@@ -1,72 +1,76 @@
-// Assuming Apollo Client is correctly included in your project setup
-const { ApolloClient, InMemoryCache, gql, HttpLink } = apolloClient;
+import React, { useState } from 'react';
+import ReactDOM from 'react-dom';
+import { ApolloClient, InMemoryCache, gql, HttpLink, ApolloProvider, useQuery } from '@apollo/client';
 
-// Create an ApolloClient instance to interact with your GraphQL server
 const client = new ApolloClient({
-  link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }), // Adjust the URI to match your Apollo Server's URL
+  link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }), // Adjust this URI to match your GraphQL server
   cache: new InMemoryCache(),
 });
 
-// Function to handle form submission
-async function handleSearch(event) {
-  event.preventDefault(); // Prevent the default form submission behavior
-  const searchTerm = document.getElementById('searchInput').value; // Get the search term from the input field
-
-  // Define your GraphQL query
-  const SEARCH_QUERY = gql`
-    query amazonProductSearchResults($searchTerm: String!) {
-      amazonProductSearchResults(searchTerm: $searchTerm) {
-        asin
-        brand
-        title
-        imageUrls
-        url
-        rating
-        ratingsTotal
-        reviewsTotal
-        featureBullets
-      }
+const SEARCH_QUERY = gql`
+  query amazonProductSearchResults($searchTerm: String!) {
+    amazonProductSearchResults(searchTerm: $searchTerm) {
+      asin
+      brand
+      title
+      imageUrls
+      url
+      rating
+      ratingsTotal
+      reviewsTotal
+      featureBullets
     }
-  `;
-
-  // Send the query to your GraphQL server
-  try {
-    const { data } = await client.query({
-      query: SEARCH_QUERY,
-      variables: { searchTerm },
-    });
-
-    // Use the response data to update your page's UI
-    if (data && data.amazonProductSearchResults) {
-      displaySearchResults(data.amazonProductSearchResults);
-    }
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    // Optionally handle the error by showing an error message in the UI
   }
-}
+`;
 
-// Function to display search results
-function displaySearchResults(results) {
-  const resultsContainer = document.getElementById('searchResults');
-  resultsContainer.innerHTML = ''; // Clear previous results
+const SearchComponent = () => {
+  const [searchTerm, setSearchTerm] = useState('');
 
-  results.forEach(result => {
-    const resultElement = document.createElement('div');
-    resultElement.classList.add('search-result');
-    // Construct the result element's content
-    const content = `
-      <h2>${result.title}</h2>
-      <p>Rating: ${result.rating} (${result.ratingsTotal} ratings)</p>
-      <p>Brand: ${result.brand}</p>
-      <img src="${result.imageUrls[0]}" alt="Product Image">
-      <a href="${result.url}" target="_blank">View Product</a>
-      <ul>${result.featureBullets.map(bullet => `<li>${bullet}</li>`).join('')}</ul>
-    `;
-    resultElement.innerHTML = content;
-    resultsContainer.appendChild(resultElement);
+  const { data, loading, error } = useQuery(SEARCH_QUERY, {
+    variables: { searchTerm },
+    skip: searchTerm.length === 0, // Skip the query if search term is empty
   });
-}
 
-// Attach the handleSearch function to your form's submit event
-document.getElementById('searchForm').addEventListener('submit', handleSearch);
+  const handleSearch = (event) => {
+    event.preventDefault();
+    const searchTerm = document.getElementById('searchInput').value;
+    setSearchTerm(searchTerm);
+  };
+
+  return (
+    <div>
+      <form onSubmit={handleSearch}>
+        <input type="text" id="searchInput" placeholder="What are we looking for today?" />
+        <button type="submit">Let's Go!</button>
+      </form>
+      {loading && <p>Loading...</p>}
+      {error && <p>Error :( Please try again</p>}
+      {data && (
+        <div id="searchResults">
+          {data.amazonProductSearchResults.map((result) => (
+            <div key={result.asin}>
+              <h2>{result.title}</h2>
+              <p>Brand: {result.brand}</p>
+              <p>Rating: {result.rating} ({result.ratingsTotal} reviews)</p>
+              <img src={result.imageUrls[0]} alt={result.title} />
+              <a href={result.url} target="_blank" rel="noreferrer">View Product</a>
+              <ul>
+                {result.featureBullets.map((bullet, index) => (
+                  <li key={index}>{bullet}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const App = () => (
+  <ApolloProvider client={client}>
+    <SearchComponent />
+  </ApolloProvider>
+);
+
+ReactDOM.render(<App />, document.getElementById('root'));
