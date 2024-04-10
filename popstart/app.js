@@ -3,7 +3,7 @@
 
   // Create an ApolloClient instance to interact with your GraphQL server
   const client = new ApolloClient({
-    link: new HttpLink({ uri: 'https://sks0sfxl49.execute-api.us-east-2.amazonaws.com/dev/graphql' }), // Adjust the URI to match your Apollo Server's URL
+    link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }), // Adjust the URI to match your Apollo Server's URL
     cache: new InMemoryCache(),
   });
 
