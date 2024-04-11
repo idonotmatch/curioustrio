@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>curious trio - start</title>
     <link rel="stylesheet" href="style.css"> <!-- Link to your existing CSS file -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/@apollo/client@3.9.10/dist/apollo-client.cjs.js"></script> -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@apollo/client@3.9.10/dist/apollo-client.cjs.js"></script>
+<script defer src="bundle.js"></script> -->
 </head>
 <body>
     <main class="main-content">
+        <div id="root"></div>
         <div class="search-box">
             <form id="searchForm">
                 <input type="text" name="search" placeholder="what are we looking for today?" id="searchInput">
@@ -20,6 +22,6 @@
     <footer>
         <p>&copy; 2024 Curious Trio. All rights reserved.</p>
     </footer>
-    <script type="module" src="./dist/bundle.js"></script>
+    <script defer src="./dist/bundle.js"></script>
 </body>
 </html>
