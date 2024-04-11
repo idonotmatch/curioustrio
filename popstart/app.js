@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import { ApolloClient, InMemoryCache, gql, HttpLink, ApolloProvider, gql, useQuery } from '@apollo/client';
+import { ApolloClient, InMemoryCache, gql, HttpLink, ApolloProvider, useQuery } from '@apollo/client';
 
 const client = new ApolloClient({
   link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }), // Adjust this URI to match your GraphQL server
