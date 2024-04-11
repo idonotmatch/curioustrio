@@ -26,7 +26,7 @@ eval("__webpack_require__.r(__webpack_exports__);\n/* harmony import */ var reac
   \*******************/
 /***/ ((module) => {
 
-eval("// schema.js\nvar API_KEY = 'Yc129c435-77ed-4584-8771-2ce5ad3954adE';\nmodule.exports = {\n  API_KEY: API_KEY\n};\n\n//# sourceURL=webpack://my-graphql-project/./schema.js?");
+eval("// schema.js\nvar API_KEY = 'c129c435-77ed-4584-8771-2ce5ad3954ad';\nmodule.exports = {\n  API_KEY: API_KEY\n};\n\n//# sourceURL=webpack://my-graphql-project/./schema.js?");
 
 /***/ }),
 
