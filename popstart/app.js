@@ -4,7 +4,7 @@ import { ApolloClient, InMemoryCache, gql, HttpLink, ApolloProvider, useQuery } 
 
 const { API_KEY } = require('./schema');
 const client = new ApolloClient({
-  link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }),
+  link: new HttpLink({ uri: 'https://endpoint.canopyapi.co/' }),
   headers: {
     'Authorization': `Bearer ${API_KEY}`,
   },
