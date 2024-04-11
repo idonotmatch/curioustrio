@@ -2,8 +2,12 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client'; // Import createRoot from react-dom/client
 import { ApolloClient, InMemoryCache, gql, HttpLink, ApolloProvider, useQuery } from '@apollo/client';
 
+const { API_KEY } = require('./schema');
 const client = new ApolloClient({
-  link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }), // Adjust this URI to match your GraphQL server
+  link: new HttpLink({ uri: 'https://graphql.canopyapi.co/' }),
+  headers: {
+    'Authorization': `Bearer ${API_KEY}`,
+  },
   cache: new InMemoryCache(),
 });
 
