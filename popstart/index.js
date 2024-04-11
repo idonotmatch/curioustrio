@@ -42,10 +42,43 @@ const resolvers = {
 async function fetchGraphQLData(searchTerm) {
   const query = `
     query MyQuery($searchTerm: String!) {
-      ...
+      amazonProductSearchResults(searchTerm: $searchTerm) {
+        asin
+        brand
+        title
+        imageUrls
+        url
+        rating
+        ratingsTotal
+        reviewsTotal
+        featureBullets
+      }
     }
   `;
-  // The rest of your fetchGraphQLData function remains unchanged
+  
+  const response = await fetch('https://graphql.canopyapi.co/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify({
+      query: query,
+      variables: { searchTerm },
+    }),
+  });
+
+  const jsonResponse = await response.json();
+
+  // Error handling for the response
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  // You might need additional error handling here based on the structure
+  // of the response data (e.g., checking jsonResponse.errors)
+
+  return jsonResponse.data; // Adjust this return based on the structure of the response
 }
 
 // Create an Apollo Server instance for Lambda
