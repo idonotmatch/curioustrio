@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client'; // Import createRoot from react-dom/client
 import { ApolloClient, InMemoryCache, gql, HttpLink, ApolloProvider, useQuery } from '@apollo/client';
 
 const client = new ApolloClient({
@@ -33,8 +33,8 @@ const SearchComponent = () => {
 
   const handleSearch = (event) => {
     event.preventDefault();
-    const searchTerm = document.getElementById('searchInput').value;
-    setSearchTerm(searchTerm);
+    const searchTermValue = document.getElementById('searchInput').value; // Renamed to searchTermValue to avoid shadowing
+    setSearchTerm(searchTermValue);
   };
 
   return (
@@ -73,4 +73,7 @@ const App = () => (
   </ApolloProvider>
 );
 
-ReactDOM.render(<App />, document.getElementById('root'));
+// Updated part for React 18
+const container = document.getElementById('root');
+const root = createRoot(container); // Create a root.
+root.render(<App />); // Initial render
