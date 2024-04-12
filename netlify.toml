@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = "build" # Update this with your actual build output directory
+
+[[redirects]]
+  from = "/popstart/*"
+  to = "https://popstart.netlify.app"
+  status = 200
+  force = true
