@@ -1,9 +1,11 @@
 [build]
   command = "npm run build"
-  publish = "build" # Update this with your actual build output directory
 
 [[redirects]]
   from = "/popstart/*"
   to = "https://popstart.netlify.app/popstart"
   status = 200
   force = true
+
+[[plugins]]
+package = "@netlify/plugin-nextjs"
