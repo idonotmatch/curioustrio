@@ -14,12 +14,46 @@ export default async function handler(req, res) {
           'Authorization': `Bearer ${process.env.API_KEY}`, // Ensure this is correctly set
         },
         body: JSON.stringify({
-          query: `your-query-here`,
+            query: `
+            query MyQuery($searchTerm: String!) {
+              amazonProductSearchResults(input: {searchTerm: $searchTerm}) {
+                productResults {
+                  results {
+                    asin
+                    bestSellerRankings {
+                      categoryName
+                      rank
+                    }
+                    brand
+                    countryOfOrigin
+                    featureBullets
+                    imageUrls
+                    price {
+                      currency
+                      value
+                    }
+                    rating
+                    ratingsBreakdown {
+                      fiveStarRatingsCount
+                      fourStarRatingsCount
+                      threeStarRatingsCount
+                      twoStarRatingsCount
+                      oneStarRatingsCount
+                    }
+                    ratingsTotal
+                    title
+                    url
+                  }
+                }
+              }
+            }
+          `,
           variables: { searchTerm },
         }),
       });
   
       if (!response.ok) {
+        // If the response is not ok, we are throwing an error with the status code
         throw new Error(`API call failed with status: ${response.status}`);
       }
   

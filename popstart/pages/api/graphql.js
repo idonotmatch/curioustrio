@@ -1,82 +1,32 @@
-// pages/api/graphql.js
-import { ApolloServer, gql } from 'apollo-server-micro';
-import fetch from 'node-fetch';
+// Ensure all the necessary imports are at the top
+import { ApolloServer } from '@apollo/server';
+import { startServerAndCreateNextHandler } from '@as-integrations/next';
+import { buildHTTPExecutor } from '@graphql-tools/executor-http';
+import { schemaFromExecutor } from '@graphql-tools/wrap';
+import { stitchSchemas } from '@graphql-tools/stitch';
 
-// Assuming the schema from your app.js looks something like this
-const typeDefs = gql`
-  type Query {
-    amazonProductSearchResults(searchTerm: String!): [Product]
-  }
+const CANOPY_GRAPHQL_ENDPOINT = 'https://graphql.canopyapi.co/';
 
-  type Product {
-    asin: String
-    brand: String
-    title: String
-    imageUrls: [String]
-    url: String
-    rating: Float
-    ratingsTotal: Int
-    reviewsTotal: Int
-    featureBullets: [String]
-  }
-`;
-
-const resolvers = {
-  Query: {
-    amazonProductSearchResults: async (_, { searchTerm }) => {
-      const response = await fetch('https://graphql.canopyapi.co/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Ensure your API key is securely stored and accessed
-          'Authorization': `Bearer ${process.env.API_KEY}`,
-        },
-        body: JSON.stringify({
-          query: `
-            query amazonProductSearchResults($searchTerm: String!) {
-              amazonProductSearchResults(searchTerm: $searchTerm) {
-                asin
-                brand
-                title
-                imageUrls
-                url
-                rating
-                ratingsTotal
-                reviewsTotal
-                featureBullets
-              }
-            }
-          `,
-          variables: { searchTerm },
-        }),
-      });
-      const { data, errors } = await response.json();
-      if (errors) {
-        console.error(errors);
-        throw new Error('Failed to fetch data');
-      }
-      return data.amazonProductSearchResults;
+async function createStitchedSchema() {
+  const remoteExecutor = buildHTTPExecutor({
+    endpoint: CANOPY_GRAPHQL_ENDPOINT,
+    headers: {
+      Authorization: `Bearer ${process.env.API_KEY}`,
     },
-  },
-};
+  });
 
-const apolloServer = new ApolloServer({ typeDefs, resolvers });
-const startServer = apolloServer.start();
+  const canopySubschema = {
+    schema: await schemaFromExecutor(remoteExecutor),
+    executor: remoteExecutor,
+  };
 
-export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.end();
-    return false;
-  }
-
-  await startServer;
-  await apolloServer.createHandler({
-    path: '/api/graphql',
-  })(req, res);
+  return stitchSchemas({
+    subschemas: [canopySubschema],
+  });
 }
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
+export default async (req, res) => {
+  const schema = await createStitchedSchema();
+  const apolloServer = new ApolloServer({ schema });
+  return startServerAndCreateNextHandler(apolloServer)(req, res);
 };

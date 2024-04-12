@@ -16,6 +16,11 @@
   "license": "ISC",
   "dependencies": {
     "@apollo/client": "^3.9.11",
+    "@apollo/server": "^4.10.2",
+    "@as-integrations/next": "^3.0.0",
+    "@graphql-tools/executor-http": "^1.0.9",
+    "@graphql-tools/stitch": "^9.1.0",
+    "@graphql-tools/wrap": "^10.0.5",
     "apollo-server-lambda": "^3.6.0",
     "graphql": "^16.8.1",
     "next": "^14.1.4",
