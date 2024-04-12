@@ -4,6 +4,6 @@
 
 [[redirects]]
   from = "/popstart/*"
-  to = "https://popstart.netlify.app"
+  to = "https://popstart.netlify.app/popstart"
   status = 200!
   force = true
