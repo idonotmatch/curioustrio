@@ -54,7 +54,7 @@ body {
 
 h1 {
     margin-bottom: 20px;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .stay-informed-link {
@@ -98,4 +98,33 @@ footer {
     border: none; /* No borders */
     cursor: pointer; /* Add a pointer on hover */
     border-radius: 12px; /* Rounded corners */
+}
+
+form {
+    color: #000; /* Match h1 color */
+}
+
+input[type="text"], input[type="email"], button {
+    font-size: 12px; /* Adjust as needed, to match or complement the h1 size */
+    color: #000; /* Text color */
+    background-color: #fff; /* Background color, adjust if needed */
+    border: 1px solid #000; /* Adds a border, remove or adjust as desired */
+    padding: 8px; /* Adjust padding */
+    margin: 4px 0; /* Margin for spacing, adjust as needed */
+}
+
+button {
+    font-weight: bold; /* If you want the button text to be bold */
+    cursor: pointer; /* Changes cursor to pointer on hover */
+    transition: background-color 0.3s; /* Smooth transition for hover effect */
+}
+
+button:hover {
+    background-color: #000; /* Button background color on hover */
+    color: #fff; /* Button text color on hover */
+}
+
+label {
+    display: block; /* Makes each label appear on a new line */
+    margin: 8px 0; /* Spacing around labels, adjust as needed */
 }

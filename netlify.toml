@@ -4,6 +4,6 @@ publish = "."
 
 [[redirects]]
   from = "/popstart/*"
-  to = "https://popstart.netlify.app/popstart"
+  to = "https://popstart.vercelapp.app/popstart"
   status = 200
   force = true
