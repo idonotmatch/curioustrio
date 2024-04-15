@@ -53,8 +53,9 @@ body {
 }
 
 h1 {
-    margin-bottom: 20px;
-    font-size: 12px;
+    margin-bottom: 40px;
+    font-size: 14px;
+    text-decoration: underline;
 }
 
 .stay-informed-link {
@@ -108,23 +109,36 @@ input[type="text"], input[type="email"], button {
     font-size: 12px; /* Adjust as needed, to match or complement the h1 size */
     color: #000; /* Text color */
     background-color: #fff; /* Background color, adjust if needed */
-    border: 1px solid #000; /* Adds a border, remove or adjust as desired */
-    padding: 8px; /* Adjust padding */
+    border: none;
+    border-bottom: 0.5px solid #000;
+    padding: 4px; /* Adjust padding */
     margin: 4px 0; /* Margin for spacing, adjust as needed */
 }
 
 button {
-    font-weight: bold; /* If you want the button text to be bold */
+    font-size: 12px;
+    color: #fff; /* White text color */
+    background-color: #000; /* Black background */
+    border: 2px solid #000; /* Solid border */
+    padding: 8px 12px; /* Larger padding for better clickability */
+    margin-top: 10px; /* Margin on top to separate from input fields */
+    width: 60%; /* Ensures it matches the width of input fields */
     cursor: pointer; /* Changes cursor to pointer on hover */
-    transition: background-color 0.3s; /* Smooth transition for hover effect */
+    transition: background-color 0.3s, color 0.3s; /* Smooth transition for hover effects */
+}
+
+label, input {
+    font-family: inherit; /* Inherits font-family from body */
+    color: inherit; /* Inherits font color from body */
 }
 
 button:hover {
-    background-color: #000; /* Button background color on hover */
-    color: #fff; /* Button text color on hover */
+    background-color: #444; /* Darken the background on hover */
+    color: #ddd; /* Lighten the text color on hover */
 }
 
 label {
-    display: block; /* Makes each label appear on a new line */
-    margin: 8px 0; /* Spacing around labels, adjust as needed */
+    display: block; 
+    margin: 4px 0; /* Spacing around labels, adjust as needed */
+    font-size: 12px;
 }

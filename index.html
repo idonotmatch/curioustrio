@@ -3,17 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css"> <!-- Update the link to style.css -->
+  <link rel="stylesheet" href="style.css"> <!-- Make sure this path is correct -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:wght@400;700&display=swap">
-  <title>Curious Trio - arriving soon.</title>
+  <title>Curious Trio - Home</title>
 </head>
 <body>
   <div class="container">
-    <h1>a better way to discover and research products is arriving soon.</h1>
-    <a href="https://hepzns0akfw.typeform.com/to/T7YEP86K" class="stay-informed-link">are you ready?</a>
+    <h1>a better way to discover and research products is here.</h1>
+    <form name="contact" method="POST" action="/submit-form" netlify>
+        <div class="form-row">
+          <label for="first_name">First Name</label>
+          <input type="text" id="first_name" name="first_name" aria-required="true">
+        </div>
+        <div class="form-row">
+          <label for="last_name">Last Name</label>
+          <input type="text" id="last_name" name="last_name" aria-required="true">
+        </div>
+        <div class="form-row">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" aria-required="true">
+        </div>
+        <div class="form-row">
+          <button type="submit">let's go.</button>
+        </div>
+      </form>
   </div>
   <footer>
-    <p>&copy; 2024 Curious Trio. All rights reserved.</p>
+    <p>&copy; 2024 Curious Trio - Beta. All rights reserved.</p>
   </footer>
 </body>
 </html>
