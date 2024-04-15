@@ -4,6 +4,6 @@ publish = "."
 
 [[redirects]]
   from = "/popstart/*"
-  to = "https://popstart.vercel.app/"
+  to = "https://popstart.vercel.app/:splat"
   status = 200
   force = true
