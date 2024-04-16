@@ -106,6 +106,8 @@ form {
 }
 
 input[type="text"], input[type="email"], button {
+    width: 100%;
+    margin: auto;
     font-size: 12px; /* Adjust as needed, to match or complement the h1 size */
     color: #000; /* Text color */
     background-color: #fff; /* Background color, adjust if needed */
