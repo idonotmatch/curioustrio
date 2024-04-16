@@ -142,3 +142,14 @@ label {
     margin: 4px 0; /* Spacing around labels, adjust as needed */
     font-size: 12px;
 }
+
+.bypass-link {
+    color: #000; /* Set the color */
+    text-decoration: none; /* Remove underline */
+    font-size: 12px; /* Set font size */
+    margin-top: 10px; /* Space between the button and link */
+}
+
+.bypass-link:hover {
+    text-decoration: underline; /* Add underline on hover */
+}
