@@ -15,7 +15,7 @@ app.use(express.static('public')); // Serve static files
 // });
 
 // New form submission endpoint
-app.post('/popstart', async (req, res) => {
+app.post('/submit-form', async (req, res) => {
   const { first_name, last_name, email } = req.body;
   try {
     // Assuming a Mongoose model for your form data
