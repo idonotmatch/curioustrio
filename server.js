@@ -25,7 +25,7 @@ app.post('/submit-form', async (req, res) => {
       email: email
     });
     await newContact.save();
-    res.redirect('/thank-you.html');
+    res.redirect('/popstart');
   } catch (error) {
     console.error('Error saving contact:', error);
     res.status(500).send('Error processing your request');
