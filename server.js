@@ -47,6 +47,6 @@ detectPort(5000, (err, availablePort) => {
     console.error(err);
     return;
   }
-  const PORT = availablePort;  // Use the available port found or default to 5000
+  const PORT = process.env.PORT || 5000; // Default to 5000 if no environment variable is set
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 });
