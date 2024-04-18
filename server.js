@@ -37,7 +37,7 @@ app.post('/submit-form', async (req, res) => {
 });
 
 // Optional: Serve static files if you have a 'public' directory
-app.use(express.static('public'));
+// app.use(express.static('public'));
 
 // Optionally handle undefined routes
 app.use((req, res) => {
