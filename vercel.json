@@ -3,7 +3,6 @@
       {
         "source": "/popstart/:path*",
         "destination": "https://popstart.vercel.app/:path*",
-        "permanent": true,
         "statusCode": 301
       }
     ]
