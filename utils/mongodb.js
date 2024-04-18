@@ -1,19 +1,21 @@
 const mongoose = require('mongoose');
 
-const connectDB = async () => {
-    const dbURI = process.env.MONGODB_URI; // Use an environment variable for the MongoDB URI
+const connectToDatabase = async () => {
+    const dbURI = process.env.MONGODB_URI;
     if (!dbURI) {
-        console.error('MongoDB connection string is missing in the environment variables.');
-        process.exit(1); // Exit if the MongoDB URI is not set
+        throw new Error('MongoDB connection string is missing in the environment variables.');
     }
 
     try {
-        const conn = await mongoose.connect(dbURI); // Removed the deprecated options
+        const conn = await mongoose.connect(dbURI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true
+        });
         console.log(`MongoDB Connected: ${conn.connection.host}`);
     } catch (err) {
         console.error(`MongoDB Connection Error: ${err.message}`);
-        process.exit(1); // Exit process with failure
+        throw err; // Rethrow the error for the caller to handle
     }
 };
 
-module.exports = connectDB;
+module.exports = { connectToDatabase };

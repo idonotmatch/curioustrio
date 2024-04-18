@@ -1,14 +1,14 @@
-require('dotenv').config({ path: './.env.local' });  // Ensure dotenv is loaded to manage environment variables
+require('dotenv').config({ path: './.env.local' });  // Load environment variables
 
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-const connectDB = require('./utils/mongodb');  // Ensure this path correctly leads to your MongoDB connection utility
+const { connectToDatabase } = require('./utils/mongodb');  // Correct path to your MongoDB utility
 
 const app = express();
 app.use(bodyParser.json()); // Parses incoming requests with JSON payloads
 
-// Define the Contact model right after MongoDB is set up
+// Define the Contact model
 const contactSchema = new mongoose.Schema({
   firstName: String,
   lastName: String,
@@ -16,13 +16,16 @@ const contactSchema = new mongoose.Schema({
 });
 const Contact = mongoose.model('Contact', contactSchema);
 
-// Ensure MongoDB connection is initiated
-connectDB();
+// Establish MongoDB connection
+connectToDatabase().then(() => {
+  console.log('MongoDB connected successfully');
+}).catch(error => {
+  console.error('MongoDB connection failed:', error);
+  process.exit(1);
+});
 
-// Serve static files from the 'public' directory
-app.use(express.static('public'));
+app.use(express.static('public')); // Serve static files from the 'public' directory if it exists
 
-// Form submission endpoint
 app.post('/submit-form', async (req, res) => {
   const { first_name, last_name, email } = req.body;
   try {
@@ -41,12 +44,11 @@ app.post('/submit-form', async (req, res) => {
 
 const detectPort = require('detect-port');
 
-// Use detect-port to find an available port, starting with 5000
 detectPort(5000, (err, availablePort) => {
   if (err) {
-    console.error(err);
+    console.error('Error detecting port:', err);
     return;
   }
-  const PORT = process.env.PORT || 5000; // Default to 5000 if no environment variable is set
+  const PORT = process.env.PORT || availablePort;  // Use the PORT from environment or the available port
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 });
