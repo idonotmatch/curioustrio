@@ -1,10 +1,6 @@
 {
-    "redirects": [
-      {
-        "source": "/popstart/:path*",
-        "destination": "curioustrio.popstart.com",
-        "statusCode": 301
-      }
+    "rewrites": [
+      { "source": "/submit-form", "destination": "/api/submitForm" }
     ]
   }
   
