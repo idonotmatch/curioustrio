@@ -2,7 +2,7 @@
     "redirects": [
       {
         "source": "/popstart/:path*",
-        "destination": "https://popstart.vercel.app/:path*",
+        "destination": "curioustrio.popstart.com",
         "statusCode": 301
       }
     ]
