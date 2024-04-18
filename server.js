@@ -1,20 +1,20 @@
+const Contact = require('./models/contact'); 
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-const connectDB = require('./utils/mongodb'); // Ensure this path is correct
+const connectDB = require('./utils/mongodb');
+
+// Assuming 'Contact' model is exported from somewhere in your project
+const Contact = require('./models/contact'); // Update the path as necessary
 
 const app = express();
-app.use(bodyParser.json());
+
+// Use urlencoded to properly parse the data sent by the default form submission
+app.use(bodyParser.urlencoded({ extended: true }));
 connectDB();
 
 app.use(express.static('public')); // Serve static files
 
-// Existing routes and middleware
-// app.get('/', (req, res) => {
-//   res.send('Hello World!');
-// });
-
-// New form submission endpoint
 app.post('/submit-form', async (req, res) => {
   const { first_name, last_name, email } = req.body;
   try {
@@ -24,6 +24,7 @@ app.post('/submit-form', async (req, res) => {
       email: email
     });
     await newContact.save();
+    // Redirect to a specific page after submission
     res.redirect('https://popstart.curioustrio.com');
   } catch (error) {
     console.error('Error saving contact:', error);
