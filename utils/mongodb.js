@@ -8,11 +8,7 @@ const connectDB = async () => {
     }
 
     try {
-        const conn = await mongoose.connect(dbURI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true
-        });
-
+        const conn = await mongoose.connect(dbURI); // Removed the deprecated options
         console.log(`MongoDB Connected: ${conn.connection.host}`);
     } catch (err) {
         console.error(`MongoDB Connection Error: ${err.message}`);

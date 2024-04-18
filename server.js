@@ -1,20 +1,19 @@
-const Contact = require('./models/contact'); 
+require('dotenv').config({ path: './.env.local' });  // Add this at the top of your main server file
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-const connectDB = require('./utils/mongodb');
+const connectDB = require('./utils/mongodb'); // Ensure this path is correct
 
-// Assuming 'Contact' model is exported from somewhere in your project
-const Contact = require('./models/contact'); // Update the path as necessary
+// Ensure dotenv is configured at the top if you use environment variables from a .env file
 
 const app = express();
-
-// Use urlencoded to properly parse the data sent by the default form submission
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 connectDB();
 
 app.use(express.static('public')); // Serve static files
 
+// Form submission endpoint
 app.post('/submit-form', async (req, res) => {
   const { first_name, last_name, email } = req.body;
   try {
@@ -24,7 +23,6 @@ app.post('/submit-form', async (req, res) => {
       email: email
     });
     await newContact.save();
-    // Redirect to a specific page after submission
     res.redirect('https://popstart.curioustrio.com');
   } catch (error) {
     console.error('Error saving contact:', error);
@@ -32,5 +30,13 @@ app.post('/submit-form', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const detectPort = require('detect-port');
+
+detectPort(5000, (err, availablePort) => {
+  if (err) {
+    console.error(err);
+    return;
+  }
+  const PORT = availablePort;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+});
