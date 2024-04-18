@@ -1,9 +1,0 @@
-[build]
-publish = "."
-
-
-[[redirects]]
-  from = "/popstart/*"
-  to = "https://popstart.vercel.app/:splat"
-  status = 302
-  force = true

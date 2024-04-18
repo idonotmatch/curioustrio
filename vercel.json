@@ -1,0 +1,22 @@
+{
+    "redirects": [
+      {
+        "source": "/popstart/:path*",
+        "destination": "https://popstart.vercel.app/:path*",
+        "permanent": true
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/popstart/:path*",
+        "destination": "https://popstart.vercel.app/:path*"
+      }
+    ],
+    "routes": [
+      {
+        "src": "/(.*)",
+        "dest": "/"
+      }
+    ]
+  }
+  
