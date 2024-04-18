@@ -3,18 +3,11 @@ require('dotenv').config({ path: './.env.local' });  // Load environment variabl
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-const { connectToDatabase } = require('./utils/mongodb');  // Correct path to your MongoDB utility
+const connectToDatabase = require('./utils/mongodb');  // Correct path to your MongoDB utility
+const Contact = require('./models/contact');  // Import the Contact model
 
 const app = express();
 app.use(bodyParser.json()); // Parses incoming requests with JSON payloads
-
-// Define the Contact model
-const contactSchema = new mongoose.Schema({
-  firstName: String,
-  lastName: String,
-  email: String
-});
-const Contact = mongoose.model('Contact', contactSchema);
 
 // Establish MongoDB connection
 connectToDatabase().then(() => {

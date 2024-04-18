@@ -1,10 +1,10 @@
-// models/Contact.js
 const mongoose = require('mongoose');
 
 const contactSchema = new mongoose.Schema({
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  email: { type: String, required: true }
+  firstName: String,
+  lastName: String,
+  email: String
 });
 
-module.exports = mongoose.model('Contact', contactSchema);
+// Use mongoose.model's third argument to prevent model recompilation if it already exists
+module.exports = mongoose.model('Contact', contactSchema, 'Contact');
