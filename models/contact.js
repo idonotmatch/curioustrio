@@ -6,5 +6,7 @@ const contactSchema = new mongoose.Schema({
   email: String
 });
 
-// Use mongoose.model's third argument to prevent model recompilation if it already exists
-module.exports = mongoose.model('Contact', contactSchema, 'Contact');
+// This prevents the model from being recompiled if it already exists
+const Contact = mongoose.models.Contact || mongoose.model('Contact', contactSchema);
+
+module.exports = Contact;
