@@ -15,7 +15,7 @@ app.use(express.static('public')); // Serve static files
 // });
 
 // New form submission endpoint
-app.post('popstart.curioustrio.com', async (req, res) => {
+app.post('https://popstart.curioustrio.com', async (req, res) => {
   const { first_name, last_name, email } = req.body;
   try {
     // Assuming a Mongoose model for your form data
@@ -25,7 +25,7 @@ app.post('popstart.curioustrio.com', async (req, res) => {
       email: email
     });
     await newContact.save();
-    res.redirect('popstart.curioustrio.com');
+    res.redirect('https://popstart.curioustrio.com');
   } catch (error) {
     console.error('Error saving contact:', error);
     res.status(500).send('Error processing your request');
