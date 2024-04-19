@@ -29,7 +29,8 @@ app.post('/submit-form', async (req, res) => {
       email: email
     });
     await newContact.save();
-    res.redirect('https://popstart.curioustrio.com');
+    // Redirect using a 303 status code to enforce a GET request on the new URL
+    res.redirect(303, 'https://popstart.curioustrio.com');
   } catch (error) {
     console.error('Error saving contact:', error);
     res.status(500).send('Error processing your request');
