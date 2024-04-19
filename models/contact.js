@@ -4,7 +4,7 @@ const contactSchema = new mongoose.Schema({
   firstName: String,
   lastName: String,
   email: String
-}, { timestamps: true }); // Enable automatic timestamping
+}, { timestamps: true });
 
 const Contact = mongoose.model('Contact', contactSchema);
 

@@ -1,14 +1,12 @@
-require('dotenv').config({ path: './.env.local' });  // Load environment variables
+require('dotenv').config({ path: './.env.local' });
 const express = require('express');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
-const connectDB = require('./utils/mongodb'); // Check the MongoDB connection utility for errors
+const connectDB = require('./utils/mongodb');
+const Contact = require('./models/contact'); // Ensure the path is correct based on your project structure
 
-// Initialize express app
 const app = express();
-app.use(bodyParser.json()); // Parses incoming requests with JSON payloads
+app.use(bodyParser.json());
 
-// Connect to MongoDB
 connectDB().then(() => {
   console.log('MongoDB connected successfully');
 }).catch(err => {
@@ -16,16 +14,6 @@ connectDB().then(() => {
   process.exit(1);
 });
 
-// Define the Contact model inside the connection callback or in a separate module
-const contactSchema = new mongoose.Schema({
-  firstName: String,
-  lastName: String,
-  email: String
-}, { timestamps: true }); // Enable automatic timestamps for contact creation and updates
-
-const Contact = mongoose.model('Contact', contactSchema);
-
-// Define a single route for form submission
 app.post('/submit-form', async (req, res) => {
   const { first_name, last_name, email } = req.body;
   try {
@@ -42,26 +30,11 @@ app.post('/submit-form', async (req, res) => {
   }
 });
 
-// Handle aggregate endpoint to get contact counts by email
-app.get('/contact-counts', async (req, res) => {
-  try {
-    const counts = await Contact.aggregate([
-      { $group: { _id: "$email", count: { $sum: 1 } } }
-    ]);
-    res.json(counts);
-  } catch (error) {
-    console.error('Error fetching contact counts:', error);
-    res.status(500).send('Error processing your request');
-  }
-});
-
-// Optionally handle undefined routes
 app.use((req, res) => {
   res.status(404).send('Page not found');
 });
 
-// Server setup
-const PORT = process.env.PORT || 5000; // Default to 5000 if no environment variable is set
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
