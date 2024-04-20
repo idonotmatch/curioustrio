@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { connectToDatabase } = require('../utils/mongodb');
+const Contact = require('../models/contact')
 
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
