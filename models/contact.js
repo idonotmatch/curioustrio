@@ -6,6 +6,7 @@ const contactSchema = new mongoose.Schema({
   email: String
 }, { timestamps: true });
 
-const Contact = mongoose.model('Contact', contactSchema);
+// Check if the model already exists, use it. If not, compile a new one.
+const Contact = mongoose.models.Contact || mongoose.model('Contact', contactSchema);
 
 module.exports = Contact;
