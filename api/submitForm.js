@@ -31,7 +31,7 @@ module.exports = async (req, res) => {
         console.log('New contact saved successfully.');
       }
   
-      res.status(303).redirect('https://popstart.curioustrio.com');
+      res.redirect(303, 'https://popstart.curioustrio.com');
     } catch (error) {
       console.error('Error during database operation:', error);
       res.status(500).json({ error: 'Internal server error', details: error.message });
