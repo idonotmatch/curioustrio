@@ -1,10 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;800&display=swap');
+
 html, body {
     height: 100%;
     margin: 0; /* Ensure there's no default margin */
 }
 
 body {
-    font-family: 'Anonymous Pro', monospace;
+    font-family: 'Open Sans', sans-serif;
     background-color: #fff;
     color: #000;
     display: flex;
@@ -55,33 +57,6 @@ body {
 h1 {
     margin-bottom: 40px;
     font-size: 14px;
-    text-decoration: underline;
-}
-
-.stay-informed-link {
-    display: inline-block;
-    padding: 10px 20px;
-    background-color: #ffffff;
-    color: #000000;
-    text-decoration: underline;
-    border-radius: 5px;
-    font-size: 20px;
-}
-
-.search-box input[type="text"] {
-    text-align: center;
-    width: 100%; /* Fill the width of its parent */
-    padding: 10px;
-    border: none;
-    border-radius: 12px;
-    box-sizing: border-box; /* Padding and border (if any) included in dimensions */
-}
-
-.search-box {
-    width: 100%;
-    max-width: 600px; /* Maintain max-width for larger screens */
-    margin: 20px auto; /* Center horizontally */
-    text-align: center;
 }
 
 footer {
@@ -90,15 +65,6 @@ footer {
     background-color: #ffffff;
     color: #000000;
     font-size: 8px;
-}
-
-.submit-button {
-    background-color: #000000;
-    color: #ffffff;
-    padding: 12px 12px;
-    border: none; /* No borders */
-    cursor: pointer; /* Add a pointer on hover */
-    border-radius: 12px; /* Rounded corners */
 }
 
 form {
@@ -123,10 +89,11 @@ button {
     background-color: #000; /* Black background */
     border: 2px solid #000; /* Solid border */
     padding: 8px 12px; /* Larger padding for better clickability */
-    margin-top: 10px; /* Margin on top to separate from input fields */
+    margin-top: 20px; /* Margin on top to separate from input fields */
     width: 60%; /* Ensures it matches the width of input fields */
     cursor: pointer; /* Changes cursor to pointer on hover */
     transition: background-color 0.3s, color 0.3s; /* Smooth transition for hover effects */
+    border-radius: 4px;
 }
 
 label, input {
@@ -142,16 +109,17 @@ button:hover {
 label {
     display: block; 
     margin: 4px 0; /* Spacing around labels, adjust as needed */
-    font-size: 12px;
+    font-size: 14px;
+    margin-top: 20px;
 }
 
 .bypass-link {
     color: #000; /* Set the color */
-    text-decoration: none; /* Remove underline */
-    font-size: 12px; /* Set font size */
-    margin-top: 10px; /* Space between the button and link */
+    font-size: 10px; /* Set font size */
+    margin-top: 20px; /* Space between the button and link */
+    text-decoration: underline;
 }
 
-.bypass-link:hover {
-    text-decoration: underline; /* Add underline on hover */
-}
+/* .bypass-link:hover {
+    text-decoration: underline;
+} */
