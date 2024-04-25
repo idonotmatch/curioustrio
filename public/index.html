@@ -2,14 +2,13 @@
 <html lang="en">
 <head>
   <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-51Y38PPW5G"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-51Y38PPW5G');
-</script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-51Y38PPW5G"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-51Y38PPW5G');
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="style.css"> <!-- Ensure this path is correct -->
@@ -17,31 +16,43 @@
   <title>Curious Trio - Home</title>
 </head>
 <body>
-  <header>
-    <div class="container">
-      <h1>a better way to discover and research products is here. get started below.</h1>
-      <form name="contact" method="POST" action="/submit-form">
-        <div class="form-row">
-          <label for="first_name">First Name:</label>
-          <input type="text" id="first_name" name="first_name" required>
-        </div>
-        <div class="form-row">
-          <label for="last_name">Last Name:</label>
-          <input type="text" id="last_name" name="last_name" required>
-        </div>
-        <div class="form-row">
-          <label for="email">Email:</label>
-          <input type="email" id="email" name="email" required>
-        </div>
-        <div class="form-row">
-          <button type="submit">let's go</button>
-        </div>
-      </form>  
-      <p><a href="https://popstart.curioustrio.com" class="bypass-link">skip the noise</a></p> 
+  <!-- Global Header Across All Pages -->
+  <header class="global-header">
+    <div class="logo">
+      <a href="/public/index.html">Curious Trio</a>
     </div>
   </header>
+
+  <!-- Page-Specific Main Content Header -->
+  <div class="container">
+    <h2>Remove the paid ads.</h2>
+    <h1>a better way to discover and research products is here. get started below.</h1>
+    <form name="contact" method="POST" action="/submit-form">
+      <!-- <div class="form-row">
+        <label for="first_name">First Name:</label>
+        <input type="text" id="first_name" name="first_name" required>
+      </div>
+      <div class="form-row">
+        <label for="last_name">Last Name:</label>
+        <input type="text" id="last_name" name="last_name" required>
+      </div> -->
+      <div class="form-row">
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required>
+      </div>
+      <div class="form-row">
+        <button type="submit">let's go</button>
+      </div>
+    </form>  
+    <p><a href="https://popstart.curioustrio.com" class="bypass-link">skip the noise</a></p> 
+  </div>
+
   <footer>
     <p>&copy; 2024 Curious Trio - Beta. All rights reserved.</p>
+    <nav class="footer-nav">
+      <a href="/services">why?</a>
+      <a href="/contact">contact.</a>
+    </nav>
   </footer>
 </body>
 </html>

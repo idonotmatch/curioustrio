@@ -38,12 +38,6 @@ body {
     margin: 0; /* Ensure the header starts at the top-left */
 }
 
-.logo {
-    height: 50px; /* Adjust based on your logo's size */
-    display: block; /* Ensures the logo can have margins adjusted if necessary */
-    margin: 0; /* Adjust if you need a bit of spacing */
-}
-
 .container {
     text-align: center;
     padding: 20px;
@@ -56,7 +50,8 @@ body {
 
 h1 {
     margin-bottom: 40px;
-    font-size: 14px;
+    font-size: 12px;
+    font-weight: normal;
 }
 
 footer {
@@ -123,3 +118,35 @@ label {
 /* .bypass-link:hover {
     text-decoration: underline;
 } */
+
+.global-header {
+    width: 100%;
+    padding: 10px 20px;
+    /* display: flex; */
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 1px 1px #000;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+}
+
+.global-header .logo a {
+    text-decoration: none;
+    color: #000;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.footer-nav a {
+    text-decoration: underline;
+    /* margin-left: 10px; */
+    color: #333;
+    font-size: 12px;
+
+}
+
+.footer-nav a:hover {
+    color: #000;
+}
