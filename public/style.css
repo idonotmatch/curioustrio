@@ -55,7 +55,7 @@ h1 {
 }
 
 footer {
-    text-align: right;
+    text-align: center;
     padding: 10px;
     background-color: #ffffff;
     color: #000000;
@@ -141,7 +141,7 @@ label {
 
 .footer-nav a {
     text-decoration: underline;
-    /* margin-left: 10px; */
+    margin-left: 10px;
     color: #333;
     font-size: 12px;
 
