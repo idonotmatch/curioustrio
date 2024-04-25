@@ -125,7 +125,7 @@ label {
     /* display: flex; */
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 1px 1px #000;
+    /* box-shadow: 0 1px 1px #000; */
     position: fixed;
     top: 0;
     left: 0;
@@ -133,7 +133,7 @@ label {
 }
 
 .global-header .logo a {
-    text-decoration: none;
+    text-decoration: underline;
     color: #000;
     font-size: 14px;
     font-weight: bold;
