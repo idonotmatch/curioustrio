@@ -40,26 +40,20 @@ body {
 
 .container {
     text-align: center;
+    width: 100%;
     padding: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100vh;
+    min-height: 100vh;
+    margin: 0 auto;
 }
 
 h1 {
     margin-bottom: 40px;
     font-size: 12px;
     font-weight: normal;
-}
-
-footer {
-    text-align: center;
-    padding: 10px;
-    background-color: #ffffff;
-    color: #000000;
-    font-size: 8px;
 }
 
 form {
@@ -139,13 +133,24 @@ label {
     font-weight: bold;
 }
 
+footer {
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+    position: fixed;
+    font-size: 8px;
+    bottom: 0;
+    left: 0;
+    background-color: #fff;
+    z-index: 1000;
+}
+
 .footer-nav a {
     text-decoration: underline;
-    margin-left: 10px;
     color: #333;
     font-size: 12px;
-
-}
+    margin-left: 10px;
+    }
 
 .footer-nav a:hover {
     color: #000;
