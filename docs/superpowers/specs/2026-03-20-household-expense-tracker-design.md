@@ -358,6 +358,106 @@ Monthly wrap cron: runs at 8am on the 1st. Sends to all household members with a
 
 ---
 
+## V2 Feature Spec: Promotion Matching & Price Protection Alerts
+
+### Overview
+
+The Gmail sync infrastructure already runs every 30 minutes scanning for receipt emails. This feature extends that same pipeline to also detect promotional emails — sale announcements, price drops, coupons, limited-time offers — and match them against recent confirmed expenses. When a match is found, the user is alerted that a previous purchase may be eligible for a price adjustment or that a cheaper option is now available.
+
+### What Gets Scanned
+
+The existing Gmail sync adds a second pass for promotional email patterns:
+
+**Subject/sender patterns to detect:**
+- "% off", "sale", "deal", "price drop", "limited time", "flash sale"
+- Sender domains matching merchants already in `MerchantMapping` (e.g. email from `@amazon.com`, `@target.com`)
+- "Price adjustment", "price match", "we've lowered the price"
+
+Promotional emails are **never** shown in the expense feed. They only exist to power matching logic — no new UI surfaces for the emails themselves.
+
+### Matching Logic
+
+Claude parses the promotional email to extract:
+- Merchant name
+- Promotion type: `price_drop | coupon | sale | price_adjustment_offer`
+- Item description (if specific item, not store-wide)
+- Discount amount or percentage
+- Promo expiry date
+- Original price (if stated)
+
+Then matches against:
+1. **Expense level:** confirmed expenses from the same merchant within the past **30 days** (configurable per household — some retailers offer 7 days, others 30)
+2. **Line item level:** if the promo specifies an item and the expense has line items, match on `LineItem.description` using fuzzy text match
+
+Match confidence tiers:
+- **High:** same merchant + specific item matches a line item description + within price adjustment window
+- **Medium:** same merchant + store-wide sale + recent purchase within window
+- **Low:** same merchant + coupon code available (useful but not a direct price match)
+
+### New Data Model
+
+```
+PromotionAlert
+  id                uuid PK
+  household_id      uuid FK → Household
+  expense_id        uuid FK → Expense (nullable; null for store-wide promos)
+  line_item_id      uuid FK → LineItem (nullable; set for item-level matches)
+  merchant          string
+  promotion_type    enum: price_drop | coupon | sale | price_adjustment_offer
+  description       string              # "20% off all groceries this weekend"
+  discount_amount   decimal(10,2)       # nullable; absolute discount if known
+  discount_pct      decimal(5,2)        # nullable; percentage discount if known
+  promo_expires_at  timestamptz         # nullable
+  potential_saving  decimal(10,2)       # calculated: expense amount × discount_pct or discount_amount
+  confidence        enum: high | medium | low
+  status            enum: new | viewed | dismissed | redeemed
+  source_email_id   string              # Gmail message ID for reference
+  created_at        timestamptz
+```
+
+### User-Facing Surface
+
+**New section in Pending Queue or dedicated "Savings" tab:**
+
+```
+💰 Potential saving
+  Amazon · Order from Mar 15
+  "15% off electronics — ends Sunday"
+  You paid $47.32 · Potential adjustment: $7.10
+  [View details]  [Dismiss]
+```
+
+Push notification (new type):
+> "Possible price adjustment: Amazon item you bought Mar 15 is now 15% off. Tap to check."
+
+Notification fires once per alert, only for `confidence: high` matches. Medium/low confidence alerts appear in-app only (no push).
+
+### Price Adjustment Window Setting
+
+User-configurable per merchant or globally (default: 14 days). Stored as a household setting. Used to filter which past expenses are eligible for matching.
+
+```
+HouseholdSettings  (new table or JSONB column on Household)
+  price_adjustment_window_days   integer DEFAULT 14
+```
+
+### Privacy Note
+
+Promotional email content is parsed transiently by Claude — same ephemeral approach as receipt emails. Promo email body is never stored; only the extracted structured data (`PromotionAlert` record) is persisted.
+
+### What This Does NOT Do
+
+- Does not automatically request price adjustments on the user's behalf
+- Does not scrape third-party price comparison sites
+- Does not track items the user hasn't purchased (no wishlist matching in v2)
+- Wishlist + proactive price alerts (before purchase) is a v3 concept
+
+### Relationship to Popstart
+
+Long-term, `LineItem.description` + `PromotionAlert` data feeds the Popstart price comparison loop: "you bought this item — here's where it's cheaper right now." That integration is planned as a separate phase once both apps are stable.
+
+---
+
 ## Future Considerations (not v1)
 
 - **Guided entry mode:** step-by-step conversational entry for new users or complex inputs
