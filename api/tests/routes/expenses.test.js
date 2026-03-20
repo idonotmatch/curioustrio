@@ -61,7 +61,6 @@ describe('POST /expenses/confirm', () => {
         merchant: "Trader Joe's",
         amount: 84.17,
         date: '2026-03-20',
-        category_id: 'some-cat-id',
         source: 'manual',
       });
 

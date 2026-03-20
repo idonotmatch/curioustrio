@@ -17,9 +17,6 @@ async function getUser(req) {
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function toUUID(val) {
-  return val && UUID_RE.test(val) ? val : null;
-}
 
 // Parse NL input → structured expense (does NOT save to DB)
 router.post('/parse', aiEndpoints, async (req, res, next) => {
@@ -53,20 +50,31 @@ router.post('/confirm', async (req, res, next) => {
     }
 
     const user = await getUser(req);
-    const safeCategoyId = toUUID(category_id);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+
+    if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
+      return res.status(400).json({ error: 'category_id must be a valid UUID' });
+    }
+
     const expense = await Expense.create({
       userId: user.id,
       householdId: user?.household_id,
-      merchant, amount, date, categoryId: safeCategoyId,
-      source, status: 'confirmed', notes,
+      merchant, amount, date,
+      categoryId: category_id,
+      source,
+      status: 'confirmed',
+      notes,
+      placeName: place_name,
+      address,
+      mapkitStableId: mapkit_stable_id,
     });
 
     // Update merchant memory
-    if (safeCategoyId && user?.household_id) {
+    if (category_id && user?.household_id) {
       await MerchantMapping.upsert({
         householdId: user.household_id,
         merchantName: merchant,
-        categoryId: safeCategoyId,
+        categoryId: category_id,
       });
     }
 
@@ -78,6 +86,7 @@ router.post('/confirm', async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const expenses = await Expense.findByUser(user.id);
     res.json(expenses);
   } catch (err) { next(err); }
