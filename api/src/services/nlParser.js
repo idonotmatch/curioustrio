@@ -9,9 +9,18 @@ Today's date is provided in the user message. If no date is mentioned, use today
 Do not include any text outside the JSON object.`;
 
 async function parseExpense(input, todayDate) {
+  if (!input || typeof input !== 'string' || input.trim().length === 0) {
+    return null;
+  }
+
+  // Validate todayDate is an ISO date string (YYYY-MM-DD)
+  if (!todayDate || !/^\d{4}-\d{2}-\d{2}$/.test(todayDate)) {
+    throw new Error('todayDate must be a valid ISO date string (YYYY-MM-DD)');
+  }
+
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 256,
+    max_tokens: 512,
     system: SYSTEM_PROMPT,
     messages: [{
       role: 'user',
@@ -19,7 +28,8 @@ async function parseExpense(input, todayDate) {
     }],
   });
 
-  const text = message.content[0].text.trim();
+  const text = message.content?.[0]?.text?.trim();
+  if (!text) return null;
   if (text === 'null') return null;
 
   try {

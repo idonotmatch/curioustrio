@@ -29,6 +29,7 @@ describe('parseExpense', () => {
     expect(result.merchant).toBe("Trader Joe's");
     expect(result.amount).toBe(242.50);
     expect(result.date).toBe('2026-03-20');
+    expect(result.notes).toBeNull();
   });
 
   it('returns null for unparseable input', async () => {
@@ -38,6 +39,11 @@ describe('parseExpense', () => {
       content: [{ text: 'null' }]
     });
     const result = await parseExpense('asdfjkl', '2026-03-20');
+    expect(result).toBeNull();
+  });
+
+  it('returns null for empty input', async () => {
+    const result = await parseExpense('', '2026-03-20');
     expect(result).toBeNull();
   });
 
