@@ -144,6 +144,23 @@ created_at      timestamp
 
 This requires adding `status: dismissed` to the `Expense.status` enum: `pending | confirmed | dismissed`.
 
+### LineItem
+```
+id              uuid PK
+expense_id      uuid FK → Expense
+description     string
+quantity        decimal (nullable; defaults to 1)
+unit_price      decimal(10,2)
+total_price     decimal(10,2)
+created_at      timestamp
+```
+
+`Expense.amount` is always the top-level total. If line items are captured, `amount` should equal the sum of `LineItem.total_price` values — enforced as a server-side validation warning, not a hard constraint (receipt totals can include tax/tip not itemized).
+
+Line items are optional on all expenses. They are captured automatically by Claude Vision (camera) and Claude email parsing where the source provides itemized data. For NL quick entry, line items can be added manually from the expense detail screen after confirming.
+
+**Future use:** `LineItem.description` is the bridge to Popstart price comparison — "find this item cheaper" feature planned for a future personal OS integration.
+
 ### RecurringExpense
 ```
 id                       uuid PK
@@ -299,4 +316,5 @@ Monthly wrap cron: runs at 8am on the 1st. Sends to all household members with a
 - **Additional household members:** data model already supports multiple members per household
 - **Google Places API:** upgrade from MapKit if location coverage proves insufficient
 - **Parenting OS module:** next app in the Curious Trio personal OS
+- **Popstart price comparison:** tap a line item → "find this cheaper" → Popstart search pre-loaded with that product description
 - **Popstart integration:** shared Auth0 login already planned; unified navigation shell as the OS matures
