@@ -14,6 +14,7 @@ afterAll(() => db.pool.end());
 
 describe('POST /users/sync', () => {
   beforeEach(async () => {
+    await db.query("DELETE FROM expenses WHERE user_id = (SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123')");
     await db.query("DELETE FROM users WHERE auth0_id = 'auth0|test-user-123'");
   });
 
