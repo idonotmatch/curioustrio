@@ -41,7 +41,7 @@ A native iOS expense tracker for households. Replaces Spending Tracker for a two
 | Auth | Auth0 | Already battle-tested in Popstart; single login across personal OS |
 | AI | Claude API (Anthropic) | Vision for receipt scanning; text parsing for email + NL input; `@anthropic-ai/sdk` already in use |
 | Location | Apple MapKit (MKLocalSearch) | Free with Apple Developer account; native iOS integration; no API key management |
-| Image storage | Cloudflare R2 or AWS S3 | Receipt images uploaded before confirm; URL stored on Expense |
+| Image storage | None (default) | Receipt photos used transiently for Claude parsing only — never stored server-side by default. Optional camera roll save on device is a user setting. |
 | Deploy | Expo EAS (iOS) · Railway or Render (API) · Supabase or Neon (Postgres) | |
 
 ---
@@ -92,7 +92,7 @@ place_name      string (nullable; human-readable name from MapKit)
 address         string (nullable)
 mapkit_stable_id string (nullable; see Location Enrichment note)
 notes           string (nullable)
-raw_receipt_url string (nullable; uploaded to R2/S3 before confirm)
+raw_receipt_url string (nullable; only set if user has "save receipt image" preference enabled — see Settings)
 created_at      timestamp
 ```
 
@@ -194,12 +194,16 @@ created_at               timestamp
 
 ### Path B — Camera Receipt Scan
 1. User taps "Scan receipt" → camera opens
-2. Photo uploaded to R2/S3 → URL obtained
-3. Claude Vision API call with image URL → extracts merchant, amount, date, line items
-4. Apple MapKit enrichment on extracted merchant name + device GPS
-5. Pre-filled confirm screen (same as Path A confirm) → user reviews and confirms
-6. On unreadable receipt: "We couldn't read this clearly" → retry or switch to NL entry
-7. If image upload fails: surface error, do not proceed to parsing
+2. Photo captured → base64 encoded on device
+3. If user setting "Save receipt photos to camera roll" is ON: save to device photo library (requires `MediaLibrary` permission)
+4. Base64 image data sent to backend (`POST /expenses/scan`)
+5. Backend calls Claude Vision API with base64 data → extracts merchant, amount, date, line items
+6. Image data discarded server-side immediately after Claude responds — never persisted
+7. If user setting "Attach receipt image to expense" is ON: `raw_receipt_url` may be set (future feature, out of scope v1)
+8. Apple MapKit enrichment on extracted merchant name + device GPS
+9. Pre-filled confirm screen (same as Path A confirm) → user reviews and confirms
+10. On unreadable receipt: "We couldn't read this clearly" → retry or switch to NL entry
+11. On Claude timeout: blank confirm screen, user enters manually
 
 ### Path C — Gmail Email Import (background)
 1. User connects Gmail via OAuth (`gmail.readonly` scope) during onboarding (optional, skippable)
@@ -246,6 +250,15 @@ Every expense (regardless of capture path) passes through on the server at confi
 - Dedup check runs server-side on sync; a queued expense may be flagged as a duplicate of one entered by the partner while offline — this is expected and surfaces in Pending Queue normally
 - Receipt images (Path B) require connectivity; camera path is disabled offline with a banner: "Receipt scanning requires a connection. Use quick entry instead."
 - `status` on the local record is set to `pending` until server confirms; UI shows a subtle sync indicator on affected expenses
+
+### Settings
+- Profile (name, email)
+- Household members (invite, remove)
+- Categories (add, rename, reorder, delete)
+- Gmail connection (connect / reconnect / disconnect)
+- Recurring expenses (manage templates, ownership)
+- Notification preferences (per-type toggles)
+- **Receipt photos — "Save to camera roll" toggle (default: off).** When off, photos are captured, used for parsing, and immediately discarded — never saved anywhere. When on, the photo is saved to the device's local photo library after scanning. Photos are never stored on our servers regardless of this setting.
 
 ---
 
@@ -294,7 +307,7 @@ Monthly wrap cron: runs at 8am on the 1st. Sends to all household members with a
 | Scenario | Behavior |
 |---|---|
 | Receipt unreadable by Claude | "We couldn't read this receipt clearly." → retry scan or switch to NL entry |
-| Receipt image upload fails | "Couldn't save the image. Try again or use quick entry." → do not proceed to parsing |
+| Camera roll save fails | Silent failure — parsing proceeds regardless; camera roll save is optional |
 | Offline (manual/NL entry) | Queue locally, sync on reconnect, show sync indicator on affected expenses |
 | Offline (camera scan) | Camera path disabled with banner; user redirected to NL entry |
 | Gmail sync failure | Silent retry × 3 (exponential backoff) → Settings banner reconnect prompt only |
@@ -316,7 +329,8 @@ Monthly wrap cron: runs at 8am on the 1st. Sends to all household members with a
 ### Data in Transit & at Rest
 - All client-server communication over HTTPS/TLS only
 - PostgreSQL encryption at rest handled by hosting provider (Supabase or Neon)
-- Receipt images stored in R2/S3 as **private objects** — never publicly accessible URLs. Client accesses images via short-lived signed URLs (15-minute expiry) generated by the backend on demand
+- **Receipt photos are never stored server-side.** Image data is sent as base64 to the backend, passed directly to Claude Vision, and discarded immediately after the API response. No image storage infrastructure required.
+- Device-side storage of receipt photos is opt-in via the "Save to camera roll" setting (default: off). This is entirely local to the user's device — no server involvement.
 
 ### Gmail OAuth
 - Scope limited to `gmail.readonly` — minimum necessary permission
