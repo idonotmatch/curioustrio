@@ -27,6 +27,7 @@ A native iOS expense tracker for households. Replaces Spending Tracker for a two
 - Financial advice or projections
 - Android support (web-first after iOS validation)
 - Budget limits or envelope budgeting (future v2)
+- Guided (step-by-step) entry mode (future v2; NL quick entry is the only manual path in v1)
 
 ---
 
@@ -39,7 +40,8 @@ A native iOS expense tracker for households. Replaces Spending Tracker for a two
 | Database | PostgreSQL | Relational data model; `pg` already used in Popstart |
 | Auth | Auth0 | Already battle-tested in Popstart; single login across personal OS |
 | AI | Claude API (Anthropic) | Vision for receipt scanning; text parsing for email + NL input; `@anthropic-ai/sdk` already in use |
-| Location | Apple MapKit | Free with Apple Developer account; native iOS integration; no API key management |
+| Location | Apple MapKit (MKLocalSearch) | Free with Apple Developer account; native iOS integration; no API key management |
+| Image storage | Cloudflare R2 or AWS S3 | Receipt images uploaded before confirm; URL stored on Expense |
 | Deploy | Expo EAS (iOS) · Railway or Render (API) · Supabase or Neon (Postgres) | |
 
 ---
@@ -52,7 +54,7 @@ id              uuid PK
 auth0_id        string UNIQUE
 name            string
 email           string
-household_id    uuid FK → Household
+household_id    uuid FK → Household (nullable until household accepted)
 created_at      timestamp
 ```
 
@@ -60,6 +62,18 @@ created_at      timestamp
 ```
 id              uuid PK
 name            string
+created_at      timestamp
+```
+
+### HouseholdInvite
+```
+id              uuid PK
+household_id    uuid FK → Household
+invited_email   string
+invited_by      uuid FK → User
+token           string UNIQUE
+status          enum: pending | accepted | expired
+expires_at      timestamp (72 hours after creation)
 created_at      timestamp
 ```
 
@@ -71,16 +85,18 @@ household_id    uuid FK → Household
 merchant        string
 amount          decimal(10,2)
 date            date
-category_id     uuid FK → Category
+category_id     uuid FK → Category (nullable; null = Unclassified)
 source          enum: manual | camera | email
 status          enum: pending | confirmed
-place_id        string (Apple MapKit place identifier)
-place_name      string
-address         string
-notes           string
-raw_receipt_url string (S3 or similar for receipt image)
+place_name      string (nullable; human-readable name from MapKit)
+address         string (nullable)
+mapkit_stable_id string (nullable; see Location Enrichment note)
+notes           string (nullable)
+raw_receipt_url string (nullable; uploaded to R2/S3 before confirm)
 created_at      timestamp
 ```
+
+**Note on `category_id` nullability:** `null` represents "Unclassified." The confirm screen always prompts the user to assign a category before confirming if none is pre-populated. No sentinel category row is needed.
 
 ### Category
 ```
@@ -98,10 +114,17 @@ id              uuid PK
 household_id    uuid FK → Household
 merchant_name   string
 category_id     uuid FK → Category
-hit_count       integer (for confidence scoring)
+hit_count       integer DEFAULT 1
+created_at      timestamp
 updated_at      timestamp
 UNIQUE (household_id, merchant_name)
 ```
+
+**Confidence display tiers** (derived from `hit_count` at read time):
+- `hit_count >= 5` → `from memory ●●●●`
+- `hit_count 2–4` → `from memory ●●●○`
+- `hit_count = 1` → `suggested ●●○○`
+- Claude fallback (no mapping yet) → `suggested ●○○○`
 
 ### DuplicateFlag
 ```
@@ -109,152 +132,143 @@ id              uuid PK
 expense_id_a    uuid FK → Expense
 expense_id_b    uuid FK → Expense
 confidence      enum: exact | fuzzy | uncertain
-status          enum: pending | kept_both | dismissed
+status          enum: pending | kept_both | dismissed | replaced
+resolved_by     uuid FK → User (nullable; set on resolution)
 created_at      timestamp
 ```
 
+**Resolution actions:**
+- `kept_both` → both expenses remain confirmed; flag closed
+- `dismissed` → `expense_id_b` (the newer/incoming expense) is soft-deleted (`status: dismissed` on Expense); `expense_id_a` retained
+- `replaced` → `expense_id_a` (the original) is soft-deleted; `expense_id_b` promoted to confirmed
+
+This requires adding `status: dismissed` to the `Expense.status` enum: `pending | confirmed | dismissed`.
+
 ### RecurringExpense
 ```
-id              uuid PK
-household_id    uuid FK → Household
-user_id         uuid FK → User
-merchant        string
-expected_amount decimal(10,2)
-category_id     uuid FK → Category
-frequency       enum: daily | weekly | monthly | yearly
-next_expected_date  date
-last_matched_expense_id  uuid FK → Expense
-created_at      timestamp
+id                       uuid PK
+household_id             uuid FK → Household
+owned_by                 enum: household | user
+user_id                  uuid FK → User (nullable; only set if owned_by = user)
+merchant                 string
+expected_amount          decimal(10,2)
+category_id              uuid FK → Category
+frequency                enum: daily | weekly | monthly | yearly
+next_expected_date       date
+last_matched_expense_id  uuid FK → Expense (nullable; null until first match)
+created_at               timestamp
 ```
+
+**Ownership:** `owned_by = household` means either member can edit or dismiss the template. `owned_by = user` means only the creating user manages it. Defaults to `household` for templates created during onboarding; user can override in Settings.
 
 ---
 
 ## Capture Paths
 
 ### Path A — Natural Language Quick Entry (primary)
-1. User opens Add Expense → defaults to "quick" mode
+1. User opens Add Expense → NL input field
 2. Types natural language: `"242.50 trader joes"`, `"lunch chipotle 14.50"`, `"60 gas yesterday"`
 3. Claude parses: amount, merchant, date (defaults to today if omitted), contextual notes
-4. Apple MapKit queried with merchant name + device GPS → returns specific location
+4. Apple MapKit (`MKLocalSearch`) queried with merchant name + device GPS → returns top match(es)
 5. MerchantMapping checked for category → Claude fallback for unknown merchants
 6. Confirm screen shown with all fields pre-filled; every field tappable to edit
-7. User confirms → pipeline runs → lands in ledger
-
-**Guided mode fallback:** Step-by-step conversational entry available via toggle for new users or complex entries.
+7. If `category_id` is null at this point, category field is highlighted and required before confirm
+8. User confirms → pipeline runs → lands in ledger
 
 ### Path B — Camera Receipt Scan
 1. User taps "Scan receipt" → camera opens
-2. Photo captured
-3. Claude Vision API call → extracts merchant, amount, date, line items
+2. Photo uploaded to R2/S3 → URL obtained
+3. Claude Vision API call with image URL → extracts merchant, amount, date, line items
 4. Apple MapKit enrichment on extracted merchant name + device GPS
-5. Pre-filled confirm screen → user reviews and confirms
-6. On unreadable receipt: "We couldn't read this clearly" → retry or enter manually
+5. Pre-filled confirm screen (same as Path A confirm) → user reviews and confirms
+6. On unreadable receipt: "We couldn't read this clearly" → retry or switch to NL entry
+7. If image upload fails: surface error, do not proceed to parsing
 
 ### Path C — Gmail Email Import (background)
-1. User connects Gmail via OAuth during onboarding (optional, skippable)
-2. Background sync job polls for emails matching receipt/order patterns (subject: "order confirmation", "your receipt", "order shipped", etc.)
-3. Claude parses email body → extracts merchant, amount, date
-4. Category suggested via MerchantMapping → Claude fallback
-5. Expense lands in **Pending Queue** with `status: pending` — never auto-confirms
-6. User reviews from Pending Queue, edits if needed, confirms
+1. User connects Gmail via OAuth (`gmail.readonly` scope) during onboarding (optional, skippable)
+2. Backend cron job runs every 30 minutes, queries Gmail API for emails matching receipt patterns (subject keywords: "order confirmation", "your receipt", "order shipped", "invoice", "payment confirmation")
+3. OAuth access token refreshed automatically using stored refresh token before each sync
+4. Claude parses email body → extracts merchant, amount, date
+5. Category suggested via MerchantMapping → Claude fallback
+6. Expense created with `status: pending` → lands in **Pending Queue** — never auto-confirms
+7. User reviews from Pending Queue, edits if needed, confirms
 
-**Gmail sync failure:** Silent retry × 3, then surface reconnect prompt in Settings only. Never blocks the main app.
+**Gmail sync failure:** Silent retry × 3 (exponential backoff), then surface reconnect prompt in Settings banner only. Never blocks the main app or shows a modal.
 
 ---
 
 ## Shared Processing Pipeline
 
-Every expense (regardless of capture path) passes through:
+Every expense (regardless of capture path) passes through on the server at confirm time:
 
 ### 1. Deduplication Check
-- **Exact match:** same merchant + same amount + same date + same household → auto-flag, high confidence
-- **Fuzzy match:** same merchant + amount within ±$1 + date within ±2 days → flag with lower confidence
-- **Place ID match:** same `place_id` + same amount + same date → near-certain duplicate
-- **Cross-user check:** runs across all household members, not just the submitting user
-- Flagged duplicates appear in Pending Queue with orange indicator
-- User resolves: keep both | dismiss new | replace original
+- **Exact match:** same `merchant` + same `amount` + same `date` + same `household_id` → flag as `exact`
+- **Fuzzy match:** same `merchant` + `amount` within ±$1 + `date` within ±2 days + same `household_id` → flag as `fuzzy`
+- **Location match:** same `mapkit_stable_id` (if present) + same `amount` + same `date` + same `household_id` → flag as `exact`
+- Scope: **cross-user within the same household only** (not across different households)
+- Flagged duplicates create a `DuplicateFlag` record and appear in Pending Queue with orange indicator
+- Email imports (`status: pending`) are checked against confirmed expenses only; two pending expenses are not cross-checked against each other
 
 ### 2. Category Assignment
-1. Check `MerchantMapping` for household's known merchant → apply category (no API call)
-2. If unknown merchant: Claude API call with merchant name + place type (from MapKit) + household category list → returns best match + confidence score
-3. Confirmed category updates `MerchantMapping` (increments `hit_count`)
-4. Confidence displayed: `from memory ●●●●` vs `suggested ●●○○`
+1. Check `MerchantMapping` for `(household_id, merchant_name)` → apply category (no API call)
+2. If no mapping: Claude API call with merchant name + MapKit place type + household category list → returns best match
+3. Confirmed category upserts `MerchantMapping` (increments `hit_count`)
+4. Confidence tier displayed on confirm screen per thresholds defined in MerchantMapping section above
 
 ### 3. Recurring Match
-- Check new expense against `RecurringExpense` templates: merchant + date within expected window
-- If matched: link via `last_matched_expense_id`, update `next_expected_date`
-- If a recurring expense's `next_expected_date` passes without a match: trigger overdue notification
+- Check new confirmed expense against `RecurringExpense` templates for same `household_id`: merchant match + date within ±5 days of `next_expected_date`
+- If matched: set `last_matched_expense_id`, advance `next_expected_date` by one frequency interval
+- If `next_expected_date` is more than 3 days in the past with no match: trigger overdue push notification (once per overdue period, not repeated daily)
 
 ---
 
-## Core Screens
+## Offline Handling
 
-### My Feed
-- Personal expense list, newest first
-- Monthly total at top
-- Filter by category, date range
-- Tap expense to view/edit detail
-
-### Pending Queue
-- Badged count on tab when items present
-- Two sections: **Review** (email imports) and **Duplicates** (flagged conflicts)
-- Inline confirm/discard actions
-
-### Household View
-- Side-by-side individual totals for each member
-- Combined household total
-- Shared expense feed filterable by member
-- Monthly and category breakdowns
-
-### Add Expense
-- Quick (NL) / Guided toggle
-- NL input with example hints
-- Confirm screen with all parsed fields + location chip
-- Location picker if MapKit returns multiple matches
-
-### Settings
-- Profile
-- Household members (invite, remove)
-- Categories (add, rename, reorder)
-- Gmail connection (connect / reconnect / disconnect)
-- Recurring expenses (manage templates)
-- Notification preferences
+- Expenses entered offline are stored locally in AsyncStorage with a `sync_status: queued` flag
+- On reconnect, queued expenses are submitted to the server in creation order
+- Dedup check runs server-side on sync; a queued expense may be flagged as a duplicate of one entered by the partner while offline — this is expected and surfaces in Pending Queue normally
+- Receipt images (Path B) require connectivity; camera path is disabled offline with a banner: "Receipt scanning requires a connection. Use quick entry instead."
+- `status` on the local record is set to `pending` until server confirms; UI shows a subtle sync indicator on affected expenses
 
 ---
 
 ## Location Enrichment (Apple MapKit)
 
+**Implementation note:** `MKLocalSearch` returns `MKMapItem` results. `MKMapItem` does not expose a stable persistent place ID. The `mapkit_stable_id` field stores a composite key of `(name + coordinate rounded to 4 decimal places)` as a best-effort stable identifier for dedup purposes. This is a known limitation vs. Google Places; it is sufficient for same-device dedup but may produce false negatives across different devices or if a business moves. This tradeoff is accepted for v1.
+
 - Triggered after NL parse or receipt scan extracts merchant name
-- Query: merchant name + device GPS coordinates
-- Returns: `place_id`, `place_name`, full `address`, place type
-- Place type feeds category suggestion (e.g. `restaurant` → Dining, `gas_station` → Gas)
-- Multiple results → inline picker on confirm screen
-- Offline or permission denied → graceful fallback to merchant name only
-- `place_id` stored on `Expense` for dedup and future location-based analytics
+- Query: `MKLocalSearch` with merchant name + device GPS region
+- Returns: place name, full address, coordinate, place category
+- Place category feeds category suggestion (e.g. `Food` → Dining, `GasStation` → Gas)
+- Multiple results (>1) → inline picker on confirm screen showing name + address
+- Zero results → address fields left blank, no error shown
+- Offline or location permission denied → skip enrichment, proceed with merchant name only
 
 ---
 
 ## Notifications
 
-| Trigger | Message |
-|---|---|
-| New email receipt detected | "Amazon · $47.32 detected — tap to review" |
-| Duplicate flagged | "Possible duplicate: Trader Joe's · $84.17 — tap to resolve" |
-| Recurring expense matched | "Netflix · $15.99 matched and logged" |
-| Recurring expense overdue | "Rent · $2,400 expected 3 days ago — not yet seen" |
-| Monthly wrap | "March closed · Household spent $1,842" |
+| Trigger | Message | Timing |
+|---|---|---|
+| New email receipt detected | "Amazon · $47.32 detected — tap to review" | On sync completion |
+| Duplicate flagged | "Possible duplicate: Trader Joe's · $84.17 — tap to resolve" | On flag creation |
+| Recurring expense matched | "Netflix · $15.99 matched and logged" | On confirm |
+| Recurring expense overdue | "Rent · $2,400 expected 3 days ago — not yet seen" | Once, when `next_expected_date` + 3 days passes |
+| Monthly wrap | "March closed · Household spent $1,842" | Server cron: 8am on the 1st of each month |
 
 Partner expense activity: **not notified in real-time** (too noisy). Visible in Household feed passively.
+
+Monthly wrap cron: runs at 8am on the 1st. Sends to all household members with at least one confirmed expense in the prior month. Users with no app activity that month still receive the notification if their household has expenses.
 
 ---
 
 ## Onboarding (5 Steps)
 
 1. **Account** — Auth0 sign-in (email/password or Google SSO). Same credentials as Popstart.
-2. **Household** — Name the household. Invite partner via email or shareable link. Partner receives push + email notification; once accepted, feeds are linked.
-3. **Categories** — Start from defaults or enter existing categories from Spending Tracker. Household-scoped; shared between all members.
-4. **Gmail** — Connect Gmail for automatic receipt import. Clearly scoped to receipt emails only. Skippable; accessible later in Settings.
-5. **First expense** — Prompted to add one expense immediately. Builds the habit and validates the NL parser for the user's input style.
+2. **Household** — Name the household. Invite partner via email (generates a `HouseholdInvite` token, 72-hour expiry). Partner receives an email with a deep link. On acceptance, partner's `User.household_id` is set and both feeds are linked. Expenses entered by either user before acceptance are **not retroactively linked** — they remain on each user's individual account until the household is joined. Invite can be resent or cancelled from Settings.
+3. **Categories** — Start from a default list or type in existing category names from Spending Tracker manually. No CSV import in v1; manual re-entry is intentional (forces the user to actively choose their categories). Household-scoped; shared between all members.
+4. **Gmail** — Connect Gmail for automatic receipt import. OAuth scope: `gmail.readonly`. Clearly explained as scoped to receipt/order emails. Skippable; accessible later in Settings.
+5. **First expense** — Prompted to add one expense via NL quick entry immediately. Builds the habit and validates the parser for the user's input style.
 
 ---
 
@@ -262,20 +276,27 @@ Partner expense activity: **not notified in real-time** (too noisy). Visible in 
 
 | Scenario | Behavior |
 |---|---|
-| Receipt unreadable by Claude | "We couldn't read this receipt clearly." → retry scan or enter manually |
-| Offline | Expenses queued locally (AsyncStorage); synced automatically on reconnect. Badge shows pending count. |
-| Gmail sync failure | Silent retry × 3 → reconnect prompt in Settings only; never interrupts main app |
-| MapKit no results | Confirm screen shows merchant name only; address field left blank |
-| Claude API timeout | Fall back to unclassified category; user prompted to assign on confirm screen |
+| Receipt unreadable by Claude | "We couldn't read this receipt clearly." → retry scan or switch to NL entry |
+| Receipt image upload fails | "Couldn't save the image. Try again or use quick entry." → do not proceed to parsing |
+| Offline (manual/NL entry) | Queue locally, sync on reconnect, show sync indicator on affected expenses |
+| Offline (camera scan) | Camera path disabled with banner; user redirected to NL entry |
+| Gmail sync failure | Silent retry × 3 (exponential backoff) → Settings banner reconnect prompt only |
+| MapKit zero results | Skip enrichment silently; address fields blank on confirm screen |
+| Claude API timeout (NL/email parse) | Surface "Couldn't parse that — enter details manually" on confirm screen with all fields blank |
+| Claude API timeout (category) | `category_id` left null; confirm screen highlights category field as required |
+| Household invite expired | Resend prompt shown in Settings; original token invalidated |
 
 ---
 
 ## Future Considerations (not v1)
 
+- **Guided entry mode:** step-by-step conversational entry for new users or complex inputs
 - **Budget envelopes:** category-level monthly limits with progress tracking
 - **CSV import:** from bank statement exports for historical data
+- **Spending Tracker data import:** bulk import of historical expenses via CSV export
 - **Pattern detection:** query-based recurring pattern identification from expense history (no schema change needed)
 - **Android:** React Native cross-platform once iOS is validated
 - **Additional household members:** data model already supports multiple members per household
+- **Google Places API:** upgrade from MapKit if location coverage proves insufficient
 - **Parenting OS module:** next app in the Curious Trio personal OS
 - **Popstart integration:** shared Auth0 login already planned; unified navigation shell as the OS matures
