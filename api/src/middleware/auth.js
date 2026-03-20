@@ -1,14 +1,24 @@
 const jwt = require('jsonwebtoken');
 const jwksClient = require('jwks-rsa');
 
-const client = jwksClient({
-  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
-  cache: true,
-  rateLimit: true,
-});
+let client;
+
+function getClient() {
+  if (!process.env.AUTH0_DOMAIN) {
+    throw new Error('AUTH0_DOMAIN environment variable is required');
+  }
+  if (!client) {
+    client = jwksClient({
+      jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
+      cache: true,
+      rateLimit: true,
+    });
+  }
+  return client;
+}
 
 function getKey(header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
+  getClient().getSigningKey(header.kid, (err, key) => {
     if (err) return callback(err);
     callback(null, key.getPublicKey());
   });
@@ -29,6 +39,7 @@ async function authenticate(req, res, next) {
         algorithms: ['RS256'],
       }, (err, payload) => {
         if (err) reject(err);
+        else if (!payload) reject(new Error('Empty payload'));
         else resolve(payload);
       });
     });

@@ -4,6 +4,12 @@ jest.mock('jwks-rsa', () => {
   }));
 });
 
+jest.mock('jsonwebtoken', () => ({
+  verify: jest.fn((token, getKey, options, callback) => {
+    callback(null, { sub: 'auth0|test-user-123' });
+  }),
+}));
+
 const { authenticate } = require('../../src/middleware/auth');
 
 describe('authenticate middleware', () => {
@@ -18,8 +24,14 @@ describe('authenticate middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('attaches auth0Id to req.user when token is valid', async () => {
-    // Tested via integration in route tests using a mock token
-    // Unit test mocks the JWKS client
+  it('sets req.auth0Id when token is valid', async () => {
+    const req = { headers: { authorization: 'Bearer valid-token' } };
+    const res = {};
+    const next = jest.fn();
+
+    await authenticate(req, res, next);
+
+    expect(req.auth0Id).toBe('auth0|test-user-123');
+    expect(next).toHaveBeenCalled();
   });
 });
