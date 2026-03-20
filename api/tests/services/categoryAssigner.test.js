@@ -1,19 +1,29 @@
 // api/tests/services/categoryAssigner.test.js
+
+// mockCreate is defined here and captured by the factory closure.
+// Jest hoists jest.mock() above all statements, but the factory function
+// is only *executed* when the module is first required — which happens
+// after this variable is initialised (module load order: test file →
+// factory runs → categoryAssigner.js is required → new Anthropic() is called).
+// Using a plain object as a container so the factory always holds the same
+// reference even though Jest hoisting moves the jest.mock() call up.
+const mockCreateContainer = { fn: null };
+
+jest.mock('@anthropic-ai/sdk', () => {
+  const create = jest.fn().mockResolvedValue({
+    content: [{ text: JSON.stringify({ category_id: 'cat-grocery-id', confidence: 'high' }) }]
+  });
+  mockCreateContainer.fn = create;
+  return jest.fn().mockImplementation(() => ({
+    messages: { create }
+  }));
+});
+
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const MerchantMapping = require('../../src/models/merchantMapping');
 const db = require('../../src/db');
 
 jest.mock('../../src/models/merchantMapping');
-jest.mock('@anthropic-ai/sdk', () => {
-  const mockCreate = jest.fn().mockResolvedValue({
-    content: [{ text: JSON.stringify({ category_id: 'cat-grocery-id', confidence: 'high' }) }]
-  });
-  const MockAnthropic = jest.fn().mockImplementation(() => ({
-    messages: { create: mockCreate }
-  }));
-  MockAnthropic._mockCreate = mockCreate;
-  return MockAnthropic;
-});
 
 afterAll(() => db.pool.end());
 
@@ -21,6 +31,11 @@ const mockCategories = [
   { id: 'cat-grocery-id', name: 'Groceries' },
   { id: 'cat-gas-id', name: 'Gas' },
 ];
+
+// Convenience getter resolved after factory has run
+function mockCreate() {
+  return mockCreateContainer.fn;
+}
 
 describe('assignCategory', () => {
   it('returns category from MerchantMapping when available', async () => {
@@ -57,8 +72,7 @@ describe('assignCategory', () => {
 
   it('returns null category when Claude cannot determine', async () => {
     MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
-    const Anthropic = require('@anthropic-ai/sdk');
-    Anthropic._mockCreate.mockResolvedValueOnce({
+    mockCreate().mockResolvedValueOnce({
       content: [{ text: JSON.stringify({ category_id: null, confidence: 'none' }) }]
     });
 
@@ -69,5 +83,35 @@ describe('assignCategory', () => {
     });
 
     expect(result.category_id).toBeNull();
+    expect(result.source).toBe('claude');
+    expect(result.confidence).toBe(1);
+  });
+
+  it('returns confidence 3 for hit_count between 2 and 4', async () => {
+    MerchantMapping.findByMerchant.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      hit_count: 3,
+    });
+    const result = await assignCategory({
+      merchant: "Some Store",
+      householdId: 'hh-1',
+      categories: mockCategories,
+    });
+    expect(result.confidence).toBe(3);
+    expect(result.source).toBe('memory');
+  });
+
+  it('returns confidence 2 for hit_count of 1', async () => {
+    MerchantMapping.findByMerchant.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      hit_count: 1,
+    });
+    const result = await assignCategory({
+      merchant: "New Store",
+      householdId: 'hh-1',
+      categories: mockCategories,
+    });
+    expect(result.confidence).toBe(2);
+    expect(result.source).toBe('memory');
   });
 });
