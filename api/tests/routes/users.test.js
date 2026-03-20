@@ -13,6 +13,10 @@ jest.mock('../../src/middleware/auth', () => ({
 afterAll(() => db.pool.end());
 
 describe('POST /users/sync', () => {
+  beforeEach(async () => {
+    await db.query("DELETE FROM users WHERE auth0_id = 'auth0|test-user-123'");
+  });
+
   it('creates a user on first login', async () => {
     const res = await request(app)
       .post('/users/sync')
@@ -30,5 +34,14 @@ describe('POST /users/sync', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.auth0_id).toBe('auth0|test-user-123');
+  });
+
+  it('returns 400 when name or email is missing', async () => {
+    const res = await request(app)
+      .post('/users/sync')
+      .send({ name: 'No Email' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('name and email required');
   });
 });
