@@ -21,7 +21,7 @@ async function update({ id, householdId, name, icon, color }) {
   const result = await db.query(
     `UPDATE categories SET name = COALESCE($1, name), icon = COALESCE($2, icon),
      color = COALESCE($3, color)
-     WHERE id = $4 AND household_id = $5
+     WHERE id = $4 AND (household_id = $5 OR (household_id IS NULL AND $5 IS NULL))
      RETURNING *`,
     [name, icon, color, id, householdId]
   );

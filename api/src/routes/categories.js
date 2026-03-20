@@ -30,8 +30,15 @@ router.post('/', async (req, res, next) => {
 
 router.patch('/:id', async (req, res, next) => {
   try {
+    const { name, icon, color } = req.body;
     const user = await getUser(req);
-    const category = await Category.update({ id: req.params.id, householdId: user?.household_id, ...req.body });
+    const category = await Category.update({
+      id: req.params.id,
+      householdId: user?.household_id,
+      name,
+      icon,
+      color,
+    });
     if (!category) return res.status(404).json({ error: 'Not found' });
     res.json(category);
   } catch (err) { next(err); }

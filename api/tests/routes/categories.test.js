@@ -9,6 +9,10 @@ jest.mock('../../src/middleware/auth', () => ({
   },
 }));
 
+beforeEach(async () => {
+  await db.query("DELETE FROM categories WHERE household_id IS NULL AND name IN ('Test Cat', 'Updated Cat', 'To Delete')");
+});
+
 afterAll(() => db.pool.end());
 
 describe('GET /categories', () => {
@@ -35,5 +39,41 @@ describe('POST /categories', () => {
       .send({ icon: '🛒' });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe('PATCH /categories/:id', () => {
+  it('updates a category', async () => {
+    const created = await request(app)
+      .post('/categories')
+      .send({ name: 'Test Cat', icon: '🔖', color: '#fff' });
+
+    const res = await request(app)
+      .patch(`/categories/${created.body.id}`)
+      .send({ name: 'Updated Cat' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Updated Cat');
+  });
+
+  it('returns 404 for non-existent category', async () => {
+    const res = await request(app)
+      .patch('/categories/00000000-0000-0000-0000-000000000000')
+      .send({ name: 'Ghost' });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /categories/:id', () => {
+  it('deletes a category and returns 204', async () => {
+    const created = await request(app)
+      .post('/categories')
+      .send({ name: 'To Delete', icon: '🗑️', color: '#000' });
+
+    const res = await request(app)
+      .delete(`/categories/${created.body.id}`);
+
+    expect(res.status).toBe(204);
   });
 });
