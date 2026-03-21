@@ -20,4 +20,13 @@ async function findByAuth0Id(auth0Id) {
   return result.rows[0] || null;
 }
 
-module.exports = { findOrCreate, findByAuth0Id };
+async function setHouseholdId(userId, householdId) {
+  const result = await db.query(
+    `UPDATE users SET household_id = $1 WHERE id = $2
+     RETURNING id, auth0_id, name, email, household_id, created_at`,
+    [householdId, userId]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { findOrCreate, findByAuth0Id, setHouseholdId };
