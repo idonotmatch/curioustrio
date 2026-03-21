@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import * as MediaLibrary from 'expo-media-library';
@@ -17,8 +17,27 @@ export default function ConfirmScreen() {
   const [locationData, setLocationData] = useState(null);
   const [saveToRoll, setSaveToRoll] = useState(false);
   const [isRefund, setIsRefund] = useState((parsed?.amount ?? 0) < 0);
+  const [paymentMethod, setPaymentMethod] = useState('unknown');
+  const [cardLast4, setCardLast4] = useState('');
+  const [cardLabel, setCardLabel] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [items, setItems] = useState(
+    Array.isArray(parsed?.items) && parsed.items.length > 0
+      ? parsed.items.map(it => ({ description: it.description || '', amount: it.amount != null ? String(it.amount) : '' }))
+      : []
+  );
 
   const isCameraSource = parsed.source === 'camera';
+
+  function handleItemChange(index, field, value) {
+    setItems(prev => prev.map((it, i) => i === index ? { ...it, [field]: value } : it));
+  }
+  function handleAddItem() {
+    setItems(prev => [...prev, { description: '', amount: '' }]);
+  }
+  function handleRemoveItem(index) {
+    setItems(prev => prev.filter((_, i) => i !== index));
+  }
 
   function handleRefundToggle(value) {
     setIsRefund(value);
@@ -57,6 +76,15 @@ export default function ConfirmScreen() {
         place_name: locationData?.place_name,
         address: locationData?.address,
         mapkit_stable_id: locationData?.mapkit_stable_id,
+        payment_method: paymentMethod,
+        card_last4: cardLast4 || null,
+        card_label: cardLabel || null,
+        is_private: isPrivate,
+        items: items.length > 0
+          ? items
+              .filter(it => it.description.trim())
+              .map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null }))
+          : undefined,
       });
       router.replace('/(tabs)');
     } catch (err) {
@@ -68,7 +96,11 @@ export default function ConfirmScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ConfirmField label="Merchant" value={expense.merchant} />
+      {expense.merchant
+        ? <ConfirmField label="Merchant" value={expense.merchant} />
+        : expense.description
+          ? <ConfirmField label="Description" value={expense.description} />
+          : null}
       <ConfirmField label="Amount" value={`$${Number(expense.amount).toFixed(2)}`} />
       <ConfirmField label="Date" value={expense.date} />
 
@@ -86,6 +118,37 @@ export default function ConfirmScreen() {
 
       <LocationPicker onLocation={setLocationData} locationData={locationData} />
 
+      {(items.length > 0 || parsed?.source === 'camera' || parsed?.source === 'email') && (
+        <View style={styles.itemsSection}>
+          <Text style={styles.sectionLabel}>ITEMS</Text>
+          {items.map((item, i) => (
+            <View key={i} style={styles.itemRow}>
+              <TextInput
+                style={styles.itemDescInput}
+                placeholder="Description"
+                placeholderTextColor="#444"
+                value={item.description}
+                onChangeText={v => handleItemChange(i, 'description', v)}
+              />
+              <TextInput
+                style={styles.itemAmountInput}
+                placeholder="0.00"
+                placeholderTextColor="#444"
+                value={item.amount}
+                onChangeText={v => handleItemChange(i, 'amount', v)}
+                keyboardType="decimal-pad"
+              />
+              <TouchableOpacity onPress={() => handleRemoveItem(i)} style={styles.removeItemBtn}>
+                <Text style={styles.removeItemText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          <TouchableOpacity onPress={handleAddItem} style={styles.addItemRow}>
+            <Text style={styles.addItemText}>+ Add item</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>This is a refund / return</Text>
         <Switch
@@ -93,6 +156,54 @@ export default function ConfirmScreen() {
           onValueChange={handleRefundToggle}
           trackColor={{ false: '#333', true: '#f97316' }}
           thumbColor={isRefund ? '#fff' : '#888'}
+        />
+      </View>
+
+      {/* Payment method */}
+      <View style={styles.paymentSection}>
+        <Text style={styles.sectionLabel}>PAYMENT</Text>
+        <View style={styles.methodRow}>
+          {['cash', 'debit', 'credit', 'unknown'].map(m => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.methodChip, paymentMethod === m && styles.methodChipActive]}
+              onPress={() => setPaymentMethod(m)}
+            >
+              <Text style={[styles.methodChipText, paymentMethod === m && styles.methodChipTextActive]}>
+                {m === 'unknown' ? 'other' : m}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {(paymentMethod === 'debit' || paymentMethod === 'credit') && (
+          <View style={styles.cardRow}>
+            <TextInput
+              style={[styles.cardInput, { flex: 1 }]}
+              placeholder="Card nickname (optional)"
+              placeholderTextColor="#444"
+              value={cardLabel}
+              onChangeText={setCardLabel}
+            />
+            <TextInput
+              style={[styles.cardInput, { width: 64 }]}
+              placeholder="last 4"
+              placeholderTextColor="#444"
+              value={cardLast4}
+              onChangeText={t => setCardLast4(t.replace(/\D/g, '').slice(0, 4))}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+          </View>
+        )}
+      </View>
+
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Keep private</Text>
+        <Switch
+          value={isPrivate}
+          onValueChange={setIsPrivate}
+          trackColor={{ false: '#333', true: '#6366f1' }}
+          thumbColor={isPrivate ? '#fff' : '#888'}
         />
       </View>
 
@@ -138,6 +249,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8,
   },
   toggleLabel: { color: '#fff', fontSize: 14 },
+  paymentSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
+  sectionLabel: { fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  methodRow: { flexDirection: 'row', gap: 6 },
+  methodChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a' },
+  methodChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  methodChipText: { fontSize: 12, color: '#555' },
+  methodChipTextActive: { color: '#000', fontWeight: '600' },
+  cardRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  cardInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
+
+  itemsSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
+  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  itemDescInput: { flex: 1, backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
+  itemAmountInput: { width: 72, backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
+  removeItemBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  removeItemText: { color: '#555', fontSize: 20, lineHeight: 22 },
+  addItemRow: { paddingVertical: 6 },
+  addItemText: { color: '#555', fontSize: 13 },
+
   actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
   discard: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },
   discardText: { color: '#666', fontSize: 14 },
