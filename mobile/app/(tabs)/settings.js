@@ -22,6 +22,7 @@ export default function SettingsScreen() {
   const [currentBudget, setCurrentBudget] = useState(null);
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetMsg, setBudgetMsg] = useState('');
+  const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
 
   const loadBudget = useCallback(async () => {
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
     const val = parseFloat(budgetLimit);
     if (!budgetLimit || isNaN(val) || val <= 0) {
       setBudgetMsg('Please enter a valid amount');
+      setBudgetMsgIsError(true);
       return;
     }
     setBudgetSaving(true);
@@ -51,9 +53,11 @@ export default function SettingsScreen() {
     try {
       await api.put('/budgets/total', { monthly_limit: val });
       setBudgetMsg('Saved!');
+      setBudgetMsgIsError(false);
       loadBudget();
     } catch (e) {
       setBudgetMsg(e.message || 'Failed to save');
+      setBudgetMsgIsError(true);
     } finally {
       setBudgetSaving(false);
     }
@@ -104,7 +108,7 @@ export default function SettingsScreen() {
         >
           <Text style={styles.buttonText}>{budgetSaving ? 'Saving...' : 'Save Budget'}</Text>
         </TouchableOpacity>
-        {budgetMsg ? <Text style={styles.msgText}>{budgetMsg}</Text> : null}
+        {budgetMsg ? <Text style={budgetMsgIsError ? styles.msgError : styles.msgText}>{budgetMsg}</Text> : null}
       </View>
 
       {/* Recurring — list only, no manual detect button */}
@@ -151,6 +155,7 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#0a0a0a', fontWeight: '600', fontSize: 15 },
   msgText: { color: '#aaa', fontSize: 13, marginTop: 6, textAlign: 'center' },
+  msgError: { color: '#ef4444', fontSize: 13, marginTop: 6, textAlign: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   rowInfo: { flex: 1, marginRight: 12 },
   rowTitle: { color: '#fff', fontSize: 15, fontWeight: '500' },

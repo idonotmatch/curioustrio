@@ -24,6 +24,7 @@ export default function CategoriesScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setErrorMsg('');
     try {
       const data = await api.get('/categories');
       setCategories(data.categories || []);
