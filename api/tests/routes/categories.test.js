@@ -79,6 +79,72 @@ describe('DELETE /categories/:id', () => {
   });
 });
 
+describe('GET /categories/suggestions', () => {
+  it('returns an array (possibly empty)', async () => {
+    const res = await request(app).get('/categories/suggestions');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('suggestion accept/reject', () => {
+  let parentId, leafId, suggestionId;
+
+  beforeEach(async () => {
+    const p = await request(app).post('/categories').send({ name: 'AcceptParent' });
+    const l = await request(app).post('/categories').send({ name: 'AcceptLeaf' });
+    parentId = p.body.id;
+    leafId   = l.body.id;
+
+    // Ensure the test user exists with a household
+    const userRes = await db.query("SELECT id, household_id FROM users WHERE auth0_id = 'auth0|test-user-123'");
+    let userId = userRes.rows[0]?.id;
+    let householdId = userRes.rows[0]?.household_id;
+    if (!userId) {
+      const hRes = await db.query("INSERT INTO households (name) VALUES ('SuggRouteTest') RETURNING id");
+      householdId = hRes.rows[0].id;
+      const uRes = await db.query(
+        "INSERT INTO users (auth0_id, name, email, household_id) VALUES ('auth0|test-user-123', 'Test User', 'test@example.com', $1) RETURNING id",
+        [householdId]
+      );
+      userId = uRes.rows[0].id;
+    } else if (!householdId) {
+      const hRes = await db.query("INSERT INTO households (name) VALUES ('SuggRouteTest') RETURNING id");
+      householdId = hRes.rows[0].id;
+      await db.query("UPDATE users SET household_id = $1 WHERE id = $2", [householdId, userId]);
+    }
+    const res = await db.query(
+      'INSERT INTO category_suggestions (household_id, leaf_id, suggested_parent_id) VALUES ($1,$2,$3) RETURNING id',
+      [householdId, leafId, parentId]
+    );
+    suggestionId = res.rows[0].id;
+  });
+
+  afterEach(async () => {
+    await db.query('DELETE FROM category_suggestions WHERE id = $1', [suggestionId]).catch(() => {});
+    await request(app).delete(`/categories/${leafId}`).catch(() => {});
+    await request(app).delete(`/categories/${parentId}`).catch(() => {});
+  });
+
+  it('POST /categories/suggestions/:id/accept returns ok and updates parent_id', async () => {
+    const res = await request(app).post(`/categories/suggestions/${suggestionId}/accept`);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('POST /categories/suggestions/:id/reject returns ok', async () => {
+    const res = await request(app).post(`/categories/suggestions/${suggestionId}/reject`);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('accept on already-rejected returns 404', async () => {
+    await request(app).post(`/categories/suggestions/${suggestionId}/reject`);
+    const res = await request(app).post(`/categories/suggestions/${suggestionId}/accept`);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('category hierarchy — parent_name', () => {
   it('GET /categories returns parent_name field on each category', async () => {
     const res = await request(app).get('/categories');
