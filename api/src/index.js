@@ -11,6 +11,7 @@ const householdsRouter = require('./routes/households');
 const gmailRouter = require('./routes/gmail');
 const budgetsRouter = require('./routes/budgets');
 const recurringRouter = require('./routes/recurring');
+const pushRouter = require('./routes/push');
 
 const app = express();
 app.use(helmet());
@@ -25,6 +26,7 @@ app.use('/households', householdsRouter);
 app.use('/gmail', gmailRouter);
 app.use('/budgets', budgetsRouter);
 app.use('/recurring', recurringRouter);
+app.use('/push', pushRouter);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
