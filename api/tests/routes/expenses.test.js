@@ -113,6 +113,50 @@ describe('POST /expenses/confirm', () => {
     expect(res.body.expense.source).toBe('refund');
   });
 
+  it('persists items when items payload is provided', async () => {
+    const res = await request(app)
+      .post('/expenses/confirm')
+      .send({
+        merchant: 'ItemMerchant',
+        amount: 30.00,
+        date: '2026-03-20',
+        source: 'manual',
+        items: [
+          { description: 'Widget A', amount: 10.00 },
+          { description: 'Widget B', amount: 20.00 },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    const expenseId = res.body.expense.id;
+
+    // Verify items are persisted via GET /:id
+    const getRes = await request(app).get(`/expenses/${expenseId}`);
+    expect(getRes.status).toBe(200);
+    expect(Array.isArray(getRes.body.items)).toBe(true);
+    expect(getRes.body.items.length).toBe(2);
+    const descriptions = getRes.body.items.map(i => i.description);
+    expect(descriptions).toContain('Widget A');
+    expect(descriptions).toContain('Widget B');
+  });
+
+  it('returns 400 when an item has an empty description', async () => {
+    const res = await request(app)
+      .post('/expenses/confirm')
+      .send({
+        merchant: 'BadItemMerchant',
+        amount: 10.00,
+        date: '2026-03-20',
+        source: 'manual',
+        items: [
+          { description: '', amount: 10.00 },
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+
   it('creates duplicate_flags when exact duplicate exists in same household', async () => {
     const merchant = 'DupeMerchant';
     const amount = 42.00;
@@ -254,6 +298,25 @@ describe('GET /expenses/:id', () => {
     const res = await request(app).get(`/expenses/${fakeId}`);
     expect(res.status).toBe(404);
   });
+
+  it('response includes an items array', async () => {
+    const userResult = await db.query(
+      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+    );
+    const userId = userResult.rows[0].id;
+
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'ItemsArrayMerchant', 5.00, '2026-03-15', 'manual', 'confirmed') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    const res = await request(app).get(`/expenses/${expenseId}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('items');
+    expect(Array.isArray(res.body.items)).toBe(true);
+  });
 });
 
 describe('PATCH /expenses/:id', () => {
@@ -278,6 +341,72 @@ describe('PATCH /expenses/:id', () => {
     expect(res.body.merchant).toBe('UpdatedMerchant');
     expect(parseFloat(res.body.amount)).toBe(25.00);
     expect(res.body.notes).toBe('updated note');
+  });
+
+  it('replaces items when items payload is provided', async () => {
+    const userResult = await db.query(
+      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+    );
+    const userId = userResult.rows[0].id;
+
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'PatchItemsMerchant', 50.00, '2026-03-13', 'manual', 'confirmed') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    // First, add initial items
+    await db.query(
+      `INSERT INTO expense_items (expense_id, description, amount, sort_order)
+       VALUES ($1, 'OldItem', 50.00, 0)`,
+      [expenseId]
+    );
+
+    // Now patch with new items
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({
+        items: [
+          { description: 'NewItem1', amount: 20.00 },
+          { description: 'NewItem2', amount: 30.00 },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+
+    // Verify the items were replaced via GET /:id
+    const getRes = await request(app).get(`/expenses/${expenseId}`);
+    expect(getRes.status).toBe(200);
+    expect(Array.isArray(getRes.body.items)).toBe(true);
+    expect(getRes.body.items.length).toBe(2);
+    const descriptions = getRes.body.items.map(i => i.description);
+    expect(descriptions).toContain('NewItem1');
+    expect(descriptions).toContain('NewItem2');
+    expect(descriptions).not.toContain('OldItem');
+  });
+
+  it('returns 400 when an item has an empty description', async () => {
+    const userResult = await db.query(
+      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+    );
+    const userId = userResult.rows[0].id;
+
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'PatchBadItemMerchant', 10.00, '2026-03-12', 'manual', 'confirmed') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({
+        items: [{ description: '   ', amount: 10.00 }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
   });
 
   it('returns 400 for invalid category_id UUID', async () => {
