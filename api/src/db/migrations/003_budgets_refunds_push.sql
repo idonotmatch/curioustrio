@@ -22,3 +22,6 @@ ALTER TABLE expenses ADD COLUMN linked_expense_id UUID REFERENCES expenses(id);
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_source_check;
 ALTER TABLE expenses ADD CONSTRAINT expenses_source_check
   CHECK (source IN ('manual','camera','email','refund'));
+
+-- Allow recurring expenses without a category
+ALTER TABLE recurring_expenses ALTER COLUMN category_id DROP NOT NULL;
