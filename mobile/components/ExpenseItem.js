@@ -1,8 +1,10 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export function ExpenseItem({ expense, onPress, showUser = false }) {
+  const router = useRouter();
   return (
-    <TouchableOpacity style={styles.container} onPress={() => onPress?.(expense)}>
+    <TouchableOpacity style={styles.container} onPress={() => router.push(`/expense/${expense.id}`)}>
       <View style={styles.left}>
         <Text style={styles.merchant}>{expense.merchant}</Text>
         {showUser && expense.user_name ? (
