@@ -1,90 +1,351 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View, Text, ScrollView, TextInput, TouchableOpacity,
+  StyleSheet, ActivityIndicator, Alert, Switch, Linking
+} from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
-import { CategoryBadge } from '../../components/CategoryBadge';
+import { useCategories } from '../../hooks/useCategories';
 
 export default function ExpenseDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const { categories } = useCategories();
   const [expense, setExpense] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [dismissing, setDismissing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Edit state
+  const [merchant, setMerchant] = useState('');
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [categoryId, setCategoryId] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('unknown');
+  const [cardLast4, setCardLast4] = useState('');
+  const [cardLabel, setCardLabel] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [items, setItems] = useState([]);
+  const [itemsExpanded, setItemsExpanded] = useState(false);
+  const [itemsEdits, setItemsEdits] = useState([]);
 
   useEffect(() => {
     api.get(`/expenses/${id}`)
-      .then(setExpense)
-      .catch(() => {}) // 404 → stay on loading, let user go back
+      .then(e => {
+        setExpense(e);
+        setMerchant(e.merchant || '');
+        setAmount(String(Math.abs(Number(e.amount))));
+        setDate(e.date ? e.date.slice(0, 10) : '');
+        setNotes(e.notes || '');
+        setCategoryId(e.category_id || null);
+        setPaymentMethod(e.payment_method || 'unknown');
+        setCardLast4(e.card_last4 || '');
+        setCardLabel(e.card_label || '');
+        setIsPrivate(e.is_private || false);
+        setItems(e.items || []);
+        setItemsEdits((e.items || []).map(it => ({
+          description: it.description,
+          amount: it.amount != null ? String(it.amount) : '',
+        })));
+      })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
 
-  async function dismiss() {
-    setDismissing(true);
+  async function handleSave() {
+    setSaving(true);
     try {
-      await api.post(`/expenses/${id}/dismiss`);
-      router.back();
+      const updated = await api.patch(`/expenses/${id}`, {
+        merchant,
+        amount: parseFloat(amount),
+        date,
+        notes,
+        category_id: categoryId,
+        payment_method: paymentMethod,
+        card_last4: cardLast4 || null,
+        card_label: cardLabel || null,
+        is_private: isPrivate,
+        items: itemsEdits
+          .filter(it => it.description.trim())
+          .map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })),
+      });
+      setExpense(updated);
+      setEditing(false);
+      setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })));
     } catch (e) {
-      setDismissing(false);
+      Alert.alert('Error', e.message);
+    } finally {
+      setSaving(false);
     }
   }
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color="#fff" /></View>;
+  async function handleDelete() {
+    Alert.alert('Delete expense', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          setDeleting(true);
+          try {
+            await api.delete(`/expenses/${id}`);
+            router.back();
+          } catch (e) {
+            Alert.alert('Error', e.message);
+            setDeleting(false);
+          }
+        },
+      },
+    ]);
+  }
+
+  if (loading) return <View style={styles.center}><ActivityIndicator color="#555" /></View>;
   if (!expense) return <View style={styles.center}><Text style={styles.muted}>Expense not found.</Text></View>;
 
-  // Format date: "March 20, 2026"
-  const formattedDate = new Date(expense.date + 'T12:00:00').toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric'
-  });
-
-  const sourceLabel = { manual: 'Manual entry', camera: 'Receipt scan', email: 'Email import' };
+  const formattedDate = (() => {
+    const d = new Date((expense.date || '').slice(0, 10) + 'T12:00:00');
+    return isNaN(d) ? expense.date : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  })();
+  const sourceLabel = { manual: 'Manual entry', camera: 'Receipt scan', email: 'Email import', refund: 'Refund' };
+  const isRefund = Number(expense.amount) < 0;
 
   return (
-    <ScrollView style={styles.container}>
-      <Stack.Screen options={{ title: expense.merchant }} />
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <Stack.Screen options={{
+        title: expense.merchant,
+        headerRight: () => (
+          <TouchableOpacity onPress={() => setEditing(e => !e)} style={{ marginRight: 4 }}>
+            <Ionicons name={editing ? 'close' : 'pencil-outline'} size={20} color="#f5f5f5" />
+          </TouchableOpacity>
+        ),
+      }} />
 
+      {/* Hero */}
       <View style={styles.hero}>
-        <Text style={styles.merchant}>{expense.merchant}</Text>
-        <Text style={styles.amount}>${Number(expense.amount).toFixed(2)}</Text>
-      </View>
-
-      <View style={styles.section}>
-        <Row label="Date" value={formattedDate} />
-        <Row label="Source" value={sourceLabel[expense.source] || expense.source} />
-        {expense.place_name && <Row label="Location" value={expense.place_name + (expense.address ? `\n${expense.address}` : '')} />}
-        {expense.notes && <Row label="Notes" value={expense.notes} />}
-        {expense.category_name && (
-          <View style={styles.row}>
-            <Text style={styles.label}>Category</Text>
-            <CategoryBadge name={expense.category_name} confidence={1} source="memory" />
+        {editing ? (
+          <View style={styles.editRow}>
+            <TextInput style={[styles.editInput, { flex: 1 }]} value={merchant} onChangeText={setMerchant} placeholderTextColor="#444" placeholder="Merchant" />
+            <TextInput style={[styles.editInput, styles.editAmount]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#444" />
           </View>
+        ) : (
+          <>
+            <Text style={styles.merchant}>{expense.merchant}</Text>
+            <Text style={[styles.amount, isRefund && styles.amountRefund]}>
+              {isRefund ? '−' : ''}${Math.abs(Number(expense.amount)).toFixed(2)}
+            </Text>
+          </>
         )}
       </View>
 
+      {/* Fields */}
+      <View style={styles.section}>
+        <Row label="Date">
+          {editing
+            ? <TextInput style={styles.editInputInline} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor="#444" />
+            : <Text style={styles.value}>{formattedDate}</Text>}
+        </Row>
+        <Row label="Source"><Text style={styles.value}>{sourceLabel[expense.source] || expense.source}</Text></Row>
+        {expense.place_name && (
+          <Row label="Location"><Text style={styles.value}>{expense.place_name}{expense.address ? `\n${expense.address}` : ''}</Text></Row>
+        )}
+        <Row label="Notes">
+          {editing
+            ? <TextInput style={styles.editInputInline} value={notes} onChangeText={setNotes} placeholder="Add a note" placeholderTextColor="#444" multiline />
+            : <Text style={styles.value}>{expense.notes || '—'}</Text>}
+        </Row>
+        <Row label="Category">
+          {editing ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {(categories || []).map(c => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.catChip, categoryId === c.id && styles.catChipActive]}
+                    onPress={() => setCategoryId(c.id)}
+                  >
+                    <Text style={[styles.catChipText, categoryId === c.id && styles.catChipTextActive]}>{c.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          ) : (
+            <Text style={styles.value}>{expense.category_name || '—'}</Text>
+          )}
+        </Row>
+
+        <Row label="Payment">
+          {editing ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {['cash', 'debit', 'credit', 'unknown'].map(m => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.catChip, paymentMethod === m && styles.catChipActive]}
+                    onPress={() => setPaymentMethod(m)}
+                  >
+                    <Text style={[styles.catChipText, paymentMethod === m && styles.catChipTextActive]}>
+                      {m === 'unknown' ? 'other' : m}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          ) : (
+            <Text style={styles.value}>
+              {expense.payment_method && expense.payment_method !== 'unknown'
+                ? `${expense.payment_method}${expense.card_label ? ` · ${expense.card_label}` : ''}${expense.card_last4 ? ` ····${expense.card_last4}` : ''}`
+                : '—'}
+            </Text>
+          )}
+        </Row>
+
+        {editing && (paymentMethod === 'debit' || paymentMethod === 'credit') && (
+          <Row label="Card">
+            <View style={{ flexDirection: 'row', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
+              <TextInput
+                style={[styles.editInputInline, { flex: 1 }]}
+                placeholder="nickname"
+                placeholderTextColor="#444"
+                value={cardLabel}
+                onChangeText={setCardLabel}
+              />
+              <TextInput
+                style={[styles.editInputInline, { width: 50 }]}
+                placeholder="last4"
+                placeholderTextColor="#444"
+                value={cardLast4}
+                onChangeText={t => setCardLast4(t.replace(/\D/g, '').slice(0, 4))}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            </View>
+          </Row>
+        )}
+
+        <View style={[styles.row, { paddingVertical: 12 }]}>
+          <Text style={styles.label}>Private</Text>
+          <Switch
+            value={isPrivate}
+            onValueChange={editing ? setIsPrivate : undefined}
+            disabled={!editing}
+            trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
+            thumbColor={isPrivate ? '#fff' : '#555'}
+          />
+        </View>
+      </View>
+
+      {(items.length > 0 || editing) && (
+        <TouchableOpacity
+          style={styles.itemsHeader}
+          onPress={() => setItemsExpanded(e => !e)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.itemsHeaderText}>
+            {items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : 'Items'}
+          </Text>
+          <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-forward'} size={14} color="#444" />
+        </TouchableOpacity>
+      )}
+
+      {itemsExpanded && (
+        <View style={styles.itemsList}>
+          {editing ? (
+            <>
+              {itemsEdits.map((item, i) => (
+                <View key={i} style={styles.itemEditRow}>
+                  <TextInput
+                    style={styles.itemEditDesc}
+                    value={item.description}
+                    onChangeText={v => setItemsEdits(prev => prev.map((it, idx) => idx === i ? { ...it, description: v } : it))}
+                    placeholder="Description"
+                    placeholderTextColor="#444"
+                  />
+                  <TextInput
+                    style={styles.itemEditAmount}
+                    value={item.amount}
+                    onChangeText={v => setItemsEdits(prev => prev.map((it, idx) => idx === i ? { ...it, amount: v } : it))}
+                    placeholder="0.00"
+                    placeholderTextColor="#444"
+                    keyboardType="decimal-pad"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setItemsEdits(prev => prev.filter((_, idx) => idx !== i))}
+                    style={styles.itemRemoveBtn}
+                  >
+                    <Text style={styles.itemRemoveText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <TouchableOpacity
+                onPress={() => setItemsEdits(prev => [...prev, { description: '', amount: '' }])}
+                style={styles.addItemRow}
+              >
+                <Text style={styles.addItemText}>+ Add item</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            items.map((item, i) => (
+              <View key={i} style={styles.itemReadRow}>
+                <Text style={styles.itemReadDesc}>{item.description}</Text>
+                {item.amount != null && (
+                  <Text style={styles.itemReadAmount}>${Number(item.amount).toFixed(2)}</Text>
+                )}
+              </View>
+            ))
+          )}
+        </View>
+      )}
+
+      {/* Location */}
+      {expense.place_name && (() => {
+        const coords = expense.mapkit_stable_id?.split(',').map(Number);
+        const hasCoords = coords?.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1]);
+        const mapsUrl = hasCoords
+          ? `maps://?ll=${coords[0]},${coords[1]}&q=${encodeURIComponent(expense.place_name)}`
+          : `maps://?q=${encodeURIComponent(expense.address || expense.place_name)}`;
+        return (
+          <TouchableOpacity style={styles.locationCard} onPress={() => Linking.openURL(mapsUrl)}>
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationName}>{expense.place_name}</Text>
+              {expense.address ? <Text style={styles.locationAddress}>{expense.address}</Text> : null}
+            </View>
+            <Ionicons name="map-outline" size={18} color="#444" />
+          </TouchableOpacity>
+        );
+      })()}
+
+      {/* Duplicate flags */}
       {expense.duplicate_flags?.length > 0 && (
         <View style={styles.dupSection}>
-          <Text style={styles.dupTitle}>⚠ Possible duplicate</Text>
+          <Text style={styles.dupTitle}>Possible duplicate</Text>
           {expense.duplicate_flags.map(f => (
-            <Text key={f.id} style={styles.dupItem}>
-              Confidence: {f.confidence} · Status: {f.status}
-            </Text>
+            <Text key={f.id} style={styles.dupItem}>Confidence: {f.confidence} · {f.status}</Text>
           ))}
         </View>
       )}
 
-      {expense.status !== 'dismissed' && (
-        <TouchableOpacity style={styles.dismissBtn} onPress={dismiss} disabled={dismissing}>
-          <Text style={styles.dismissText}>{dismissing ? 'Dismissing…' : 'Dismiss expense'}</Text>
+      {/* Actions */}
+      {editing && (
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save changes'}</Text>
         </TouchableOpacity>
       )}
+
+      <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
+        {deleting
+          ? <ActivityIndicator color="#ef4444" size="small" />
+          : <Text style={styles.deleteBtnText}>Delete expense</Text>}
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
-function Row({ label, value }) {
+function Row({ label, children }) {
   return (
     <View style={styles.row}>
       <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+      <View style={styles.valueWrap}>{children}</View>
     </View>
   );
 }
@@ -92,17 +353,54 @@ function Row({ label, value }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   center: { flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' },
-  hero: { padding: 24, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  merchant: { fontSize: 22, color: '#fff', fontWeight: '700' },
-  amount: { fontSize: 36, color: '#fff', fontWeight: '700', marginTop: 4 },
-  section: { padding: 16 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  label: { fontSize: 13, color: '#666', flex: 1 },
-  value: { fontSize: 14, color: '#fff', flex: 2, textAlign: 'right' },
-  dupSection: { margin: 16, padding: 12, backgroundColor: '#2a1f00', borderRadius: 8 },
-  dupTitle: { color: '#ffd060', fontWeight: '600', marginBottom: 6 },
-  dupItem: { color: '#ffb84d', fontSize: 12, marginTop: 2 },
-  dismissBtn: { margin: 16, padding: 14, backgroundColor: '#1a1a1a', borderRadius: 8, alignItems: 'center' },
-  dismissText: { color: '#ff6b6b', fontWeight: '600' },
   muted: { color: '#555' },
+
+  hero: { padding: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#111' },
+  merchant: { fontSize: 20, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
+  amount: { fontSize: 36, color: '#f5f5f5', fontWeight: '600', marginTop: 4, letterSpacing: -1 },
+  amountRefund: { color: '#4ade80' },
+
+  editRow: { flexDirection: 'row', gap: 10 },
+  editInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
+  editAmount: { width: 100 },
+  editInputInline: { color: '#f5f5f5', fontSize: 14, textAlign: 'right', flex: 1, padding: 4 },
+
+  section: { paddingHorizontal: 20 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
+  label: { fontSize: 13, color: '#444', width: 90 },
+  valueWrap: { flex: 1, alignItems: 'flex-end' },
+  value: { fontSize: 14, color: '#f5f5f5', textAlign: 'right' },
+
+  catChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#1f1f1f' },
+  catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  catChipText: { fontSize: 12, color: '#555' },
+  catChipTextActive: { color: '#000', fontWeight: '600' },
+
+  locationCard: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
+  locationInfo: { flex: 1 },
+  locationName: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
+  locationAddress: { color: '#555', fontSize: 11, marginTop: 2 },
+
+  dupSection: { margin: 20, padding: 12, backgroundColor: '#141008', borderRadius: 8, borderWidth: 1, borderColor: '#2a1f00' },
+  dupTitle: { color: '#f59e0b', fontWeight: '600', fontSize: 13, marginBottom: 4 },
+  dupItem: { color: '#78716c', fontSize: 12, marginTop: 2 },
+
+  saveBtn: { margin: 20, marginBottom: 8, backgroundColor: '#f5f5f5', borderRadius: 10, padding: 14, alignItems: 'center' },
+  saveBtnText: { color: '#000', fontWeight: '600', fontSize: 15 },
+  deleteBtn: { margin: 20, marginTop: 8, padding: 14, alignItems: 'center' },
+  deleteBtnText: { color: '#ef4444', fontSize: 14 },
+
+  itemsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
+  itemsHeaderText: { fontSize: 13, color: '#444', fontWeight: '500' },
+  itemsList: { marginHorizontal: 20, marginBottom: 4, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f', overflow: 'hidden' },
+  itemReadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  itemReadDesc: { fontSize: 13, color: '#f5f5f5', flex: 1 },
+  itemReadAmount: { fontSize: 13, color: '#888', paddingLeft: 8 },
+  itemEditRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  itemEditDesc: { flex: 1, color: '#f5f5f5', fontSize: 13, padding: 4 },
+  itemEditAmount: { width: 64, color: '#f5f5f5', fontSize: 13, padding: 4, textAlign: 'right' },
+  itemRemoveBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  itemRemoveText: { color: '#555', fontSize: 20, lineHeight: 22 },
+  addItemRow: { paddingHorizontal: 14, paddingVertical: 10 },
+  addItemText: { color: '#555', fontSize: 13 },
 });
