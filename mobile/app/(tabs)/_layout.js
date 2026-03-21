@@ -11,6 +11,7 @@ export default function TabLayout() {
     }}>
       <Tabs.Screen name="index" options={{ title: 'My Feed', tabBarLabel: 'Feed' }} />
       <Tabs.Screen name="household" options={{ title: 'Household', tabBarLabel: 'Household' }} />
+      <Tabs.Screen name="pending" options={{ title: 'Pending', tabBarLabel: 'Pending' }} />
       <Tabs.Screen name="add" options={{ title: 'Add Expense', tabBarLabel: 'Add' }} />
     </Tabs>
   );
