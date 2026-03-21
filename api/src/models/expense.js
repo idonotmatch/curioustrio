@@ -1,17 +1,19 @@
 const db = require('../db');
 
-async function create({ userId, householdId, merchant, amount, date, categoryId, source, status = 'pending', notes, placeName, address, mapkitStableId, linkedExpenseId = null }) {
+async function create({ userId, householdId, merchant, amount, date, categoryId, source, status = 'pending', notes, placeName, address, mapkitStableId, linkedExpenseId = null, paymentMethod = 'unknown', cardLast4 = null, cardLabel = null, isPrivate = false }) {
   const result = await db.query(
-    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status, notes, place_name, address, mapkit_stable_id, linked_expense_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-    [userId, householdId, merchant, amount, date, categoryId, source, status, notes, placeName, address, mapkitStableId, linkedExpenseId]
+    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status, notes, place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label, is_private)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+    [userId, householdId, merchant, amount, date, categoryId, source, status, notes, placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel, isPrivate]
   );
   return result.rows[0];
 }
 
 async function findByUser(userId, { limit = 50, offset = 0 } = {}) {
   const result = await db.query(
-    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+    `SELECT e.*,
+            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      WHERE e.user_id = $1 AND e.status != 'dismissed'
@@ -73,7 +75,9 @@ async function findByMapkitStableId({ householdId, mapkitStableId, amount, date,
 
 async function findById(id) {
   const result = await db.query(
-    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+    `SELECT e.*,
+            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count
      FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
      WHERE e.id = $1`,
     [id]
@@ -81,31 +85,44 @@ async function findById(id) {
   return result.rows[0] || null;
 }
 
-async function findByHousehold(householdId, { limit = 50, offset = 0 } = {}) {
+async function findByHousehold(householdId, { limit = 50, offset = 0, userId } = {}) {
+  const params = [householdId, limit, offset];
+  let privateClause = '';
+  if (userId) {
+    params.push(userId);
+    privateClause = `AND (e.is_private = FALSE OR e.user_id = $${params.length})`;
+  }
   const result = await db.query(
-    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
+    `SELECT e.*,
+            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count,
             u.name as user_name
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      LEFT JOIN users u ON e.user_id = u.id
      WHERE e.household_id = $1 AND e.status != 'dismissed'
+     ${privateClause}
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
-    [householdId, limit, offset]
+    params
   );
   return result.rows;
 }
 
-async function update(id, userId, { merchant, amount, date, categoryId, notes } = {}) {
+async function update(id, userId, { merchant, amount, date, categoryId, notes, paymentMethod, cardLast4, cardLabel, isPrivate } = {}) {
   const result = await db.query(
     `UPDATE expenses SET
        merchant = COALESCE($3, merchant),
        amount = COALESCE($4, amount),
        date = COALESCE($5, date),
        category_id = COALESCE($6, category_id),
-       notes = COALESCE($7, notes)
+       notes = COALESCE($7, notes),
+       payment_method = COALESCE($8, payment_method),
+       card_last4 = COALESCE($9, card_last4),
+       card_label = COALESCE($10, card_label),
+       is_private = COALESCE($11, is_private)
      WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [id, userId, merchant, amount, date, categoryId, notes]
+    [id, userId, merchant, amount, date, categoryId, notes, paymentMethod, cardLast4, cardLabel, isPrivate]
   );
   return result.rows[0] || null;
 }
@@ -119,3 +136,4 @@ async function updateStatusByHousehold(id, householdId, status) {
 }
 
 module.exports = { create, findByUser, updateStatus, findPotentialDuplicates, findByMapkitStableId, findById, findByHousehold, update, updateStatusByHousehold };
+
