@@ -10,6 +10,7 @@ const usersRouter = require('./routes/users');
 const householdsRouter = require('./routes/households');
 const gmailRouter = require('./routes/gmail');
 const budgetsRouter = require('./routes/budgets');
+const recurringRouter = require('./routes/recurring');
 
 const app = express();
 app.use(helmet());
@@ -23,6 +24,7 @@ app.use('/users', usersRouter);
 app.use('/households', householdsRouter);
 app.use('/gmail', gmailRouter);
 app.use('/budgets', budgetsRouter);
+app.use('/recurring', recurringRouter);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
