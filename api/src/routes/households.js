@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
+const { pool } = require('../db');
 const User = require('../models/user');
 const Household = require('../models/household');
 const HouseholdInvite = require('../models/householdInvite');
@@ -87,8 +88,24 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
       return res.status(409).json({ error: 'Already in a household' });
     }
 
-    await User.setHouseholdId(user.id, invite.household_id);
-    await HouseholdInvite.accept(req.params.token);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'UPDATE users SET household_id = $1 WHERE id = $2',
+        [invite.household_id, user.id]
+      );
+      await client.query(
+        "UPDATE household_invites SET status = $1 WHERE token = $2 AND status = 'pending'",
+        ['accepted', req.params.token]
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
 
     return res.status(200).json({ household_id: invite.household_id });
   } catch (err) {

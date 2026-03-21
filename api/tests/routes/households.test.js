@@ -1,16 +1,19 @@
 const request = require('supertest');
 const app = require('../../src/index');
 const db = require('../../src/db');
+const User = require('../../src/models/user');
+
+let mockAuth0Id = 'test-auth0-households-owner';
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.auth0Id = 'test-auth0-id-households';
+    req.auth0Id = mockAuth0Id;
     next();
   },
 }));
 
-const TEST_AUTH0_ID = 'test-auth0-id-households';
-const TEST_AUTH0_ID_2 = 'test-auth0-id-households-2';
+const TEST_AUTH0_ID = 'test-auth0-households-owner';
+const TEST_AUTH0_ID_JOINER = 'test-auth0-households-joiner';
 
 async function cleanUp() {
   // FK-safe cleanup order: household_invites → expenses (for test users) → users → households
@@ -18,22 +21,22 @@ async function cleanUp() {
     `DELETE FROM household_invites WHERE invited_by IN (
       SELECT id FROM users WHERE auth0_id IN ($1, $2)
     )`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_2]
+    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
   );
   await db.query(
     `DELETE FROM expenses WHERE user_id IN (
       SELECT id FROM users WHERE auth0_id IN ($1, $2)
     )`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_2]
+    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
   );
   // Null out household_id first to avoid FK issue when deleting households
   await db.query(
     `UPDATE users SET household_id = NULL WHERE auth0_id IN ($1, $2)`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_2]
+    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
   );
   await db.query(
     `DELETE FROM users WHERE auth0_id IN ($1, $2)`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_2]
+    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
   );
   // Delete test households (created by these tests have a recognizable name prefix)
   await db.query(
@@ -42,6 +45,7 @@ async function cleanUp() {
 }
 
 beforeEach(async () => {
+  mockAuth0Id = TEST_AUTH0_ID;
   await cleanUp();
   // Create fresh test user with no household
   await db.query(
@@ -138,40 +142,23 @@ describe('POST /households/invites', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('Must be in a household to invite');
   });
+
+  it('returns 400 if email is missing', async () => {
+    // Create a household first so the 403 doesn't trigger
+    await request(app)
+      .post('/households')
+      .send({ name: 'Test Household Invite Missing Email' });
+
+    const res = await request(app)
+      .post('/households/invites')
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('email is required');
+  });
 });
 
 describe('POST /households/invites/:token/accept', () => {
-  it('allows a second user to join a household via invite token', async () => {
-    // Create household as primary user
-    await request(app)
-      .post('/households')
-      .send({ name: 'Test Household Epsilon' });
-
-    // Create invite
-    const inviteRes = await request(app)
-      .post('/households/invites')
-      .send({ email: 'joiner@test.com' });
-
-    const token = inviteRes.body.token;
-
-    // Create a second user who will accept
-    await db.query(
-      `INSERT INTO users (auth0_id, name, email) VALUES ($1, 'Test User 2', 'joiner@test.com')`,
-      [TEST_AUTH0_ID_2]
-    );
-
-    // Temporarily re-mock to simulate second user
-    // Since we can't re-mock inline, we'll test acceptance as primary user
-    // (the route only checks user has no household_id)
-    // Instead: accept the invite as a new user by directly calling with token
-    const acceptRes = await request(app)
-      .post(`/households/invites/${token}/accept`);
-
-    // The primary user already has a household, so this should 409
-    expect(acceptRes.status).toBe(409);
-    expect(acceptRes.body.error).toBe('Already in a household');
-  });
-
   it('returns 409 if accepting user already has a household', async () => {
     // Create household as primary user
     await request(app)
@@ -199,5 +186,94 @@ describe('POST /households/invites/:token/accept', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Invite not found');
+  });
+
+  it('returns 410 when invite is expired', async () => {
+    // Create household and invite with past expiry
+    await request(app)
+      .post('/households')
+      .send({ name: 'Test Household Expired' });
+
+    const ownerRow = await db.query(
+      `SELECT id, household_id FROM users WHERE auth0_id = $1`,
+      [TEST_AUTH0_ID]
+    );
+    const owner = ownerRow.rows[0];
+
+    const token = 'expired-token-test-' + Date.now();
+    const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    await db.query(
+      `INSERT INTO household_invites (household_id, invited_email, invited_by, token, expires_at, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      [owner.household_id, 'expireduser@test.com', owner.id, token, pastDate]
+    );
+
+    const res = await request(app)
+      .post(`/households/invites/${token}/accept`);
+
+    expect(res.status).toBe(410);
+    expect(res.body.error).toBe('Invite expired');
+  });
+
+  it('returns 410 when invite is already accepted', async () => {
+    // Create household and invite
+    await request(app)
+      .post('/households')
+      .send({ name: 'Test Household Already Accepted' });
+
+    const inviteRes = await request(app)
+      .post('/households/invites')
+      .send({ email: 'joiner@test.com' });
+
+    const token = inviteRes.body.token;
+
+    // Create joiner user and accept as them
+    await User.findOrCreate({ auth0Id: TEST_AUTH0_ID_JOINER, name: 'Joiner', email: 'joiner@test.com' });
+    mockAuth0Id = TEST_AUTH0_ID_JOINER;
+
+    const firstAccept = await request(app)
+      .post(`/households/invites/${token}/accept`);
+    expect(firstAccept.status).toBe(200);
+
+    // Try to accept again (invite is now 'accepted', not 'pending')
+    // Reset joiner's household so we don't get 409 first
+    await db.query(
+      `UPDATE users SET household_id = NULL WHERE auth0_id = $1`,
+      [TEST_AUTH0_ID_JOINER]
+    );
+
+    const secondAccept = await request(app)
+      .post(`/households/invites/${token}/accept`);
+    expect(secondAccept.status).toBe(410);
+    expect(secondAccept.body.error).toBe('Invite already used or expired');
+  });
+
+  it('happy-path: second user accepts invite and joins household', async () => {
+    // Create household as owner
+    mockAuth0Id = TEST_AUTH0_ID;
+    const householdRes = await request(app)
+      .post('/households')
+      .send({ name: 'Test Household Happy Accept' });
+    expect(householdRes.status).toBe(201);
+    const householdId = householdRes.body.id;
+
+    // Create invite
+    const inviteRes = await request(app)
+      .post('/households/invites')
+      .send({ email: 'joiner@test.com' });
+    expect(inviteRes.status).toBe(201);
+    const token = inviteRes.body.token;
+
+    // Create joiner user
+    await User.findOrCreate({ auth0Id: TEST_AUTH0_ID_JOINER, name: 'Joiner', email: 'joiner@test.com' });
+
+    // Switch to joiner
+    mockAuth0Id = TEST_AUTH0_ID_JOINER;
+
+    const acceptRes = await request(app)
+      .post(`/households/invites/${token}/accept`);
+
+    expect(acceptRes.status).toBe(200);
+    expect(acceptRes.body.household_id).toBe(householdId);
   });
 });
