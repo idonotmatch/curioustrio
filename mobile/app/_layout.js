@@ -1,5 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
-import Auth0Provider, { useAuth0 } from 'react-native-auth0';
+import { Auth0Provider, useAuth0 } from 'react-native-auth0';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useEffect } from 'react';
