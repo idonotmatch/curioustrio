@@ -67,7 +67,7 @@ router.post('/', async (req, res, next) => {
       name,
       icon,
       color,
-      parentId: parent_id || null,
+      parentId: parent_id !== undefined ? parent_id : null,
     });
     // Fire background AI suggestions if creating a top-level category (no parent)
     if (!parent_id && user?.household_id) {
@@ -82,6 +82,9 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const { name, icon, color } = req.body;
     const parentId = 'parent_id' in req.body ? req.body.parent_id : undefined;
+    if (parentId && parentId === req.params.id) {
+      return res.status(400).json({ error: 'A category cannot be its own parent' });
+    }
     const user = await getUser(req);
     const category = await Category.update({
       id: req.params.id,
