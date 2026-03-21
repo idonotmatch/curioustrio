@@ -1,21 +1,42 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { api } from '../services/api';
 
-export function ExpenseItem({ expense, onPress, showUser = false }) {
+export function ExpenseItem({ expense, onPress, showUser = false, onDelete }) {
   const router = useRouter();
-  return (
-    <TouchableOpacity style={styles.container} onPress={() => router.push(`/expense/${expense.id}`)}>
-      <View style={styles.left}>
-        <Text style={styles.merchant}>{expense.merchant}</Text>
-        {showUser && expense.user_name ? (
-          <Text style={styles.userName}>{expense.user_name}</Text>
-        ) : null}
-        <Text style={styles.meta}>
-          {expense.category_name || 'Unclassified'} · {expense.date}
-        </Text>
-      </View>
-      <Text style={styles.amount}>${Number(expense.amount).toFixed(2)}</Text>
+
+  const renderRightActions = () => (
+    <TouchableOpacity
+      style={{ backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 80 }}
+      onPress={async () => {
+        try {
+          await api.delete(`/expenses/${expense.id}`);
+          onDelete?.(expense.id);
+        } catch (e) {
+          // ignore — item stays in list if delete fails
+        }
+      }}
+    >
+      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Delete</Text>
     </TouchableOpacity>
+  );
+
+  return (
+    <Swipeable renderRightActions={renderRightActions}>
+      <TouchableOpacity style={styles.container} onPress={() => router.push(`/expense/${expense.id}`)}>
+        <View style={styles.left}>
+          <Text style={styles.merchant}>{expense.merchant}</Text>
+          {showUser && expense.user_name ? (
+            <Text style={styles.userName}>{expense.user_name}</Text>
+          ) : null}
+          <Text style={styles.meta}>
+            {expense.category_name || 'Unclassified'} · {expense.date}
+          </Text>
+        </View>
+        <Text style={styles.amount}>${Number(expense.amount).toFixed(2)}</Text>
+      </TouchableOpacity>
+    </Swipeable>
   );
 }
 
