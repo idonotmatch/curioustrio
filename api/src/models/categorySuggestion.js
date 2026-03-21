@@ -29,14 +29,24 @@ async function getPending(householdId) {
 
 // Delete existing pending for this leaf, then insert new one.
 async function upsertForLeaf(householdId, leafId, suggestedParentId) {
-  await db.query(
-    "DELETE FROM category_suggestions WHERE household_id = $1 AND leaf_id = $2 AND status = 'pending'",
-    [householdId, leafId]
-  );
-  await db.query(
-    'INSERT INTO category_suggestions (household_id, leaf_id, suggested_parent_id) VALUES ($1, $2, $3)',
-    [householdId, leafId, suggestedParentId]
-  );
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      "DELETE FROM category_suggestions WHERE household_id = $1 AND leaf_id = $2 AND status = 'pending'",
+      [householdId, leafId]
+    );
+    await client.query(
+      'INSERT INTO category_suggestions (household_id, leaf_id, suggested_parent_id) VALUES ($1, $2, $3)',
+      [householdId, leafId, suggestedParentId]
+    );
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 // Accept: set status + update leaf's parent_id atomically.
@@ -58,7 +68,7 @@ async function accept(id, householdId) {
     const { leaf_id, suggested_parent_id } = result.rows[0];
     await client.query('UPDATE categories SET parent_id = $1 WHERE id = $2', [suggested_parent_id, leaf_id]);
     await client.query('COMMIT');
-    return result.rows[0];
+    return true;
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
