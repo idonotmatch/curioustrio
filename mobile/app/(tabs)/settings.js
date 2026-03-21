@@ -6,52 +6,39 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Linking,
-  ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
 
 export default function SettingsScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { recurring, loading: recurringLoading, refresh: refreshRecurring } = useRecurring();
 
-  // Budget section
   const [budgetLimit, setBudgetLimit] = useState('');
   const [currentBudget, setCurrentBudget] = useState(null);
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetMsg, setBudgetMsg] = useState('');
-
-  // Recurring detect section
-  const [detecting, setDetecting] = useState(false);
-  const [candidates, setCandidates] = useState(null);
-  const [addingId, setAddingId] = useState(null);
-
-  // Gmail section
-  const [gmailStatus, setGmailStatus] = useState(null);
+  const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
 
   const loadBudget = useCallback(async () => {
     try {
       const data = await api.get('/budgets');
       setCurrentBudget(data.total);
       if (data.total?.limit) setBudgetLimit(String(data.total.limit));
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }, []);
 
-  const loadGmailStatus = useCallback(async () => {
-    try {
-      const data = await api.get('/gmail/status');
-      setGmailStatus(data);
-    } catch {
-      setGmailStatus(null);
-    }
-  }, []);
+  useEffect(() => { loadBudget(); }, [loadBudget]);
 
   useEffect(() => {
-    loadBudget();
-    loadGmailStatus();
-  }, [loadBudget, loadGmailStatus]);
+    api.get('/categories')
+      .then(d => setPendingSuggestionsCount(d.pending_suggestions_count || 0))
+      .catch(() => {});
+  }, []);
 
   async function saveBudget() {
     setBudgetSaving(true);
@@ -67,67 +54,34 @@ export default function SettingsScreen() {
     }
   }
 
-  async function detectRecurring() {
-    setDetecting(true);
-    setCandidates(null);
-    try {
-      const data = await api.post('/recurring/detect');
-      setCandidates(data);
-    } catch {
-      setCandidates([]);
-    } finally {
-      setDetecting(false);
-    }
-  }
-
-  async function addCandidate(candidate, index) {
-    setAddingId(index);
-    try {
-      await api.post('/recurring', {
-        merchant: candidate.merchant,
-        expected_amount: candidate.medianAmount,
-        frequency: candidate.frequency,
-        next_expected_date: candidate.nextExpectedDate,
-      });
-      // Remove from candidates list after adding
-      setCandidates(prev => prev.filter((_, i) => i !== index));
-      refreshRecurring();
-    } catch {
-      // ignore
-    } finally {
-      setAddingId(null);
-    }
-  }
-
   async function removeRecurring(id) {
     try {
       await api.delete(`/recurring/${id}`);
       refreshRecurring();
-    } catch {
-      // ignore
-    }
-  }
-
-  async function connectGmail() {
-    try {
-      const data = await api.get('/gmail/auth');
-      if (data?.url) {
-        await Linking.openURL(data.url);
-      }
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
 
-      {/* Budget Section */}
+      {/* Categories */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>CATEGORIES</Text>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/categories')}>
+          <Text style={styles.navRowText}>Edit category details</Text>
+          <View style={styles.navRowRight}>
+            {pendingSuggestionsCount > 0 && <View style={styles.badge} />}
+            <Ionicons name="chevron-forward" size={16} color="#444" />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Budget */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>BUDGET</Text>
         {currentBudget && (
           <Text style={styles.subText}>
-            Current: ${currentBudget.limit}/mo · Spent: ${currentBudget.spent}
+            Current: ${Math.round(currentBudget.limit)}/mo · Spent: ${Math.round(currentBudget.spent)}
           </Text>
         )}
         <TextInput
@@ -148,15 +102,11 @@ export default function SettingsScreen() {
         {budgetMsg ? <Text style={styles.msgText}>{budgetMsg}</Text> : null}
       </View>
 
-      {/* Recurring Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>RECURRING EXPENSES</Text>
-        {recurringLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : recurring.length === 0 ? (
-          <Text style={styles.emptyText}>No recurring expenses tracked.</Text>
-        ) : (
-          recurring.map(item => (
+      {/* Recurring — list only, no manual detect button */}
+      {!recurringLoading && recurring.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>RECURRING EXPENSES</Text>
+          {recurring.map(item => (
             <View key={item.id} style={styles.row}>
               <View style={styles.rowInfo}>
                 <Text style={styles.rowTitle}>{item.merchant}</Text>
@@ -168,57 +118,16 @@ export default function SettingsScreen() {
                 <Text style={styles.removeText}>Remove</Text>
               </TouchableOpacity>
             </View>
-          ))
-        )}
+          ))}
+        </View>
+      )}
 
-        <TouchableOpacity
-          style={[styles.button, styles.buttonSecondary, detecting && styles.buttonDisabled]}
-          onPress={detectRecurring}
-          disabled={detecting}
-        >
-          <Text style={styles.buttonText}>{detecting ? 'Detecting...' : 'Detect Recurring'}</Text>
-        </TouchableOpacity>
-
-        {candidates !== null && candidates.length === 0 && (
-          <Text style={styles.emptyText}>No recurring patterns detected.</Text>
-        )}
-        {candidates && candidates.length > 0 && (
-          <View style={styles.candidatesBox}>
-            <Text style={styles.candidatesTitle}>Detected Patterns</Text>
-            {candidates.map((c, i) => (
-              <View key={i} style={styles.row}>
-                <View style={styles.rowInfo}>
-                  <Text style={styles.rowTitle}>{c.merchant}</Text>
-                  <Text style={styles.rowSub}>
-                    ${c.medianAmount?.toFixed(2)} · {c.frequency} · next {c.nextExpectedDate}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => addCandidate(c, i)}
-                  disabled={addingId === i}
-                >
-                  <Text style={styles.addText}>{addingId === i ? '...' : 'Add'}</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* Gmail Section */}
+      {/* Accounts */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>GMAIL</Text>
-        {gmailStatus ? (
-          <Text style={styles.subText}>
-            {gmailStatus.connected ? `Connected: ${gmailStatus.email}` : 'Not connected'}
-          </Text>
-        ) : (
-          <Text style={styles.subText}>Loading status...</Text>
-        )}
-        <TouchableOpacity style={styles.button} onPress={connectGmail}>
-          <Text style={styles.buttonText}>
-            {gmailStatus?.connected ? 'Reconnect Gmail' : 'Connect Gmail'}
-          </Text>
+        <Text style={styles.sectionTitle}>ACCOUNTS</Text>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/accounts')}>
+          <Text style={styles.navRowText}>Manage accounts</Text>
+          <Ionicons name="chevron-forward" size={16} color="#444" />
         </TouchableOpacity>
       </View>
 
@@ -229,60 +138,21 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 40 },
-  section: {
-    marginBottom: 32,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-    paddingBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 11,
-    color: '#666',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
+  sectionTitle: { fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   subText: { color: '#aaa', fontSize: 13, marginBottom: 10 },
-  input: {
-    backgroundColor: '#111',
-    borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 8,
-    color: '#fff',
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  button: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  buttonSecondary: {
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#333',
-    marginTop: 12,
-  },
+  input: { backgroundColor: '#111', borderWidth: 1, borderColor: '#333', borderRadius: 8, color: '#fff', padding: 12, fontSize: 16, marginBottom: 10 },
+  button: { backgroundColor: '#fff', borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#0a0a0a', fontWeight: '600', fontSize: 15 },
   msgText: { color: '#aaa', fontSize: 13, marginTop: 6, textAlign: 'center' },
-  emptyText: { color: '#555', fontSize: 13, marginBottom: 4 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-  },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   rowInfo: { flex: 1, marginRight: 12 },
   rowTitle: { color: '#fff', fontSize: 15, fontWeight: '500' },
   rowSub: { color: '#666', fontSize: 12, marginTop: 2 },
   removeText: { color: '#e44', fontSize: 13 },
-  addText: { color: '#4af', fontSize: 13, fontWeight: '600' },
-  candidatesBox: { marginTop: 12 },
-  candidatesTitle: { color: '#aaa', fontSize: 12, marginBottom: 6 },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+  navRowText: { color: '#f5f5f5', fontSize: 15 },
+  navRowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  badge: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ef4444' },
 });
