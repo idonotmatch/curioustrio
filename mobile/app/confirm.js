@@ -16,8 +16,17 @@ export default function ConfirmScreen() {
   const [saving, setSaving] = useState(false);
   const [locationData, setLocationData] = useState(null);
   const [saveToRoll, setSaveToRoll] = useState(false);
+  const [isRefund, setIsRefund] = useState((parsed?.amount ?? 0) < 0);
 
   const isCameraSource = parsed.source === 'camera';
+
+  function handleRefundToggle(value) {
+    setIsRefund(value);
+    setExpense(prev => ({
+      ...prev,
+      amount: value ? -Math.abs(Number(prev.amount)) : Math.abs(Number(prev.amount)),
+    }));
+  }
 
   async function handleConfirm() {
     if (!expense.category_id) {
@@ -43,7 +52,7 @@ export default function ConfirmScreen() {
         amount: expense.amount,
         date: expense.date,
         category_id: expense.category_id,
-        source: parsed.source || 'manual',
+        source: isRefund ? 'refund' : (parsed?.source || 'manual'),
         notes: expense.notes,
         place_name: locationData?.place_name,
         address: locationData?.address,
@@ -76,6 +85,16 @@ export default function ConfirmScreen() {
       )}
 
       <LocationPicker onLocation={setLocationData} locationData={locationData} />
+
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>This is a refund / return</Text>
+        <Switch
+          value={isRefund}
+          onValueChange={handleRefundToggle}
+          trackColor={{ false: '#333', true: '#f97316' }}
+          thumbColor={isRefund ? '#fff' : '#888'}
+        />
+      </View>
 
       {isCameraSource && (
         <View style={styles.toggleRow}>
@@ -118,7 +137,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8,
   },
-  toggleLabel: { color: '#888', fontSize: 13 },
+  toggleLabel: { color: '#fff', fontSize: 14 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
   discard: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },
   discardText: { color: '#666', fontSize: 14 },
