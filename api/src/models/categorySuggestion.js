@@ -32,6 +32,15 @@ async function upsertForLeaf(householdId, leafId, suggestedParentId) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    const ownerCheck = await client.query(
+      'SELECT id FROM categories WHERE id = $1 AND household_id = $2',
+      [leafId, householdId]
+    );
+    if (!ownerCheck.rows.length) {
+      await client.query('ROLLBACK');
+      client.release();
+      return;
+    }
     await client.query(
       "DELETE FROM category_suggestions WHERE household_id = $1 AND leaf_id = $2 AND status = 'pending'",
       [householdId, leafId]
@@ -66,7 +75,10 @@ async function accept(id, householdId) {
       return null;
     }
     const { leaf_id, suggested_parent_id } = result.rows[0];
-    await client.query('UPDATE categories SET parent_id = $1 WHERE id = $2', [suggested_parent_id, leaf_id]);
+    await client.query(
+      'UPDATE categories SET parent_id = $1 WHERE id = $2 AND household_id = $3',
+      [suggested_parent_id, leaf_id, householdId]
+    );
     await client.query('COMMIT');
     return true;
   } catch (e) {

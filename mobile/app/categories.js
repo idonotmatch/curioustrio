@@ -74,7 +74,7 @@ export default function CategoriesScreen() {
   }
 
   async function deleteCategory(id, name) {
-    Alert.alert('Delete category', `Delete "${name}"? Expenses won't lose their category.`, [
+    Alert.alert('Delete category', `Delete "${name}"? Expenses will keep this category. Child categories will be moved to Ungrouped.`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {

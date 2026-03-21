@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const db = require('../db');
 const User = require('../models/user');
 const Category = require('../models/category');
 const CategorySuggestion = require('../models/categorySuggestion');
@@ -84,6 +85,15 @@ router.patch('/:id', async (req, res, next) => {
     const parentId = 'parent_id' in req.body ? req.body.parent_id : undefined;
     if (parentId && parentId === req.params.id) {
       return res.status(400).json({ error: 'A category cannot be its own parent' });
+    }
+    if (parentId) {
+      const user2 = await getUser(req);
+      const parentCat = await db.query(
+        'SELECT parent_id FROM categories WHERE id = $1 AND (household_id = $2 OR household_id IS NULL)',
+        [parentId, user2?.household_id]
+      );
+      if (!parentCat.rows.length) return res.status(404).json({ error: 'Parent category not found' });
+      if (parentCat.rows[0].parent_id) return res.status(400).json({ error: 'Cannot use a child category as a parent' });
     }
     const user = await getUser(req);
     const category = await Category.update({
