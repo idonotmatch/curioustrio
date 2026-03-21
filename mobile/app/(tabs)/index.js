@@ -1,9 +1,12 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native';
 import { useExpenses } from '../../hooks/useExpenses';
+import { useBudget } from '../../hooks/useBudget';
 import { ExpenseItem } from '../../components/ExpenseItem';
+import { BudgetBar } from '../../components/BudgetBar';
 
 export default function FeedScreen() {
   const { expenses, loading, refresh } = useExpenses();
+  const { budget } = useBudget();
 
   const monthlyTotal = expenses
     .filter(e => e.date?.startsWith(new Date().toISOString().slice(0, 7)))
@@ -14,6 +17,9 @@ export default function FeedScreen() {
       <View style={styles.header}>
         <Text style={styles.totalLabel}>This month</Text>
         <Text style={styles.total}>${monthlyTotal.toFixed(2)}</Text>
+        {budget?.total && (
+          <BudgetBar spent={budget.total.spent} limit={budget.total.limit} />
+        )}
       </View>
       <FlatList
         data={expenses}

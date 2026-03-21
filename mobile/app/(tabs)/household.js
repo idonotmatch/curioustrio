@@ -1,15 +1,21 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
+import { useBudget } from '../../hooks/useBudget';
 import { ExpenseItem } from '../../components/ExpenseItem';
+import { BudgetBar } from '../../components/BudgetBar';
 
 export default function HouseholdScreen() {
   const { expenses, loading, refresh, total } = useHouseholdExpenses();
+  const { budget } = useBudget();
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.totalLabel}>Household this month</Text>
         <Text style={styles.total}>${total.toFixed(2)}</Text>
+        {budget?.total && (
+          <BudgetBar spent={budget.total.spent} limit={budget.total.limit} />
+        )}
       </View>
       <FlatList
         data={expenses}
