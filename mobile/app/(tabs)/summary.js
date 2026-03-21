@@ -126,23 +126,23 @@ export default function SummaryScreen() {
           {byParent.length > 0 && (
             <View style={styles.byParentSection}>
               {byParent
-                .filter(g => (g.spent && g.spent > 0) || g.limit)
+                .filter(g => Number(g.spent) > 0 || g.limit)
                 .map(g => {
-                  const spent = parseFloat(g.spent) || 0;
-                  const limit = g.limit ? parseFloat(g.limit) : null;
-                  const progress = limit ? Math.min(spent / limit, 1) : 0;
-                  const isOver = limit && spent > limit;
+                  const pSpent = parseFloat(g.spent) || 0;
+                  const pLimit = g.limit ? parseFloat(g.limit) : null;
+                  const pProgress = pLimit ? Math.min(pSpent / pLimit, 1) : 0;
+                  const pIsOver = pLimit && pSpent > pLimit;
                   return (
                     <View key={g.group_id} style={styles.parentRow}>
                       <View style={styles.parentRowTop}>
                         <Text style={styles.parentName}>{g.name}</Text>
                         <Text style={styles.parentSpend}>
-                          ${spent.toFixed(0)}{limit ? ` / $${parseFloat(limit).toFixed(0)}` : ''}
+                          ${pSpent.toFixed(0)}{pLimit !== null ? ` / $${pLimit.toFixed(0)}` : ''}
                         </Text>
                       </View>
-                      {limit && (
+                      {pLimit !== null && (
                         <View style={styles.miniBarBg}>
-                          <View style={[styles.miniBarFill, { width: `${progress * 100}%`, backgroundColor: isOver ? '#ef4444' : '#4ade80' }]} />
+                          <View style={[styles.miniBarFill, { width: `${pProgress * 100}%`, backgroundColor: pIsOver ? '#ef4444' : '#4ade80' }]} />
                         </View>
                       )}
                     </View>
