@@ -7,6 +7,7 @@ const Category = require('../models/category');
 const MerchantMapping = require('../models/merchantMapping');
 const DuplicateFlag = require('../models/duplicateFlag');
 const { parseExpense } = require('../services/nlParser');
+const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
 const detectDuplicates = require('../services/duplicateDetector');
 const db = require('../db');
@@ -39,6 +40,28 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
     });
 
     res.json({ ...parsed, category_id, category_source: source, category_confidence: confidence });
+  } catch (err) { next(err); }
+});
+
+// Scan receipt image → structured expense (does NOT save to DB)
+router.post('/scan', aiEndpoints, async (req, res, next) => {
+  try {
+    const { image_base64, today } = req.body;
+    if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
+
+    const todayDate = today || new Date().toISOString().split('T')[0];
+    const parsed = await parseReceipt(image_base64, todayDate);
+    if (!parsed) return res.status(422).json({ error: 'Could not parse receipt' });
+
+    const user = await getUser(req);
+    const categories = await Category.findByHousehold(user?.household_id);
+    const { category_id, source, confidence } = await assignCategory({
+      merchant: parsed.merchant,
+      householdId: user?.household_id,
+      categories,
+    });
+
+    res.json({ ...parsed, source: 'camera', category_id, category_source: source, category_confidence: confidence });
   } catch (err) { next(err); }
 });
 

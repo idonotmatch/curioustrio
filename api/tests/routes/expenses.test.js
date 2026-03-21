@@ -10,11 +10,19 @@ jest.mock('../../src/middleware/auth', () => ({
 }));
 jest.mock('../../src/services/nlParser');
 jest.mock('../../src/services/categoryAssigner');
+jest.mock('../../src/services/receiptParser', () => ({
+  parseReceipt: jest.fn(),
+}));
 
 const { parseExpense } = require('../../src/services/nlParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
+const { parseReceipt } = require('../../src/services/receiptParser');
 
 let householdId;
+
+beforeEach(() => {
+  parseReceipt.mockReset();
+});
 
 beforeAll(async () => {
   // Create a household and associate the test user with it
@@ -275,5 +283,42 @@ describe('PATCH /expenses/:id', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/uuid/i);
+  });
+});
+
+describe('POST /expenses/scan', () => {
+  it('returns parsed expense with source camera', async () => {
+    parseReceipt.mockResolvedValue({
+      merchant: 'Whole Foods', amount: 87.32, date: '2026-03-21', notes: null
+    });
+    assignCategory.mockResolvedValueOnce({
+      category_id: null, source: 'default', confidence: 0,
+    });
+    const res = await request(app)
+      .post('/expenses/scan')
+      .set('Authorization', 'Bearer test')
+      .send({ image_base64: 'base64data' });
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe('camera');
+    expect(res.body.merchant).toBe('Whole Foods');
+    expect(res.body.amount).toBe(87.32);
+  });
+
+  it('returns 400 when image_base64 missing', async () => {
+    const res = await request(app)
+      .post('/expenses/scan')
+      .set('Authorization', 'Bearer test')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('image_base64 required');
+  });
+
+  it('returns 422 when receipt cannot be parsed', async () => {
+    parseReceipt.mockResolvedValue(null);
+    const res = await request(app)
+      .post('/expenses/scan')
+      .set('Authorization', 'Bearer test')
+      .send({ image_base64: 'base64data' });
+    expect(res.status).toBe(422);
   });
 });
