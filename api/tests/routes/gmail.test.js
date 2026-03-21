@@ -88,9 +88,9 @@ describe('GET /gmail/callback', () => {
       scope: 'gmail.readonly',
     });
 
-    const res = await request(app).get('/gmail/callback?code=auth_code_123');
+    const res = await request(app).get(`/gmail/callback?code=auth_code_123&state=${userId}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ connected: true });
+    expect(res.text).toContain('Gmail connected');
     expect(exchangeCode).toHaveBeenCalledWith('auth_code_123');
 
     const token = await db.query(`SELECT * FROM oauth_tokens WHERE user_id = $1`, [userId]);
@@ -101,7 +101,7 @@ describe('GET /gmail/callback', () => {
   it('returns 400 when code is missing', async () => {
     const res = await request(app).get('/gmail/callback');
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Missing code');
+    expect(res.body.error).toBe('Missing code or state');
   });
 });
 

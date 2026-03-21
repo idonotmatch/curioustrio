@@ -9,12 +9,13 @@ function createOAuth2Client() {
   );
 }
 
-function getAuthUrl() {
+function getAuthUrl(userId) {
   const client = createOAuth2Client();
   return client.generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/gmail.readonly'],
     prompt: 'consent',
+    state: userId,
   });
 }
 

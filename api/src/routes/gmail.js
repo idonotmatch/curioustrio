@@ -10,21 +10,23 @@ const { getAuthUrl, exchangeCode, listRecentMessages, getMessage } = require('..
 const { parseEmailExpense } = require('../services/emailParser');
 const { assignCategory } = require('../services/categoryAssigner');
 
-// GET /gmail/auth — redirect to Google OAuth
-router.get('/auth', authenticate, (req, res) => {
-  res.redirect(getAuthUrl());
-});
-
-// GET /gmail/callback — exchange code, save token
-router.get('/callback', authenticate, async (req, res, next) => {
+// GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
+router.get('/auth', authenticate, async (req, res, next) => {
   try {
-    const { code } = req.query;
-    if (!code) return res.status(400).json({ error: 'Missing code' });
     const user = await User.findByAuth0Id(req.auth0Id);
     if (!user) return res.status(401).json({ error: 'User not synced' });
+    res.redirect(getAuthUrl(user.id));
+  } catch (err) { next(err); }
+});
+
+// GET /gmail/callback — exchange code, save token (no auth — called by Google redirect)
+router.get('/callback', async (req, res, next) => {
+  try {
+    const { code, state: userId } = req.query;
+    if (!code || !userId) return res.status(400).json({ error: 'Missing code or state' });
     const tokens = await exchangeCode(code);
-    await OAuthToken.upsert({ userId: user.id, ...tokens });
-    res.json({ connected: true });
+    await OAuthToken.upsert({ userId, ...tokens });
+    res.send('<html><body><h2>Gmail connected!</h2><p>You can close this tab.</p></body></html>');
   } catch (err) { next(err); }
 });
 
