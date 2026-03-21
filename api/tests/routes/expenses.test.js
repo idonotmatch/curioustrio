@@ -520,3 +520,14 @@ describe('POST /expenses/scan', () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe('expense response includes category_parent_name', () => {
+  it('GET /expenses returns category_parent_name field on each expense', async () => {
+    const res = await request(app).get('/expenses');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    if (res.body.length > 0) {
+      expect(res.body[0]).toHaveProperty('category_parent_name');
+    }
+  });
+});
