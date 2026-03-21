@@ -6,6 +6,7 @@ const Expense = require('../models/expense');
 const Category = require('../models/category');
 const MerchantMapping = require('../models/merchantMapping');
 const DuplicateFlag = require('../models/duplicateFlag');
+const ExpenseItem = require('../models/expenseItem');
 const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
@@ -35,6 +36,7 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
     const categories = await Category.findByHousehold(user?.household_id);
     const { category_id, source, confidence } = await assignCategory({
       merchant: parsed.merchant,
+      description: parsed.description,
       householdId: user?.household_id,
       categories,
     });
@@ -57,6 +59,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
     const categories = await Category.findByHousehold(user?.household_id);
     const { category_id, source, confidence } = await assignCategory({
       merchant: parsed.merchant,
+      description: parsed.description,
       householdId: user?.household_id,
       categories,
     });
@@ -69,10 +72,15 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 router.post('/confirm', async (req, res, next) => {
   try {
     const { merchant, amount, date, category_id, source, notes,
-            place_name, address, mapkit_stable_id, linked_expense_id } = req.body;
+            place_name, address, mapkit_stable_id, linked_expense_id,
+            payment_method, card_last4, card_label, is_private, items } = req.body;
 
-    if (!merchant || !amount || !date || !source) {
-      return res.status(400).json({ error: 'merchant, amount, date, source required' });
+    if (!amount || !date || !source) {
+      return res.status(400).json({ error: 'amount, date, source required' });
+    }
+
+    if (Array.isArray(items) && items.some(it => !it.description || typeof it.description !== 'string' || it.description.trim() === '')) {
+      return res.status(400).json({ error: 'Each item must have a non-empty description' });
     }
 
     const user = await getUser(req);
@@ -94,7 +102,15 @@ router.post('/confirm', async (req, res, next) => {
       address,
       mapkitStableId: mapkit_stable_id,
       linkedExpenseId: linked_expense_id,
+      paymentMethod: payment_method,
+      cardLast4: card_last4,
+      cardLabel: card_label,
+      isPrivate: is_private ?? false,
     });
+
+    if (Array.isArray(items) && items.length > 0) {
+      await ExpenseItem.createBulk(expense.id, items);
+    }
 
     // Update merchant memory
     if (category_id && user?.household_id) {
@@ -143,7 +159,7 @@ router.get('/household', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const expenses = user.household_id
-      ? await Expense.findByHousehold(user.household_id)
+      ? await Expense.findByHousehold(user.household_id, { userId: user.id })
       : await Expense.findByUser(user.id);
     res.json(expenses);
   } catch (err) { next(err); }
@@ -209,21 +225,32 @@ router.get('/:id', async (req, res, next) => {
     const inHousehold = user?.household_id && expense.household_id === user.household_id;
     if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
     const duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
-    res.json({ ...expense, duplicate_flags });
+    const items = await ExpenseItem.findByExpenseId(expense.id);
+    res.json({ ...expense, duplicate_flags, items });
   } catch (err) { next(err); }
 });
 
 // Update an expense
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { merchant, amount, date, category_id, notes } = req.body;
+    const { merchant, amount, date, category_id, notes,
+            payment_method, card_last4, card_label, is_private, items } = req.body;
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
+    if (items !== undefined) {
+      const itemList = Array.isArray(items) ? items : [];
+      if (itemList.some(it => !it.description || typeof it.description !== 'string' || it.description.trim() === '')) {
+        return res.status(400).json({ error: 'Each item must have a non-empty description' });
+      }
+    }
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const expense = await Expense.update(req.params.id, user.id, { merchant, amount, date, categoryId: category_id, notes });
+    const expense = await Expense.update(req.params.id, user.id, { merchant, amount, date, categoryId: category_id, notes, paymentMethod: payment_method, cardLast4: card_last4, cardLabel: card_label, isPrivate: is_private });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    if (items !== undefined) {
+      await ExpenseItem.replaceItems(req.params.id, Array.isArray(items) ? items : []);
+    }
     res.json(expense);
   } catch (err) { next(err); }
 });
