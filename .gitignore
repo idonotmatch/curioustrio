@@ -1,5 +1,5 @@
 node_modules/
 archive/
+.env
 .env.local
 test.html
-.env.local
