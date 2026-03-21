@@ -1,0 +1,36 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "popstart (Next.js)",
+      "cwd": "/Users/dangnguyen/popstart",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "curious-trio (Next.js)",
+      "cwd": "/Users/dangnguyen/curious-trio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3001
+    },
+    {
+      "name": "curious-trio (Express)",
+      "cwd": "/Users/dangnguyen/curious-trio",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 5000
+    },
+    {
+      "name": "expense-tracker-api",
+      "cwd": "/Users/dangnguyen/curious-trio/.claude/worktrees/lucid-faraday/api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3002,
+      "env": {
+        "PORT": "3002"
+      }
+    }
+  ]
+}
