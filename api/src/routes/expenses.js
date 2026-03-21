@@ -113,6 +113,18 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// List all non-dismissed expenses for the user's household (falls back to personal if no household)
+router.get('/household', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const expenses = user.household_id
+      ? await Expense.findByHousehold(user.household_id)
+      : await Expense.findByUser(user.id);
+    res.json(expenses);
+  } catch (err) { next(err); }
+});
+
 // List pending expenses for the authenticated user
 router.get('/pending', async (req, res, next) => {
   try {

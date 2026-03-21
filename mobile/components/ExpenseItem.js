@@ -1,10 +1,13 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
-export function ExpenseItem({ expense, onPress }) {
+export function ExpenseItem({ expense, onPress, showUser = false }) {
   return (
     <TouchableOpacity style={styles.container} onPress={() => onPress?.(expense)}>
       <View style={styles.left}>
         <Text style={styles.merchant}>{expense.merchant}</Text>
+        {showUser && expense.user_name ? (
+          <Text style={styles.userName}>{expense.user_name}</Text>
+        ) : null}
         <Text style={styles.meta}>
           {expense.category_name || 'Unclassified'} · {expense.date}
         </Text>
@@ -21,6 +24,7 @@ const styles = StyleSheet.create({
   },
   left: { flex: 1 },
   merchant: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  userName: { fontSize: 11, color: '#888', marginTop: 2 },
   meta: { fontSize: 11, color: '#666', marginTop: 2 },
   amount: { fontSize: 16, color: '#fff', fontWeight: '700' },
 });
