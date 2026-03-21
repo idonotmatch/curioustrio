@@ -1,7 +1,5 @@
-const Anthropic = require('@anthropic-ai/sdk');
+const { complete } = require('./ai');
 const MerchantMapping = require('../models/merchantMapping');
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function confidenceFromHitCount(hitCount) {
   if (hitCount >= 5) return 4;
@@ -26,18 +24,15 @@ async function assignCategory({ merchant, householdId, categories, placeType }) 
 
   // 2. Claude fallback
   const categoryList = categories.map(c => `${c.id}: ${c.name}`).join('\n');
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 128,
-    system: SYSTEM_PROMPT,
-    messages: [{
-      role: 'user',
-      content: `Merchant: ${merchant}${placeType ? `\nPlace type: ${placeType}` : ''}\n\nCategories:\n${categoryList}`,
-    }],
-  });
-
   try {
-    const text = message.content?.[0]?.text?.trim();
+    const text = await complete({
+      system: SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Merchant: ${merchant}${placeType ? `\nPlace type: ${placeType}` : ''}\n\nCategories:\n${categoryList}`,
+      }],
+      maxTokens: 128,
+    });
     if (!text) return { category_id: null, source: 'claude', confidence: 0 };
     const parsed = JSON.parse(text);
     return {
