@@ -151,8 +151,13 @@ router.post('/:id/dismiss', async (req, res, next) => {
 // Get a single expense by ID with duplicate_flags
 router.get('/:id', async (req, res, next) => {
   try {
+    const user = await getUser(req);
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    // Scope to user's household or own expenses
+    const ownedByUser = expense.user_id === user?.id;
+    const inHousehold = user?.household_id && expense.household_id === user.household_id;
+    if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
     const duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
     res.json({ ...expense, duplicate_flags });
   } catch (err) { next(err); }

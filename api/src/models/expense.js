@@ -71,4 +71,51 @@ async function findByMapkitStableId({ householdId, mapkitStableId, amount, date,
   return result.rows;
 }
 
-module.exports = { create, findByUser, updateStatus, findPotentialDuplicates, findByMapkitStableId };
+async function findById(id) {
+  const result = await db.query(
+    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+     FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+     WHERE e.id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+async function findByHousehold(householdId, { limit = 50, offset = 0 } = {}) {
+  const result = await db.query(
+    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
+            u.name as user_name
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN users u ON e.user_id = u.id
+     WHERE e.household_id = $1 AND e.status != 'dismissed'
+     ORDER BY e.date DESC, e.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [householdId, limit, offset]
+  );
+  return result.rows;
+}
+
+async function update(id, userId, { merchant, amount, date, categoryId, notes } = {}) {
+  const result = await db.query(
+    `UPDATE expenses SET
+       merchant = COALESCE($3, merchant),
+       amount = COALESCE($4, amount),
+       date = COALESCE($5, date),
+       category_id = COALESCE($6, category_id),
+       notes = COALESCE($7, notes)
+     WHERE id = $1 AND user_id = $2 RETURNING *`,
+    [id, userId, merchant, amount, date, categoryId, notes]
+  );
+  return result.rows[0] || null;
+}
+
+async function updateStatusByHousehold(id, householdId, status) {
+  const result = await db.query(
+    `UPDATE expenses SET status = $1 WHERE id = $2 AND household_id = $3 RETURNING *`,
+    [status, id, householdId]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { create, findByUser, updateStatus, findPotentialDuplicates, findByMapkitStableId, findById, findByHousehold, update, updateStatusByHousehold };
