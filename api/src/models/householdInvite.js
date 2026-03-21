@@ -21,7 +21,7 @@ async function findByToken(token) {
 
 async function accept(token) {
   const result = await db.query(
-    `UPDATE household_invites SET status = 'accepted' WHERE token = $1
+    `UPDATE household_invites SET status = 'accepted' WHERE token = $1 AND status = 'pending'
      RETURNING id, household_id, invited_email, invited_by, token, status, expires_at, created_at`,
     [token]
   );
