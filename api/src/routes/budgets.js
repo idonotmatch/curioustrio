@@ -1,0 +1,108 @@
+const express = require('express');
+const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const User = require('../models/user');
+const BudgetSetting = require('../models/budgetSetting');
+const db = require('../db');
+
+router.use(authenticate);
+
+async function requireHousehold(req, res) {
+  const user = await User.findByAuth0Id(req.auth0Id);
+  if (!user) { res.status(401).json({ error: 'User not synced' }); return null; }
+  if (!user.household_id) { res.status(403).json({ error: 'Must be in a household to manage budgets' }); return null; }
+  return user;
+}
+
+// GET /budgets — summary: budget limits + current month spending
+router.get('/', async (req, res, next) => {
+  try {
+    const user = await requireHousehold(req, res);
+    if (!user) return;
+
+    const thisMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+
+    const settings = await BudgetSetting.findByHousehold(user.household_id);
+
+    const spendResult = await db.query(
+      `SELECT category_id, SUM(amount) as spent
+       FROM expenses
+       WHERE household_id = $1
+         AND status = 'confirmed'
+         AND to_char(date, 'YYYY-MM') = $2
+       GROUP BY category_id`,
+      [user.household_id, thisMonth]
+    );
+    const spendByCategory = {};
+    for (const row of spendResult.rows) {
+      spendByCategory[row.category_id || '__total__'] = Number(row.spent);
+    }
+
+    const totalSpent = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
+
+    const totalSetting = settings.find(s => s.category_id === null);
+    const categorySummaries = settings
+      .filter(s => s.category_id !== null)
+      .map(s => {
+        const spent = spendByCategory[s.category_id] || 0;
+        return {
+          id: s.category_id,
+          limit: Number(s.monthly_limit),
+          spent,
+          remaining: Number(s.monthly_limit) - spent,
+        };
+      });
+
+    res.json({
+      total: totalSetting
+        ? { limit: Number(totalSetting.monthly_limit), spent: totalSpent, remaining: Number(totalSetting.monthly_limit) - totalSpent }
+        : null,
+      categories: categorySummaries,
+    });
+  } catch (err) { next(err); }
+});
+
+// PUT /budgets/total
+router.put('/total', async (req, res, next) => {
+  try {
+    const user = await requireHousehold(req, res);
+    if (!user) return;
+    const { monthly_limit } = req.body;
+    if (!monthly_limit || isNaN(Number(monthly_limit)) || Number(monthly_limit) <= 0) {
+      return res.status(400).json({ error: 'monthly_limit must be a positive number' });
+    }
+    const setting = await BudgetSetting.upsert({ householdId: user.household_id, categoryId: null, monthlyLimit: monthly_limit });
+    res.json(setting);
+  } catch (err) { next(err); }
+});
+
+// PUT /budgets/category/:id
+router.put('/category/:id', async (req, res, next) => {
+  try {
+    const user = await requireHousehold(req, res);
+    if (!user) return;
+    const { monthly_limit } = req.body;
+    if (!monthly_limit || isNaN(Number(monthly_limit)) || Number(monthly_limit) <= 0) {
+      return res.status(400).json({ error: 'monthly_limit must be a positive number' });
+    }
+    const setting = await BudgetSetting.upsert({
+      householdId: user.household_id,
+      categoryId: req.params.id,
+      monthlyLimit: monthly_limit,
+    });
+    res.json(setting);
+  } catch (err) { next(err); }
+});
+
+// DELETE /budgets/category/:id
+router.delete('/category/:id', async (req, res, next) => {
+  try {
+    const user = await requireHousehold(req, res);
+    if (!user) return;
+    const removed = await BudgetSetting.remove({ householdId: user.household_id, categoryId: req.params.id });
+    if (!removed) return res.status(404).json({ error: 'Budget not found' });
+    res.json(removed);
+  } catch (err) { next(err); }
+});
+
+module.exports = router;
