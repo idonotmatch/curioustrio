@@ -36,8 +36,9 @@ async function suggest(householdId, newParentId) {
     const clean = responseText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     const suggestions = JSON.parse(clean);
 
+    const leafIds = new Set(leaves.map(c => c.id));
     for (const s of suggestions) {
-      if (s.leaf_id && s.parent_id) {
+      if (s.leaf_id && s.parent_id && leafIds.has(s.leaf_id) && s.parent_id === newParentId) {
         await CategorySuggestion.upsertForLeaf(householdId, s.leaf_id, s.parent_id);
       }
     }

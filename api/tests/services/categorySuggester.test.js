@@ -55,4 +55,14 @@ describe('suggest', () => {
     ai.complete.mockResolvedValue('not valid json');
     await expect(suggest(HOUSEHOLD, PARENT_ID)).resolves.toBeUndefined();
   });
+
+  it('ignores suggestions with hallucinated IDs not in the candidate list', async () => {
+    ai.complete.mockResolvedValue(
+      '[{"leaf_id":"hallucinated-id","parent_id":"parent-uuid-001"}]'
+    );
+
+    await suggest(HOUSEHOLD, PARENT_ID);
+
+    expect(CategorySuggestion.upsertForLeaf).not.toHaveBeenCalled();
+  });
 });
