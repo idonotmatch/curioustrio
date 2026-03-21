@@ -20,7 +20,10 @@ export default function CategoriesScreen() {
   const [editingCatId, setEditingCatId] = useState(null);
   const [editingCatName, setEditingCatName] = useState('');
 
+  const [errorMsg, setErrorMsg] = useState('');
+
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await api.get('/categories');
       setCategories(data.categories || []);
@@ -41,6 +44,7 @@ export default function CategoriesScreen() {
 
   async function addCategory() {
     if (!newCatName.trim()) return;
+    setErrorMsg('');
     setAddingCat(true);
     try {
       const body = { name: newCatName.trim() };
@@ -49,18 +53,23 @@ export default function CategoriesScreen() {
       setNewCatName('');
       setNewCatParentId(null);
       load();
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    } finally {
       setAddingCat(false);
     }
   }
 
   async function saveCategory(id) {
     if (!editingCatName.trim()) return;
+    setErrorMsg('');
     try {
       await api.patch(`/categories/${id}`, { name: editingCatName.trim() });
       setEditingCatId(null);
       load();
-    } catch { /* ignore */ }
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    }
   }
 
   async function deleteCategory(id, name) {
@@ -68,25 +77,32 @@ export default function CategoriesScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
+          setErrorMsg('');
           try { await api.delete(`/categories/${id}`); load(); }
-          catch { /* ignore */ }
+          catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
         },
       },
     ]);
   }
 
   async function acceptSuggestion(id) {
+    setErrorMsg('');
     try {
       await api.post(`/categories/suggestions/${id}/accept`);
       load();
-    } catch { /* ignore */ }
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    }
   }
 
   async function rejectSuggestion(id) {
+    setErrorMsg('');
     try {
       await api.post(`/categories/suggestions/${id}/reject`);
       load();
-    } catch { /* ignore */ }
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    }
   }
 
   const custom = categories.filter(c => c.household_id !== null);
@@ -96,11 +112,15 @@ export default function CategoriesScreen() {
   const referencedParentIds = new Set(custom.filter(c => c.parent_id).map(c => c.parent_id));
   const parentCats = custom.filter(c => !c.parent_id && referencedParentIds.has(c.id));
   const childrenByParent = {};
-  for (const cat of custom.filter(c => c.parent_id)) {
-    if (!childrenByParent[cat.parent_id]) childrenByParent[cat.parent_id] = [];
-    childrenByParent[cat.parent_id].push(cat);
-  }
-  const ungrouped = custom.filter(c => !c.parent_id && !referencedParentIds.has(c.id));
+  custom.filter(c => c.parent_id).forEach(c => {
+    if (!childrenByParent[c.parent_id]) childrenByParent[c.parent_id] = [];
+    childrenByParent[c.parent_id].push(c);
+  });
+  const renderedIds = new Set([
+    ...parentCats.map(c => c.id),
+    ...Object.values(childrenByParent).flat().map(c => c.id),
+  ]);
+  const ungrouped = custom.filter(c => !renderedIds.has(c.id));
 
   // Parent options for the "add" form picker
   const parentOptions = custom.filter(c => !c.parent_id);
@@ -256,6 +276,8 @@ export default function CategoriesScreen() {
               )}
             </View>
 
+            {errorMsg ? <Text style={styles.errorMsg}>{errorMsg}</Text> : null}
+
             {/* Default categories (read-only) */}
             <Text style={[styles.sectionLabel, { marginTop: 32 }]}>DEFAULTS</Text>
             <Text style={styles.defaultsNote}>Built-in categories shared across all households.</Text>
@@ -317,6 +339,9 @@ const styles = StyleSheet.create({
   addBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
   addBtnDisabled: { opacity: 0.3 },
   addBtnText: { color: '#000', fontWeight: '600', fontSize: 14 },
+
+  // Error message
+  errorMsg: { color: '#ef4444', fontSize: 13, marginTop: 10 },
 
   // Parent picker
   parentPicker: { marginTop: 10 },

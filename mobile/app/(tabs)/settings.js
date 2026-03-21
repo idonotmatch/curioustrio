@@ -41,10 +41,15 @@ export default function SettingsScreen() {
   }, []);
 
   async function saveBudget() {
+    const val = parseFloat(budgetLimit);
+    if (!budgetLimit || isNaN(val) || val <= 0) {
+      setBudgetMsg('Please enter a valid amount');
+      return;
+    }
     setBudgetSaving(true);
     setBudgetMsg('');
     try {
-      await api.put('/budgets/total', { monthly_limit: parseFloat(budgetLimit) });
+      await api.put('/budgets/total', { monthly_limit: val });
       setBudgetMsg('Saved!');
       loadBudget();
     } catch (e) {
