@@ -24,6 +24,7 @@ router.get('/', async (req, res, next) => {
 
     const settings = await BudgetSetting.findByHousehold(user.household_id);
 
+    // Per-category spending (existing)
     const spendResult = await db.query(
       `SELECT category_id, SUM(amount) as spent
        FROM expenses
@@ -37,8 +38,47 @@ router.get('/', async (req, res, next) => {
     for (const row of spendResult.rows) {
       spendByCategory[row.category_id || '__total__'] = Number(row.spent);
     }
-
     const totalSpent = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
+
+    // Per-parent spending (new): group leaf expenses under their parent
+    const parentSpendResult = await db.query(
+      `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
+       FROM expenses e
+       LEFT JOIN categories c ON e.category_id = c.id
+       WHERE e.household_id = $1
+         AND e.status = 'confirmed'
+         AND to_char(e.date, 'YYYY-MM') = $2
+       GROUP BY group_id`,
+      [user.household_id, thisMonth]
+    );
+
+    // Look up names for the group IDs
+    const groupIds = parentSpendResult.rows
+      .map(r => r.group_id)
+      .filter(Boolean);
+    const catNames = {};
+    if (groupIds.length > 0) {
+      const catRes = await db.query(
+        'SELECT id, name FROM categories WHERE id = ANY($1)',
+        [groupIds]
+      );
+      for (const row of catRes.rows) catNames[row.id] = row.name;
+    }
+
+    const by_parent = parentSpendResult.rows
+      .filter(r => r.group_id)
+      .map(r => {
+        const spent = Number(r.spent);
+        const setting = settings.find(s => s.category_id === r.group_id);
+        const limit = setting ? Number(setting.monthly_limit) : null;
+        return {
+          group_id: r.group_id,
+          name: catNames[r.group_id] || 'Unknown',
+          spent,
+          limit,
+          remaining: limit !== null ? limit - spent : null,
+        };
+      });
 
     const totalSetting = settings.find(s => s.category_id === null);
     const categorySummaries = settings
@@ -58,6 +98,7 @@ router.get('/', async (req, res, next) => {
         ? { limit: Number(totalSetting.monthly_limit), spent: totalSpent, remaining: Number(totalSetting.monthly_limit) - totalSpent }
         : null,
       categories: categorySummaries,
+      by_parent,
     });
   } catch (err) { next(err); }
 });

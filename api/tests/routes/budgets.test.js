@@ -214,3 +214,12 @@ describe('GET /budgets (no household)', () => {
     expect(res.body.error).toMatch(/household/i);
   });
 });
+
+describe('GET /budgets by_parent', () => {
+  it('includes a by_parent array in response', async () => {
+    const res = await request(app).get('/budgets');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('by_parent');
+    expect(Array.isArray(res.body.by_parent)).toBe(true);
+  });
+});
