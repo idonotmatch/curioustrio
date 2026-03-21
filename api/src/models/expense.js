@@ -12,10 +12,14 @@ async function create({ userId, householdId, merchant, amount, date, categoryId,
 async function findByUser(userId, { limit = 50, offset = 0 } = {}) {
   const result = await db.query(
     `SELECT e.*,
-            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            c.name  AS category_name,
+            c.icon  AS category_icon,
+            c.color AS category_color,
+            pc.name AS category_parent_name,
             (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count
      FROM expenses e
-     LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN categories  c  ON e.category_id = c.id
+     LEFT JOIN categories  pc ON c.parent_id   = pc.id
      WHERE e.user_id = $1 AND e.status != 'dismissed'
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
@@ -76,9 +80,14 @@ async function findByMapkitStableId({ householdId, mapkitStableId, amount, date,
 async function findById(id) {
   const result = await db.query(
     `SELECT e.*,
-            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            c.name  AS category_name,
+            c.icon  AS category_icon,
+            c.color AS category_color,
+            pc.name AS category_parent_name,
             (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count
-     FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+     FROM expenses e
+     LEFT JOIN categories  c  ON e.category_id = c.id
+     LEFT JOIN categories  pc ON c.parent_id   = pc.id
      WHERE e.id = $1`,
     [id]
   );
@@ -94,12 +103,16 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId } =
   }
   const result = await db.query(
     `SELECT e.*,
-            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            c.name  AS category_name,
+            c.icon  AS category_icon,
+            c.color AS category_color,
+            pc.name AS category_parent_name,
             (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count,
-            u.name as user_name
+            u.name  AS user_name
      FROM expenses e
-     LEFT JOIN categories c ON e.category_id = c.id
-     LEFT JOIN users u ON e.user_id = u.id
+     LEFT JOIN categories  c  ON e.category_id = c.id
+     LEFT JOIN categories  pc ON c.parent_id   = pc.id
+     LEFT JOIN users       u  ON e.user_id     = u.id
      WHERE e.household_id = $1 AND e.status != 'dismissed'
      ${privateClause}
      ORDER BY e.date DESC, e.created_at DESC
