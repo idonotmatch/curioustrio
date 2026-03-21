@@ -30,4 +30,45 @@ async function updateStatus(id, userId, status) {
   return result.rows[0] || null;
 }
 
-module.exports = { create, findByUser, updateStatus };
+async function findPotentialDuplicates({ householdId, merchant, amount, date, excludeId }) {
+  const params = [householdId, merchant, amount, date];
+  let excludeClause = '';
+  if (excludeId) {
+    params.push(excludeId);
+    excludeClause = `AND id != $${params.length}`;
+  }
+  const result = await db.query(
+    `SELECT * FROM expenses
+     WHERE household_id = $1
+       AND LOWER(merchant) = LOWER($2)
+       AND ABS(amount - $3) <= 1.00
+       AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
+       AND status IN ('pending', 'confirmed')
+       ${excludeClause}`,
+    params
+  );
+  return result.rows;
+}
+
+async function findByMapkitStableId({ householdId, mapkitStableId, amount, date, excludeId }) {
+  const params = [householdId, mapkitStableId, amount, date];
+  let excludeClause = '';
+  if (excludeId) {
+    params.push(excludeId);
+    excludeClause = `AND id != $${params.length}`;
+  }
+  const result = await db.query(
+    `SELECT * FROM expenses
+     WHERE household_id = $1
+       AND mapkit_stable_id = $2
+       AND mapkit_stable_id IS NOT NULL
+       AND ABS(amount - $3) <= 1.00
+       AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
+       AND status IN ('pending', 'confirmed')
+       ${excludeClause}`,
+    params
+  );
+  return result.rows;
+}
+
+module.exports = { create, findByUser, updateStatus, findPotentialDuplicates, findByMapkitStableId };
