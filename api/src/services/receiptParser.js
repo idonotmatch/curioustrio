@@ -1,8 +1,14 @@
 const { completeWithImage } = require('./ai');
 
 const SYSTEM_PROMPT = `You are a receipt parser. Extract structured data from a receipt image.
-Return ONLY a JSON object with these fields: merchant (string), amount (number), date (ISO date string YYYY-MM-DD), notes (string or null).
-The amount should be the total paid. If you cannot extract the data, return null.
+Return ONLY a JSON object with these fields:
+- merchant (string)
+- amount (number): the total paid (including tax and fees)
+- date (ISO date string YYYY-MM-DD)
+- notes (string or null)
+- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null }. Omit tax lines, subtotals, and fee lines. Set to null if line items are not clearly visible.
+
+If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
 
 async function parseReceipt(imageBase64, todayDate) {
@@ -21,10 +27,10 @@ async function parseReceipt(imageBase64, todayDate) {
   });
 
   if (!text) return null;
-  if (text === 'null') return null;
-
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  if (!cleaned || cleaned === 'null') return null;
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch {
     return null;
   }

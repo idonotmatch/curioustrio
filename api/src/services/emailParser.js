@@ -1,10 +1,15 @@
 const { complete } = require('./ai');
 
 const SYSTEM_PROMPT = `You are a receipt email parser. Extract purchase data from email receipts, order confirmations, and refund notifications.
-Return ONLY a JSON object with: merchant (string), amount (number), date (ISO date string YYYY-MM-DD), notes (string or null).
+Return ONLY a JSON object with:
+- merchant (string)
+- amount (number): the total charged or refunded (negative for refunds)
+- date (ISO date string YYYY-MM-DD)
+- notes (string or null)
+- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null }. Set to null if the email does not list individual items.
+
 If the email describes a refund or return, set amount as a negative number.
 If the email is not purchase/refund related, return null.
-The amount should be the total charged or refunded. Use the email date if no explicit purchase date is found.
 Do not include any text outside the JSON object.`;
 
 async function parseEmailExpense(emailBody, subject, fromAddress, todayDate) {
@@ -25,10 +30,11 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate) {
     }],
   });
 
-  if (!text || text === 'null') return null;
-
+  if (!text) return null;
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  if (!cleaned || cleaned === 'null') return null;
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch {
     return null;
   }
