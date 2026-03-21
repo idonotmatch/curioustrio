@@ -62,7 +62,7 @@ export function ExpenseItem({ expense, showUser = false, onDelete, pending = fal
           <View style={styles.metaRow}>
             <View style={[styles.dot, { backgroundColor: color }]} />
             <Text style={styles.meta}>
-              {expense.category_name || 'Uncategorized'}
+              {expense.category_parent_name || expense.category_name || 'Uncategorized'}
               {showUser && expense.user_name ? ` · ${expense.user_name}` : ''}
               {' · '}{formatDate(expense.date)}
               {expense.place_name ? ` · 📍 ${expense.place_name}` : ''}
