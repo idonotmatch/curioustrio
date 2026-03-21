@@ -65,6 +65,8 @@ router.get('/', async (req, res, next) => {
       for (const row of catRes.rows) catNames[row.id] = row.name;
     }
 
+    // Exclude uncategorized expenses (group_id = null) from the breakdown.
+    // These are captured in total.spent but don't belong to any named group.
     const by_parent = parentSpendResult.rows
       .filter(r => r.group_id)
       .map(r => {
