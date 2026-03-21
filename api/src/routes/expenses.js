@@ -184,6 +184,20 @@ router.post('/:id/dismiss', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Delete an expense
+router.delete('/:id', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByAuth0Id(req.auth0Id);
+    const expense = await Expense.findById(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const ownedByUser = expense.user_id === user?.id;
+    const ownedByHousehold = user?.household_id && expense.household_id === user.household_id;
+    if (!ownedByUser && !ownedByHousehold) return res.status(404).json({ error: 'Expense not found' });
+    await db.query('DELETE FROM expenses WHERE id = $1', [req.params.id]);
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
 // Get a single expense by ID with duplicate_flags
 router.get('/:id', async (req, res, next) => {
   try {

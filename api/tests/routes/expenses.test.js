@@ -302,6 +302,59 @@ describe('PATCH /expenses/:id', () => {
   });
 });
 
+describe('DELETE /expenses/:id', () => {
+  it('owner can delete their expense (204)', async () => {
+    const userResult = await db.query(
+      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+    );
+    const userId = userResult.rows[0].id;
+
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'ToDelete', 15.00, '2026-03-10', 'manual', 'confirmed') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    const res = await request(app).delete(`/expenses/${expenseId}`);
+    expect(res.status).toBe(204);
+
+    // Confirm it's gone
+    const check = await db.query(`SELECT id FROM expenses WHERE id = $1`, [expenseId]);
+    expect(check.rows.length).toBe(0);
+  });
+
+  it('returns 404 for non-existent expense', async () => {
+    const fakeId = '00000000-0000-0000-0000-000000000001';
+    const res = await request(app).delete(`/expenses/${fakeId}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for another user's expense", async () => {
+    const otherUserResult = await db.query(
+      `INSERT INTO users (auth0_id, name, email)
+       VALUES ('auth0|other-delete-user', 'Other Delete User', 'otherdelete@test.com')
+       ON CONFLICT (auth0_id) DO UPDATE SET name = 'Other Delete User'
+       RETURNING id`
+    );
+    const otherUserId = otherUserResult.rows[0].id;
+
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, NULL, 'OtherDelete', 5.00, '2026-03-09', 'manual', 'confirmed') RETURNING id`,
+      [otherUserId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    const res = await request(app).delete(`/expenses/${expenseId}`);
+    expect(res.status).toBe(404);
+
+    // Cleanup
+    await db.query(`DELETE FROM expenses WHERE id = $1`, [expenseId]);
+    await db.query(`DELETE FROM users WHERE auth0_id = 'auth0|other-delete-user'`);
+  });
+});
+
 describe('POST /expenses/scan', () => {
   it('returns parsed expense with source camera', async () => {
     parseReceipt.mockResolvedValue({
