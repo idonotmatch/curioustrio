@@ -19,7 +19,8 @@ describe('GET /categories', () => {
   it('returns categories for the user household', async () => {
     const res = await request(app).get('/categories');
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveProperty('categories');
+    expect(Array.isArray(res.body.categories)).toBe(true);
   });
 });
 
@@ -75,5 +76,60 @@ describe('DELETE /categories/:id', () => {
       .delete(`/categories/${created.body.id}`);
 
     expect(res.status).toBe(204);
+  });
+});
+
+describe('category hierarchy — parent_name', () => {
+  it('GET /categories returns parent_name field on each category', async () => {
+    const res = await request(app).get('/categories');
+    expect(res.status).toBe(200);
+    // New shape: { categories, pending_suggestions_count }
+    expect(res.body).toHaveProperty('categories');
+    expect(res.body).toHaveProperty('pending_suggestions_count');
+    expect(Array.isArray(res.body.categories)).toBe(true);
+    const cat = res.body.categories[0];
+    if (cat) {
+      expect(cat).toHaveProperty('parent_name'); // null or string
+    }
+  });
+
+  it('POST /categories accepts parent_id', async () => {
+    const parent = await request(app)
+      .post('/categories')
+      .send({ name: 'ParentCat' });
+    expect(parent.status).toBe(201);
+
+    const child = await request(app)
+      .post('/categories')
+      .send({ name: 'ChildCat', parent_id: parent.body.id });
+    expect(child.status).toBe(201);
+    expect(child.body.parent_id).toBe(parent.body.id);
+
+    // cleanup
+    await request(app).delete(`/categories/${child.body.id}`);
+    await request(app).delete(`/categories/${parent.body.id}`);
+  });
+
+  it('PATCH /categories/:id accepts parent_id to assign and null to unassign', async () => {
+    const parent = await request(app).post('/categories').send({ name: 'PatchParent' });
+    const leaf = await request(app).post('/categories').send({ name: 'PatchLeaf' });
+
+    // assign
+    const assign = await request(app)
+      .patch(`/categories/${leaf.body.id}`)
+      .send({ parent_id: parent.body.id });
+    expect(assign.status).toBe(200);
+    expect(assign.body.parent_id).toBe(parent.body.id);
+
+    // unassign
+    const unassign = await request(app)
+      .patch(`/categories/${leaf.body.id}`)
+      .send({ parent_id: null });
+    expect(unassign.status).toBe(200);
+    expect(unassign.body.parent_id).toBeNull();
+
+    // cleanup
+    await request(app).delete(`/categories/${leaf.body.id}`);
+    await request(app).delete(`/categories/${parent.body.id}`);
   });
 });
