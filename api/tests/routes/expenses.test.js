@@ -97,6 +97,22 @@ describe('POST /expenses/confirm', () => {
     expect(Array.isArray(res.body.duplicate_flags)).toBe(true);
   });
 
+  it('creates refund expense with negative amount and source=refund', async () => {
+    const res = await request(app)
+      .post('/expenses/confirm')
+      .set('Authorization', 'Bearer test')
+      .send({
+        merchant: 'Amazon',
+        amount: -24.99,
+        date: '2026-03-21',
+        source: 'refund',
+        category_id: null,
+      });
+    expect(res.status).toBe(201);
+    expect(Number(res.body.expense.amount)).toBe(-24.99);
+    expect(res.body.expense.source).toBe('refund');
+  });
+
   it('creates duplicate_flags when exact duplicate exists in same household', async () => {
     const merchant = 'DupeMerchant';
     const amount = 42.00;

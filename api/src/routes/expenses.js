@@ -69,7 +69,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 router.post('/confirm', async (req, res, next) => {
   try {
     const { merchant, amount, date, category_id, source, notes,
-            place_name, address, mapkit_stable_id } = req.body;
+            place_name, address, mapkit_stable_id, linked_expense_id } = req.body;
 
     if (!merchant || !amount || !date || !source) {
       return res.status(400).json({ error: 'merchant, amount, date, source required' });
@@ -93,6 +93,7 @@ router.post('/confirm', async (req, res, next) => {
       placeName: place_name,
       address,
       mapkitStableId: mapkit_stable_id,
+      linkedExpenseId: linked_expense_id,
     });
 
     // Update merchant memory

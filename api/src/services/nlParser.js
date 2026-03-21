@@ -2,7 +2,8 @@ const { complete } = require('./ai');
 
 const SYSTEM_PROMPT = `You are an expense parser. Extract structured data from natural language expense input.
 Return ONLY a JSON object with these fields: merchant (string), amount (number), date (ISO date string), notes (string or null).
-If the input cannot be parsed as an expense, return null.
+If the input describes a refund or return (e.g., "refund trader joes 24.50", "return amazon"), set amount as a negative number.
+If the input cannot be parsed as an expense or refund, return null.
 Today's date is provided in the user message. If no date is mentioned, use today's date.
 Do not include any text outside the JSON object.`;
 

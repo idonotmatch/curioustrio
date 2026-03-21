@@ -1,10 +1,10 @@
 const db = require('../db');
 
-async function create({ userId, householdId, merchant, amount, date, categoryId, source, status = 'pending', notes, placeName, address, mapkitStableId }) {
+async function create({ userId, householdId, merchant, amount, date, categoryId, source, status = 'pending', notes, placeName, address, mapkitStableId, linkedExpenseId = null }) {
   const result = await db.query(
-    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status, notes, place_name, address, mapkit_stable_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-    [userId, householdId, merchant, amount, date, categoryId, source, status, notes, placeName, address, mapkitStableId]
+    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status, notes, place_name, address, mapkit_stable_id, linked_expense_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+    [userId, householdId, merchant, amount, date, categoryId, source, status, notes, placeName, address, mapkitStableId, linkedExpenseId]
   );
   return result.rows[0];
 }
