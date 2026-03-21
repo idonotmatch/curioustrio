@@ -7,6 +7,7 @@ const { standard } = require('./middleware/rateLimit');
 const expensesRouter = require('./routes/expenses');
 const categoriesRouter = require('./routes/categories');
 const usersRouter = require('./routes/users');
+const householdsRouter = require('./routes/households');
 
 const app = express();
 app.use(helmet());
@@ -17,6 +18,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/expenses', expensesRouter);
 app.use('/categories', categoriesRouter);
 app.use('/users', usersRouter);
+app.use('/households', householdsRouter);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
