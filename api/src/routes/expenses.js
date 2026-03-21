@@ -5,8 +5,11 @@ const User = require('../models/user');
 const Expense = require('../models/expense');
 const Category = require('../models/category');
 const MerchantMapping = require('../models/merchantMapping');
+const DuplicateFlag = require('../models/duplicateFlag');
 const { parseExpense } = require('../services/nlParser');
 const { assignCategory } = require('../services/categoryAssigner');
+const detectDuplicates = require('../services/duplicateDetector');
+const db = require('../db');
 
 router.use(authenticate);
 
@@ -39,7 +42,7 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Confirm expense → save to DB + update merchant mapping
+// Confirm expense → save to DB + update merchant mapping + run dedup
 router.post('/confirm', async (req, res, next) => {
   try {
     const { merchant, amount, date, category_id, source, notes,
@@ -78,7 +81,25 @@ router.post('/confirm', async (req, res, next) => {
       });
     }
 
-    res.status(201).json(expense);
+    // Run dedup (non-fatal)
+    let duplicate_flags = [];
+    try {
+      const expenseDate = expense.date instanceof Date
+        ? expense.date.toISOString().split('T')[0]
+        : expense.date;
+      duplicate_flags = await detectDuplicates({
+        id: expense.id,
+        householdId: expense.household_id,
+        merchant: expense.merchant,
+        amount: expense.amount,
+        date: expenseDate,
+        mapkit_stable_id: expense.mapkit_stable_id,
+      });
+    } catch (dupErr) {
+      console.error('Dedup error (non-fatal):', dupErr);
+    }
+
+    res.status(201).json({ expense, duplicate_flags });
   } catch (err) { next(err); }
 });
 
@@ -89,6 +110,66 @@ router.get('/', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const expenses = await Expense.findByUser(user.id);
     res.json(expenses);
+  } catch (err) { next(err); }
+});
+
+// List pending expenses for the authenticated user
+router.get('/pending', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const result = await db.query(
+      `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+       FROM expenses e
+       LEFT JOIN categories c ON e.category_id = c.id
+       WHERE e.user_id = $1 AND e.status = 'pending'
+       ORDER BY e.date DESC, e.created_at DESC`,
+      [user.id]
+    );
+    // For each expense, attach duplicate_flags
+    const expenses = await Promise.all(
+      result.rows.map(async (e) => ({
+        ...e,
+        duplicate_flags: await DuplicateFlag.findByExpenseId(e.id),
+      }))
+    );
+    res.json(expenses);
+  } catch (err) { next(err); }
+});
+
+// Dismiss a pending expense
+router.post('/:id/dismiss', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    res.json(expense);
+  } catch (err) { next(err); }
+});
+
+// Get a single expense by ID with duplicate_flags
+router.get('/:id', async (req, res, next) => {
+  try {
+    const expense = await Expense.findById(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
+    res.json({ ...expense, duplicate_flags });
+  } catch (err) { next(err); }
+});
+
+// Update an expense
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const { merchant, amount, date, category_id, notes } = req.body;
+    if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
+      return res.status(400).json({ error: 'category_id must be a valid UUID' });
+    }
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const expense = await Expense.update(req.params.id, user.id, { merchant, amount, date, categoryId: category_id, notes });
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    res.json(expense);
   } catch (err) { next(err); }
 });
 
