@@ -4,7 +4,7 @@ const db = require('../../src/db');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.auth0Id = 'auth0|test-push-user';
+    req.userId = 'auth0|test-push-user';
     next();
   },
 }));
@@ -23,9 +23,9 @@ beforeAll(async () => {
   householdId = hhResult.rows[0].id;
 
   const userResult = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|test-push-user', 'Push User', 'push@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
      RETURNING id`,
     [householdId]
   );
@@ -34,7 +34,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
-  await db.query(`UPDATE users SET household_id = NULL WHERE auth0_id = 'auth0|test-push-user'`);
+  await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-push-user'`);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
 
@@ -82,7 +82,7 @@ describe('POST /push/notify-pending', () => {
 
   it('returns 403 when user has no household', async () => {
     await db.query(
-      `UPDATE users SET household_id = NULL WHERE auth0_id = 'auth0|test-push-user'`
+      `UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-push-user'`
     );
 
     const res = await request(app)
@@ -90,7 +90,7 @@ describe('POST /push/notify-pending', () => {
       .send();
 
     await db.query(
-      `UPDATE users SET household_id = $1 WHERE auth0_id = 'auth0|test-push-user'`,
+      `UPDATE users SET household_id = $1 WHERE provider_uid = 'auth0|test-push-user'`,
       [householdId]
     );
 

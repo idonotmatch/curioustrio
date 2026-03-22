@@ -4,7 +4,7 @@ const db = require('../../src/db');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.auth0Id = 'auth0|test-budget-user';
+    req.userId = 'auth0|test-budget-user';
     next();
   },
 }));
@@ -29,9 +29,9 @@ beforeAll(async () => {
 
   // Create test user with household_id
   const userResult = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|test-budget-user', 'Budget User', 'budget@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
      RETURNING id`,
     [householdId]
   );
@@ -42,7 +42,7 @@ afterAll(async () => {
   await db.query(`DELETE FROM budget_settings WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
-  await db.query(`UPDATE users SET household_id = NULL WHERE auth0_id = 'auth0|test-budget-user'`);
+  await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-budget-user'`);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
 
@@ -199,14 +199,14 @@ describe('GET /budgets (no household)', () => {
   it('returns 403 when user has no household_id', async () => {
     // Temporarily remove household from user
     await db.query(
-      `UPDATE users SET household_id = NULL WHERE auth0_id = 'auth0|test-budget-user'`
+      `UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-budget-user'`
     );
 
     const res = await request(app).get('/budgets');
 
     // Restore household
     await db.query(
-      `UPDATE users SET household_id = $1 WHERE auth0_id = 'auth0|test-budget-user'`,
+      `UPDATE users SET household_id = $1 WHERE provider_uid = 'auth0|test-budget-user'`,
       [householdId]
     );
 

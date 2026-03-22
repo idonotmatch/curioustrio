@@ -4,7 +4,7 @@ const db = require('../../src/db');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.auth0Id = 'auth0|test-user-123';
+    req.userId = 'auth0|test-user-123';
     next();
   },
 }));
@@ -97,14 +97,14 @@ describe('suggestion accept/reject', () => {
     leafId   = l.body.id;
 
     // Ensure the test user exists with a household
-    const userRes = await db.query("SELECT id, household_id FROM users WHERE auth0_id = 'auth0|test-user-123'");
+    const userRes = await db.query("SELECT id, household_id FROM users WHERE provider_uid = 'auth0|test-user-123'");
     let userId = userRes.rows[0]?.id;
     let householdId = userRes.rows[0]?.household_id;
     if (!userId) {
       const hRes = await db.query("INSERT INTO households (name) VALUES ('SuggRouteTest') RETURNING id");
       householdId = hRes.rows[0].id;
       const uRes = await db.query(
-        "INSERT INTO users (auth0_id, name, email, household_id) VALUES ('auth0|test-user-123', 'Test User', 'test@example.com', $1) RETURNING id",
+        "INSERT INTO users (provider_uid, name, email, household_id) VALUES ('auth0|test-user-123', 'Test User', 'test@example.com', $1) RETURNING id",
         [householdId]
       );
       userId = uRes.rows[0].id;

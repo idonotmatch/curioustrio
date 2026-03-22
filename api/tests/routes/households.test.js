@@ -3,40 +3,40 @@ const app = require('../../src/index');
 const db = require('../../src/db');
 const User = require('../../src/models/user');
 
-let mockAuth0Id = 'test-auth0-households-owner';
+let mockUserId = 'test-auth0-households-owner';
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.auth0Id = mockAuth0Id;
+    req.userId = mockUserId;
     next();
   },
 }));
 
-const TEST_AUTH0_ID = 'test-auth0-households-owner';
-const TEST_AUTH0_ID_JOINER = 'test-auth0-households-joiner';
+const TEST_PROVIDER_UID = 'test-auth0-households-owner';
+const TEST_PROVIDER_UID_JOINER = 'test-auth0-households-joiner';
 
 async function cleanUp() {
   // FK-safe cleanup order: household_invites → expenses (for test users) → users → households
   await db.query(
     `DELETE FROM household_invites WHERE invited_by IN (
-      SELECT id FROM users WHERE auth0_id IN ($1, $2)
+      SELECT id FROM users WHERE provider_uid IN ($1, $2)
     )`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
+    [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
   );
   await db.query(
     `DELETE FROM expenses WHERE user_id IN (
-      SELECT id FROM users WHERE auth0_id IN ($1, $2)
+      SELECT id FROM users WHERE provider_uid IN ($1, $2)
     )`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
+    [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
   );
   // Null out household_id first to avoid FK issue when deleting households
   await db.query(
-    `UPDATE users SET household_id = NULL WHERE auth0_id IN ($1, $2)`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
+    `UPDATE users SET household_id = NULL WHERE provider_uid IN ($1, $2)`,
+    [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
   );
   await db.query(
-    `DELETE FROM users WHERE auth0_id IN ($1, $2)`,
-    [TEST_AUTH0_ID, TEST_AUTH0_ID_JOINER]
+    `DELETE FROM users WHERE provider_uid IN ($1, $2)`,
+    [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
   );
   // Delete test households (created by these tests have a recognizable name prefix)
   await db.query(
@@ -45,12 +45,12 @@ async function cleanUp() {
 }
 
 beforeEach(async () => {
-  mockAuth0Id = TEST_AUTH0_ID;
+  mockUserId = TEST_PROVIDER_UID;
   await cleanUp();
   // Create fresh test user with no household
   await db.query(
-    `INSERT INTO users (auth0_id, name, email) VALUES ($1, 'Test User Households', 'test-households@test.com')`,
-    [TEST_AUTH0_ID]
+    `INSERT INTO users (provider_uid, name, email) VALUES ($1, 'Test User Households', 'test-households@test.com')`,
+    [TEST_PROVIDER_UID]
   );
 });
 
@@ -195,8 +195,8 @@ describe('POST /households/invites/:token/accept', () => {
       .send({ name: 'Test Household Expired' });
 
     const ownerRow = await db.query(
-      `SELECT id, household_id FROM users WHERE auth0_id = $1`,
-      [TEST_AUTH0_ID]
+      `SELECT id, household_id FROM users WHERE provider_uid = $1`,
+      [TEST_PROVIDER_UID]
     );
     const owner = ownerRow.rows[0];
 
@@ -228,8 +228,8 @@ describe('POST /households/invites/:token/accept', () => {
     const token = inviteRes.body.token;
 
     // Create joiner user and accept as them
-    await User.findOrCreate({ auth0Id: TEST_AUTH0_ID_JOINER, name: 'Joiner', email: 'joiner@test.com' });
-    mockAuth0Id = TEST_AUTH0_ID_JOINER;
+    await User.findOrCreateByProviderUid({ providerUid: TEST_PROVIDER_UID_JOINER, name: 'Joiner', email: 'joiner@test.com' });
+    mockUserId = TEST_PROVIDER_UID_JOINER;
 
     const firstAccept = await request(app)
       .post(`/households/invites/${token}/accept`);
@@ -238,8 +238,8 @@ describe('POST /households/invites/:token/accept', () => {
     // Try to accept again (invite is now 'accepted', not 'pending')
     // Reset joiner's household so we don't get 409 first
     await db.query(
-      `UPDATE users SET household_id = NULL WHERE auth0_id = $1`,
-      [TEST_AUTH0_ID_JOINER]
+      `UPDATE users SET household_id = NULL WHERE provider_uid = $1`,
+      [TEST_PROVIDER_UID_JOINER]
     );
 
     const secondAccept = await request(app)
@@ -250,7 +250,7 @@ describe('POST /households/invites/:token/accept', () => {
 
   it('happy-path: second user accepts invite and joins household', async () => {
     // Create household as owner
-    mockAuth0Id = TEST_AUTH0_ID;
+    mockUserId = TEST_PROVIDER_UID;
     const householdRes = await request(app)
       .post('/households')
       .send({ name: 'Test Household Happy Accept' });
@@ -265,10 +265,10 @@ describe('POST /households/invites/:token/accept', () => {
     const token = inviteRes.body.token;
 
     // Create joiner user
-    await User.findOrCreate({ auth0Id: TEST_AUTH0_ID_JOINER, name: 'Joiner', email: 'joiner@test.com' });
+    await User.findOrCreateByProviderUid({ providerUid: TEST_PROVIDER_UID_JOINER, name: 'Joiner', email: 'joiner@test.com' });
 
     // Switch to joiner
-    mockAuth0Id = TEST_AUTH0_ID_JOINER;
+    mockUserId = TEST_PROVIDER_UID_JOINER;
 
     const acceptRes = await request(app)
       .post(`/households/invites/${token}/accept`);

@@ -4,7 +4,7 @@ const db = require('../../src/db');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.auth0Id = 'auth0|test-user-123';
+    req.userId = 'auth0|test-user-123';
     next();
   },
 }));
@@ -32,9 +32,9 @@ beforeAll(async () => {
   householdId = hhResult.rows[0].id;
 
   await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|test-user-123', 'Test User', 'test@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1`,
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1`,
     [householdId]
   );
 });
@@ -45,7 +45,7 @@ afterAll(async () => {
     SELECT id FROM expenses WHERE household_id = $1
   )`, [householdId]);
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
-  await db.query(`UPDATE users SET household_id = NULL WHERE auth0_id = 'auth0|test-user-123'`);
+  await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-user-123'`);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
 
@@ -164,7 +164,7 @@ describe('POST /expenses/confirm', () => {
 
     // Insert an existing confirmed expense directly
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -197,7 +197,7 @@ describe('GET /expenses/pending', () => {
   it('returns pending expenses for the user', async () => {
     // Seed a pending expense
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -229,7 +229,7 @@ describe('GET /expenses/pending', () => {
 describe('POST /expenses/:id/dismiss', () => {
   it('marks expense as dismissed', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -249,9 +249,9 @@ describe('POST /expenses/:id/dismiss', () => {
   it('returns 404 for non-owned expense', async () => {
     // Insert expense owned by a different user
     const otherUserResult = await db.query(
-      `INSERT INTO users (auth0_id, name, email)
+      `INSERT INTO users (provider_uid, name, email)
        VALUES ('auth0|other-user-999', 'Other User', 'other@test.com')
-       ON CONFLICT (auth0_id) DO UPDATE SET name = 'Other User'
+       ON CONFLICT (provider_uid) DO UPDATE SET name = 'Other User'
        RETURNING id`
     );
     const otherUserId = otherUserResult.rows[0].id;
@@ -268,14 +268,14 @@ describe('POST /expenses/:id/dismiss', () => {
 
     // Cleanup
     await db.query(`DELETE FROM expenses WHERE id = $1`, [expenseId]);
-    await db.query(`DELETE FROM users WHERE auth0_id = 'auth0|other-user-999'`);
+    await db.query(`DELETE FROM users WHERE provider_uid = 'auth0|other-user-999'`);
   });
 });
 
 describe('GET /expenses/:id', () => {
   it('returns expense with duplicate_flags', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -301,7 +301,7 @@ describe('GET /expenses/:id', () => {
 
   it('response includes an items array', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -322,7 +322,7 @@ describe('GET /expenses/:id', () => {
 describe('PATCH /expenses/:id', () => {
   it('updates merchant, amount, and notes', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -345,7 +345,7 @@ describe('PATCH /expenses/:id', () => {
 
   it('replaces items when items payload is provided', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -388,7 +388,7 @@ describe('PATCH /expenses/:id', () => {
 
   it('returns 400 when an item has an empty description', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -411,7 +411,7 @@ describe('PATCH /expenses/:id', () => {
 
   it('returns 400 for invalid category_id UUID', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -434,7 +434,7 @@ describe('PATCH /expenses/:id', () => {
 describe('DELETE /expenses/:id', () => {
   it('owner can delete their expense (204)', async () => {
     const userResult = await db.query(
-      `SELECT id FROM users WHERE auth0_id = 'auth0|test-user-123'`
+      `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
     );
     const userId = userResult.rows[0].id;
 
@@ -461,9 +461,9 @@ describe('DELETE /expenses/:id', () => {
 
   it("returns 404 for another user's expense", async () => {
     const otherUserResult = await db.query(
-      `INSERT INTO users (auth0_id, name, email)
+      `INSERT INTO users (provider_uid, name, email)
        VALUES ('auth0|other-delete-user', 'Other Delete User', 'otherdelete@test.com')
-       ON CONFLICT (auth0_id) DO UPDATE SET name = 'Other Delete User'
+       ON CONFLICT (provider_uid) DO UPDATE SET name = 'Other Delete User'
        RETURNING id`
     );
     const otherUserId = otherUserResult.rows[0].id;
@@ -480,7 +480,7 @@ describe('DELETE /expenses/:id', () => {
 
     // Cleanup
     await db.query(`DELETE FROM expenses WHERE id = $1`, [expenseId]);
-    await db.query(`DELETE FROM users WHERE auth0_id = 'auth0|other-delete-user'`);
+    await db.query(`DELETE FROM users WHERE provider_uid = 'auth0|other-delete-user'`);
   });
 });
 

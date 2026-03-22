@@ -2,7 +2,7 @@ const request = require('supertest');
 const db = require('../../src/db');
 
 jest.mock('../../src/middleware/auth', () => ({
-  authenticate: (req, res, next) => { req.auth0Id = 'test-auth0-gmail'; next(); }
+  authenticate: (req, res, next) => { req.userId = 'test-auth0-gmail'; next(); }
 }));
 jest.mock('../../src/services/gmailClient', () => ({
   getAuthUrl: jest.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth?...'),
@@ -32,9 +32,9 @@ beforeAll(async () => {
   householdId = hhResult.rows[0].id;
 
   const userResult = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('test-auth0-gmail', 'Gmail Test User', 'gmail-test@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1 RETURNING id`,
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1 RETURNING id`,
     [householdId]
   );
   userId = userResult.rows[0].id;
@@ -44,7 +44,7 @@ afterAll(async () => {
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [userId]);
-  await db.query(`UPDATE users SET household_id = NULL WHERE auth0_id = 'test-auth0-gmail'`);
+  await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'test-auth0-gmail'`);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
 
