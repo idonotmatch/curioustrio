@@ -57,6 +57,33 @@ router.post('/suggestions/:id/reject', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /categories/quick — create a leaf category under "Uncategorized" parent (for inline creation from expense entry)
+router.post('/quick', async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+
+    // Find or create "Uncategorized" parent
+    let parent = await db.query(
+      `SELECT id FROM categories WHERE household_id = $1 AND name = 'Uncategorized' AND parent_id IS NULL LIMIT 1`,
+      [user.household_id]
+    );
+    if (!parent.rows.length) {
+      const created = await Category.create({ householdId: user.household_id, name: 'Uncategorized' });
+      parent = { rows: [{ id: created.id }] };
+    }
+
+    const category = await Category.create({
+      householdId: user.household_id,
+      name: name.trim(),
+      parentId: parent.rows[0].id,
+    });
+    res.status(201).json(category);
+  } catch (err) { next(err); }
+});
+
 // POST /categories
 router.post('/', async (req, res, next) => {
   try {

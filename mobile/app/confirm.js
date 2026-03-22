@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, TextInput, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { api } from '../services/api';
 import { ConfirmField } from '../components/ConfirmField';
@@ -11,7 +11,7 @@ export default function ConfirmScreen() {
   const { data } = useLocalSearchParams();
   const parsed = JSON.parse(data);
   const router = useRouter();
-  const { categories } = useCategories();
+  const { categories, refresh: refreshCategories } = useCategories();
 
   const [expense, setExpense] = useState(parsed);
   const [merchant, setMerchant] = useState(parsed.merchant || '');
@@ -20,16 +20,23 @@ export default function ConfirmScreen() {
   const [locationData, setLocationData] = useState(null);
   const [saveToRoll, setSaveToRoll] = useState(false);
   const [isRefund, setIsRefund] = useState((parsed?.amount ?? 0) < 0);
-  const [paymentMethod, setPaymentMethod] = useState('unknown');
+  const [paymentMethod, setPaymentMethod] = useState(parsed.payment_method || 'unknown');
   const [cardLast4, setCardLast4] = useState('');
-  const [cardLabel, setCardLabel] = useState('');
+  const [cardLabel, setCardLabel] = useState(parsed.card_label || '');
+  const [savedCards, setSavedCards] = useState([]);
   const [isPrivate, setIsPrivate] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [catSearch, setCatSearch] = useState('');
+  const [catCreating, setCatCreating] = useState(false);
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
       ? parsed.items.map(it => ({ description: it.description || '', amount: it.amount != null ? String(it.amount) : '' }))
       : []
   );
+
+  useEffect(() => {
+    api.get('/expenses/cards').then(setSavedCards).catch(() => {});
+  }, []);
 
   const isCameraSource = parsed.source === 'camera';
 
@@ -53,7 +60,25 @@ export default function ConfirmScreen() {
 
   function selectCategory(cat) {
     setExpense(prev => ({ ...prev, category_id: cat?.id || null, category_name: cat?.name || null }));
+    setCatSearch('');
     setShowCategoryPicker(false);
+  }
+
+  async function createAndSelectCategory() {
+    const name = catSearch.trim();
+    if (!name) return;
+    setCatCreating(true);
+    try {
+      const newCat = await api.post('/categories/quick', { name });
+      setExpense(prev => ({ ...prev, category_id: newCat.id, category_name: newCat.name }));
+      setCatSearch('');
+      setShowCategoryPicker(false);
+      refreshCategories();
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not create category');
+    } finally {
+      setCatCreating(false);
+    }
   }
 
   async function handleConfirm() {
@@ -143,21 +168,50 @@ export default function ConfirmScreen() {
       </TouchableOpacity>
       {showCategoryPicker && (
         <View style={styles.categoryPicker}>
-          <TouchableOpacity
-            style={[styles.catChip, !expense.category_id && styles.catChipActive]}
-            onPress={() => selectCategory(null)}
-          >
-            <Text style={[styles.catChipText, !expense.category_id && styles.catChipTextActive]}>Unassigned</Text>
-          </TouchableOpacity>
-          {categories.map(c => (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.catChip, expense.category_id === c.id && styles.catChipActive]}
-              onPress={() => selectCategory(c)}
-            >
-              <Text style={[styles.catChipText, expense.category_id === c.id && styles.catChipTextActive]}>{c.name}</Text>
-            </TouchableOpacity>
-          ))}
+          {/* Search / create input */}
+          <View style={styles.catSearchRow}>
+            <TextInput
+              style={styles.catSearchInput}
+              placeholder="Search or create..."
+              placeholderTextColor="#444"
+              value={catSearch}
+              onChangeText={setCatSearch}
+              autoCorrect={false}
+            />
+            {catSearch.trim() && !categories.find(c => c.name.toLowerCase() === catSearch.trim().toLowerCase()) && (
+              <TouchableOpacity
+                style={[styles.catCreateBtn, catCreating && { opacity: 0.5 }]}
+                onPress={createAndSelectCategory}
+                disabled={catCreating}
+              >
+                {catCreating
+                  ? <ActivityIndicator size="small" color="#000" />
+                  : <Text style={styles.catCreateText}>+ Create</Text>}
+              </TouchableOpacity>
+            )}
+          </View>
+          {/* Chips */}
+          <View style={styles.catChipsWrap}>
+            {!catSearch && (
+              <TouchableOpacity
+                style={[styles.catChip, !expense.category_id && styles.catChipActive]}
+                onPress={() => selectCategory(null)}
+              >
+                <Text style={[styles.catChipText, !expense.category_id && styles.catChipTextActive]}>Unassigned</Text>
+              </TouchableOpacity>
+            )}
+            {categories
+              .filter(c => !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()))
+              .map(c => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[styles.catChip, expense.category_id === c.id && styles.catChipActive]}
+                  onPress={() => selectCategory(c)}
+                >
+                  <Text style={[styles.catChipText, expense.category_id === c.id && styles.catChipTextActive]}>{c.name}</Text>
+                </TouchableOpacity>
+              ))}
+          </View>
         </View>
       )}
 
@@ -221,24 +275,48 @@ export default function ConfirmScreen() {
           ))}
         </View>
         {(paymentMethod === 'debit' || paymentMethod === 'credit') && (
-          <View style={styles.cardRow}>
-            <TextInput
-              style={[styles.cardInput, { flex: 1 }]}
-              placeholder="Card nickname (optional)"
-              placeholderTextColor="#444"
-              value={cardLabel}
-              onChangeText={setCardLabel}
-            />
-            <TextInput
-              style={[styles.cardInput, { width: 64 }]}
-              placeholder="last 4"
-              placeholderTextColor="#444"
-              value={cardLast4}
-              onChangeText={t => setCardLast4(t.replace(/\D/g, '').slice(0, 4))}
-              keyboardType="number-pad"
-              maxLength={4}
-            />
-          </View>
+          <>
+            {savedCards.filter(c => c.payment_method === paymentMethod).length > 0 && (
+              <View style={styles.savedCardsRow}>
+                {savedCards.filter(c => c.payment_method === paymentMethod).map((c, i) => {
+                  const isSelected = cardLabel === (c.card_label || '') && cardLast4 === (c.card_last4 || '');
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.savedCardChip, isSelected && styles.savedCardChipActive]}
+                      onPress={() => {
+                        setCardLabel(c.card_label || '');
+                        setCardLast4(c.card_last4 || '');
+                      }}
+                    >
+                      <Text style={[styles.savedCardChipText, isSelected && styles.savedCardChipTextActive]}>
+                        {c.card_label || ''}
+                        {c.card_last4 ? ` ····${c.card_last4}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+            <View style={styles.cardRow}>
+              <TextInput
+                style={[styles.cardInput, { flex: 1 }]}
+                placeholder="Card nickname (optional)"
+                placeholderTextColor="#444"
+                value={cardLabel}
+                onChangeText={setCardLabel}
+              />
+              <TextInput
+                style={[styles.cardInput, { width: 64 }]}
+                placeholder="last 4"
+                placeholderTextColor="#444"
+                value={cardLast4}
+                onChangeText={t => setCardLast4(t.replace(/\D/g, '').slice(0, 4))}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            </View>
+          </>
         )}
       </View>
 
@@ -300,9 +378,13 @@ const styles = StyleSheet.create({
   categoryValue: { fontSize: 14, color: '#fff' },
   categoryChevron: { fontSize: 9, color: '#444' },
   categoryPicker: {
-    backgroundColor: '#111', borderRadius: 8, padding: 10, marginBottom: 8,
-    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+    backgroundColor: '#111', borderRadius: 8, padding: 10, marginBottom: 8, gap: 8,
   },
+  catSearchRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
+  catSearchInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: '#f5f5f5', fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
+  catCreateBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },
+  catCreateText: { color: '#000', fontSize: 13, fontWeight: '600' },
+  catChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   catChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
   catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   catChipText: { fontSize: 12, color: '#555' },
@@ -320,6 +402,11 @@ const styles = StyleSheet.create({
   methodChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   methodChipText: { fontSize: 12, color: '#555' },
   methodChipTextActive: { color: '#000', fontWeight: '600' },
+  savedCardsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  savedCardChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a' },
+  savedCardChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  savedCardChipText: { fontSize: 12, color: '#666' },
+  savedCardChipTextActive: { color: '#000', fontWeight: '600' },
   cardRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   cardInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
 

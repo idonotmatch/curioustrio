@@ -59,12 +59,12 @@ function AppNavigator() {
       contentStyle: { backgroundColor: '#0a0a0a' },
     }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="confirm" options={{ presentation: 'modal', title: 'Confirm Expense' }} />
+      <Stack.Screen name="confirm" options={{ presentation: 'modal', title: 'Confirm Expense', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="categories" options={{ title: 'Category Details' }} />
-      <Stack.Screen name="accounts" options={{ title: 'Accounts' }} />
-      <Stack.Screen name="expense/[id]" options={{ title: '' }} />
-      <Stack.Screen name="join" options={{ title: 'Join Household' }} />
+      <Stack.Screen name="categories" options={{ title: 'Category Details', headerBackTitle: 'Settings' }} />
+      <Stack.Screen name="accounts" options={{ title: 'Accounts', headerBackTitle: 'Settings' }} />
+      <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Feed' }} />
+      <Stack.Screen name="join" options={{ title: 'Join Household', headerBackTitle: 'Back' }} />
     </Stack>
   );
 }

@@ -52,7 +52,7 @@ export default function SummaryScreen() {
   const hSpent = budget?.total?.spent ?? 0;
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit && hSpent > hLimit;
-  const showHousehold = hLimit > 0;
+  const showHousehold = hLimit > 0 && Math.abs(hSpent - spent) > 0.01;
   const byParent = budget?.by_parent || [];
   const recent = (expenses || []).slice(0, 5);
 
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: 12, color: '#555' },
   recentRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#111',
+    paddingVertical: 12, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111',
     backgroundColor: '#0a0a0a',
   },
   recentMerchant: { flex: 1, fontSize: 14, color: '#f5f5f5', fontWeight: '500' },

@@ -114,9 +114,9 @@ export default function ExpenseDetailScreen() {
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{
         title: expense.merchant,
-        headerRight: () => (
-          <TouchableOpacity onPress={() => setEditing(e => !e)} style={{ marginRight: 4 }}>
-            <Ionicons name={editing ? 'close' : 'pencil-outline'} size={20} color="#f5f5f5" />
+        headerRight: editing ? undefined : () => (
+          <TouchableOpacity onPress={() => setEditing(true)} style={{ marginRight: 4 }}>
+            <Ionicons name="pencil-outline" size={20} color="#f5f5f5" />
           </TouchableOpacity>
         ),
       }} />

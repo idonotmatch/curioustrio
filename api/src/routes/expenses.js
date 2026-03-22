@@ -189,6 +189,26 @@ router.get('/pending', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// List distinct cards previously used by the user
+router.get('/cards', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const result = await db.query(
+      `SELECT card_label, card_last4, payment_method, MAX(created_at) AS last_used
+       FROM expenses
+       WHERE user_id = $1
+         AND payment_method IN ('credit', 'debit')
+         AND (card_last4 IS NOT NULL OR card_label IS NOT NULL)
+       GROUP BY card_label, card_last4, payment_method
+       ORDER BY MAX(created_at) DESC
+       LIMIT 10`,
+      [user.id]
+    );
+    res.json(result.rows);
+  } catch (err) { next(err); }
+});
+
 // Dismiss a pending expense
 router.post('/:id/dismiss', async (req, res, next) => {
   try {

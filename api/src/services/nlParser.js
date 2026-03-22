@@ -7,12 +7,15 @@ Return ONLY a JSON object with these fields:
 - amount (number): the expense amount, negative for refunds/returns.
 - date (ISO date string): the date of the expense.
 - notes (string or null): any additional context.
+- payment_method (string or null): one of "cash", "credit", "debit", or null if not mentioned. Infer from context: "amex", "visa", "mastercard", "credit card" → "credit"; "debit card" → "debit"; "cash" → "cash".
+- card_label (string or null): the card nickname or description if mentioned (e.g. "platinum amex", "chase sapphire", "blue visa"). null if not mentioned.
 
 Examples:
-- "lunch 14" → { merchant: null, description: "lunch", amount: 14, ... }
-- "trader joes 50" → { merchant: "Trader Joe's", description: "groceries", amount: 50, ... }
-- "refund amazon 24.50" → { merchant: "Amazon", description: null, amount: -24.50, ... }
-- "gas yesterday 60" → { merchant: null, description: "gas", amount: 60, ... }
+- "lunch 14" → { merchant: null, description: "lunch", amount: 14, payment_method: null, card_label: null, ... }
+- "trader joes 50" → { merchant: "Trader Joe's", description: "groceries", amount: 50, payment_method: null, card_label: null, ... }
+- "65 at gym for monthly dues on platinum amex" → { merchant: "gym", description: "monthly dues", amount: 65, payment_method: "credit", card_label: "platinum amex", ... }
+- "coffee 5 cash" → { merchant: null, description: "coffee", amount: 5, payment_method: "cash", card_label: null, ... }
+- "amazon 34 on chase sapphire" → { merchant: "Amazon", description: null, amount: 34, payment_method: "credit", card_label: "chase sapphire", ... }
 
 If the input cannot be parsed as an expense or refund, return null.
 Today's date is provided in the user message. If no date is mentioned, use today's date.
