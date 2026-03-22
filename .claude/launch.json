@@ -23,14 +23,11 @@
       "port": 5000
     },
     {
-      "name": "expense-tracker-api",
-      "cwd": "/Users/dangnguyen/curious-trio/.claude/worktrees/lucid-faraday/api",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3002,
-      "env": {
-        "PORT": "3002"
-      }
+      "name": "icon-export",
+      "cwd": "/Users/dangnguyen/curious-trio/mobile/assets",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "3456", "."],
+      "port": 3456
     }
   ]
 }
