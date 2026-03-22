@@ -19,6 +19,10 @@ app.use(cors());
 app.use(standard);
 app.use(express.json({ limit: '1mb' }));
 
+// Health check — no auth, no rate limit. Used by Render's health check config
+// and by any keep-alive pinger to prevent free-tier sleep.
+app.get('/health', (req, res) => res.json({ ok: true }));
+
 app.use('/expenses', expensesRouter);
 app.use('/categories', categoriesRouter);
 app.use('/users', usersRouter);
