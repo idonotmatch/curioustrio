@@ -22,7 +22,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Expense Tracker</Text>
+      <Text style={styles.title}>Adlo</Text>
       <Text style={styles.subtitle}>Track spending together.</Text>
       <TouchableOpacity style={styles.btn} onPress={handleSignIn} disabled={loading}>
         {loading

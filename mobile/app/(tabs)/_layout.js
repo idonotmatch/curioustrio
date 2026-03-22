@@ -8,7 +8,7 @@ function FeedIcon({ focused }) {
   const count = expenses?.length ?? 0;
   return (
     <View>
-      <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={focused ? '#f5f5f5' : '#444'} />
+      <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
       {count > 0 && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{count > 9 ? '9+' : count}</Text>
@@ -44,7 +44,7 @@ export default function TabLayout() {
         name="summary"
         options={{
           tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? '#f5f5f5' : '#444'} />
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
           ),
         }}
       />
@@ -59,7 +59,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={focused ? '#f5f5f5' : '#444'} />
+            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
           ),
         }}
       />
