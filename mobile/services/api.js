@@ -1,14 +1,21 @@
 import { supabase } from '../lib/supabase';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3002';
+// Use 127.0.0.1 (not localhost) as the local fallback to force IPv4.
+// `localhost` can resolve to an IPv6 address (::1 or a public 2600:... on some
+// networks) which causes ENETUNREACH when the network lacks IPv6 routing.
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3001';
 
 async function getToken() {
   const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token ?? null;
 }
 
-async function request(path, options = {}) {
-  const token = await getToken();
+async function request(path, options = {}, tokenOverride) {
+  // tokenOverride lets callers pass a token they already have in memory,
+  // avoiding a round-trip through AsyncStorage. This is necessary right after
+  // sign-in: the session is in memory but may not yet be flushed to storage,
+  // so supabase.auth.getSession() can return null and produce a spurious 401.
+  const token = tokenOverride !== undefined ? tokenOverride : await getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -32,9 +39,9 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) }),
-  put: (path, body) => request(path, { method: 'PUT', body: JSON.stringify(body) }),
-  patch: (path, body) => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: (path) => request(path, { method: 'DELETE' }),
+  get: (path, { token } = {}) => request(path, {}, token),
+  post: (path, body, { token } = {}) => request(path, { method: 'POST', body: JSON.stringify(body) }, token),
+  put: (path, body, { token } = {}) => request(path, { method: 'PUT', body: JSON.stringify(body) }, token),
+  patch: (path, body, { token } = {}) => request(path, { method: 'PATCH', body: JSON.stringify(body) }, token),
+  delete: (path, { token } = {}) => request(path, { method: 'DELETE' }, token),
 };

@@ -31,6 +31,20 @@ export default function AddScreen() {
 
   async function handleScan(fromGallery = false) {
     try {
+      if (!fromGallery) {
+        // Camera permission must be explicitly requested — launchCameraAsync throws
+        // without it rather than prompting, causing the "scan failed" error before
+        // the camera ever opens.
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Camera access needed',
+            'Please allow camera access in Settings to scan receipts.'
+          );
+          return;
+        }
+      }
+
       const pickerResult = fromGallery
         ? await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7, mediaTypes: 'images' })
         : await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 });
