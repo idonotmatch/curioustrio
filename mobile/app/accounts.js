@@ -6,6 +6,7 @@ import {
 import { Stack } from 'expo-router';
 import { useAuth0 } from 'react-native-auth0';
 import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 
 export default function AccountsScreen() {
@@ -15,6 +16,12 @@ export default function AccountsScreen() {
 
   const [householdData, setHouseholdData] = useState(null);
   const [householdLoading, setHouseholdLoading] = useState(true);
+
+  // Household name editing
+  const [editingName, setEditingName] = useState(false);
+  const [householdNameInput, setHouseholdNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
   const [newHouseholdName, setNewHouseholdName] = useState('');
   const [creatingHousehold, setCreatingHousehold] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -36,6 +43,7 @@ export default function AccountsScreen() {
     try {
       const data = await api.get('/households/me');
       setHouseholdData(data);
+      setHouseholdNameInput(data.household?.name || '');
     } catch {
       setHouseholdData('none');
     } finally {
@@ -56,13 +64,30 @@ export default function AccountsScreen() {
         loadGmailStatus();
       }
     } catch (e) {
-      console.error('[gmail/auth error]', e?.message);
+      Alert.alert('Gmail', e?.message || 'Could not start Gmail connection');
     }
   }
 
   async function signOut() {
     setSigningOut(true);
     try { await clearSession(); } catch { setSigningOut(false); }
+  }
+
+  async function saveHouseholdName() {
+    if (!householdNameInput.trim()) return;
+    setSavingName(true);
+    try {
+      await api.patch('/households/me', { name: householdNameInput.trim() });
+      setHouseholdData(prev => ({
+        ...prev,
+        household: { ...prev.household, name: householdNameInput.trim() },
+      }));
+      setEditingName(false);
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingName(false);
+    }
   }
 
   async function createHousehold() {
@@ -84,7 +109,6 @@ export default function AccountsScreen() {
     setSendingInvite(true);
     try {
       const result = await api.post('/households/invites', { email: inviteEmail.trim() });
-      const email = inviteEmail.trim();
       setInviteEmail('');
       await Share.share({
         message: `Join my household on Expense Tracker!\n\nTap this link or enter the token manually:\nexpensetracker://join?token=${result.token}\n\nToken: ${result.token}`,
@@ -123,7 +147,40 @@ export default function AccountsScreen() {
             <ActivityIndicator color="#555" style={{ alignSelf: 'flex-start' }} />
           ) : householdData && householdData !== 'none' ? (
             <>
-              <Text style={styles.householdName}>{householdData.household?.name}</Text>
+              {/* Household name — inline editable */}
+              {editingName ? (
+                <View style={styles.nameEditRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                    value={householdNameInput}
+                    onChangeText={setHouseholdNameInput}
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={saveHouseholdName}
+                  />
+                  <TouchableOpacity
+                    style={[styles.nameEditBtn, savingName && { opacity: 0.5 }]}
+                    onPress={saveHouseholdName}
+                    disabled={savingName}
+                  >
+                    {savingName
+                      ? <ActivityIndicator color="#000" size="small" />
+                      : <Text style={styles.nameEditBtnText}>Save</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.nameCancelBtn} onPress={() => {
+                    setHouseholdNameInput(householdData.household?.name || '');
+                    setEditingName(false);
+                  }}>
+                    <Ionicons name="close" size={18} color="#555" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.nameRow} onPress={() => setEditingName(true)}>
+                  <Text style={styles.householdName}>{householdData.household?.name}</Text>
+                  <Ionicons name="pencil-outline" size={14} color="#555" style={{ marginLeft: 8 }} />
+                </TouchableOpacity>
+              )}
+
               <Text style={styles.subLabel}>Members</Text>
               {(householdData.members || []).map(m => (
                 <View key={m.id} style={styles.memberRow}>
@@ -246,7 +303,14 @@ const styles = StyleSheet.create({
   rowTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '500' },
   rowSub: { color: '#555', fontSize: 12, marginTop: 2 },
   emptyText: { color: '#555', fontSize: 13, marginBottom: 12 },
-  householdName: { color: '#f5f5f5', fontSize: 18, fontWeight: '600', marginBottom: 16 },
+
+  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  householdName: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
+  nameEditRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  nameEditBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
+  nameEditBtnText: { color: '#000', fontWeight: '600', fontSize: 13 },
+  nameCancelBtn: { padding: 8 },
+
   subLabel: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 8 },
   memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#111' },
   memberName: { color: '#f5f5f5', fontSize: 14 },

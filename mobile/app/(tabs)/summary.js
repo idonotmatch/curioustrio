@@ -1,5 +1,5 @@
 import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +25,6 @@ function formatDate(dateStr) {
 }
 
 export default function SummaryScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { expenses, refresh: refreshExpenses } = useExpenses();
   const { budget, refresh: refreshBudget } = useBudget();
@@ -98,9 +97,10 @@ export default function SummaryScreen() {
   }
 
   return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
     <ScrollView
       style={styles.container}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}
+      contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
       {/* Spend vs Budget */}
@@ -245,12 +245,14 @@ export default function SummaryScreen() {
         </View>
       )}
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 32 },
   spendMonth: { fontSize: 12, color: '#444', letterSpacing: 0.5, marginBottom: 12 },
