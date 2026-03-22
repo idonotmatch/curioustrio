@@ -1,0 +1,27 @@
+{
+  "cli": {
+    "version": ">= 18.4.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_AUTH0_DOMAIN": "dev-666j65ue5kugpg5f.us.auth0.com",
+        "EXPO_PUBLIC_AUTH0_CLIENT_ID": "kGQMoPr8Um6TK2gAS1eT7VXNr1yqEvmL",
+        "EXPO_PUBLIC_AUTH0_AUDIENCE": "https://api.expense-tracker.app",
+        "EXPO_PUBLIC_API_URL": "https://adlo-1j98.onrender.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
