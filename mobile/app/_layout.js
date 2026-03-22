@@ -1,15 +1,15 @@
 import { Stack, useRouter } from 'expo-router';
-import { Auth0Provider, useAuth0 } from 'react-native-auth0';
 import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { useEffect } from 'react';
 import { api } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 function AppNavigator() {
   const router = useRouter();
-  const { user, isLoading } = useAuth0();
 
+  // Push notification registration (independent of auth)
   useEffect(() => {
     async function registerForPushNotifications() {
       try {
@@ -24,38 +24,51 @@ function AppNavigator() {
         const tokenData = await Notifications.getExpoPushTokenAsync();
         const platform = Platform.OS === 'ios' ? 'ios' : 'android';
         await api.post('/push/register', { token: tokenData.data, platform });
-      } catch (e) {
+      } catch {
         // Non-fatal
       }
     }
     registerForPushNotifications();
   }, []);
 
+  // Auth state listener
   useEffect(() => {
-    if (isLoading) return;
-
-    if (!user) {
-      router.replace('/login');
-      return;
-    }
-
-    async function checkHousehold() {
+    async function checkHousehold(session) {
       try {
         const me = await api.post('/users/sync', {
-          name: user.name || user.nickname || user.email,
-          email: user.email,
+          name: session.user.user_metadata?.full_name || session.user.email || 'User',
+          email: session.user.email || null,
         });
         if (!me?.household_id) {
           router.replace('/onboarding');
         } else {
           router.replace('/(tabs)/summary');
         }
-      } catch (e) {
-        // Non-fatal — if sync fails, don't redirect
+      } catch {
+        // Non-fatal sync failure — stay on current screen
       }
     }
-    checkHousehold();
-  }, [user?.sub, isLoading]);
+
+    // Subscribe to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        checkHousehold(session);
+      } else if (event === 'SIGNED_OUT' || !session) {
+        router.replace('/login');
+      }
+    });
+
+    // Check session on mount (handles app reopen with persisted session)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.replace('/login');
+      } else {
+        checkHousehold(session);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   return (
     <Stack screenOptions={{
@@ -78,14 +91,10 @@ function AppNavigator() {
 }
 
 export default function RootLayout() {
+  // Auth0Provider wrapper removed — Supabase manages session internally via lib/supabase.js
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Auth0Provider
-        domain={process.env.EXPO_PUBLIC_AUTH0_DOMAIN}
-        clientId={process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID}
-      >
-        <AppNavigator />
-      </Auth0Provider>
+      <AppNavigator />
     </GestureHandlerRootView>
   );
 }

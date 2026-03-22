@@ -1,9 +1,10 @@
-import * as SecureStore from 'expo-secure-store';
+import { supabase } from '../lib/supabase';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3002';
 
 async function getToken() {
-  return SecureStore.getItemAsync('auth_token');
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
 }
 
 async function request(path, options = {}) {
@@ -19,6 +20,10 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));
+    // If 401, session is invalid — sign out so _layout.js redirects to login
+    if (res.status === 401) {
+      await supabase.auth.signOut();
+    }
     throw new Error(error.error || `HTTP ${res.status}`);
   }
 
