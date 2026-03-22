@@ -73,18 +73,6 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
 
-      {/* Categories */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>CATEGORIES</Text>
-        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/categories')}>
-          <Text style={styles.navRowText}>Edit category details</Text>
-          <View style={styles.navRowRight}>
-            {pendingSuggestionsCount > 0 && <View style={styles.badge} />}
-            <Ionicons name="chevron-forward" size={16} color="#444" />
-          </View>
-        </TouchableOpacity>
-      </View>
-
       {/* Budget */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>BUDGET</Text>
@@ -137,6 +125,18 @@ export default function SettingsScreen() {
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/accounts')}>
           <Text style={styles.navRowText}>Manage accounts</Text>
           <Ionicons name="chevron-forward" size={16} color="#444" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Categories */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>CATEGORIES</Text>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/categories')}>
+          <Text style={styles.navRowText}>Edit category details</Text>
+          <View style={styles.navRowRight}>
+            {pendingSuggestionsCount > 0 && <View style={styles.badge} />}
+            <Ionicons name="chevron-forward" size={16} color="#444" />
+          </View>
         </TouchableOpacity>
       </View>
 

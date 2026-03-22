@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import { Auth0Provider, useAuth0 } from 'react-native-auth0';
 import * as Notifications from 'expo-notifications';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { useEffect } from 'react';
 import { api } from '../services/api';
@@ -50,24 +51,33 @@ function AppNavigator() {
   }, [user?.sub]);
 
   return (
-    <Stack>
+    <Stack screenOptions={{
+      headerStyle: { backgroundColor: '#0a0a0a' },
+      headerTintColor: '#f5f5f5',
+      headerTitleStyle: { fontWeight: '500', fontSize: 15 },
+      headerShadowVisible: false,
+      contentStyle: { backgroundColor: '#0a0a0a' },
+    }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="confirm" options={{ presentation: 'modal', title: 'Confirm Expense' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="categories" options={{ title: 'Category Details' }} />
-      <Stack.Screen name="accounts" options={{ title: 'Account' }} />
+      <Stack.Screen name="accounts" options={{ title: 'Accounts' }} />
       <Stack.Screen name="expense/[id]" options={{ title: '' }} />
+      <Stack.Screen name="join" options={{ title: 'Join Household' }} />
     </Stack>
   );
 }
 
 export default function RootLayout() {
   return (
-    <Auth0Provider
-      domain={process.env.EXPO_PUBLIC_AUTH0_DOMAIN}
-      clientId={process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID}
-    >
-      <AppNavigator />
-    </Auth0Provider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Auth0Provider
+        domain={process.env.EXPO_PUBLIC_AUTH0_DOMAIN}
+        clientId={process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID}
+      >
+        <AppNavigator />
+      </Auth0Provider>
+    </GestureHandlerRootView>
   );
 }

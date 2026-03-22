@@ -1,53 +1,261 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
+  TextInput, Alert, ScrollView, Share,
+} from 'react-native';
+import { Stack } from 'expo-router';
 import { useAuth0 } from 'react-native-auth0';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
+import { api } from '../services/api';
 
 export default function AccountsScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { user, clearSession } = useAuth0();
+  const { clearSession } = useAuth0();
+  const [gmailStatus, setGmailStatus] = useState(null);
+  const [signingOut, setSigningOut] = useState(false);
 
-  async function handleLogout() {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await clearSession();
-          } catch {
-            // ignore
-          }
-        },
-      },
-    ]);
+  const [householdData, setHouseholdData] = useState(null);
+  const [householdLoading, setHouseholdLoading] = useState(true);
+  const [newHouseholdName, setNewHouseholdName] = useState('');
+  const [creatingHousehold, setCreatingHousehold] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [joinToken, setJoinToken] = useState('');
+  const [joiningHousehold, setJoiningHousehold] = useState(false);
+
+  const loadGmailStatus = useCallback(async () => {
+    try {
+      const data = await api.get('/gmail/status');
+      setGmailStatus(data);
+    } catch {
+      setGmailStatus(null);
+    }
+  }, []);
+
+  const loadHousehold = useCallback(async () => {
+    setHouseholdLoading(true);
+    try {
+      const data = await api.get('/households/me');
+      setHouseholdData(data);
+    } catch {
+      setHouseholdData('none');
+    } finally {
+      setHouseholdLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGmailStatus();
+    loadHousehold();
+  }, [loadGmailStatus, loadHousehold]);
+
+  async function connectGmail() {
+    try {
+      const data = await api.get('/gmail/auth');
+      if (data?.url) {
+        await WebBrowser.openAuthSessionAsync(data.url, 'expensetracker://');
+        loadGmailStatus();
+      }
+    } catch (e) {
+      console.error('[gmail/auth error]', e?.message);
+    }
+  }
+
+  async function signOut() {
+    setSigningOut(true);
+    try { await clearSession(); } catch { setSigningOut(false); }
+  }
+
+  async function createHousehold() {
+    if (!newHouseholdName.trim()) return;
+    setCreatingHousehold(true);
+    try {
+      await api.post('/households', { name: newHouseholdName.trim() });
+      setNewHouseholdName('');
+      loadHousehold();
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setCreatingHousehold(false);
+    }
+  }
+
+  async function sendInvite() {
+    if (!inviteEmail.trim()) return;
+    setSendingInvite(true);
+    try {
+      const result = await api.post('/households/invites', { email: inviteEmail.trim() });
+      const email = inviteEmail.trim();
+      setInviteEmail('');
+      await Share.share({
+        message: `Join my household on Expense Tracker!\n\nTap this link or enter the token manually:\nexpensetracker://join?token=${result.token}\n\nToken: ${result.token}`,
+        title: `Join ${householdData?.household?.name || 'my household'}`,
+      });
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSendingInvite(false);
+    }
+  }
+
+  async function joinHousehold() {
+    if (!joinToken.trim()) return;
+    setJoiningHousehold(true);
+    try {
+      await api.post(`/households/invites/${joinToken.trim()}/accept`, {});
+      setJoinToken('');
+      loadHousehold();
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setJoiningHousehold(false);
+    }
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>PROFILE</Text>
-        {user?.name && <Text style={styles.value}>{user.name}</Text>}
-        {user?.email && <Text style={styles.sub}>{user.email}</Text>}
-      </View>
+    <>
+      <Stack.Screen options={{ title: 'Accounts' }} />
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.dangerRow} onPress={handleLogout}>
-          <Text style={styles.dangerText}>Log out</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        {/* Household */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>HOUSEHOLD</Text>
+          {householdLoading ? (
+            <ActivityIndicator color="#555" style={{ alignSelf: 'flex-start' }} />
+          ) : householdData && householdData !== 'none' ? (
+            <>
+              <Text style={styles.householdName}>{householdData.household?.name}</Text>
+              <Text style={styles.subLabel}>Members</Text>
+              {(householdData.members || []).map(m => (
+                <View key={m.id} style={styles.memberRow}>
+                  <Text style={styles.memberName}>{m.name || m.email}</Text>
+                  {m.email ? <Text style={styles.memberEmail}>{m.email}</Text> : null}
+                </View>
+              ))}
+              <Text style={styles.subLabel}>Invite someone</Text>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="their email"
+                  placeholderTextColor="#333"
+                  value={inviteEmail}
+                  onChangeText={setInviteEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={[styles.actionBtn, (!inviteEmail.trim() || sendingInvite) && styles.actionBtnDisabled]}
+                  onPress={sendInvite}
+                  disabled={sendingInvite || !inviteEmail.trim()}
+                >
+                  {sendingInvite
+                    ? <ActivityIndicator color="#f5f5f5" size="small" />
+                    : <Text style={styles.actionBtnText}>Invite</Text>}
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.emptyText}>You're not in a household yet.</Text>
+              <Text style={styles.subLabel}>Create one</Text>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Household name"
+                  placeholderTextColor="#333"
+                  value={newHouseholdName}
+                  onChangeText={setNewHouseholdName}
+                />
+                <TouchableOpacity
+                  style={[styles.actionBtn, (!newHouseholdName.trim() || creatingHousehold) && styles.actionBtnDisabled]}
+                  onPress={createHousehold}
+                  disabled={creatingHousehold || !newHouseholdName.trim()}
+                >
+                  {creatingHousehold
+                    ? <ActivityIndicator color="#f5f5f5" size="small" />
+                    : <Text style={styles.actionBtnText}>Create</Text>}
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.subLabel, { marginTop: 20 }]}>Join with invite token</Text>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Paste invite token"
+                  placeholderTextColor="#333"
+                  value={joinToken}
+                  onChangeText={setJoinToken}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={[styles.actionBtn, (!joinToken.trim() || joiningHousehold) && styles.actionBtnDisabled]}
+                  onPress={joinHousehold}
+                  disabled={joiningHousehold || !joinToken.trim()}
+                >
+                  {joiningHousehold
+                    ? <ActivityIndicator color="#f5f5f5" size="small" />
+                    : <Text style={styles.actionBtnText}>Join</Text>}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* Gmail */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>GMAIL</Text>
+          <View style={styles.row}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Gmail import</Text>
+              <Text style={styles.rowSub}>
+                {gmailStatus == null
+                  ? 'Loading…'
+                  : gmailStatus.connected
+                    ? (gmailStatus.email ? gmailStatus.email : 'Connected')
+                    : 'Not connected'}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.actionBtn} onPress={connectGmail}>
+              <Text style={styles.actionBtnText}>
+                {gmailStatus?.connected ? 'Reconnect' : 'Connect'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Sign out */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>SESSION</Text>
+          <TouchableOpacity style={styles.signOutBtn} onPress={signOut} disabled={signingOut}>
+            {signingOut
+              ? <ActivityIndicator color="#ef4444" size="small" />
+              : <Text style={styles.signOutText}>Sign out</Text>}
+          </TouchableOpacity>
+        </View>
+
+      </ScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a', padding: 20 },
-  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
-  sectionTitle: { fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  value: { color: '#f5f5f5', fontSize: 16, fontWeight: '500' },
-  sub: { color: '#666', fontSize: 13, marginTop: 4 },
-  dangerRow: { paddingVertical: 12 },
-  dangerText: { color: '#ef4444', fontSize: 15 },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  content: { padding: 20, paddingBottom: 48 },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#111', paddingBottom: 24 },
+  sectionTitle: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rowInfo: { flex: 1, marginRight: 12 },
+  rowTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '500' },
+  rowSub: { color: '#555', fontSize: 12, marginTop: 2 },
+  emptyText: { color: '#555', fontSize: 13, marginBottom: 12 },
+  householdName: { color: '#f5f5f5', fontSize: 18, fontWeight: '600', marginBottom: 16 },
+  subLabel: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 8 },
+  memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#111' },
+  memberName: { color: '#f5f5f5', fontSize: 14 },
+  memberEmail: { color: '#555', fontSize: 12 },
+  inputRow: { flexDirection: 'row', gap: 8 },
+  input: { flex: 1, backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#1f1f1f' },
+  actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
+  actionBtnDisabled: { opacity: 0.4 },
+  actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
+  signOutBtn: { paddingVertical: 14, alignItems: 'center' },
+  signOutText: { color: '#ef4444', fontSize: 15 },
 });
