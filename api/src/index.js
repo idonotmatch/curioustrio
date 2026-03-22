@@ -14,14 +14,22 @@ const recurringRouter = require('./routes/recurring');
 const pushRouter = require('./routes/push');
 
 const app = express();
+
+// Trust Render's load balancer so express-rate-limit sees the real client IP
+// via X-Forwarded-For rather than the proxy's internal IP. Without this,
+// rate-limit v6+ misidentifies all clients as the same IP and can block valid
+// requests. '1' means trust the first hop (Render's LB).
+app.set('trust proxy', 1);
+
+// Health check — registered before all other middleware so it responds
+// immediately regardless of rate limits, auth, or body parsing. Render's
+// internal health checker pings this to confirm the service is alive.
+app.get('/health', (req, res) => res.json({ ok: true }));
+
 app.use(helmet());
 app.use(cors());
 app.use(standard);
 app.use(express.json({ limit: '1mb' }));
-
-// Health check — no auth, no rate limit. Used by Render's health check config
-// and by any keep-alive pinger to prevent free-tier sleep.
-app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.use('/expenses', expensesRouter);
 app.use('/categories', categoriesRouter);
