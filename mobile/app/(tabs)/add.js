@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { NLInput } from '../../components/NLInput';
@@ -6,6 +7,7 @@ import { api } from '../../services/api';
 import { useState } from 'react';
 
 export default function AddScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
@@ -51,7 +53,7 @@ export default function AddScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.hint}>
         try: "242.50 trader joes" · "lunch chipotle 14.50" · "60 gas yesterday"
       </Text>
@@ -70,7 +72,7 @@ export default function AddScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a', padding: 20 },
+  container: { flex: 1, backgroundColor: '#0a0a0a', paddingHorizontal: 20, paddingBottom: 20 },
   hint: { color: '#555', fontSize: 12, marginBottom: 16, lineHeight: 18 },
   scanRow: { marginTop: 24, gap: 10 },
   scanBtn: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },
