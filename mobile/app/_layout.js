@@ -35,17 +35,23 @@ function AppNavigator() {
   useEffect(() => {
     async function checkHousehold(session) {
       try {
+        // Pass the token directly from the session object already in memory.
+        // Do NOT rely on supabase.auth.getSession() here: immediately after
+        // sign-in the session may not yet be flushed to AsyncStorage, causing
+        // getSession() to return null, the request to go out unauthenticated,
+        // the server to respond 401, and navigation to silently never fire.
         const me = await api.post('/users/sync', {
           name: session.user.user_metadata?.full_name || session.user.email || 'User',
           email: session.user.email || null,
-        });
+        }, { token: session.access_token });
         if (!me?.household_id) {
           router.replace('/onboarding');
         } else {
           router.replace('/(tabs)/summary');
         }
-      } catch {
-        // Non-fatal sync failure — stay on current screen
+      } catch (err) {
+        // Log so this never fails silently again
+        console.error('[checkHousehold] sync failed, navigation blocked:', err?.message ?? err);
       }
     }
 

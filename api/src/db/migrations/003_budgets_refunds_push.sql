@@ -5,7 +5,7 @@ CREATE TABLE budget_settings (
   monthly_limit NUMERIC(10,2) NOT NULL CHECK (monthly_limit > 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE NULLS NOT DISTINCT (household_id, category_id)
+  CONSTRAINT budget_settings_household_category_uq UNIQUE NULLS NOT DISTINCT (household_id, category_id)
 );
 
 CREATE TABLE push_tokens (

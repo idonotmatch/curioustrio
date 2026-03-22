@@ -6,7 +6,7 @@ async function upsert({ householdId, categoryId = null, monthlyLimit }) {
   const result = await db.query(
     `INSERT INTO budget_settings (household_id, category_id, monthly_limit)
      VALUES ($1, $2, $3)
-     ON CONFLICT (household_id, category_id) DO UPDATE
+     ON CONFLICT ON CONSTRAINT budget_settings_household_category_uq DO UPDATE
        SET monthly_limit = EXCLUDED.monthly_limit, updated_at = NOW()
      RETURNING *`,
     [householdId, categoryId, monthlyLimit]
