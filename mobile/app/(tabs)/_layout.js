@@ -30,7 +30,7 @@ const styles = StyleSheet.create({
 
 export default function TabLayout() {
   return (
-    <Tabs screenOptions={{
+    <Tabs initialRouteName="summary" screenOptions={{
       tabBarStyle: {
         backgroundColor: '#0a0a0a',
         borderTopColor: '#111',

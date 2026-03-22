@@ -8,7 +8,7 @@ import { api } from '../services/api';
 
 function AppNavigator() {
   const router = useRouter();
-  const { user } = useAuth0();
+  const { user, isLoading } = useAuth0();
 
   useEffect(() => {
     async function registerForPushNotifications() {
@@ -32,7 +32,12 @@ function AppNavigator() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (isLoading) return;
+
+    if (!user) {
+      router.replace('/login');
+      return;
+    }
 
     async function checkHousehold() {
       try {
@@ -42,13 +47,15 @@ function AppNavigator() {
         });
         if (!me?.household_id) {
           router.replace('/onboarding');
+        } else {
+          router.replace('/(tabs)/summary');
         }
       } catch (e) {
         // Non-fatal — if sync fails, don't redirect
       }
     }
     checkHousehold();
-  }, [user?.sub]);
+  }, [user?.sub, isLoading]);
 
   return (
     <Stack screenOptions={{
@@ -58,6 +65,7 @@ function AppNavigator() {
       headerShadowVisible: false,
       contentStyle: { backgroundColor: '#0a0a0a' },
     }}>
+      <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="confirm" options={{ presentation: 'modal', title: 'Confirm Expense', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />

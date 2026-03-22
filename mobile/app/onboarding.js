@@ -15,7 +15,7 @@ export default function OnboardingScreen() {
     setLoading(true);
     try {
       await api.post('/households', { name: name.trim() });
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/summary');
     } catch (e) {
       Alert.alert('Error', e?.message || 'Failed to create household');
     } finally {
@@ -28,7 +28,7 @@ export default function OnboardingScreen() {
     setLoading(true);
     try {
       await api.post(`/households/invites/${token.trim()}/accept`, {});
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/summary');
     } catch (e) {
       Alert.alert('Error', 'Invalid or expired invite token');
     } finally {
