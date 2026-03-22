@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="#0a0a0a"/>
+
+  <!-- Geometric A: outer triangle with counter removed -->
+  <!-- Outer: apex (512,190), BL (148,834), BR (876,834)  -->
+  <!-- Inner: apex (512,354), BL (298,748), BR (726,748)  -->
+  <path
+    d="M512,190 L148,834 L876,834 Z M512,354 L298,748 L726,748 Z"
+    fill="#6366f1"
+    fill-rule="evenodd"
+  />
+
+  <!-- Accent line: thin horizontal mark in the counter space (ledger line concept) -->
+  <rect x="365" y="622" width="294" height="6" rx="3" fill="#6366f1" opacity="0.55"/>
+</svg>
