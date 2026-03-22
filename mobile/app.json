@@ -15,8 +15,14 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.curioustrio.expensetracker",
+      "usesAppleSignIn": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["com.googleusercontent.apps.336238140966-9bdj3hpgi874t7073h8vkielsl4soola"]
+          }
+        ]
       }
     },
     "android": {
@@ -33,7 +39,8 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ],
     "extra": {
       "router": {},

@@ -14,9 +14,10 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_AUTH0_DOMAIN": "dev-666j65ue5kugpg5f.us.auth0.com",
-        "EXPO_PUBLIC_AUTH0_CLIENT_ID": "kGQMoPr8Um6TK2gAS1eT7VXNr1yqEvmL",
-        "EXPO_PUBLIC_AUTH0_AUDIENCE": "https://api.expense-tracker.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://qybozqtugexupxqavtjj.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_YZ-z1Uv0f6-eEg8cKUDFKw_WqcdiuKo",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "336238140966-ush79g369qeudgh5ck4ls4kmtar74emn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "336238140966-9bdj3hpgi874t7073h8vkielsl4soola.apps.googleusercontent.com",
         "EXPO_PUBLIC_API_URL": "https://adlo-1j98.onrender.com"
       }
     }
