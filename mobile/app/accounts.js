@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 
 export default function AccountsScreen() {
-  const { clearSession } = useAuth0();
+  const { clearSession, user: auth0User } = useAuth0();
   const [gmailStatus, setGmailStatus] = useState(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -28,6 +28,8 @@ export default function AccountsScreen() {
   const [sendingInvite, setSendingInvite] = useState(false);
   const [joinToken, setJoinToken] = useState('');
   const [joiningHousehold, setJoiningHousehold] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState(null);
+  const [leavingHousehold, setLeavingHousehold] = useState(false);
 
   const loadGmailStatus = useCallback(async () => {
     try {
@@ -104,6 +106,58 @@ export default function AccountsScreen() {
     }
   }
 
+  async function removeMember(memberId) {
+    Alert.alert(
+      'Remove member',
+      'This person will lose access to household expenses.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            if (removingMemberId === memberId) return;
+            setRemovingMemberId(memberId);
+            try {
+              await api.delete(`/households/me/members/${memberId}`);
+              loadHousehold();
+            } catch (e) {
+              Alert.alert('Could not remove member', e.message || 'Please try again.');
+            } finally {
+              setRemovingMemberId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function leaveHousehold() {
+    Alert.alert(
+      'Leave household',
+      'You will lose access to shared expenses. Your own expenses are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            if (leavingHousehold) return;
+            setLeavingHousehold(true);
+            try {
+              await api.post('/households/me/leave', {});
+              loadHousehold();
+            } catch (e) {
+              Alert.alert('Could not leave household', e.message || 'Please try again.');
+            } finally {
+              setLeavingHousehold(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   async function sendInvite() {
     if (!inviteEmail.trim()) return;
     setSendingInvite(true);
@@ -134,6 +188,11 @@ export default function AccountsScreen() {
       setJoiningHousehold(false);
     }
   }
+
+  const currentMember = (householdData?.members || []).find(
+    m => m.email === auth0User?.email
+  );
+  const currentUserId = currentMember?.id;
 
   return (
     <>
@@ -184,8 +243,21 @@ export default function AccountsScreen() {
               <Text style={styles.subLabel}>Members</Text>
               {(householdData.members || []).map(m => (
                 <View key={m.id} style={styles.memberRow}>
-                  <Text style={styles.memberName}>{m.name || m.email}</Text>
-                  {m.email ? <Text style={styles.memberEmail}>{m.email}</Text> : null}
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{m.name || m.email}</Text>
+                    {m.email ? <Text style={styles.memberEmail}>{m.email}</Text> : null}
+                  </View>
+                  {currentUserId != null && m.id !== currentUserId && (
+                    <TouchableOpacity
+                      onPress={() => removeMember(m.id)}
+                      disabled={removingMemberId === m.id}
+                      style={{ paddingVertical: 8, paddingHorizontal: 4 }}
+                    >
+                      {removingMemberId === m.id
+                        ? <ActivityIndicator size="small" color="#ef4444" />
+                        : <Text style={styles.removeText}>Remove</Text>}
+                    </TouchableOpacity>
+                  )}
                 </View>
               ))}
               <Text style={styles.subLabel}>Invite someone</Text>
@@ -209,6 +281,15 @@ export default function AccountsScreen() {
                     : <Text style={styles.actionBtnText}>Invite</Text>}
                 </TouchableOpacity>
               </View>
+              <TouchableOpacity
+                style={[styles.leaveBtn, leavingHousehold && { opacity: 0.5 }]}
+                onPress={leaveHousehold}
+                disabled={leavingHousehold}
+              >
+                {leavingHousehold
+                  ? <ActivityIndicator color="#ef4444" size="small" />
+                  : <Text style={styles.leaveBtnText}>Leave household</Text>}
+              </TouchableOpacity>
             </>
           ) : (
             <>
@@ -315,6 +396,10 @@ const styles = StyleSheet.create({
   memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#111' },
   memberName: { color: '#f5f5f5', fontSize: 14 },
   memberEmail: { color: '#555', fontSize: 12 },
+  memberInfo: { flex: 1 },
+  removeText: { color: '#ef4444', fontSize: 14 },
+  leaveBtn: { marginTop: 24, paddingVertical: 12, alignItems: 'center' },
+  leaveBtnText: { color: '#ef4444', fontSize: 14 },
   inputRow: { flexDirection: 'row', gap: 8 },
   input: { flex: 1, backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#1f1f1f' },
   actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },

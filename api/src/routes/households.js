@@ -134,7 +134,7 @@ router.post('/me/leave', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Not in a household' });
     }
     await User.setHouseholdId(user.id, null);
-    return res.status(200).json({ household_id: user.household_id });
+    return res.status(200).json({ household_id: null });
   } catch (err) {
     next(err);
   }
@@ -157,7 +157,7 @@ router.delete('/me/members/:userId', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Member not found in your household' });
     }
     await User.setHouseholdId(target.id, null);
-    return res.status(200).json({ household_id: target.household_id });
+    return res.status(200).json({ household_id: null });
   } catch (err) {
     next(err);
   }
