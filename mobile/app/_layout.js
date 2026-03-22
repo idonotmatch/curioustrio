@@ -49,21 +49,14 @@ function AppNavigator() {
       }
     }
 
-    // Subscribe to auth state changes
+    // Subscribe to auth state changes.
+    // INITIAL_SESSION fires on app start with the restored session (or null if not logged in).
+    // SIGNED_IN fires after a fresh login. Both need the same handling.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         checkHousehold(session);
-      } else if (event === 'SIGNED_OUT' || !session) {
+      } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         router.replace('/login');
-      }
-    });
-
-    // Check session on mount (handles app reopen with persisted session)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.replace('/login');
-      } else {
-        checkHousehold(session);
       }
     });
 

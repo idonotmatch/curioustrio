@@ -11,6 +11,15 @@ GoogleSignin.configure({
 
 export { statusCodes };
 
+// SHA256 via crypto.subtle (available in Hermes / React Native 0.71+)
+async function sha256Hex(str) {
+  const msgBuffer = new TextEncoder().encode(str);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export async function signInWithGoogle() {
   await GoogleSignin.hasPlayServices();
   const userInfo = await GoogleSignin.signIn();
@@ -26,16 +35,24 @@ export async function signInWithGoogle() {
 }
 
 export async function signInWithApple() {
+  // Supabase requires a nonce for Apple Sign In. The raw nonce is passed to
+  // Supabase; Apple receives the SHA256-hashed version and embeds it in the
+  // identity token so Supabase can verify the round-trip.
+  const rawNonce = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+  const hashedNonce = await sha256Hex(rawNonce);
+
   const credential = await AppleAuthentication.signInAsync({
     requestedScopes: [
       AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
       AppleAuthentication.AppleAuthenticationScope.EMAIL,
     ],
+    nonce: hashedNonce,
   });
 
   const { data, error } = await supabase.auth.signInWithIdToken({
     provider: 'apple',
     token: credential.identityToken,
+    nonce: rawNonce,
   });
   if (error) throw error;
   return data.session;
