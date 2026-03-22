@@ -50,8 +50,11 @@ function AppNavigator() {
           router.replace('/(tabs)/summary');
         }
       } catch (err) {
-        // Log so this never fails silently again
-        console.error('[checkHousehold] sync failed, navigation blocked:', err?.message ?? err);
+        console.error('[checkHousehold] sync failed:', err?.message ?? err);
+        // Don't leave the user on a blank screen — send to onboarding as safe fallback.
+        // They can retry from there; if the server is misconfigured, this is better
+        // than silently blocking navigation after a successful sign-in.
+        router.replace('/onboarding');
       }
     }
 

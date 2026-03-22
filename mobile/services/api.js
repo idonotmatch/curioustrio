@@ -27,10 +27,10 @@ async function request(path, options = {}, tokenOverride) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));
-    // If 401, session is invalid — sign out so _layout.js redirects to login
-    if (res.status === 401) {
-      await supabase.auth.signOut();
-    }
+    // Do NOT call supabase.auth.signOut() on 401 — the server may return 401
+    // due to misconfiguration (e.g. missing SUPABASE_PROJECT_REF) rather than
+    // a truly expired token. Supabase handles token refresh natively via
+    // autoRefreshToken; a forced signOut here would cause a login loop.
     throw new Error(error.error || `HTTP ${res.status}`);
   }
 
