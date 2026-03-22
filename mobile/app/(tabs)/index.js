@@ -138,23 +138,23 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   toggleChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#111', borderWidth: 1, borderColor: '#222' },
   toggleChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  toggleText: { fontSize: 13, color: '#555', fontWeight: '500' },
+  toggleText: { fontSize: 14, color: '#999', fontWeight: '500' },
   toggleTextActive: { color: '#000' },
 
   spendHeader: { padding: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#111' },
   spendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 },
-  spendMonth: { fontSize: 11, color: '#444', letterSpacing: 0.3 },
+  spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.3 },
   spendAmount: { fontSize: 26, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
   barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 6 },
   barFill: { height: 2, borderRadius: 1 },
-  spendSub: { fontSize: 11, color: '#444' },
+  spendSub: { fontSize: 13, color: '#888' },
 
   list: { padding: 16 },
-  empty: { color: '#555', textAlign: 'center', marginTop: 40 },
+  empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
 
   pendingSection: { backgroundColor: '#111', borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#1f1f1f' },
-  pendingLabel: { fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: '600' },
-  pendingMore: { color: '#444', fontSize: 12, marginTop: 4, textAlign: 'center' },
+  pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: '600' },
+  pendingMore: { color: '#888', fontSize: 14, marginTop: 4, textAlign: 'center' },
 
   fab: {
     position: 'absolute', bottom: 24, right: 24,

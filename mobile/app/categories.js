@@ -393,9 +393,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 48 },
 
-  sectionLabel: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
-  empty: { color: '#444', fontSize: 13, marginBottom: 12 },
-  defaultsNote: { color: '#444', fontSize: 12, marginBottom: 10 },
+  sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  empty: { color: '#888', fontSize: 15, marginBottom: 12 },
+  defaultsNote: { color: '#888', fontSize: 14, marginBottom: 10 },
 
   // Add section
   addSection: { marginBottom: 28 },
@@ -406,56 +406,56 @@ const styles = StyleSheet.create({
   },
   typeBtnActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   typeBtnDisabled: { opacity: 0.3 },
-  typeBtnText: { fontSize: 13, color: '#666' },
+  typeBtnText: { fontSize: 14, color: '#999' },
   typeBtnTextActive: { color: '#000', fontWeight: '600' },
-  typeBtnTextDisabled: { color: '#444' },
+  typeBtnTextDisabled: { color: '#888' },
   parentPicker: { marginBottom: 10 },
   parentPickerRow: { flexDirection: 'row', gap: 8 },
   addRow: { flexDirection: 'row', gap: 10 },
   addBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
   addBtnDisabled: { opacity: 0.3 },
   addBtnText: { color: '#000', fontWeight: '600', fontSize: 14 },
-  errorMsg: { color: '#ef4444', fontSize: 13, marginTop: 10 },
+  errorMsg: { color: '#ef4444', fontSize: 14, marginTop: 10 },
 
   // Suggestions
   suggestCard: { backgroundColor: '#111', borderRadius: 10, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: '#2a2a1a' },
   suggestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  suggestTitle: { fontSize: 11, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
-  dismissText: { fontSize: 12, color: '#555' },
+  suggestTitle: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
+  dismissText: { fontSize: 14, color: '#999' },
   suggestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  suggestLabel: { flex: 1, color: '#ccc', fontSize: 14 },
+  suggestLabel: { flex: 1, color: '#ccc', fontSize: 15 },
   suggestActions: { flexDirection: 'row', gap: 12 },
-  acceptText: { color: '#4ade80', fontSize: 13, fontWeight: '600' },
-  rejectText: { color: '#555', fontSize: 13 },
+  acceptText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
+  rejectText: { color: '#999', fontSize: 14 },
 
   // Category rows
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111', backgroundColor: '#0a0a0a' },
   rowIndented: { paddingLeft: 16 },
   catName: { flex: 1, fontSize: 15, color: '#f5f5f5' },
   actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  saveText: { color: '#4ade80', fontSize: 13, fontWeight: '600' },
-  cancelText: { color: '#555', fontSize: 13 },
+  saveText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
+  cancelText: { color: '#999', fontSize: 14 },
 
   // Edit mode within row
   editBlock: { flex: 1, marginRight: 12 },
-  editInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#1f1f1f' },
+  editInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
   editParentPicker: { marginTop: 8 },
   editParentRow: { flexDirection: 'row', gap: 6 },
 
   // Parent chips (shared)
   parentChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', marginRight: 2 },
   parentChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  parentChipText: { fontSize: 13, color: '#555' },
+  parentChipText: { fontSize: 14, color: '#999' },
   parentChipTextActive: { color: '#000', fontWeight: '600' },
 
   // Parent category header
   parentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  parentLabel: { flex: 1, fontSize: 13, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  parentLabel: { flex: 1, fontSize: 13, color: '#aaa', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   ungroupedSection: { marginTop: 12 },
-  ungroupedLabel: { fontSize: 10, color: '#333', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  ungroupedLabel: { fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
 
   // Swipe delete
   deleteSwipe: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, borderBottomWidth: 1, borderBottomColor: '#111', gap: 3 },
-  deleteSwipeText: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  deleteSwipeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 });

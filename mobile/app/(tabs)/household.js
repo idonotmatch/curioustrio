@@ -58,10 +58,10 @@ export default function HouseholdScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   header: { padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  totalLabel: { fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1 },
+  totalLabel: { fontSize: 13, color: '#999', textTransform: 'uppercase', letterSpacing: 1 },
   total: { fontSize: 32, color: '#fff', fontWeight: '700', marginTop: 4 },
   list: { padding: 16 },
-  empty: { color: '#555', textAlign: 'center', marginTop: 40 },
+  empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
   fab: {
     position: 'absolute',
     bottom: 24,

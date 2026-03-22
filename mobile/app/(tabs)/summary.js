@@ -197,7 +197,7 @@ export default function SummaryScreen() {
             value={input}
             onChangeText={setInput}
             placeholder="84.50 trader joes · lunch 14 · gas 60 yesterday"
-            placeholderTextColor="#333"
+            placeholderTextColor="#555"
             onSubmitEditing={handleQuickAdd}
             autoCorrect={false}
             returnKeyType="done"
@@ -210,7 +210,7 @@ export default function SummaryScreen() {
           </TouchableOpacity>
         </View>
         <TouchableOpacity style={styles.scanLink} onPress={() => router.push('/(tabs)/add')}>
-          <Ionicons name="camera-outline" size={14} color="#444" />
+          <Ionicons name="camera-outline" size={14} color="#888" />
           <Text style={styles.scanLinkText}>scan a receipt</Text>
         </TouchableOpacity>
       </View>
@@ -255,43 +255,43 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 32 },
-  spendMonth: { fontSize: 12, color: '#444', letterSpacing: 0.5, marginBottom: 12 },
+  spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.5, marginBottom: 12 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
-  spendLabel: { fontSize: 11, color: '#444', marginBottom: 2 },
+  spendLabel: { fontSize: 13, color: '#888', marginBottom: 2 },
   spendAmount: { fontSize: 48, color: '#f5f5f5', fontWeight: '600', letterSpacing: -2 },
   spendOver: { color: '#ef4444' },
   spendRight: { alignItems: 'flex-end' },
-  budgetAmount: { fontSize: 22, color: '#555', fontWeight: '500', letterSpacing: -0.5 },
+  budgetAmount: { fontSize: 22, color: '#999', fontWeight: '500', letterSpacing: -0.5 },
   barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 8 },
   barFill: { height: 2, borderRadius: 1 },
-  barLabel: { fontSize: 11, color: '#444' },
-  setBudgetLink: { fontSize: 12, color: '#555', marginTop: 8 },
+  barLabel: { fontSize: 13, color: '#888' },
+  setBudgetLink: { fontSize: 14, color: '#999', marginTop: 8 },
 
   householdCard: { marginBottom: 32, backgroundColor: '#111', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#1a1a1a' },
   householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  householdLabel: { fontSize: 11, color: '#444', textTransform: 'uppercase', letterSpacing: 0.5 },
+  householdLabel: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5 },
   householdNumbers: { flexDirection: 'row', alignItems: 'baseline' },
   householdSpent: { fontSize: 18, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
   householdOver: { color: '#ef4444' },
-  householdLimit: { fontSize: 13, color: '#444' },
+  householdLimit: { fontSize: 15, color: '#888' },
   hBarTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 6 },
   hBarFill: { height: 2, borderRadius: 1 },
-  hBarLabel: { fontSize: 11, color: '#444' },
+  hBarLabel: { fontSize: 13, color: '#888' },
   byParentSection: { marginTop: 12, borderTopWidth: 1, borderTopColor: '#1f1f1f', paddingTop: 10 },
   parentRow: { marginBottom: 8 },
   parentRowTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
-  parentName: { fontSize: 12, color: '#888' },
-  parentSpend: { fontSize: 12, color: '#888' },
+  parentName: { fontSize: 14, color: '#aaa' },
+  parentSpend: { fontSize: 14, color: '#aaa' },
   miniBarBg: { height: 3, backgroundColor: '#222', borderRadius: 2, overflow: 'hidden' },
   miniBarFill: { height: 3, borderRadius: 2 },
 
   quickAdd: { marginBottom: 32 },
-  sectionLabel: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   inputRow: { flexDirection: 'row', gap: 8 },
   input: {
     flex: 1, backgroundColor: '#111', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 13,
-    color: '#f5f5f5', fontSize: 14,
+    color: '#f5f5f5', fontSize: 15,
     borderWidth: 1, borderColor: '#1f1f1f',
   },
   addBtn: {
@@ -299,19 +299,19 @@ const styles = StyleSheet.create({
     width: 46, justifyContent: 'center', alignItems: 'center',
   },
   scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  scanLinkText: { fontSize: 12, color: '#444' },
+  scanLinkText: { fontSize: 14, color: '#888' },
 
   recent: {},
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  seeAll: { fontSize: 12, color: '#555' },
+  seeAll: { fontSize: 14, color: '#999' },
   recentRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111',
     backgroundColor: '#0a0a0a',
   },
-  recentMerchant: { flex: 1, fontSize: 14, color: '#f5f5f5', fontWeight: '500' },
-  recentDate: { fontSize: 12, color: '#444', marginRight: 16 },
-  recentAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', minWidth: 60, textAlign: 'right' },
+  recentMerchant: { flex: 1, fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
+  recentDate: { fontSize: 13, color: '#888', marginRight: 16 },
+  recentAmount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600', minWidth: 60, textAlign: 'right' },
   recentRefund: { color: '#4ade80' },
 
   deleteAction: {
@@ -319,5 +319,5 @@ const styles = StyleSheet.create({
     width: 80, borderBottomWidth: 1, borderBottomColor: '#111',
     flexDirection: 'column', gap: 2,
   },
-  deleteActionText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  deleteActionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });

@@ -127,7 +127,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>ACCOUNTS</Text>
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/accounts')}>
           <Text style={styles.navRowText}>Manage accounts</Text>
-          <Ionicons name="chevron-forward" size={16} color="#444" />
+          <Ionicons name="chevron-forward" size={16} color="#888" />
         </TouchableOpacity>
       </View>
 
@@ -138,7 +138,7 @@ export default function SettingsScreen() {
           <Text style={styles.navRowText}>Edit category details</Text>
           <View style={styles.navRowRight}>
             {pendingSuggestionsCount > 0 && <View style={styles.badge} />}
-            <Ionicons name="chevron-forward" size={16} color="#444" />
+            <Ionicons name="chevron-forward" size={16} color="#888" />
           </View>
         </TouchableOpacity>
       </View>
@@ -151,19 +151,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 40 },
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
-  sectionTitle: { fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  subText: { color: '#aaa', fontSize: 13, marginBottom: 10 },
+  sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  subText: { color: '#bbb', fontSize: 14, marginBottom: 10 },
   input: { backgroundColor: '#111', borderWidth: 1, borderColor: '#333', borderRadius: 8, color: '#fff', padding: 12, fontSize: 16, marginBottom: 10 },
   button: { backgroundColor: '#fff', borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#0a0a0a', fontWeight: '600', fontSize: 15 },
-  msgText: { color: '#aaa', fontSize: 13, marginTop: 6, textAlign: 'center' },
-  msgError: { color: '#ef4444', fontSize: 13, marginTop: 6, textAlign: 'center' },
+  msgText: { color: '#bbb', fontSize: 14, marginTop: 6, textAlign: 'center' },
+  msgError: { color: '#ef4444', fontSize: 14, marginTop: 6, textAlign: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   rowInfo: { flex: 1, marginRight: 12 },
   rowTitle: { color: '#fff', fontSize: 15, fontWeight: '500' },
-  rowSub: { color: '#666', fontSize: 12, marginTop: 2 },
-  removeText: { color: '#e44', fontSize: 13 },
+  rowSub: { color: '#999', fontSize: 14, marginTop: 2 },
+  removeText: { color: '#e44', fontSize: 14 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
   navRowText: { color: '#f5f5f5', fontSize: 15 },
   navRowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
