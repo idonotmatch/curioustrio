@@ -4,13 +4,14 @@ import {
   TextInput, Alert, ScrollView, Share,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { useAuth0 } from 'react-native-auth0';
+import { signOut } from '../lib/auth';
+import { supabase } from '../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 
 export default function AccountsScreen() {
-  const { clearSession, user: auth0User } = useAuth0();
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [gmailStatus, setGmailStatus] = useState(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -56,6 +57,9 @@ export default function AccountsScreen() {
   useEffect(() => {
     loadGmailStatus();
     loadHousehold();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUserEmail(session?.user?.email ?? null);
+    });
   }, [loadGmailStatus, loadHousehold]);
 
   async function connectGmail() {
@@ -70,9 +74,9 @@ export default function AccountsScreen() {
     }
   }
 
-  async function signOut() {
+  async function handleSignOut() {
     setSigningOut(true);
-    try { await clearSession(); } catch { setSigningOut(false); }
+    try { await signOut(); } catch { setSigningOut(false); }
   }
 
   async function saveHouseholdName() {
@@ -190,7 +194,7 @@ export default function AccountsScreen() {
   }
 
   const currentMember = (householdData?.members || []).find(
-    m => m.email === auth0User?.email
+    m => m.email === currentUserEmail
   );
   const currentUserId = currentMember?.id;
 
@@ -362,7 +366,7 @@ export default function AccountsScreen() {
         {/* Sign out */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>SESSION</Text>
-          <TouchableOpacity style={styles.signOutBtn} onPress={signOut} disabled={signingOut}>
+          <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} disabled={signingOut}>
             {signingOut
               ? <ActivityIndicator color="#ef4444" size="small" />
               : <Text style={styles.signOutText}>Sign out</Text>}
