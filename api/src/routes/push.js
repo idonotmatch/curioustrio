@@ -10,7 +10,7 @@ router.post('/register', authenticate, async (req, res, next) => {
   try {
     const { token, platform } = req.body;
     if (!token || !platform) return res.status(400).json({ error: 'token and platform required' });
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     await PushToken.upsert({ userId: user.id, token, platform });
     res.status(204).end();
@@ -19,7 +19,7 @@ router.post('/register', authenticate, async (req, res, next) => {
 
 router.post('/notify-pending', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
 
     const tokens = await PushToken.findByUser(user.id);

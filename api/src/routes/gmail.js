@@ -13,7 +13,7 @@ const { assignCategory } = require('../services/categoryAssigner');
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     res.json({ url: getAuthUrl(user.id) });
   } catch (err) { next(err); }
@@ -33,7 +33,7 @@ router.get('/callback', async (req, res, next) => {
 // GET /gmail/status — is Gmail connected?
 router.get('/status', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
     res.json({ connected: !!token });
@@ -43,7 +43,7 @@ router.get('/status', authenticate, async (req, res, next) => {
 // POST /gmail/import — trigger email import for authenticated user
 router.post('/import', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
     if (!token) return res.status(403).json({ error: 'Gmail not connected. Visit GET /gmail/auth first.' });

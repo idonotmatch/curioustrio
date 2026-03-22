@@ -16,7 +16,7 @@ const db = require('../db');
 router.use(authenticate);
 
 async function getUser(req) {
-  return User.findByAuth0Id(req.auth0Id);
+  return User.findByProviderUid(req.userId);
 }
 
 const { aiEndpoints } = require('../middleware/rateLimit');
@@ -223,7 +223,7 @@ router.post('/:id/dismiss', async (req, res, next) => {
 // Delete an expense
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     const ownedByUser = expense.user_id === user?.id;

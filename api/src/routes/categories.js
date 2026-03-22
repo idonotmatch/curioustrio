@@ -10,7 +10,7 @@ const categorySuggester = require('../services/categorySuggester');
 router.use(authenticate);
 
 async function getUser(req) {
-  return User.findByAuth0Id(req.auth0Id);
+  return User.findByProviderUid(req.userId);
 }
 
 // GET /categories — { categories, pending_suggestions_count }

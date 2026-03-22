@@ -13,7 +13,7 @@ router.post('/', authenticate, async (req, res, next) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (user.household_id) {
       return res.status(409).json({ error: 'Already in a household' });
     }
@@ -29,7 +29,7 @@ router.post('/', authenticate, async (req, res, next) => {
 
 router.get('/me', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user.household_id) {
       return res.status(404).json({ error: 'Not in a household' });
     }
@@ -47,7 +47,7 @@ router.patch('/me', authenticate, async (req, res, next) => {
   try {
     const { name } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user?.household_id) return res.status(404).json({ error: 'Not in a household' });
     const household = await Household.updateName(user.household_id, name.trim());
     return res.status(200).json(household);
@@ -61,7 +61,7 @@ router.post('/invites', authenticate, async (req, res, next) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'email is required' });
 
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user.household_id) {
       return res.status(403).json({ error: 'Must be in a household to invite' });
     }
@@ -96,7 +96,7 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
       return res.status(410).json({ error: 'Invite expired' });
     }
 
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (user.household_id) {
       return res.status(409).json({ error: 'Already in a household' });
     }
@@ -129,7 +129,7 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
 // Leave current household (self-service)
 router.post('/me/leave', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByAuth0Id(req.auth0Id);
+    const user = await User.findByProviderUid(req.userId);
     if (!user?.household_id) {
       return res.status(400).json({ error: 'Not in a household' });
     }
@@ -143,7 +143,7 @@ router.post('/me/leave', authenticate, async (req, res, next) => {
 // Remove a member from the household (any member can remove others)
 router.delete('/me/members/:userId', authenticate, async (req, res, next) => {
   try {
-    const requester = await User.findByAuth0Id(req.auth0Id);
+    const requester = await User.findByProviderUid(req.userId);
     if (!requester?.household_id) {
       return res.status(403).json({ error: 'Not in a household' });
     }

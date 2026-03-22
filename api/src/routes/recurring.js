@@ -7,7 +7,7 @@ const { detectRecurring } = require('../services/recurringDetector');
 
 router.use(authenticate);
 
-async function getUser(req) { return User.findByAuth0Id(req.auth0Id); }
+async function getUser(req) { return User.findByProviderUid(req.userId); }
 
 router.get('/', async (req, res, next) => {
   try {

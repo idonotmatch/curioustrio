@@ -8,7 +8,7 @@ const db = require('../db');
 router.use(authenticate);
 
 async function requireHousehold(req, res) {
-  const user = await User.findByAuth0Id(req.auth0Id);
+  const user = await User.findByProviderUid(req.userId);
   if (!user) { res.status(401).json({ error: 'User not synced' }); return null; }
   if (!user.household_id) { res.status(403).json({ error: 'Must be in a household to manage budgets' }); return null; }
   return user;
