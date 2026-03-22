@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Adlo",
-    "slug": "adlo",
+    "slug": "expense-tracker",
     "scheme": "adlo",
     "version": "1.0.0",
     "orientation": "portrait",
