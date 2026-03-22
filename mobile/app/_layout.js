@@ -54,6 +54,9 @@ function AppNavigator() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="confirm" options={{ presentation: 'modal', title: 'Confirm Expense' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+      <Stack.Screen name="categories" options={{ title: 'Category Details' }} />
+      <Stack.Screen name="accounts" options={{ title: 'Account' }} />
+      <Stack.Screen name="expense/[id]" options={{ title: '' }} />
     </Stack>
   );
 }

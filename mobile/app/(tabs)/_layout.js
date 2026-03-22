@@ -9,6 +9,7 @@ export default function TabLayout() {
       headerStyle: { backgroundColor: '#0a0a0a' },
       headerTintColor: '#fff',
     }}>
+      <Tabs.Screen name="summary" options={{ title: 'Summary', tabBarLabel: 'Summary' }} />
       <Tabs.Screen name="index" options={{ title: 'My Feed', tabBarLabel: 'Feed' }} />
       <Tabs.Screen name="household" options={{ title: 'Household', tabBarLabel: 'Household' }} />
       <Tabs.Screen name="pending" options={{ title: 'Pending', tabBarLabel: 'Pending' }} />
