@@ -126,4 +126,41 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
   }
 });
 
+// Leave current household (self-service)
+router.post('/me/leave', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByAuth0Id(req.auth0Id);
+    if (!user?.household_id) {
+      return res.status(400).json({ error: 'Not in a household' });
+    }
+    await User.setHouseholdId(user.id, null);
+    return res.status(200).json({ household_id: user.household_id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Remove a member from the household (any member can remove others)
+router.delete('/me/members/:userId', authenticate, async (req, res, next) => {
+  try {
+    const requester = await User.findByAuth0Id(req.auth0Id);
+    if (!requester?.household_id) {
+      return res.status(403).json({ error: 'Not in a household' });
+    }
+    // Prevent self-removal via this endpoint (use /me/leave instead)
+    if (req.params.userId === requester.id) {
+      return res.status(400).json({ error: 'Use POST /households/me/leave to leave' });
+    }
+    // Verify target user is actually in the same household
+    const target = await User.findById(req.params.userId);
+    if (!target || target.household_id !== requester.household_id) {
+      return res.status(404).json({ error: 'Member not found in your household' });
+    }
+    await User.setHouseholdId(target.id, null);
+    return res.status(200).json({ household_id: target.household_id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

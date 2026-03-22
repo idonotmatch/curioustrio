@@ -29,4 +29,12 @@ async function setHouseholdId(userId, householdId) {
   return result.rows[0] || null;
 }
 
-module.exports = { findOrCreate, findByAuth0Id, setHouseholdId };
+async function findById(id) {
+  const result = await db.query(
+    'SELECT id, auth0_id, name, email, household_id, created_at FROM users WHERE id = $1',
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { findOrCreate, findByAuth0Id, findById, setHouseholdId };
