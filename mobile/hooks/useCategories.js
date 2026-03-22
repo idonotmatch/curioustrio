@@ -7,7 +7,7 @@ export function useCategories() {
 
   useEffect(() => {
     api.get('/categories')
-      .then(setCategories)
+      .then(data => setCategories(data.categories || []))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);

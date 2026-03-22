@@ -83,6 +83,7 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const { name, icon, color } = req.body;
     const parentId = 'parent_id' in req.body ? req.body.parent_id : undefined;
+    const sortOrder = 'sort_order' in req.body ? req.body.sort_order : undefined;
     if (parentId && parentId === req.params.id) {
       return res.status(400).json({ error: 'A category cannot be its own parent' });
     }
@@ -103,6 +104,7 @@ router.patch('/:id', async (req, res, next) => {
       icon,
       color,
       parentId,
+      sortOrder,
     });
     if (!category) return res.status(404).json({ error: 'Not found' });
     res.json(category);

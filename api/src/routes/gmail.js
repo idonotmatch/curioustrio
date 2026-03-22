@@ -15,7 +15,7 @@ router.get('/auth', authenticate, async (req, res, next) => {
   try {
     const user = await User.findByAuth0Id(req.auth0Id);
     if (!user) return res.status(401).json({ error: 'User not synced' });
-    res.redirect(getAuthUrl(user.id));
+    res.json({ url: getAuthUrl(user.id) });
   } catch (err) { next(err); }
 });
 

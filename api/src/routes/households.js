@@ -43,6 +43,19 @@ router.get('/me', authenticate, async (req, res, next) => {
   }
 });
 
+router.patch('/me', authenticate, async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+    const user = await User.findByAuth0Id(req.auth0Id);
+    if (!user?.household_id) return res.status(404).json({ error: 'Not in a household' });
+    const household = await Household.updateName(user.household_id, name.trim());
+    return res.status(200).json(household);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/invites', authenticate, async (req, res, next) => {
   try {
     const { email } = req.body;

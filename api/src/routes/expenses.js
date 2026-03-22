@@ -71,7 +71,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 // Confirm expense → save to DB + update merchant mapping + run dedup
 router.post('/confirm', async (req, res, next) => {
   try {
-    const { merchant, amount, date, category_id, source, notes,
+    const { merchant, description, amount, date, category_id, source, notes,
             place_name, address, mapkit_stable_id, linked_expense_id,
             payment_method, card_last4, card_label, is_private, items } = req.body;
 
@@ -93,7 +93,7 @@ router.post('/confirm', async (req, res, next) => {
     const expense = await Expense.create({
       userId: user.id,
       householdId: user?.household_id,
-      merchant, amount, date,
+      merchant, description, amount, date,
       categoryId: category_id,
       source,
       status: 'confirmed',

@@ -6,7 +6,7 @@ async function findByHousehold(householdId) {
      FROM categories c
      LEFT JOIN categories p ON c.parent_id = p.id
      WHERE c.household_id = $1 OR c.household_id IS NULL
-     ORDER BY c.name`,
+     ORDER BY c.sort_order ASC, c.name ASC`,
     [householdId]
   );
   return result.rows;
@@ -21,21 +21,26 @@ async function create({ householdId, name, icon, color, parentId = null }) {
   return result.rows[0];
 }
 
-async function update({ id, householdId, name, icon, color, parentId }) {
+async function update({ id, householdId, name, icon, color, parentId, sortOrder }) {
   // parentId === undefined → don't touch parent_id column
   // parentId === null      → explicitly unassign
   // parentId === 'uuid'    → assign to parent
   const hasParent = parentId !== undefined;
-  const params = hasParent
-    ? [id, householdId, name, icon, color, parentId]
-    : [id, householdId, name, icon, color];
+  const hasSortOrder = sortOrder !== undefined;
+
+  // Build params dynamically: $1=id, $2=householdId, $3=name, $4=icon, $5=color, [$6=parentId], [$N=sortOrder]
+  const params = [id, householdId, name, icon, color];
+  let parentIdx, sortOrderIdx;
+  if (hasParent) { parentIdx = params.push(parentId); }
+  if (hasSortOrder) { sortOrderIdx = params.push(sortOrder); }
 
   const result = await db.query(
     `UPDATE categories
      SET name  = COALESCE($3, name),
          icon  = COALESCE($4, icon),
          color = COALESCE($5, color)
-         ${hasParent ? ', parent_id = $6' : ''}
+         ${hasParent ? `, parent_id = $${parentIdx}` : ''}
+         ${hasSortOrder ? `, sort_order = $${sortOrderIdx}` : ''}
      WHERE id = $1
        AND (household_id = $2 OR (household_id IS NULL AND $2 IS NULL))
      RETURNING *`,

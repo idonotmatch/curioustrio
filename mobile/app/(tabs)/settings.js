@@ -25,6 +25,12 @@ export default function SettingsScreen() {
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
 
+  const [householdName, setHouseholdName] = useState('');
+  const [currentHouseholdName, setCurrentHouseholdName] = useState('');
+  const [householdSaving, setHouseholdSaving] = useState(false);
+  const [householdMsg, setHouseholdMsg] = useState('');
+  const [householdMsgIsError, setHouseholdMsgIsError] = useState(false);
+
   const loadBudget = useCallback(async () => {
     try {
       const data = await api.get('/budgets');
@@ -33,7 +39,18 @@ export default function SettingsScreen() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { loadBudget(); }, [loadBudget]);
+  const loadHousehold = useCallback(async () => {
+    try {
+      const data = await api.get('/households/me');
+      setCurrentHouseholdName(data.household?.name || '');
+      setHouseholdName(data.household?.name || '');
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    loadBudget();
+    loadHousehold();
+  }, [loadBudget, loadHousehold]);
 
   useEffect(() => {
     api.get('/categories')
@@ -61,6 +78,28 @@ export default function SettingsScreen() {
       setBudgetMsgIsError(true);
     } finally {
       setBudgetSaving(false);
+    }
+  }
+
+  async function saveHouseholdName() {
+    if (!householdName.trim()) {
+      setHouseholdMsg('Name cannot be empty');
+      setHouseholdMsgIsError(true);
+      return;
+    }
+    setHouseholdSaving(true);
+    setHouseholdMsg('');
+    try {
+      await api.patch('/households/me', { name: householdName.trim() });
+      setCurrentHouseholdName(householdName.trim());
+      setHouseholdMsg('Saved!');
+      setHouseholdMsgIsError(false);
+      setTimeout(() => setHouseholdMsg(''), 2000);
+    } catch (e) {
+      setHouseholdMsg(e.message || 'Failed to save');
+      setHouseholdMsgIsError(true);
+    } finally {
+      setHouseholdSaving(false);
     }
   }
 
@@ -98,6 +137,29 @@ export default function SettingsScreen() {
           <Text style={styles.buttonText}>{budgetSaving ? 'Saving...' : 'Save Budget'}</Text>
         </TouchableOpacity>
         {budgetMsg ? <Text style={budgetMsgIsError ? styles.msgError : styles.msgText}>{budgetMsg}</Text> : null}
+      </View>
+
+      {/* Household name */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>HOUSEHOLD</Text>
+        {currentHouseholdName ? (
+          <Text style={styles.subText}>Current: {currentHouseholdName}</Text>
+        ) : null}
+        <TextInput
+          style={styles.input}
+          value={householdName}
+          onChangeText={setHouseholdName}
+          placeholder="Household name"
+          placeholderTextColor="#555"
+        />
+        <TouchableOpacity
+          style={[styles.button, householdSaving && styles.buttonDisabled]}
+          onPress={saveHouseholdName}
+          disabled={householdSaving}
+        >
+          <Text style={styles.buttonText}>{householdSaving ? 'Saving...' : 'Save Name'}</Text>
+        </TouchableOpacity>
+        {householdMsg ? <Text style={householdMsgIsError ? styles.msgError : styles.msgText}>{householdMsg}</Text> : null}
       </View>
 
       {/* Recurring — list only, no manual detect button */}

@@ -4,15 +4,18 @@ import { useState } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { api } from '../services/api';
 import { ConfirmField } from '../components/ConfirmField';
-import { CategoryBadge } from '../components/CategoryBadge';
 import { LocationPicker } from '../components/LocationPicker';
+import { useCategories } from '../hooks/useCategories';
 
 export default function ConfirmScreen() {
   const { data } = useLocalSearchParams();
   const parsed = JSON.parse(data);
   const router = useRouter();
+  const { categories } = useCategories();
 
   const [expense, setExpense] = useState(parsed);
+  const [merchant, setMerchant] = useState(parsed.merchant || '');
+  const [description, setDescription] = useState(parsed.description || '');
   const [saving, setSaving] = useState(false);
   const [locationData, setLocationData] = useState(null);
   const [saveToRoll, setSaveToRoll] = useState(false);
@@ -21,6 +24,7 @@ export default function ConfirmScreen() {
   const [cardLast4, setCardLast4] = useState('');
   const [cardLabel, setCardLabel] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
       ? parsed.items.map(it => ({ description: it.description || '', amount: it.amount != null ? String(it.amount) : '' }))
@@ -47,11 +51,12 @@ export default function ConfirmScreen() {
     }));
   }
 
+  function selectCategory(cat) {
+    setExpense(prev => ({ ...prev, category_id: cat?.id || null, category_name: cat?.name || null }));
+    setShowCategoryPicker(false);
+  }
+
   async function handleConfirm() {
-    if (!expense.category_id) {
-      Alert.alert('Category required', 'Please assign a category before confirming.');
-      return;
-    }
     try {
       setSaving(true);
 
@@ -67,10 +72,11 @@ export default function ConfirmScreen() {
       }
 
       await api.post('/expenses/confirm', {
-        merchant: expense.merchant,
+        merchant: merchant.trim() || null,
+        description: description.trim() || null,
         amount: expense.amount,
         date: expense.date,
-        category_id: expense.category_id,
+        category_id: expense.category_id || null,
         source: isRefund ? 'refund' : (parsed?.source || 'manual'),
         notes: expense.notes,
         place_name: locationData?.place_name,
@@ -96,24 +102,63 @@ export default function ConfirmScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {expense.merchant
-        ? <ConfirmField label="Merchant" value={expense.merchant} />
-        : expense.description
-          ? <ConfirmField label="Description" value={expense.description} />
-          : null}
+      {/* Merchant / Description — editable */}
+      <View style={styles.editableRow}>
+        <Text style={styles.editableLabel}>{merchant.trim() ? 'MERCHANT' : 'DESCRIPTION'}</Text>
+        <TextInput
+          style={styles.editableInput}
+          value={merchant.trim() ? merchant : description}
+          onChangeText={merchant.trim() ? setMerchant : setDescription}
+          placeholder={merchant.trim() ? 'Merchant name' : 'What was this for?'}
+          placeholderTextColor="#444"
+        />
+      </View>
+      {/* If both merchant and description exist (e.g. from receipt scan), show both */}
+      {merchant.trim() && description.trim() ? (
+        <View style={styles.editableRow}>
+          <Text style={styles.editableLabel}>DESCRIPTION</Text>
+          <TextInput
+            style={styles.editableInput}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Description"
+            placeholderTextColor="#444"
+          />
+        </View>
+      ) : null}
+
       <ConfirmField label="Amount" value={`$${Number(expense.amount).toFixed(2)}`} />
       <ConfirmField label="Date" value={expense.date} />
 
-      <View style={styles.categoryRow}>
+      {/* Category — tappable picker */}
+      <TouchableOpacity
+        style={styles.categoryRow}
+        onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+      >
         <Text style={styles.categoryLabel}>CATEGORY</Text>
-        <CategoryBadge
-          name={expense.category_name}
-          confidence={expense.category_confidence || 0}
-          source={expense.category_source}
-        />
-      </View>
-      {!expense.category_id && (
-        <Text style={styles.categoryRequired}>Category required before confirming</Text>
+        <View style={styles.categoryRight}>
+          <Text style={styles.categoryValue}>{expense.category_name || 'Unassigned'}</Text>
+          <Text style={styles.categoryChevron}>{showCategoryPicker ? '▲' : '▼'}</Text>
+        </View>
+      </TouchableOpacity>
+      {showCategoryPicker && (
+        <View style={styles.categoryPicker}>
+          <TouchableOpacity
+            style={[styles.catChip, !expense.category_id && styles.catChipActive]}
+            onPress={() => selectCategory(null)}
+          >
+            <Text style={[styles.catChipText, !expense.category_id && styles.catChipTextActive]}>Unassigned</Text>
+          </TouchableOpacity>
+          {categories.map(c => (
+            <TouchableOpacity
+              key={c.id}
+              style={[styles.catChip, expense.category_id === c.id && styles.catChipActive]}
+              onPress={() => selectCategory(c)}
+            >
+              <Text style={[styles.catChipText, expense.category_id === c.id && styles.catChipTextActive]}>{c.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
 
       <LocationPicker onLocation={setLocationData} locationData={locationData} />
@@ -238,12 +283,31 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20 },
+
+  editableRow: {
+    backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
+    marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  editableLabel: { fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1, width: 80 },
+  editableInput: { flex: 1, color: '#fff', fontSize: 14, textAlign: 'right', padding: 0 },
+
   categoryRow: {
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
-    marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between',
+    marginBottom: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   categoryLabel: { fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 },
-  categoryRequired: { color: '#f97316', fontSize: 11, marginBottom: 8, textAlign: 'center' },
+  categoryRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  categoryValue: { fontSize: 14, color: '#fff' },
+  categoryChevron: { fontSize: 9, color: '#444' },
+  categoryPicker: {
+    backgroundColor: '#111', borderRadius: 8, padding: 10, marginBottom: 8,
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+  },
+  catChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
+  catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  catChipText: { fontSize: 12, color: '#555' },
+  catChipTextActive: { color: '#000', fontWeight: '600' },
+
   toggleRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8,

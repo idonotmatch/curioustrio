@@ -4,6 +4,7 @@ import {
   ScrollView, StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Stack } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 
 export default function CategoriesScreen() {
@@ -106,10 +107,34 @@ export default function CategoriesScreen() {
     }
   }
 
+  // Move a category up or down in the list by updating sort_order
+  async function moveCategory(id, direction) {
+    const custom = categories.filter(c => c.household_id !== null);
+    const idx = custom.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= custom.length) return;
+
+    // Swap sort_order values
+    const current = custom[idx];
+    const target = custom[targetIdx];
+    const currentOrder = current.sort_order ?? idx;
+    const targetOrder = target.sort_order ?? targetIdx;
+
+    try {
+      await Promise.all([
+        api.patch(`/categories/${current.id}`, { sort_order: targetOrder }),
+        api.patch(`/categories/${target.id}`, { sort_order: currentOrder }),
+      ]);
+      load();
+    } catch (e) {
+      setErrorMsg(e.message || 'Could not reorder');
+    }
+  }
+
   const custom = categories.filter(c => c.household_id !== null);
   const defaults = categories.filter(c => c.household_id === null);
 
-  // Which IDs are referenced as parent_id by at least one custom category
   const referencedParentIds = new Set(custom.filter(c => c.parent_id).map(c => c.parent_id));
   const parentCats = custom.filter(c => !c.parent_id && referencedParentIds.has(c.id));
   const childrenByParent = {};
@@ -123,10 +148,13 @@ export default function CategoriesScreen() {
   ]);
   const ungrouped = custom.filter(c => !renderedIds.has(c.id));
 
-  // Parent options for the "add" form picker
   const parentOptions = custom.filter(c => !c.parent_id);
 
   function renderCatRow(cat, indented = false) {
+    const catIdx = custom.findIndex(c => c.id === cat.id);
+    const isFirst = catIdx === 0;
+    const isLast = catIdx === custom.length - 1;
+
     return (
       <View key={cat.id} style={[styles.row, indented && styles.rowIndented]}>
         {editingCatId === cat.id ? (
@@ -153,6 +181,21 @@ export default function CategoriesScreen() {
             </>
           ) : (
             <>
+              {/* Reorder arrows */}
+              <TouchableOpacity
+                onPress={() => moveCategory(cat.id, 'up')}
+                disabled={isFirst}
+                style={[styles.arrowBtn, isFirst && styles.arrowDisabled]}
+              >
+                <Ionicons name="chevron-up" size={14} color={isFirst ? '#333' : '#888'} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => moveCategory(cat.id, 'down')}
+                disabled={isLast}
+                style={[styles.arrowBtn, isLast && styles.arrowDisabled]}
+              >
+                <Ionicons name="chevron-down" size={14} color={isLast ? '#333' : '#888'} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => { setEditingCatId(cat.id); setEditingCatName(cat.name); }}>
                 <Text style={styles.editText}>Edit</Text>
               </TouchableOpacity>
@@ -302,7 +345,6 @@ const styles = StyleSheet.create({
   empty: { color: '#444', fontSize: 13, marginBottom: 12 },
   defaultsNote: { color: '#444', fontSize: 12, marginBottom: 10 },
 
-  // Suggestions card
   suggestCard: { backgroundColor: '#111', borderRadius: 10, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: '#2a2a1a' },
   suggestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   suggestTitle: { fontSize: 11, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
@@ -313,38 +355,33 @@ const styles = StyleSheet.create({
   acceptText: { color: '#4ade80', fontSize: 13, fontWeight: '600' },
   rejectText: { color: '#555', fontSize: 13 },
 
-  // Category rows
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#111' },
   rowIndented: { paddingLeft: 16 },
   catName: { flex: 1, fontSize: 15, color: '#f5f5f5' },
-  actions: { flexDirection: 'row', gap: 16 },
+  actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   editText: { color: '#888', fontSize: 13 },
   deleteText: { color: '#ef4444', fontSize: 13 },
   saveText: { color: '#4ade80', fontSize: 13, fontWeight: '600' },
   cancelText: { color: '#555', fontSize: 13 },
+  arrowBtn: { padding: 2 },
+  arrowDisabled: { opacity: 0.3 },
 
-  // Parent section header
   parentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   parentLabel: { flex: 1, fontSize: 13, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  // Ungrouped section
   ungroupedSection: { marginTop: 12 },
   ungroupedLabel: { fontSize: 10, color: '#333', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
 
-  // Edit input
   editInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#1f1f1f' },
 
-  // Add form
   addSection: { marginTop: 16 },
   addRow: { flexDirection: 'row', gap: 10 },
   addBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
   addBtnDisabled: { opacity: 0.3 },
   addBtnText: { color: '#000', fontWeight: '600', fontSize: 14 },
 
-  // Error message
   errorMsg: { color: '#ef4444', fontSize: 13, marginTop: 10 },
 
-  // Parent picker
   parentPicker: { marginTop: 10 },
   parentChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', marginRight: 8 },
   parentChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },

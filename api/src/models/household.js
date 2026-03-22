@@ -35,4 +35,12 @@ async function findMembers(householdId) {
   return result.rows;
 }
 
-module.exports = { create, findById, findByUserId, findMembers };
+async function updateName(id, name) {
+  const result = await db.query(
+    `UPDATE households SET name = $1 WHERE id = $2 RETURNING id, name, created_at`,
+    [name, id]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { create, findById, findByUserId, findMembers, updateName };

@@ -1,8 +1,9 @@
 import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { api } from '../../services/api';
@@ -26,14 +27,23 @@ function formatDate(dateStr) {
 export default function SummaryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { expenses } = useExpenses();
-  const { budget } = useBudget();
+  const { expenses, refresh: refreshExpenses } = useExpenses();
+  const { budget, refresh: refreshBudget } = useBudget();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Refresh data when tab gains focus
+  useFocusEffect(useCallback(() => {
+    refreshExpenses();
+    refreshBudget();
+  }, [refreshExpenses, refreshBudget]));
+
   const now = new Date();
   const currentMonth = now.toISOString().slice(0, 7);
-  const monthlyExpenses = (expenses || []).filter(e => e.date?.slice(0, 7) === currentMonth);
+  const monthlyExpenses = (expenses || []).filter(e => {
+    const d = e.date ? String(e.date) : '';
+    return d.slice(0, 7) === currentMonth;
+  });
   const spent = monthlyExpenses.reduce((s, e) => s + Number(e.amount), 0);
   const limit = budget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
@@ -60,6 +70,31 @@ export default function SummaryScreen() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function deleteExpense(id) {
+    try {
+      await api.delete(`/expenses/${id}`);
+      refreshExpenses();
+      refreshBudget();
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not delete expense');
+    }
+  }
+
+  function renderDeleteAction(id) {
+    return (
+      <TouchableOpacity
+        style={styles.deleteAction}
+        onPress={() => Alert.alert('Delete expense', 'This cannot be undone.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => deleteExpense(id) },
+        ])}
+      >
+        <Ionicons name="trash-outline" size={18} color="#fff" />
+        <Text style={styles.deleteActionText}>Delete</Text>
+      </TouchableOpacity>
+    );
   }
 
   return (
@@ -180,7 +215,7 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Recent */}
+      {/* Recent — swipe left to delete */}
       {recent.length > 0 && (
         <View style={styles.recent}>
           <View style={styles.recentHeader}>
@@ -190,15 +225,22 @@ export default function SummaryScreen() {
             </TouchableOpacity>
           </View>
           {recent.map(e => (
-            <TouchableOpacity
+            <Swipeable
               key={e.id}
-              style={styles.recentRow}
-              onPress={() => router.push(`/expense/${e.id}`)}
+              renderRightActions={() => renderDeleteAction(e.id)}
+              overshootRight={false}
             >
-              <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant}</Text>
-              <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
-              <Text style={styles.recentAmount}>${Number(e.amount).toFixed(2)}</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.recentRow}
+                onPress={() => router.push(`/expense/${e.id}`)}
+              >
+                <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
+                <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
+                <Text style={[styles.recentAmount, Number(e.amount) < 0 && styles.recentRefund]}>
+                  {Number(e.amount) < 0 ? '−' : ''}${Math.abs(Number(e.amount)).toFixed(2)}
+                </Text>
+              </TouchableOpacity>
+            </Swipeable>
           ))}
         </View>
       )}
@@ -263,8 +305,17 @@ const styles = StyleSheet.create({
   recentRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#111',
+    backgroundColor: '#0a0a0a',
   },
   recentMerchant: { flex: 1, fontSize: 14, color: '#f5f5f5', fontWeight: '500' },
   recentDate: { fontSize: 12, color: '#444', marginRight: 16 },
   recentAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', minWidth: 60, textAlign: 'right' },
+  recentRefund: { color: '#4ade80' },
+
+  deleteAction: {
+    backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center',
+    width: 80, borderBottomWidth: 1, borderBottomColor: '#111',
+    flexDirection: 'column', gap: 2,
+  },
+  deleteActionText: { color: '#fff', fontSize: 11, fontWeight: '600' },
 });
