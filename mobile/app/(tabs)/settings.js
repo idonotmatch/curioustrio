@@ -55,6 +55,7 @@ export default function SettingsScreen() {
       setBudgetMsg('Saved!');
       setBudgetMsgIsError(false);
       loadBudget();
+      setTimeout(() => setBudgetMsg(''), 2000);
     } catch (e) {
       setBudgetMsg(e.message || 'Failed to save');
       setBudgetMsgIsError(true);
