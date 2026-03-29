@@ -28,6 +28,7 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
   try {
     const { input, today } = req.body;
     if (!input) return res.status(400).json({ error: 'input required' });
+    if (input.length > 500) return res.status(400).json({ error: 'input too long (max 500 characters)' });
 
     const parsed = await parseExpense(input, today || new Date().toISOString().split('T')[0]);
     if (!parsed) return res.status(422).json({ error: 'Could not parse expense' });
@@ -50,6 +51,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
   try {
     const { image_base64, today } = req.body;
     if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
+    if (image_base64.length > 1_400_000) return res.status(400).json({ error: 'image too large (max ~1MB base64)' });
 
     const todayDate = today || new Date().toISOString().split('T')[0];
     const parsed = await parseReceipt(image_base64, todayDate);

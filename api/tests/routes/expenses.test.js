@@ -521,6 +521,26 @@ describe('POST /expenses/scan', () => {
   });
 });
 
+describe('POST /expenses/parse — input length limit', () => {
+  it('returns 400 when input exceeds 500 chars', async () => {
+    const res = await request(app)
+      .post('/expenses/parse')
+      .send({ input: 'a'.repeat(501), today: '2026-03-29' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/too long/i);
+  });
+});
+
+describe('POST /expenses/scan — image size limit', () => {
+  it('returns 400 when image_base64 exceeds 1.4MB', async () => {
+    const res = await request(app)
+      .post('/expenses/scan')
+      .send({ image_base64: 'a'.repeat(1_400_001), today: '2026-03-29' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/too large/i);
+  });
+});
+
 describe('expense response includes category_parent_name', () => {
   it('GET /expenses returns category_parent_name field on each expense', async () => {
     const res = await request(app).get('/expenses');

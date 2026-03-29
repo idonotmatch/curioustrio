@@ -26,10 +26,19 @@ app.set('trust proxy', 1);
 // internal health checker pings this to confirm the service is alive.
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // mobile apps, curl, server-to-server
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`Origin ${origin} not allowed by CORS policy`));
+  },
+}));
 app.use(standard);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 app.use('/expenses', expensesRouter);
 app.use('/categories', categoriesRouter);
