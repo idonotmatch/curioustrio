@@ -63,7 +63,7 @@ router.post('/import', authenticate, async (req, res, next) => {
         const parsed = await parseEmailExpense(body, subject, from, todayDate);
 
         if (!parsed) {
-          await EmailImportLog.create({ userId: user.id, messageId: msg.id, subject, fromAddress: from, status: 'skipped' });
+          await EmailImportLog.create({ userId: user.id, messageId: msg.id, status: 'skipped' });
           skipped++;
           continue;
         }
@@ -89,8 +89,6 @@ router.post('/import', authenticate, async (req, res, next) => {
         await EmailImportLog.create({
           userId: user.id,
           messageId: msg.id,
-          subject,
-          fromAddress: from,
           expenseId: expense.id,
           status: 'imported',
         });
