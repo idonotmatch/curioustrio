@@ -95,7 +95,7 @@ describe('GET /gmail/callback', () => {
 
     const token = await db.query(`SELECT * FROM oauth_tokens WHERE user_id = $1`, [userId]);
     expect(token.rows).toHaveLength(1);
-    expect(token.rows[0].access_token).toBe('new_access');
+    expect(token.rows[0].access_token).toBeNull();
   });
 
   it('returns 400 when code is missing', async () => {

@@ -25,7 +25,7 @@ router.get('/callback', async (req, res, next) => {
     const { code, state: userId } = req.query;
     if (!code || !userId) return res.status(400).json({ error: 'Missing code or state' });
     const tokens = await exchangeCode(code);
-    await OAuthToken.upsert({ userId, ...tokens });
+    await OAuthToken.upsert({ userId, ...tokens, accessToken: null }); // do not persist access_token
     res.send('<html><body><h2>Gmail connected!</h2><p>You can close this tab.</p></body></html>');
   } catch (err) { next(err); }
 });

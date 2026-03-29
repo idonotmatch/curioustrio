@@ -36,24 +36,19 @@ async function getAuthenticatedClient(userId) {
 
   const client = createOAuth2Client();
   client.setCredentials({
-    access_token: tokenRow.access_token,
     refresh_token: tokenRow.refresh_token,
-    expiry_date: tokenRow.expires_at ? new Date(tokenRow.expires_at).getTime() : undefined,
   });
 
-  // Auto-refresh if token expires within 5 minutes
-  const expiresAt = tokenRow.expires_at ? new Date(tokenRow.expires_at) : null;
-  if (!expiresAt || expiresAt < new Date(Date.now() + 5 * 60 * 1000)) {
-    const { credentials } = await client.refreshAccessToken();
-    await OAuthToken.upsert({
-      userId,
-      accessToken: credentials.access_token,
-      refreshToken: credentials.refresh_token || tokenRow.refresh_token,
-      expiresAt: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : null,
-      scope: tokenRow.scope,
-    });
-    client.setCredentials(credentials);
-  }
+  // Always refresh — access_token is never persisted, so always fetch a fresh one
+  const { credentials } = await client.refreshAccessToken();
+  await OAuthToken.upsert({
+    userId,
+    accessToken: null,       // do not persist
+    refreshToken: credentials.refresh_token || tokenRow.refresh_token,
+    expiresAt: null,
+    scope: tokenRow.scope,
+  });
+  client.setCredentials(credentials); // in-memory only, valid for this request
 
   return client;
 }
