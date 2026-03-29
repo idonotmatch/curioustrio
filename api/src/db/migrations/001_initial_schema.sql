@@ -3,6 +3,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE households (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
+  created_by UUID,  -- FK added after users table; see constraint below
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -14,6 +15,12 @@ CREATE TABLE users (
   household_id UUID REFERENCES households(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE households
+  ADD CONSTRAINT fk_households_created_by
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_households_created_by ON households(created_by);
 
 CREATE TABLE household_invites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

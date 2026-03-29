@@ -18,7 +18,7 @@ router.post('/', authenticate, async (req, res, next) => {
       return res.status(409).json({ error: 'Already in a household' });
     }
 
-    const household = await Household.create({ name });
+    const household = await Household.create({ name, createdBy: user.id });
     await User.setHouseholdId(user.id, household.id);
 
     return res.status(201).json(household);
@@ -156,6 +156,12 @@ router.delete('/me/members/:userId', authenticate, async (req, res, next) => {
     if (req.params.userId === requester.id) {
       return res.status(400).json({ error: 'Use POST /households/me/leave to leave' });
     }
+    // Only the household creator can remove members
+    const household = await Household.findById(requester.household_id);
+    if (!household || household.created_by !== requester.id) {
+      return res.status(403).json({ error: 'Only the household owner can remove members' });
+    }
+
     // Verify target user is actually in the same household
     const target = await User.findById(req.params.userId);
     if (!target || target.household_id !== requester.household_id) {

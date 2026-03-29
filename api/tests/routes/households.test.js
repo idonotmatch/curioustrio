@@ -298,3 +298,53 @@ describe('POST /households/invites/:token/accept — email mismatch', () => {
     await db.query(`DELETE FROM users WHERE provider_uid = $1`, [wrongUid]);
   });
 });
+
+describe('DELETE /households/me/members/:userId — ownership', () => {
+  it('returns 403 when a non-creator tries to remove a member', async () => {
+    mockUserId = TEST_PROVIDER_UID;
+    await request(app).post('/households').send({ name: 'Test Household Ownership A' });
+    const inviteRes = await request(app)
+      .post('/households/invites').send({ email: 'joiner@test.com' });
+    await User.findOrCreateByProviderUid({
+      providerUid: TEST_PROVIDER_UID_JOINER, name: 'Joiner', email: 'joiner@test.com',
+    });
+    mockUserId = TEST_PROVIDER_UID_JOINER;
+    await request(app).post(`/households/invites/${inviteRes.body.token}/accept`);
+
+    const thirdUid = 'test-third-member-ownership';
+    const thirdUser = await User.findOrCreateByProviderUid({
+      providerUid: thirdUid, name: 'Third', email: 'third@test.com',
+    });
+    const ownerRow = await db.query(
+      `SELECT household_id FROM users WHERE provider_uid = $1`, [TEST_PROVIDER_UID]
+    );
+    await db.query(`UPDATE users SET household_id = $1 WHERE id = $2`,
+      [ownerRow.rows[0].household_id, thirdUser.id]);
+
+    // Joiner (non-creator) attempts removal
+    const res = await request(app).delete(`/households/me/members/${thirdUser.id}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/owner/i);
+
+    await db.query(`DELETE FROM users WHERE provider_uid = $1`, [thirdUid]);
+  });
+
+  it('allows the creator to remove a member', async () => {
+    mockUserId = TEST_PROVIDER_UID;
+    await request(app).post('/households').send({ name: 'Test Household Creator Remove' });
+    const inviteRes = await request(app)
+      .post('/households/invites').send({ email: 'joiner@test.com' });
+    await User.findOrCreateByProviderUid({
+      providerUid: TEST_PROVIDER_UID_JOINER, name: 'Joiner', email: 'joiner@test.com',
+    });
+    mockUserId = TEST_PROVIDER_UID_JOINER;
+    await request(app).post(`/households/invites/${inviteRes.body.token}/accept`);
+
+    mockUserId = TEST_PROVIDER_UID;
+    const joinerRow = await db.query(
+      `SELECT id FROM users WHERE provider_uid = $1`, [TEST_PROVIDER_UID_JOINER]
+    );
+    const res = await request(app).delete(`/households/me/members/${joinerRow.rows[0].id}`);
+    expect(res.status).toBe(200);
+  });
+});
