@@ -10,6 +10,11 @@ CREATE TABLE oauth_tokens (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+COMMENT ON COLUMN oauth_tokens.refresh_token IS
+  'AES-256-GCM encrypted. Use tokenCrypto.decrypt() to read.';
+COMMENT ON COLUMN oauth_tokens.access_token IS
+  'Always NULL. Not persisted — regenerated from refresh_token on each use.';
+
 CREATE TABLE email_import_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id),

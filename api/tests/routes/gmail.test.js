@@ -1,3 +1,5 @@
+process.env.TOKEN_ENCRYPTION_KEY = 'a'.repeat(64); // 32 bytes as hex
+const { encrypt } = require('../../src/services/tokenCrypto');
 const request = require('supertest');
 const db = require('../../src/db');
 
@@ -70,8 +72,8 @@ describe('GET /gmail/status', () => {
   it('returns { connected: true } when token exists', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
-       VALUES ($1, 'google', 'acc_tok', 'ref_tok', 'gmail.readonly')`,
-      [userId]
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
     );
     const res = await request(app).get('/gmail/status');
     expect(res.status).toBe(200);
@@ -115,8 +117,8 @@ describe('POST /gmail/import', () => {
   it('returns { imported, skipped, failed } counts', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
-       VALUES ($1, 'google', 'acc_tok', 'ref_tok', 'gmail.readonly')`,
-      [userId]
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
     );
 
     listRecentMessages.mockResolvedValue([
@@ -139,8 +141,8 @@ describe('POST /gmail/import', () => {
   it('skips already-imported messages', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
-       VALUES ($1, 'google', 'acc_tok', 'ref_tok', 'gmail.readonly')`,
-      [userId]
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
     );
     await db.query(
       `INSERT INTO email_import_log (user_id, message_id, status) VALUES ($1, 'already-msg', 'imported')`,
@@ -159,8 +161,8 @@ describe('POST /gmail/import', () => {
   it('counts failed when getMessage throws', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
-       VALUES ($1, 'google', 'acc_tok', 'ref_tok', 'gmail.readonly')`,
-      [userId]
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
     );
 
     listRecentMessages.mockResolvedValue([{ id: 'fail-msg' }]);
