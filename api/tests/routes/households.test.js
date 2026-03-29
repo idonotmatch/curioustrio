@@ -1,3 +1,5 @@
+process.env.EMAIL_HASH_SECRET = 'test-secret-32chars-padded-xxxxx';
+const { hashEmail } = require('../../src/services/emailHmac');
 const request = require('supertest');
 const app = require('../../src/index');
 const db = require('../../src/db');
@@ -200,9 +202,9 @@ describe('POST /households/invites/:token/accept', () => {
     const token = 'expired-token-test-' + Date.now();
     const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     await db.query(
-      `INSERT INTO household_invites (household_id, invited_email, invited_by, token, expires_at, status)
+      `INSERT INTO household_invites (household_id, invited_email_hash, invited_by, token, expires_at, status)
        VALUES ($1, $2, $3, $4, $5, 'pending')`,
-      [owner.household_id, 'expireduser@test.com', owner.id, token, pastDate]
+      [owner.household_id, hashEmail('expireduser@test.com'), owner.id, token, pastDate]
     );
 
     const res = await request(app)

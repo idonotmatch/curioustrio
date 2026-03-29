@@ -5,6 +5,7 @@ const { pool } = require('../db');
 const User = require('../models/user');
 const Household = require('../models/household');
 const HouseholdInvite = require('../models/householdInvite');
+const { hashEmail } = require('../services/emailHmac');
 
 const router = express.Router();
 
@@ -71,7 +72,7 @@ router.post('/invites', authenticate, async (req, res, next) => {
 
     await HouseholdInvite.create({
       householdId: user.household_id,
-      invitedEmail: email,
+      invitedEmail: hashEmail(email),
       invitedBy: user.id,
       token,
       expiresAt,
@@ -101,8 +102,8 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
       return res.status(409).json({ error: 'Already in a household' });
     }
 
-    if (invite.invited_email && user.email &&
-        invite.invited_email.toLowerCase() !== user.email.toLowerCase()) {
+    if (invite.invited_email_hash && user.email &&
+        invite.invited_email_hash !== hashEmail(user.email)) {
       return res.status(403).json({ error: 'This invite was sent to a different email address' });
     }
 

@@ -25,7 +25,7 @@ CREATE INDEX idx_households_created_by ON households(created_by);
 CREATE TABLE household_invites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   household_id UUID NOT NULL REFERENCES households(id),
-  invited_email TEXT NOT NULL,
+  invited_email_hash TEXT NOT NULL,
   invited_by UUID NOT NULL REFERENCES users(id),
   token TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','expired')),

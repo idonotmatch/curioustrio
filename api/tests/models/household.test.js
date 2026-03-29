@@ -1,3 +1,5 @@
+process.env.EMAIL_HASH_SECRET = 'test-secret-32chars-padded-xxxxx';
+const { hashEmail } = require('../../src/services/emailHmac');
 const db = require('../../src/db');
 const Household = require('../../src/models/household');
 const HouseholdInvite = require('../../src/models/householdInvite');
@@ -17,9 +19,9 @@ beforeAll(async () => {
 
   // Create a test user
   const uResult = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|household-test-user', 'Test Member', 'member@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, household_id = $1
+     ON CONFLICT (provider_uid) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, household_id = $1
      RETURNING id`,
     [testHouseholdId]
   );
@@ -32,8 +34,9 @@ afterAll(async () => {
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [testUserId]);
   await db.query(`DELETE FROM users WHERE id = $1`, [testUserId]);
   // Also clean up any additional users/households created during tests
-  await db.query(`DELETE FROM users WHERE auth0_id LIKE 'auth0|hh-test-%'`);
-  await db.query(`DELETE FROM household_invites WHERE invited_email LIKE '%@hh-test.com'`);
+  await db.query(`DELETE FROM users WHERE provider_uid LIKE 'auth0|hh-test-%'`);
+  // household_invites cleanup handled by household_id FK delete above
+  await db.query(`DELETE FROM categories WHERE household_id IN (SELECT id FROM households WHERE name LIKE 'Test Household%')`);
   await db.query(`DELETE FROM households WHERE name LIKE 'Test Household%'`);
   await db.pool.end();
 });
@@ -76,7 +79,7 @@ describe('Household.findByUserId', () => {
 
   it('returns null when user has no household', async () => {
     const uResult = await db.query(
-      `INSERT INTO users (auth0_id, name, email)
+      `INSERT INTO users (provider_uid, name, email)
        VALUES ('auth0|hh-test-no-household', 'No Household', 'nohousehold@hh-test.com')
        RETURNING id`
     );
@@ -100,8 +103,8 @@ describe('Household.findMembers', () => {
     expect(member.name).toBe('Test Member');
     expect(member.email).toBe('member@test.com');
     expect(member.created_at).toBeDefined();
-    // Should not expose auth0_id or household_id
-    expect(member.auth0_id).toBeUndefined();
+    // Should not expose provider_uid or household_id
+    expect(member.provider_uid).toBeUndefined();
   });
 });
 
@@ -110,7 +113,7 @@ describe('HouseholdInvite.create', () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
     const invite = await HouseholdInvite.create({
       householdId: testHouseholdId,
-      invitedEmail: 'invited@hh-test.com',
+      invitedEmail: hashEmail('invited@hh-test.com'),
       invitedBy: testUserId,
       token: 'test-token-create-001',
       expiresAt,
@@ -119,7 +122,7 @@ describe('HouseholdInvite.create', () => {
     expect(invite).toBeDefined();
     expect(invite.id).toBeDefined();
     expect(invite.household_id).toBe(testHouseholdId);
-    expect(invite.invited_email).toBe('invited@hh-test.com');
+    expect(invite.invited_email_hash).toBe(hashEmail('invited@hh-test.com'));
     expect(invite.invited_by).toBe(testUserId);
     expect(invite.token).toBe('test-token-create-001');
     expect(invite.status).toBe('pending');
@@ -132,7 +135,7 @@ describe('HouseholdInvite.findByToken', () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await HouseholdInvite.create({
       householdId: testHouseholdId,
-      invitedEmail: 'findtoken@hh-test.com',
+      invitedEmail: hashEmail('findtoken@hh-test.com'),
       invitedBy: testUserId,
       token: 'test-token-find-002',
       expiresAt,
@@ -142,7 +145,7 @@ describe('HouseholdInvite.findByToken', () => {
 
     expect(found).toBeDefined();
     expect(found.token).toBe('test-token-find-002');
-    expect(found.invited_email).toBe('findtoken@hh-test.com');
+    expect(found.invited_email_hash).toBe(hashEmail('findtoken@hh-test.com'));
     expect(found.status).toBe('pending');
   });
 
@@ -158,7 +161,7 @@ describe('HouseholdInvite.accept', () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await HouseholdInvite.create({
       householdId: testHouseholdId,
-      invitedEmail: 'accept@hh-test.com',
+      invitedEmail: hashEmail('accept@hh-test.com'),
       invitedBy: testUserId,
       token: 'test-token-accept-003',
       expiresAt,
@@ -177,7 +180,7 @@ describe('HouseholdInvite.expireOld', () => {
     const pastDate = new Date(Date.now() - 1000); // 1 second in the past
     await HouseholdInvite.create({
       householdId: testHouseholdId,
-      invitedEmail: 'expire@hh-test.com',
+      invitedEmail: hashEmail('expire@hh-test.com'),
       invitedBy: testUserId,
       token: 'test-token-expire-004',
       expiresAt: pastDate,
@@ -197,7 +200,7 @@ describe('User.setHouseholdId', () => {
   it('updates the household_id on a user and returns updated row', async () => {
     // Create a user without a household
     const uResult = await db.query(
-      `INSERT INTO users (auth0_id, name, email)
+      `INSERT INTO users (provider_uid, name, email)
        VALUES ('auth0|hh-test-set-household', 'Set Household User', 'sethousehold@hh-test.com')
        RETURNING id`
     );
@@ -208,7 +211,7 @@ describe('User.setHouseholdId', () => {
     expect(updated).toBeDefined();
     expect(updated.id).toBe(userId);
     expect(updated.household_id).toBe(testHouseholdId);
-    expect(updated.auth0_id).toBe('auth0|hh-test-set-household');
+    expect(updated.provider_uid).toBe('auth0|hh-test-set-household');
     expect(updated.name).toBe('Set Household User');
     expect(updated.email).toBe('sethousehold@hh-test.com');
     expect(updated.created_at).toBeDefined();
