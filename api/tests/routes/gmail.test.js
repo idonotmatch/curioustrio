@@ -7,7 +7,7 @@ jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => { req.userId = 'test-auth0-gmail'; next(); }
 }));
 jest.mock('../../src/services/gmailClient', () => ({
-  getAuthUrl: jest.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth?...'),
+  getAuthUrl: jest.fn().mockResolvedValue('https://accounts.google.com/o/oauth2/auth?state=test-csrf-token'),
   exchangeCode: jest.fn(),
   listRecentMessages: jest.fn(),
   getMessage: jest.fn(),
@@ -57,6 +57,7 @@ beforeEach(async () => {
   parseEmailExpense.mockReset();
   assignCategory.mockReset();
   // Clean state between tests
+  await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [userId]);
@@ -82,22 +83,31 @@ describe('GET /gmail/status', () => {
 });
 
 describe('GET /gmail/callback', () => {
-  it('saves token, returns { connected: true }', async () => {
-    exchangeCode.mockResolvedValue({
-      accessToken: 'new_access',
-      refreshToken: 'new_refresh',
-      expiresAt: '2026-04-21T00:00:00.000Z',
-      scope: 'gmail.readonly',
-    });
+  it('saves token, returns Gmail connected page', async () => {
+    await db.query(
+      `INSERT INTO gmail_oauth_states (token, user_id) VALUES ('valid-csrf-token', $1)`, [userId]
+    );
+    exchangeCode.mockResolvedValue({ accessToken: null, refreshToken: 'new_refresh', expiresAt: null, scope: 'gmail.readonly' });
 
-    const res = await request(app).get(`/gmail/callback?code=auth_code_123&state=${userId}`);
+    const res = await request(app).get('/gmail/callback?code=auth_code_123&state=valid-csrf-token');
     expect(res.status).toBe(200);
     expect(res.text).toContain('Gmail connected');
     expect(exchangeCode).toHaveBeenCalledWith('auth_code_123');
 
+    // State token should be consumed
+    const stateRow = await db.query(`SELECT * FROM gmail_oauth_states WHERE token = 'valid-csrf-token'`);
+    expect(stateRow.rows).toHaveLength(0);
+
     const token = await db.query(`SELECT * FROM oauth_tokens WHERE user_id = $1`, [userId]);
     expect(token.rows).toHaveLength(1);
     expect(token.rows[0].access_token).toBeNull();
+  });
+
+  it('returns 400 for unknown state token', async () => {
+    exchangeCode.mockResolvedValue({ accessToken: null, refreshToken: 'r', expiresAt: null, scope: '' });
+    const res = await request(app).get('/gmail/callback?code=code&state=not-a-real-token');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid|expired/i);
   });
 
   it('returns 400 when code is missing', async () => {

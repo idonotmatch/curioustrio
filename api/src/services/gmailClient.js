@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const { google } = require('googleapis');
 const OAuthToken = require('../models/oauthToken');
+const db = require('../db');
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
@@ -9,13 +11,17 @@ function createOAuth2Client() {
   );
 }
 
-function getAuthUrl(userId) {
+async function getAuthUrl(userId) {
+  const stateToken = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO gmail_oauth_states (token, user_id) VALUES ($1, $2)`, [stateToken, userId]
+  );
   const client = createOAuth2Client();
   return client.generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/gmail.readonly'],
     prompt: 'consent',
-    state: userId,
+    state: stateToken,
   });
 }
 
