@@ -101,6 +101,11 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
       return res.status(409).json({ error: 'Already in a household' });
     }
 
+    if (invite.invited_email && user.email &&
+        invite.invited_email.toLowerCase() !== user.email.toLowerCase()) {
+      return res.status(403).json({ error: 'This invite was sent to a different email address' });
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');

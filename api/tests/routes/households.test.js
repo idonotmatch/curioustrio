@@ -16,6 +16,8 @@ const TEST_PROVIDER_UID = 'test-auth0-households-owner';
 const TEST_PROVIDER_UID_JOINER = 'test-auth0-households-joiner';
 
 async function cleanUp() {
+  // Null out household_id for ALL users in test households (not just the two known UIDs)
+  await db.query(`UPDATE users SET household_id = NULL WHERE household_id IN (SELECT id FROM households WHERE name LIKE 'Test Household%')`);
   // FK-safe cleanup order: household_invites → expenses (for test users) → users → households
   await db.query(
     `DELETE FROM household_invites WHERE invited_by IN (
@@ -29,19 +31,14 @@ async function cleanUp() {
     )`,
     [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
   );
-  // Null out household_id first to avoid FK issue when deleting households
-  await db.query(
-    `UPDATE users SET household_id = NULL WHERE provider_uid IN ($1, $2)`,
-    [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
-  );
   await db.query(
     `DELETE FROM users WHERE provider_uid IN ($1, $2)`,
     [TEST_PROVIDER_UID, TEST_PROVIDER_UID_JOINER]
   );
-  // Delete test households (created by these tests have a recognizable name prefix)
-  await db.query(
-    `DELETE FROM households WHERE name LIKE 'Test Household%'`
-  );
+  // Delete categories before households (FK constraint)
+  await db.query(`DELETE FROM categories WHERE household_id IN (SELECT id FROM households WHERE name LIKE 'Test Household%')`);
+  // Delete test households
+  await db.query(`DELETE FROM households WHERE name LIKE 'Test Household%'`);
 }
 
 beforeEach(async () => {
@@ -275,5 +272,29 @@ describe('POST /households/invites/:token/accept', () => {
 
     expect(acceptRes.status).toBe(200);
     expect(acceptRes.body.household_id).toBe(householdId);
+  });
+});
+
+describe('POST /households/invites/:token/accept — email mismatch', () => {
+  it('returns 403 when accepting user email does not match invited_email', async () => {
+    mockUserId = TEST_PROVIDER_UID;
+    await request(app).post('/households').send({ name: 'Test Household Email Mismatch' });
+    const inviteRes = await request(app)
+      .post('/households/invites')
+      .send({ email: 'specifically-invited@test.com' });
+    const token = inviteRes.body.token;
+
+    const wrongUid = 'test-wrong-email-user';
+    await db.query(
+      `INSERT INTO users (provider_uid, name, email) VALUES ($1, 'Wrong User', 'wrong@test.com')
+       ON CONFLICT (provider_uid) DO NOTHING`, [wrongUid]
+    );
+    mockUserId = wrongUid;
+
+    const res = await request(app).post(`/households/invites/${token}/accept`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/email/i);
+
+    await db.query(`DELETE FROM users WHERE provider_uid = $1`, [wrongUid]);
   });
 });
