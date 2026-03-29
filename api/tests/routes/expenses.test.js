@@ -521,6 +521,20 @@ describe('POST /expenses/scan', () => {
   });
 });
 
+describe('POST /expenses/confirm — no location fields stored', () => {
+  it('does not store or return place_name or address', async () => {
+    const res = await request(app)
+      .post('/expenses/confirm')
+      .send({
+        merchant: 'Test Cafe', amount: 12.50, date: '2026-03-29', source: 'manual',
+        place_name: 'Test Cafe Downtown', address: '123 Main St',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.expense).not.toHaveProperty('place_name');
+    expect(res.body.expense).not.toHaveProperty('address');
+  });
+});
+
 describe('POST /expenses/parse — input length limit', () => {
   it('returns 400 when input exceeds 500 chars', async () => {
     const res = await request(app)

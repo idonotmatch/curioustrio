@@ -52,11 +52,8 @@ CREATE TABLE expenses (
   category_id UUID REFERENCES categories(id),
   source TEXT NOT NULL CHECK (source IN ('manual','camera','email')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','dismissed')),
-  place_name TEXT,
-  address TEXT,
   mapkit_stable_id TEXT,
   notes TEXT,
-  raw_receipt_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

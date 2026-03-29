@@ -74,7 +74,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 router.post('/confirm', async (req, res, next) => {
   try {
     const { merchant, description, amount, date, category_id, source, notes,
-            place_name, address, mapkit_stable_id, linked_expense_id,
+            mapkit_stable_id, linked_expense_id,
             payment_method, card_last4, card_label, is_private, items } = req.body;
 
     if (!amount || !date || !source) {
@@ -100,8 +100,6 @@ router.post('/confirm', async (req, res, next) => {
       source,
       status: 'confirmed',
       notes,
-      placeName: place_name,
-      address,
       mapkitStableId: mapkit_stable_id,
       linkedExpenseId: linked_expense_id,
       paymentMethod: payment_method,
