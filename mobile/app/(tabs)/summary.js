@@ -72,8 +72,13 @@ export default function SummaryScreen() {
       const parsed = await api.post('/expenses/parse', { input: input.trim(), today });
       setInput('');
       router.push({ pathname: '/confirm', params: { data: JSON.stringify({ ...parsed, source: 'manual' }) } });
-    } catch {
-      Alert.alert("Couldn't parse", "Try: '84.50 trader joes' or 'lunch 14'");
+    } catch (err) {
+      const msg = err?.message || '';
+      if (msg.includes('Could not parse')) {
+        Alert.alert("Couldn't parse that", "Try: '84.50 trader joes' or 'lunch 14'");
+      } else {
+        Alert.alert('Error', msg || 'Something went wrong. Check your connection.');
+      }
     } finally {
       setLoading(false);
     }
