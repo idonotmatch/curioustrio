@@ -1,22 +1,7 @@
 require('dotenv').config();
-// Force IPv4-only DNS resolution — Supabase DB host has both A and AAAA records
-// but Render's free tier (GCP) lacks IPv6 routing, causing ENETUNREACH when pg
-// connects to the IPv6 address. Patching dns.lookup to always request family:4
-// is more reliable than setDefaultResultOrder, which only reorders results but
-// still allows pg's underlying socket to pick the AAAA record on dual-stack hosts.
-(function forceIPv4() {
-  const dns = require('dns');
-  const _lookup = dns.lookup.bind(dns);
-  dns.lookup = (hostname, options, cb) => {
-    if (typeof options === 'function') {
-      cb = options;
-      options = { family: 4 };
-    } else {
-      options = Object.assign({}, options, { family: 4 });
-    }
-    return _lookup(hostname, options, cb);
-  };
-})();
+// Prefer IPv4 DNS results — belt-and-suspenders alongside the pooler URL which
+// already resolves to IPv4 on AWS. This must be called before any network I/O.
+require('dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
