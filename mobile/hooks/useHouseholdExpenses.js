@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 
-export function useHouseholdExpenses() {
+export function useHouseholdExpenses(month) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,21 +10,20 @@ export function useHouseholdExpenses() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.get('/expenses/household');
+      const url = month ? `/expenses/household?month=${month}` : '/expenses/household';
+      const data = await api.get(url);
       setExpenses(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [month]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const total = expenses
-    .filter(e => e.date?.startsWith(currentMonth))
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+  // Server already filtered by month — sum all returned expenses
+  const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   return { expenses, loading, error, refresh, total };
 }
