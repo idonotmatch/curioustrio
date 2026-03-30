@@ -9,7 +9,13 @@ async function create({ userId, householdId, merchant, description, amount, date
   return result.rows[0];
 }
 
-async function findByUser(userId, { limit = 50, offset = 0 } = {}) {
+async function findByUser(userId, { limit = 50, offset = 0, month } = {}) {
+  const params = [userId, limit, offset];
+  let monthClause = '';
+  if (month) {
+    params.push(month);
+    monthClause = `AND to_char(e.date, 'YYYY-MM') = $${params.length}`;
+  }
   const result = await db.query(
     `SELECT e.*,
             c.name  AS category_name,
@@ -21,9 +27,10 @@ async function findByUser(userId, { limit = 50, offset = 0 } = {}) {
      LEFT JOIN categories  c  ON e.category_id = c.id
      LEFT JOIN categories  pc ON c.parent_id   = pc.id
      WHERE e.user_id = $1 AND e.status != 'dismissed'
+     ${monthClause}
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
-    [userId, limit, offset]
+    params
   );
   return result.rows;
 }
@@ -94,12 +101,17 @@ async function findById(id) {
   return result.rows[0] || null;
 }
 
-async function findByHousehold(householdId, { limit = 50, offset = 0, userId } = {}) {
+async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month } = {}) {
   const params = [householdId, limit, offset];
   let privateClause = '';
   if (userId) {
     params.push(userId);
     privateClause = `AND (e.is_private = FALSE OR e.user_id = $${params.length})`;
+  }
+  let monthClause = '';
+  if (month) {
+    params.push(month);
+    monthClause = `AND to_char(e.date, 'YYYY-MM') = $${params.length}`;
   }
   const result = await db.query(
     `SELECT e.*,
@@ -115,6 +127,7 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId } =
      LEFT JOIN users       u  ON e.user_id     = u.id
      WHERE e.household_id = $1 AND e.status != 'dismissed'
      ${privateClause}
+     ${monthClause}
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
     params
