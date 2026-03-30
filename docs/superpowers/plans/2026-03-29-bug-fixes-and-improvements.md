@@ -213,7 +213,7 @@ cd /Users/dangnguyen/curious-trio && npm test -- --testPathPattern="nlParser.tes
 
 Expected: the `items` prompt test fails; other tests pass.
 
-- [ ] **Step 5: Update the system prompt in `nlParser.js`**
+- [ ] **Step 4: Update the system prompt in `nlParser.js`**
 
 In `api/src/services/nlParser.js`, add `items` to the `SYSTEM_PROMPT`:
 
@@ -675,7 +675,7 @@ ALTER TABLE budget_settings
 psql $DATABASE_URL -f api/src/db/migrations/019_budget_user_scope.sql
 ```
 
-Expected: `ALTER TABLE` × 3, `DROP CONSTRAINT`, `ADD CONSTRAINT` × 2 — no errors.
+Expected: four `ALTER TABLE` outputs (add column, drop NOT NULL, drop constraint, add constraint × 2) — no errors.
 
 - [ ] **Step 3: Verify schema**
 
@@ -1230,19 +1230,21 @@ Expected: fails with "Cannot find module '../../src/services/mapkitService'".
 
 - [ ] **Step 4: Create `mapkitService.js`**
 
+Note: Apple MapKit Web Services uses the self-signed JWT **directly** as the Bearer token on search requests — there is no `/v1/token` exchange endpoint. Sign the JWT and use it directly:
+
 ```js
 // api/src/services/mapkitService.js
 const jwt = require('jsonwebtoken');
 const fetch = require('node-fetch');
 
-const MAPKIT_TOKEN_URL = 'https://maps-api.apple.com/v1/token';
 const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
 
-let cachedToken = null;
-let tokenExpiry = 0;
+let cachedJwt = null;
+let jwtExpiry = 0;
 
-async function getMapKitToken() {
-  if (cachedToken && Date.now() < tokenExpiry - 60_000) return cachedToken;
+function getSignedJwt() {
+  // Cache for up to 25 minutes (JWT signed for 30m)
+  if (cachedJwt && Date.now() < jwtExpiry - 60_000) return cachedJwt;
 
   const { APPLE_MAPS_KEY_ID, APPLE_MAPS_TEAM_ID, APPLE_MAPS_PRIVATE_KEY } = process.env;
   if (!APPLE_MAPS_KEY_ID || !APPLE_MAPS_TEAM_ID || !APPLE_MAPS_PRIVATE_KEY) {
@@ -1250,25 +1252,17 @@ async function getMapKitToken() {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const authJwt = jwt.sign(
+  cachedJwt = jwt.sign(
     { iss: APPLE_MAPS_TEAM_ID, iat: now, exp: now + 1800 },
     APPLE_MAPS_PRIVATE_KEY,
     { algorithm: 'ES256', keyid: APPLE_MAPS_KEY_ID }
   );
-
-  const res = await fetch(MAPKIT_TOKEN_URL, {
-    headers: { Authorization: `Bearer ${authJwt}` },
-  });
-  if (!res.ok) throw new Error(`MapKit token request failed: ${res.status}`);
-  const { accessToken, expiresInSeconds } = await res.json();
-
-  cachedToken = accessToken;
-  tokenExpiry = Date.now() + expiresInSeconds * 1000;
-  return cachedToken;
+  jwtExpiry = Date.now() + 1800 * 1000;
+  return cachedJwt;
 }
 
 async function searchPlace(query, lat, lng) {
-  const token = await getMapKitToken();
+  const token = getSignedJwt();
   const url = new URL(MAPKIT_SEARCH_URL);
   url.searchParams.set('q', query);
   url.searchParams.set('userLocation', `${lat},${lng}`);
