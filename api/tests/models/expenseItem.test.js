@@ -7,7 +7,7 @@ beforeAll(async () => {
   const hh = await db.query(`INSERT INTO households (name) VALUES ('Items Test HH') RETURNING id`);
   householdId = hh.rows[0].id;
   const u = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|items-test', 'Items Tester', 'items@test.com', $1) RETURNING id`,
     [householdId]
   );

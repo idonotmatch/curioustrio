@@ -10,12 +10,12 @@ let householdId, parentId, leafId, suggestionId;
 
 beforeAll(async () => {
   // Find or create a household for the test user
-  const userRes = await db.query("SELECT household_id FROM users WHERE auth0_id = 'auth0|test-user-123'");
+  const userRes = await db.query("SELECT household_id FROM users WHERE provider_uid = 'auth0|test-user-123'");
   householdId = userRes.rows[0]?.household_id;
   if (!householdId) {
     const hRes = await db.query("INSERT INTO households (name) VALUES ('SuggTest') RETURNING id");
     householdId = hRes.rows[0].id;
-    await db.query("UPDATE users SET household_id = $1 WHERE auth0_id = 'auth0|test-user-123'", [householdId]);
+    await db.query("UPDATE users SET household_id = $1 WHERE provider_uid = 'auth0|test-user-123'", [householdId]);
   }
   const pRes = await db.query(
     "INSERT INTO categories (household_id, name) VALUES ($1, 'SGParent') RETURNING id",

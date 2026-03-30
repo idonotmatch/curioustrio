@@ -18,18 +18,18 @@ beforeAll(async () => {
 
   // Create two users
   const u1 = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|dupdet-user1', 'DupDet User1', 'dupdet1@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
      RETURNING id`,
     [householdId]
   );
   userId = u1.rows[0].id;
 
   const u2 = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|dupdet-user2', 'DupDet User2', 'dupdet2@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
      RETURNING id`,
     [householdId2]
   );

@@ -11,9 +11,9 @@ beforeAll(async () => {
   testHouseholdId = hResult.rows[0].id;
 
   const uResult = await db.query(
-    `INSERT INTO users (auth0_id, name, email, household_id)
+    `INSERT INTO users (provider_uid, name, email, household_id)
      VALUES ('auth0|detector-test-user', 'Detector Test User', 'detectortest@test.com', $1)
-     ON CONFLICT (auth0_id) DO UPDATE SET household_id = $1
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
      RETURNING id`,
     [testHouseholdId]
   );
