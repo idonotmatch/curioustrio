@@ -46,7 +46,8 @@ async function assignCategory({ merchant, description, householdId, categories, 
     });
     console.log(`[categoryAssigner] Claude raw response: ${text}`);
     if (!text) return { category_id: null, source: 'claude', confidence: 0 };
-    const parsed = JSON.parse(text);
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const parsed = JSON.parse(cleaned);
     console.log(`[categoryAssigner] Assigned category_id=${parsed.category_id}`);
     return {
       category_id: parsed.category_id || null,

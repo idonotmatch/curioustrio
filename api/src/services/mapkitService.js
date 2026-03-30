@@ -15,10 +15,14 @@ function getSignedJwt() {
     throw new Error('Apple Maps credentials not configured');
   }
 
+  // Render env vars store the .p8 key with literal \n strings instead of
+  // real newlines. jsonwebtoken requires actual newlines to parse an EC key.
+  const privateKey = APPLE_MAPS_PRIVATE_KEY.replace(/\\n/g, '\n');
+
   const now = Math.floor(Date.now() / 1000);
   cachedJwt = jwt.sign(
     { iss: APPLE_MAPS_TEAM_ID, iat: now, exp: now + 1800 },
-    APPLE_MAPS_PRIVATE_KEY,
+    privateKey,
     { algorithm: 'ES256', keyid: APPLE_MAPS_KEY_ID }
   );
   jwtExpiry = Date.now() + 1800 * 1000;
