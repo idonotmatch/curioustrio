@@ -23,6 +23,18 @@ jest.mock('@anthropic-ai/sdk', () => {
   return MockAnthropic;
 });
 
+describe('nlParser system prompt', () => {
+  it('system prompt documents the items field', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../src/services/nlParser.js'),
+      'utf8'
+    );
+    expect(src).toContain('items');
+  });
+});
+
 describe('parseExpense', () => {
   it('parses amount and merchant from simple NL input', async () => {
     const result = await parseExpense('242.50 trader joes', '2026-03-20');
@@ -52,5 +64,31 @@ describe('parseExpense', () => {
     const instance = new Anthropic();
     instance.messages.create.mockRejectedValueOnce(new Error('API timeout'));
     await expect(parseExpense('lunch chipotle 14.50', '2026-03-20')).rejects.toThrow('API timeout');
+  });
+
+  it('extracts items, merchant, and card_label from a rich input string', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: JSON.stringify({
+          merchant: 'Nordstrom',
+          description: null,
+          amount: 125,
+          date: '2026-03-29',
+          notes: null,
+          payment_method: 'credit',
+          card_label: 'amex platinum',
+          items: [{ description: 'Nike running shoes', amount: 125 }],
+        }),
+      }],
+    });
+
+    const result = await parseExpense('125 nike running shoes from nordstrom using amex platinum', '2026-03-29');
+    expect(result.merchant).toBe('Nordstrom');
+    expect(result.payment_method).toBe('credit');
+    expect(result.card_label).toBe('amex platinum');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].description).toBe('Nike running shoes');
   });
 });

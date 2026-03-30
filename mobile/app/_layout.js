@@ -40,9 +40,10 @@ function AppNavigator() {
         // sign-in the session may not yet be flushed to AsyncStorage, causing
         // getSession() to return null, the request to go out unauthenticated,
         // the server to respond 401, and navigation to silently never fire.
+        const isAnon = session.user.is_anonymous === true;
         const me = await api.post('/users/sync', {
-          name: session.user.user_metadata?.full_name || session.user.email || 'User',
-          email: session.user.email || null,
+          name: isAnon ? 'Anonymous' : (session.user.user_metadata?.full_name || session.user.email || 'User'),
+          email: isAnon ? null : (session.user.email || null),
         }, { token: session.access_token });
         if (!me?.household_id) {
           router.replace('/onboarding');

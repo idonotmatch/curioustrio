@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, Te
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
+import * as Location from 'expo-location';
 import { api } from '../services/api';
 import { ConfirmField } from '../components/ConfirmField';
 import { LocationPicker } from '../components/LocationPicker';
@@ -14,6 +15,7 @@ export default function ConfirmScreen() {
   const { categories, refresh: refreshCategories } = useCategories();
 
   const [expense, setExpense] = useState(parsed);
+  const [amountText, setAmountText] = useState(String(Math.abs(parsed?.amount ?? 0)));
   const [merchant, setMerchant] = useState(parsed.merchant || '');
   const [description, setDescription] = useState(parsed.description || '');
   const [saving, setSaving] = useState(false);
@@ -38,6 +40,31 @@ export default function ConfirmScreen() {
     api.get('/expenses/cards').then(setSavedCards).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!merchant?.trim()) return; // only auto-populate when merchant is known
+
+    async function autoPopulateLocation() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+
+        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude } = position.coords;
+
+        const result = await api.get(
+          `/places/search?q=${encodeURIComponent(merchant)}&lat=${latitude}&lng=${longitude}`
+        );
+        if (result?.result) {
+          setLocationData(result.result);
+        }
+      } catch {
+        // Non-fatal — location stays unpopulated, user can add manually
+      }
+    }
+
+    autoPopulateLocation();
+  }, []); // run once on mount; merchant is captured from closure at parse time
+
   const isCameraSource = parsed.source === 'camera';
 
   function handleItemChange(index, field, value) {
@@ -54,7 +81,7 @@ export default function ConfirmScreen() {
     setIsRefund(value);
     setExpense(prev => ({
       ...prev,
-      amount: value ? -Math.abs(Number(prev.amount)) : Math.abs(Number(prev.amount)),
+      amount: value ? -Math.abs(parseFloat(amountText) || 0) : Math.abs(parseFloat(amountText) || 0),
     }));
   }
 
@@ -152,8 +179,37 @@ export default function ConfirmScreen() {
         </View>
       ) : null}
 
-      <ConfirmField label="Amount" value={`$${Number(expense.amount).toFixed(2)}`} />
-      <ConfirmField label="Date" value={expense.date} />
+      <View style={styles.editableRow}>
+        <Text style={styles.editableLabel}>AMOUNT</Text>
+        <TextInput
+          style={styles.editableInput}
+          value={amountText}
+          onChangeText={value => {
+            setAmountText(value);
+            setExpense(prev => ({
+              ...prev,
+              amount: isRefund
+                ? -Math.abs(parseFloat(value) || 0)
+                : Math.abs(parseFloat(value) || 0),
+            }));
+          }}
+          keyboardType="decimal-pad"
+          placeholder="0.00"
+          placeholderTextColor="#444"
+        />
+      </View>
+      <View style={styles.editableRow}>
+        <Text style={styles.editableLabel}>DATE</Text>
+        <TextInput
+          style={styles.editableInput}
+          value={expense.date || ''}
+          onChangeText={value => setExpense(prev => ({ ...prev, date: value }))}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor="#444"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
 
       {/* Category — tappable picker */}
       <TouchableOpacity

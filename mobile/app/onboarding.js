@@ -1,7 +1,8 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -9,6 +10,13 @@ export default function OnboardingScreen() {
   const [name, setName] = useState('');
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAnonymous(session?.user?.is_anonymous === true);
+    });
+  }, []);
 
   async function handleCreate() {
     if (!name.trim()) return;
@@ -40,13 +48,30 @@ export default function OnboardingScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Welcome</Text>
-        <Text style={styles.subtitle}>Set up your household to start tracking expenses together.</Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => setMode('create')}>
-          <Text style={styles.primaryText}>Create a household</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('join')}>
-          <Text style={styles.secondaryText}>Join with invite code</Text>
-        </TouchableOpacity>
+        {isAnonymous ? (
+          <>
+            <Text style={styles.subtitle}>You're tracking solo. Create an account to join or create a household.</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/login')}>
+              <Text style={styles.primaryText}>Create an account →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)/summary')}>
+              <Text style={styles.skipText}>Continue solo</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.subtitle}>Set up your household to start tracking expenses together.</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => setMode('create')}>
+              <Text style={styles.primaryText}>Create a household</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('join')}>
+              <Text style={styles.secondaryText}>Join with invite code</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)/summary')}>
+              <Text style={styles.skipText}>I'm tracking solo</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     );
   }
@@ -105,4 +130,5 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#fff', fontSize: 15 },
   input: { backgroundColor: '#1a1a1a', color: '#fff', borderRadius: 10, padding: 14, fontSize: 15, marginBottom: 16 },
   back: { color: '#555', textAlign: 'center', marginTop: 16, fontSize: 13 },
+  skipText: { color: '#555', textAlign: 'center', marginTop: 16, fontSize: 13 },
 });

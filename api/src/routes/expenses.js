@@ -41,8 +41,9 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
       householdId: user?.household_id,
       categories,
     });
+    const matchedCat = categories.find(c => c.id === category_id);
 
-    res.json({ ...parsed, category_id, category_source: source, category_confidence: confidence });
+    res.json({ ...parsed, category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
   } catch (err) { next(err); }
 });
 
@@ -65,8 +66,9 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       householdId: user?.household_id,
       categories,
     });
+    const matchedCat = categories.find(c => c.id === category_id);
 
-    res.json({ ...parsed, source: 'camera', category_id, category_source: source, category_confidence: confidence });
+    res.json({ ...parsed, source: 'camera', category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
   } catch (err) { next(err); }
 });
 
@@ -148,7 +150,8 @@ router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const expenses = await Expense.findByUser(user.id);
+    const { month } = req.query;
+    const expenses = await Expense.findByUser(user.id, { month });
     res.json(expenses);
   } catch (err) { next(err); }
 });
@@ -158,9 +161,10 @@ router.get('/household', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const { month } = req.query;
     const expenses = user.household_id
-      ? await Expense.findByHousehold(user.household_id, { userId: user.id })
-      : await Expense.findByUser(user.id);
+      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month })
+      : await Expense.findByUser(user.id, { month });
     res.json(expenses);
   } catch (err) { next(err); }
 });

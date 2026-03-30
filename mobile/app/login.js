@@ -3,11 +3,26 @@ import {
 } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { signInWithGoogle, signInWithApple, statusCodes } from '../lib/auth';
+import { supabase } from '../lib/supabase';
 import { useState } from 'react';
 
 export default function LoginScreen() {
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [loadingApple, setLoadingApple] = useState(false);
+  const [loadingAnon, setLoadingAnon] = useState(false);
+
+  async function handleContinueAnonymously() {
+    setLoadingAnon(true);
+    try {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      // _layout.js onAuthStateChange handles routing
+    } catch (e) {
+      Alert.alert('Sign in failed', 'Please try again.');
+    } finally {
+      setLoadingAnon(false);
+    }
+  }
 
   async function handleGoogleSignIn() {
     setLoadingGoogle(true);
@@ -59,6 +74,16 @@ export default function LoginScreen() {
           onPress={handleAppleSignIn}
         />
       )}
+
+      <TouchableOpacity
+        style={styles.anonBtn}
+        onPress={handleContinueAnonymously}
+        disabled={loadingAnon}
+      >
+        {loadingAnon
+          ? <ActivityIndicator color="#888" />
+          : <Text style={styles.anonBtnText}>Continue without account</Text>}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -76,4 +101,6 @@ const styles = StyleSheet.create({
   },
   googleBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
   appleBtn: { width: '100%', height: 52 },
+  anonBtn: { marginTop: 24, alignItems: 'center', padding: 12 },
+  anonBtnText: { color: '#555', fontSize: 14 },
 });

@@ -60,7 +60,14 @@ export default function AddScreen() {
         params: { data: JSON.stringify({ ...parsed, source: 'camera', image_uri: asset.uri }) }
       });
     } catch (err) {
-      Alert.alert('Scan failed', 'Could not read receipt. Try entering manually.');
+      const msg = err?.message || '';
+      if (msg.includes('image too large')) {
+        Alert.alert('Image too large', 'Receipt image is too large. Try a closer crop.');
+      } else if (msg.includes('Could not parse receipt')) {
+        Alert.alert('Could not read receipt', "Couldn't read that receipt. Try better lighting or enter manually.");
+      } else {
+        Alert.alert('Scan failed', 'Could not reach the server. Check your connection and try again.');
+      }
     } finally {
       setScanLoading(false);
     }

@@ -19,9 +19,12 @@ const { assignCategory } = require('../../src/services/categoryAssigner');
 const { parseReceipt } = require('../../src/services/receiptParser');
 
 let householdId;
+let userId;
 
 beforeEach(() => {
   parseReceipt.mockReset();
+  parseExpense.mockReset();
+  assignCategory.mockReset();
 });
 
 beforeAll(async () => {
@@ -37,6 +40,11 @@ beforeAll(async () => {
      ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1`,
     [householdId]
   );
+
+  const userRow = await db.query(
+    `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
+  );
+  userId = userRow.rows[0].id;
 });
 
 afterAll(async () => {
@@ -46,6 +54,7 @@ afterAll(async () => {
   )`, [householdId]);
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-user-123'`);
+  await db.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
 
@@ -563,5 +572,91 @@ describe('expense response includes category_parent_name', () => {
     if (res.body.length > 0) {
       expect(res.body[0]).toHaveProperty('category_parent_name');
     }
+  });
+});
+
+describe('POST /expenses/parse — category_name in response', () => {
+  it('returns category_name alongside category_id', async () => {
+    parseExpense.mockResolvedValueOnce({
+      merchant: "Trader Joe's", amount: 84.17, date: '2026-03-20', notes: null,
+    });
+    const catRes = await db.query(
+      `INSERT INTO categories (name, household_id) VALUES ('Groceries', $1) RETURNING id, name`,
+      [householdId]
+    );
+    const catId = catRes.rows[0].id;
+    assignCategory.mockResolvedValueOnce({ category_id: catId, source: 'memory', confidence: 4 });
+
+    const res = await request(app)
+      .post('/expenses/parse')
+      .send({ input: '84.17 trader joes', today: '2026-03-20' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.category_id).toBe(catId);
+    expect(res.body.category_name).toBe('Groceries');
+    expect(res.body.category_source).toBe('memory');
+
+    await db.query('DELETE FROM categories WHERE id = $1', [catId]);
+  });
+
+  it('returns category_name: null when no category matched', async () => {
+    parseExpense.mockResolvedValueOnce({
+      merchant: 'Unknown Shop', amount: 10, date: '2026-03-20', notes: null,
+    });
+    assignCategory.mockResolvedValueOnce({ category_id: null, source: 'claude', confidence: 0 });
+
+    const res = await request(app)
+      .post('/expenses/parse')
+      .send({ input: '10 unknown shop', today: '2026-03-20' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.category_id).toBeNull();
+    expect(res.body.category_name).toBeNull();
+  });
+});
+
+describe('GET /expenses with ?month filter', () => {
+  afterEach(async () => {
+    await db.query(`DELETE FROM expenses WHERE merchant IN ('Jan Merchant', 'Feb Merchant')`);
+  });
+
+  it('returns only expenses from the specified month', async () => {
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Jan Merchant', 10.00, '2026-01-15', 'manual', 'confirmed'),
+              ($1, $2, 'Feb Merchant', 20.00, '2026-02-15', 'manual', 'confirmed')`,
+      [userId, householdId]
+    );
+
+    const res = await request(app).get('/expenses?month=2026-01');
+    expect(res.status).toBe(200);
+    expect(res.body.every(e => String(e.date).startsWith('2026-01'))).toBe(true);
+    expect(res.body.some(e => e.merchant === 'Jan Merchant')).toBe(true);
+    expect(res.body.some(e => e.merchant === 'Feb Merchant')).toBe(false);
+  });
+});
+
+describe('POST /expenses/scan — category_name in response', () => {
+  it('returns category_name alongside category_id', async () => {
+    const catRes = await db.query(
+      `INSERT INTO categories (name, household_id) VALUES ('Groceries Scan', $1) RETURNING id, name`,
+      [householdId]
+    );
+    const catId = catRes.rows[0].id;
+    parseReceipt.mockResolvedValueOnce({
+      merchant: 'Whole Foods', amount: 87.32, date: '2026-03-21', notes: null,
+    });
+    assignCategory.mockResolvedValueOnce({ category_id: catId, source: 'memory', confidence: 4 });
+
+    const res = await request(app)
+      .post('/expenses/scan')
+      .send({ image_base64: 'base64data' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.category_id).toBe(catId);
+    expect(res.body.category_name).toBe('Groceries Scan');
+    expect(res.body.category_source).toBe('memory');
+
+    await db.query('DELETE FROM categories WHERE id = $1', [catId]);
   });
 });
