@@ -53,7 +53,7 @@ app.use(cors({
   },
 }));
 app.use(standard);
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 
 app.use('/expenses', expensesRouter);
 app.use('/categories', categoriesRouter);

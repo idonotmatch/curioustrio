@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.99.3",
     "expo": "~55.0.8",
     "expo-apple-authentication": "^55.0.9",
+    "expo-image-manipulator": "^55.0.11",
     "expo-image-picker": "^55.0.13",
     "expo-linking": "~55.0.8",
     "expo-location": "^55.1.4",

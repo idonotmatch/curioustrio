@@ -52,7 +52,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
   try {
     const { image_base64, today } = req.body;
     if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
-    if (image_base64.length > 1_400_000) return res.status(400).json({ error: 'image too large (max ~1MB base64)' });
+    if (image_base64.length > 3_000_000) return res.status(400).json({ error: 'image too large (max ~2MB)' });
 
     const todayDate = today || new Date().toISOString().split('T')[0];
     const parsed = await parseReceipt(image_base64, todayDate);
