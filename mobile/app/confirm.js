@@ -14,6 +14,7 @@ export default function ConfirmScreen() {
   const { categories, refresh: refreshCategories } = useCategories();
 
   const [expense, setExpense] = useState(parsed);
+  const [amountText, setAmountText] = useState(String(Math.abs(parsed?.amount ?? 0)));
   const [merchant, setMerchant] = useState(parsed.merchant || '');
   const [description, setDescription] = useState(parsed.description || '');
   const [saving, setSaving] = useState(false);
@@ -54,7 +55,7 @@ export default function ConfirmScreen() {
     setIsRefund(value);
     setExpense(prev => ({
       ...prev,
-      amount: value ? -Math.abs(Number(prev.amount)) : Math.abs(Number(prev.amount)),
+      amount: value ? -Math.abs(parseFloat(amountText) || 0) : Math.abs(parseFloat(amountText) || 0),
     }));
   }
 
@@ -152,8 +153,37 @@ export default function ConfirmScreen() {
         </View>
       ) : null}
 
-      <ConfirmField label="Amount" value={`$${Number(expense.amount).toFixed(2)}`} />
-      <ConfirmField label="Date" value={expense.date} />
+      <View style={styles.editableRow}>
+        <Text style={styles.editableLabel}>AMOUNT</Text>
+        <TextInput
+          style={styles.editableInput}
+          value={amountText}
+          onChangeText={value => {
+            setAmountText(value);
+            setExpense(prev => ({
+              ...prev,
+              amount: isRefund
+                ? -Math.abs(parseFloat(value) || 0)
+                : Math.abs(parseFloat(value) || 0),
+            }));
+          }}
+          keyboardType="decimal-pad"
+          placeholder="0.00"
+          placeholderTextColor="#444"
+        />
+      </View>
+      <View style={styles.editableRow}>
+        <Text style={styles.editableLabel}>DATE</Text>
+        <TextInput
+          style={styles.editableInput}
+          value={expense.date || ''}
+          onChangeText={value => setExpense(prev => ({ ...prev, date: value }))}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor="#444"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
 
       {/* Category — tappable picker */}
       <TouchableOpacity
