@@ -6,6 +6,7 @@ import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { useHousehold } from '../../hooks/useHousehold';
 import { ExpenseItem } from '../../components/ExpenseItem';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -55,6 +56,8 @@ export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const { memberCount } = useHousehold();
+  const isMultiMember = memberCount > 1;
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHousehold } = useHouseholdExpenses(selectedMonth);
@@ -105,21 +108,23 @@ export default function FeedScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Mine / Household toggle */}
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={[styles.toggleChip, mode === 'mine' && styles.toggleChipActive]}
-          onPress={() => setMode('mine')}
-        >
-          <Text style={[styles.toggleText, mode === 'mine' && styles.toggleTextActive]}>Mine</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleChip, mode === 'household' && styles.toggleChipActive]}
-          onPress={() => setMode('household')}
-        >
-          <Text style={[styles.toggleText, mode === 'household' && styles.toggleTextActive]}>Household</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Mine / Household toggle — only shown for multi-member households */}
+      {isMultiMember && (
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[styles.toggleChip, mode === 'mine' && styles.toggleChipActive]}
+            onPress={() => setMode('mine')}
+          >
+            <Text style={[styles.toggleText, mode === 'mine' && styles.toggleTextActive]}>Mine</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleChip, mode === 'household' && styles.toggleChipActive]}
+            onPress={() => setMode('household')}
+          >
+            <Text style={[styles.toggleText, mode === 'household' && styles.toggleTextActive]}>Household</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <SpendHeader
         total={monthlyTotal}

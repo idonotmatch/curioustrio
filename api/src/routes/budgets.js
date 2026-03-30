@@ -27,7 +27,8 @@ router.get('/', async (req, res, next) => {
 
       const spendResult = await db.query(
         `SELECT category_id, SUM(amount) as spent FROM expenses
-         WHERE household_id = $1 AND status = 'confirmed' AND to_char(date, 'YYYY-MM') = $2
+         WHERE (household_id = $1 OR user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND status = 'confirmed' AND to_char(date, 'YYYY-MM') = $2
          GROUP BY category_id`,
         [user.household_id, month]
       );
@@ -40,7 +41,8 @@ router.get('/', async (req, res, next) => {
       const parentSpendResult = await db.query(
         `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
          FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
-         WHERE e.household_id = $1 AND e.status = 'confirmed' AND to_char(e.date, 'YYYY-MM') = $2
+         WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND e.status = 'confirmed' AND to_char(e.date, 'YYYY-MM') = $2
          GROUP BY group_id`,
         [user.household_id, month]
       );
