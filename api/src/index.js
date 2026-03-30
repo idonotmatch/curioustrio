@@ -30,10 +30,21 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 
+// Origins that Expo/React Native sends on real devices and simulators.
+// These are not browser origins so CORS restrictions don't apply, but the
+// cors middleware still sees them as a non-null origin and would reject them
+// if not explicitly listed.
+const MOBILE_ORIGINS = [
+  'capacitor://localhost',  // Expo on iOS (TestFlight + device)
+  'https://localhost',      // Expo web / some RN bridges
+  'http://localhost',       // local dev
+];
+
 app.use(helmet());
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // mobile apps, curl, server-to-server
+    if (!origin) return callback(null, true); // curl, server-to-server
+    if (MOBILE_ORIGINS.includes(origin)) return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     callback(new Error(`Origin ${origin} not allowed by CORS policy`));
   },
