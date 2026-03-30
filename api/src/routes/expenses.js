@@ -41,8 +41,9 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
       householdId: user?.household_id,
       categories,
     });
+    const matchedCat = categories.find(c => c.id === category_id);
 
-    res.json({ ...parsed, category_id, category_source: source, category_confidence: confidence });
+    res.json({ ...parsed, category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
   } catch (err) { next(err); }
 });
 
@@ -65,8 +66,9 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       householdId: user?.household_id,
       categories,
     });
+    const matchedCat = categories.find(c => c.id === category_id);
 
-    res.json({ ...parsed, source: 'camera', category_id, category_source: source, category_confidence: confidence });
+    res.json({ ...parsed, source: 'camera', category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
   } catch (err) { next(err); }
 });
 
