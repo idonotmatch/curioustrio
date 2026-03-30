@@ -6,10 +6,12 @@ const db = require('../../src/db');
 const User = require('../../src/models/user');
 
 let mockUserId = 'test-auth0-households-owner';
+let mockIsAnonymous = false;
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
     req.userId = mockUserId;
+    req.isAnonymous = mockIsAnonymous;
     next();
   },
 }));
@@ -45,6 +47,7 @@ async function cleanUp() {
 
 beforeEach(async () => {
   mockUserId = TEST_PROVIDER_UID;
+  mockIsAnonymous = false;
   await cleanUp();
   // Create fresh test user with no household
   await db.query(
@@ -298,6 +301,15 @@ describe('POST /households/invites/:token/accept — email mismatch', () => {
     expect(res.body.error).toMatch(/email/i);
 
     await db.query(`DELETE FROM users WHERE provider_uid = $1`, [wrongUid]);
+  });
+});
+
+describe('Anonymous user guard', () => {
+  it('returns 403 on POST / when req.isAnonymous is true', async () => {
+    mockIsAnonymous = true;
+    const res = await request(app).post('/households').send({ name: 'Test' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/Create an account/);
   });
 });
 

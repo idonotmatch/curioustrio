@@ -9,8 +9,17 @@ const { hashEmail } = require('../services/emailHmac');
 
 const router = express.Router();
 
+function rejectAnonymous(req, res) {
+  if (req.isAnonymous) {
+    res.status(403).json({ error: 'Create an account to join a household' });
+    return true;
+  }
+  return false;
+}
+
 router.post('/', authenticate, async (req, res, next) => {
   try {
+    if (rejectAnonymous(req, res)) return;
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
@@ -59,6 +68,7 @@ router.patch('/me', authenticate, async (req, res, next) => {
 
 router.post('/invites', authenticate, async (req, res, next) => {
   try {
+    if (rejectAnonymous(req, res)) return;
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'email is required' });
 
@@ -86,6 +96,7 @@ router.post('/invites', authenticate, async (req, res, next) => {
 
 router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
   try {
+    if (rejectAnonymous(req, res)) return;
     const invite = await HouseholdInvite.findByToken(req.params.token);
     if (!invite) return res.status(404).json({ error: 'Invite not found' });
 
@@ -135,6 +146,7 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
 // Leave current household (self-service)
 router.post('/me/leave', authenticate, async (req, res, next) => {
   try {
+    if (rejectAnonymous(req, res)) return;
     const user = await User.findByProviderUid(req.userId);
     if (!user?.household_id) {
       return res.status(400).json({ error: 'Not in a household' });
@@ -149,6 +161,7 @@ router.post('/me/leave', authenticate, async (req, res, next) => {
 // Remove a member from the household (any member can remove others)
 router.delete('/me/members/:userId', authenticate, async (req, res, next) => {
   try {
+    if (rejectAnonymous(req, res)) return;
     const requester = await User.findByProviderUid(req.userId);
     if (!requester?.household_id) {
       return res.status(403).json({ error: 'Not in a household' });

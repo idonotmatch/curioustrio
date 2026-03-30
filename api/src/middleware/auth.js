@@ -64,6 +64,7 @@ async function authenticate(req, res, next) {
       });
     });
     req.userId = decoded.sub;
+    req.isAnonymous = decoded.is_anonymous === true;
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid token' });
