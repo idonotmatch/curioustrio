@@ -1,10 +1,13 @@
-import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 import { useState } from 'react';
+import Constants from 'expo-constants';
+
+const isSimulator = Platform.OS === 'ios' && !Constants.isDevice;
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
@@ -30,6 +33,10 @@ export default function AddScreen() {
   }
 
   async function handleScan(fromGallery = false) {
+    if (!fromGallery && isSimulator) {
+      Alert.alert('Simulator', 'Camera is not available in the simulator. Use "from camera roll" or test on a real device.');
+      return;
+    }
     try {
       if (!fromGallery) {
         // Camera permission must be explicitly requested — launchCameraAsync throws
