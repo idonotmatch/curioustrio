@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Modal,
+  Alert,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +27,60 @@ export default function SettingsScreen() {
   const [budgetMsg, setBudgetMsg] = useState('');
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
+
+  // Household
+  const [household, setHousehold] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteToken, setInviteToken] = useState(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinToken, setJoinToken] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+
+  useEffect(() => {
+    api.get('/households/me')
+      .then(data => { setHousehold(data.household); setMembers(data.members || []); })
+      .catch(() => {});
+  }, []);
+
+  async function generateInvite() {
+    if (!inviteEmail.trim()) return;
+    setInviteLoading(true);
+    try {
+      const data = await api.post('/households/invites', { email: inviteEmail.trim().toLowerCase() });
+      setInviteToken(data.token);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to generate invite');
+    } finally {
+      setInviteLoading(false);
+    }
+  }
+
+  async function joinHousehold() {
+    if (!joinToken.trim()) return;
+    setJoinLoading(true);
+    try {
+      await api.post(`/households/invites/${joinToken.trim()}/accept`, {});
+      const data = await api.get('/households/me');
+      setHousehold(data.household);
+      setMembers(data.members || []);
+      setShowJoinModal(false);
+      setJoinToken('');
+      Alert.alert('Joined!', `You're now part of ${data.household.name}.`);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Invalid or expired invite code');
+    } finally {
+      setJoinLoading(false);
+    }
+  }
+
+  function resetInviteModal() {
+    setShowInviteModal(false);
+    setInviteEmail('');
+    setInviteToken(null);
+  }
 
   const loadBudget = useCallback(async () => {
     try {
@@ -75,6 +132,118 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
+
+      {/* Household */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>HOUSEHOLD</Text>
+        {household ? (
+          <>
+            <Text style={styles.subText}>{household.name}</Text>
+            {members.map(m => (
+              <View key={m.id} style={styles.memberRow}>
+                <Ionicons name="person-circle-outline" size={18} color="#555" />
+                <Text style={styles.memberName}>{m.name || m.email}</Text>
+              </View>
+            ))}
+            <TouchableOpacity style={[styles.button, { marginTop: 12 }]} onPress={() => setShowInviteModal(true)}>
+              <Text style={styles.buttonText}>Invite Member</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.subText}>You're not in a household yet.</Text>
+            <TouchableOpacity style={styles.button} onPress={() => router.push('/onboarding')}>
+              <Text style={styles.buttonText}>Create or Join a Household</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.outlineButton, { marginTop: 8 }]} onPress={() => setShowJoinModal(true)}>
+              <Text style={styles.outlineButtonText}>Enter Invite Code</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      {/* Invite Member Modal */}
+      <Modal visible={showInviteModal} transparent animationType="slide" onRequestClose={resetInviteModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            {inviteToken ? (
+              <>
+                <Text style={styles.modalTitle}>Invite sent</Text>
+                <Text style={styles.modalSub}>
+                  Share this code with {inviteEmail}. It expires in 7 days and can only be used once.
+                  {'\n\n'}They must sign in with {inviteEmail} to accept it.
+                </Text>
+                <View style={styles.tokenBox}>
+                  <Text style={styles.tokenText} selectable>{inviteToken}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={() => Share.share({ message: `Join my household on Adlo with this invite code:\n\n${inviteToken}` })}
+                >
+                  <Text style={styles.buttonText}>Share Code</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelBtn} onPress={resetInviteModal}>
+                  <Text style={styles.cancelText}>Done</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Invite a member</Text>
+                <Text style={styles.modalSub}>Enter their email address. They must accept with the same email.</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="their@email.com"
+                  placeholderTextColor="#555"
+                  value={inviteEmail}
+                  onChangeText={setInviteEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.button, inviteLoading && styles.buttonDisabled]}
+                  onPress={generateInvite}
+                  disabled={inviteLoading}
+                >
+                  <Text style={styles.buttonText}>{inviteLoading ? 'Generating…' : 'Generate Invite Code'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelBtn} onPress={resetInviteModal}>
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Join Household Modal */}
+      <Modal visible={showJoinModal} transparent animationType="slide" onRequestClose={() => setShowJoinModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Enter invite code</Text>
+            <Text style={styles.modalSub}>Paste the code you received from your household member.</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Paste invite code here"
+              placeholderTextColor="#555"
+              value={joinToken}
+              onChangeText={setJoinToken}
+              autoCapitalize="none"
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.button, joinLoading && styles.buttonDisabled]}
+              onPress={joinHousehold}
+              disabled={joinLoading}
+            >
+              <Text style={styles.buttonText}>{joinLoading ? 'Joining…' : 'Join Household'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowJoinModal(false); setJoinToken(''); }}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Budget */}
       <View style={styles.section}>
@@ -168,4 +337,16 @@ const styles = StyleSheet.create({
   navRowText: { color: '#f5f5f5', fontSize: 15 },
   navRowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   badge: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ef4444' },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  memberName: { color: '#ccc', fontSize: 14 },
+  outlineButton: { borderWidth: 1, borderColor: '#333', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  outlineButtonText: { color: '#ccc', fontWeight: '600', fontSize: 15 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  modalTitle: { fontSize: 20, color: '#fff', fontWeight: '700', marginBottom: 8 },
+  modalSub: { color: '#888', fontSize: 14, lineHeight: 20, marginBottom: 16 },
+  tokenBox: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, marginBottom: 16 },
+  tokenText: { color: '#fff', fontSize: 13, fontFamily: 'monospace', lineHeight: 20 },
+  cancelBtn: { alignItems: 'center', marginTop: 12 },
+  cancelText: { color: '#555', fontSize: 14 },
 });
