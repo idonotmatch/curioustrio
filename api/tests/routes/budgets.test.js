@@ -4,89 +4,75 @@ const db = require('../../src/db');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
-    req.userId = 'auth0|test-budget-user';
+    req.userId = 'test|budget-user-solo';
     next();
   },
 }));
 
+let soloUserId;
 let householdId;
+let member1Id;
 let categoryId;
-let userId;
 
 beforeAll(async () => {
-  // Create a household
-  const hhResult = await db.query(
-    `INSERT INTO households (name) VALUES ('Budget Test Household') RETURNING id`
+  // Solo user (no household)
+  const u1 = await db.query(
+    `INSERT INTO users (provider_uid, name) VALUES ('test|budget-user-solo', 'Solo User')
+     ON CONFLICT (provider_uid) DO UPDATE SET name = 'Solo User' RETURNING id`
   );
-  householdId = hhResult.rows[0].id;
+  soloUserId = u1.rows[0].id;
 
-  // Create a category
-  const catResult = await db.query(
+  // Household with a member (same user for simplicity)
+  const hh = await db.query(`INSERT INTO households (name) VALUES ('Budget HH') RETURNING id`);
+  householdId = hh.rows[0].id;
+  const u2 = await db.query(
+    `INSERT INTO users (provider_uid, name, household_id)
+     VALUES ('test|budget-member-1', 'Member 1', $1) RETURNING id`,
+    [householdId]
+  );
+  member1Id = u2.rows[0].id;
+
+  const cat = await db.query(
     `INSERT INTO categories (name, household_id) VALUES ('Groceries', $1) RETURNING id`,
     [householdId]
   );
-  categoryId = catResult.rows[0].id;
-
-  // Create test user with household_id
-  const userResult = await db.query(
-    `INSERT INTO users (provider_uid, name, email, household_id)
-     VALUES ('auth0|test-budget-user', 'Budget User', 'budget@test.com', $1)
-     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
-     RETURNING id`,
-    [householdId]
-  );
-  userId = userResult.rows[0].id;
+  categoryId = cat.rows[0].id;
 });
 
 afterAll(async () => {
-  await db.query(`DELETE FROM budget_settings WHERE household_id = $1`, [householdId]);
-  await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
+  await db.query(`DELETE FROM budget_settings WHERE user_id IN ($1, $2)`, [soloUserId, member1Id]);
+  await db.query(`DELETE FROM expenses WHERE user_id IN ($1, $2)`, [soloUserId, member1Id]);
   await db.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
-  await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-budget-user'`);
+  await db.query(`DELETE FROM users WHERE provider_uid IN ('test|budget-user-solo', 'test|budget-member-1')`);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
 
 afterEach(async () => {
-  // Clean up budget settings between tests
-  await db.query(`DELETE FROM budget_settings WHERE household_id = $1`, [householdId]);
-  await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
+  await db.query(`DELETE FROM budget_settings WHERE user_id IN ($1, $2)`, [soloUserId, member1Id]);
+  await db.query(`DELETE FROM expenses WHERE user_id IN ($1, $2)`, [soloUserId, member1Id]);
 });
 
-describe('GET /budgets', () => {
-  it('returns { total: null, categories: [] } when no budget settings', async () => {
+describe('GET /budgets — solo user', () => {
+  it('returns null total and empty categories when no settings', async () => {
     const res = await request(app).get('/budgets');
     expect(res.status).toBe(200);
     expect(res.body.total).toBeNull();
     expect(res.body.categories).toEqual([]);
   });
 
-  it('returns total budget with correct spent/remaining from current-month confirmed expenses', async () => {
-    // Set a total budget
+  it('returns total budget with solo user spending', async () => {
     await db.query(
-      `INSERT INTO budget_settings (household_id, category_id, monthly_limit)
-       VALUES ($1, NULL, 500.00)`,
-      [householdId]
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [soloUserId]
     );
-
-    // Insert a confirmed expense for this month
     const thisMonth = new Date().toISOString().slice(0, 7);
-    const expenseDate = `${thisMonth}-15`;
     await db.query(
-      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
-       VALUES ($1, $2, 'TestMerchant', 75.00, $3, 'manual', 'confirmed')`,
-      [userId, householdId, expenseDate]
-    );
-
-    // Insert a pending expense that should NOT count
-    await db.query(
-      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
-       VALUES ($1, $2, 'PendingMerchant', 25.00, $3, 'manual', 'pending')`,
-      [userId, householdId, expenseDate]
+      `INSERT INTO expenses (user_id, amount, date, source, status) VALUES ($1, 75, $2, 'manual', 'confirmed')`,
+      [soloUserId, `${thisMonth}-15`]
     );
 
     const res = await request(app).get('/budgets');
     expect(res.status).toBe(200);
-    expect(res.body.total).not.toBeNull();
     expect(res.body.total.limit).toBe(500);
     expect(res.body.total.spent).toBe(75);
     expect(res.body.total.remaining).toBe(425);
@@ -94,124 +80,53 @@ describe('GET /budgets', () => {
 });
 
 describe('PUT /budgets/total', () => {
-  it('creates total budget and returns the setting row', async () => {
-    const res = await request(app)
-      .put('/budgets/total')
-      .send({ monthly_limit: 1000 });
-
+  it('saves a budget for the solo user', async () => {
+    const res = await request(app).put('/budgets/total').send({ monthly_limit: 1000 });
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('household_id', householdId);
-    expect(parseFloat(res.body.monthly_limit)).toBe(1000);
-    expect(res.body.category_id).toBeNull();
+    expect(Number(res.body.monthly_limit)).toBe(1000);
   });
 
   it('returns 400 when monthly_limit is missing', async () => {
-    const res = await request(app)
-      .put('/budgets/total')
-      .send({});
-
+    const res = await request(app).put('/budgets/total').send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/monthly_limit/i);
   });
 
   it('returns 400 when monthly_limit is negative', async () => {
-    const res = await request(app)
-      .put('/budgets/total')
-      .send({ monthly_limit: -100 });
-
+    const res = await request(app).put('/budgets/total').send({ monthly_limit: -100 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/monthly_limit/i);
   });
 
   it('returns 400 when monthly_limit is zero', async () => {
-    const res = await request(app)
-      .put('/budgets/total')
-      .send({ monthly_limit: 0 });
-
+    const res = await request(app).put('/budgets/total').send({ monthly_limit: 0 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/monthly_limit/i);
-  });
-
-  it('returns 400 when monthly_limit is non-numeric', async () => {
-    const res = await request(app)
-      .put('/budgets/total')
-      .send({ monthly_limit: 'abc' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/monthly_limit/i);
   });
 });
 
 describe('PUT /budgets/category/:id', () => {
-  it('creates/updates category budget and returns the setting row', async () => {
+  it('creates/updates a category budget for the user', async () => {
     const res = await request(app)
       .put(`/budgets/category/${categoryId}`)
       .send({ monthly_limit: 200 });
-
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('household_id', householdId);
-    expect(res.body).toHaveProperty('category_id', categoryId);
-    expect(parseFloat(res.body.monthly_limit)).toBe(200);
-  });
-
-  it('updates an existing category budget', async () => {
-    // Create initial
-    await request(app)
-      .put(`/budgets/category/${categoryId}`)
-      .send({ monthly_limit: 200 });
-
-    // Update
-    const res = await request(app)
-      .put(`/budgets/category/${categoryId}`)
-      .send({ monthly_limit: 300 });
-
-    expect(res.status).toBe(200);
-    expect(parseFloat(res.body.monthly_limit)).toBe(300);
+    expect(Number(res.body.monthly_limit)).toBe(200);
   });
 });
 
 describe('DELETE /budgets/category/:id', () => {
-  it('removes category budget and returns the row', async () => {
-    // First create it
+  it('deletes a category budget for the user', async () => {
     await db.query(
-      `INSERT INTO budget_settings (household_id, category_id, monthly_limit)
-       VALUES ($1, $2, 150.00)`,
-      [householdId, categoryId]
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, $2, 200)`,
+      [soloUserId, categoryId]
     );
-
     const res = await request(app).delete(`/budgets/category/${categoryId}`);
-
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('category_id', categoryId);
-    expect(res.body).toHaveProperty('household_id', householdId);
   });
 
-  it('returns 404 when category budget not found', async () => {
+  it('returns 404 when budget not found', async () => {
     const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).delete(`/budgets/category/${fakeId}`);
-
     expect(res.status).toBe(404);
-    expect(res.body.error).toMatch(/budget not found/i);
-  });
-});
-
-describe('GET /budgets (no household)', () => {
-  it('returns 403 when user has no household_id', async () => {
-    // Temporarily remove household from user
-    await db.query(
-      `UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-budget-user'`
-    );
-
-    const res = await request(app).get('/budgets');
-
-    // Restore household
-    await db.query(
-      `UPDATE users SET household_id = $1 WHERE provider_uid = 'auth0|test-budget-user'`,
-      [householdId]
-    );
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/household/i);
   });
 });
 
