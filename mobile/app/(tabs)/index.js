@@ -1,4 +1,4 @@
-import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
@@ -9,8 +9,19 @@ import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { ExpenseItem } from '../../components/ExpenseItem';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-function SpendHeader({ total, budget, month, mode }) {
+function getPastMonths() {
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < 13; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(d.toISOString().slice(0, 7));
+  }
+  return months;
+}
+
+function SpendHeader({ total, budget, month, mode, onMonthPress }) {
   const limit = budget?.total?.limit;
   const pct = limit ? Math.min(total / limit, 1) : null;
   const over = limit && total > limit;
@@ -19,7 +30,9 @@ function SpendHeader({ total, budget, month, mode }) {
   return (
     <View style={styles.spendHeader}>
       <View style={styles.spendRow}>
-        <Text style={styles.spendMonth}>{monthName} {month.getFullYear()}{mode === 'household' ? ' · Household' : ''}</Text>
+        <TouchableOpacity onPress={onMonthPress}>
+          <Text style={styles.spendMonth}>{monthName} {month.getFullYear()}{mode === 'household' ? ' · Household' : ''}</Text>
+        </TouchableOpacity>
         <Text style={styles.spendAmount}>${total.toFixed(0)}</Text>
       </View>
       {pct !== null && (
@@ -41,9 +54,11 @@ function SpendHeader({ total, budget, month, mode }) {
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
-  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses();
-  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHousehold } = useHouseholdExpenses();
-  const { budget, refresh: refreshBudget } = useBudget();
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
+  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHousehold } = useHouseholdExpenses(selectedMonth);
+  const { budget, refresh: refreshBudget } = useBudget(selectedMonth);
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
   const router = useRouter();
 
@@ -62,11 +77,9 @@ export default function FeedScreen() {
 
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
-  const now = new Date();
-  const currentMonth = now.toISOString().slice(0, 7);
-  const monthlyTotal = displayExpenses
-    .filter(e => e.date?.slice(0, 7) === currentMonth)
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+  const selectedDate = new Date(selectedMonth + '-02');
+  // Server already filtered by selectedMonth — sum all returned expenses
+  const monthlyTotal = displayExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   const listData = [
     ...(mode === 'mine' && pending?.length > 0 ? [{ _type: 'pending_section', items: pending }] : []),
@@ -108,7 +121,13 @@ export default function FeedScreen() {
         </TouchableOpacity>
       </View>
 
-      <SpendHeader total={monthlyTotal} budget={budget} month={now} mode={mode} />
+      <SpendHeader
+        total={monthlyTotal}
+        budget={budget}
+        month={selectedDate}
+        mode={mode}
+        onMonthPress={() => setShowMonthPicker(true)}
+      />
 
       <FlatList
         data={listData}
@@ -128,6 +147,28 @@ export default function FeedScreen() {
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
+
+      <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+        <View style={styles.monthPickerOverlay}>
+          <View style={styles.monthPickerSheet}>
+            <Text style={styles.monthPickerTitle}>Select month</Text>
+            {getPastMonths().map(m => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
+                onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+              >
+                <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
+                  {MONTH_NAMES_FULL[new Date(m + '-02').getMonth()]} {new Date(m + '-02').getFullYear()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.monthPickerClose} onPress={() => setShowMonthPicker(false)}>
+              <Text style={styles.monthPickerCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -165,4 +206,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
   },
   fabText: { fontSize: 28, color: '#000', lineHeight: 32, fontWeight: '300' },
+
+  monthPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  monthPickerSheet: { backgroundColor: '#111', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
+  monthPickerTitle: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+  monthOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  monthOptionActive: {},
+  monthOptionText: { fontSize: 16, color: '#999' },
+  monthOptionTextActive: { color: '#f5f5f5', fontWeight: '600' },
+  monthPickerClose: { paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  monthPickerCloseText: { color: '#888', fontSize: 15 },
 });

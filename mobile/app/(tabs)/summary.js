@@ -1,4 +1,4 @@
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
@@ -10,6 +10,16 @@ import { api } from '../../services/api';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function getPastMonths() {
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < 13; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(d.toISOString().slice(0, 7));
+  }
+  return months;
+}
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -26,8 +36,10 @@ function formatDate(dateStr) {
 
 export default function SummaryScreen() {
   const router = useRouter();
-  const { expenses, refresh: refreshExpenses } = useExpenses();
-  const { budget, refresh: refreshBudget } = useBudget();
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
+  const { budget, refresh: refreshBudget } = useBudget(selectedMonth);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -37,13 +49,8 @@ export default function SummaryScreen() {
     refreshBudget();
   }, [refreshExpenses, refreshBudget]));
 
-  const now = new Date();
-  const currentMonth = now.toISOString().slice(0, 7);
-  const monthlyExpenses = (expenses || []).filter(e => {
-    const d = e.date ? String(e.date) : '';
-    return d.slice(0, 7) === currentMonth;
-  });
-  const spent = monthlyExpenses.reduce((s, e) => s + Number(e.amount), 0);
+  const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
+  const selectedDate = new Date(selectedMonth + '-02');
   const limit = budget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
   const over = limit && spent > limit;
@@ -54,6 +61,7 @@ export default function SummaryScreen() {
   const hOver = hLimit && hSpent > hLimit;
   const showHousehold = hLimit > 0 && Math.abs(hSpent - spent) > 0.01;
   const byParent = budget?.by_parent || [];
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
   const recent = (expenses || []).slice(0, 5);
 
   async function handleQuickAdd() {
@@ -105,7 +113,12 @@ export default function SummaryScreen() {
     >
       {/* Spend vs Budget */}
       <View style={styles.spendCard}>
-        <Text style={styles.spendMonth}>{MONTH_NAMES[now.getMonth()]} {now.getFullYear()}</Text>
+        <TouchableOpacity onPress={() => setShowMonthPicker(true)}>
+          <Text style={styles.spendMonth}>
+            {MONTH_NAMES[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+            {selectedMonth !== currentMonthStr ? '  ·  tap to change' : ''}
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.spendNumbers}>
           <View>
@@ -245,6 +258,28 @@ export default function SummaryScreen() {
         </View>
       )}
     </ScrollView>
+
+    <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+      <View style={styles.monthPickerOverlay}>
+        <View style={styles.monthPickerSheet}>
+          <Text style={styles.monthPickerTitle}>Select month</Text>
+          {getPastMonths().map(m => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
+              onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+            >
+              <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
+                {MONTH_NAMES[new Date(m + '-02').getMonth()]} {new Date(m + '-02').getFullYear()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity style={styles.monthPickerClose} onPress={() => setShowMonthPicker(false)}>
+            <Text style={styles.monthPickerCloseText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
     </SafeAreaView>
   );
 }
@@ -320,4 +355,14 @@ const styles = StyleSheet.create({
     flexDirection: 'column', gap: 2,
   },
   deleteActionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+
+  monthPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  monthPickerSheet: { backgroundColor: '#111', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
+  monthPickerTitle: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+  monthOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  monthOptionActive: {},
+  monthOptionText: { fontSize: 16, color: '#999' },
+  monthOptionTextActive: { color: '#f5f5f5', fontWeight: '600' },
+  monthPickerClose: { paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  monthPickerCloseText: { color: '#888', fontSize: 15 },
 });
