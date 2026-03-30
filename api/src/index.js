@@ -1,4 +1,8 @@
 require('dotenv').config();
+// Force IPv4 DNS resolution — Supabase DB host has both A and AAAA records but
+// Render's free tier containers lack IPv6 routing, causing ENETUNREACH when
+// Node picks the IPv6 address. This must be set before any network calls.
+require('dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
