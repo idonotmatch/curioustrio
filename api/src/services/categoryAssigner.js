@@ -28,6 +28,13 @@ async function assignCategory({ merchant, description, householdId, categories, 
   //    like "lunch 14" (merchant=null, description="lunch") still get matched.
   const categoryList = categories.map(c => `${c.id}: ${c.name}`).join('\n');
   const expenseLine = [merchant, description].filter(Boolean).join(' — ') || 'unknown';
+
+  console.log(`[categoryAssigner] expense="${expenseLine}" categories=${categories.length} householdId=${householdId}`);
+  if (categories.length === 0) {
+    console.warn('[categoryAssigner] No categories available — skipping Claude call');
+    return { category_id: null, source: 'claude', confidence: 0 };
+  }
+
   try {
     const text = await complete({
       system: SYSTEM_PROMPT,
@@ -37,14 +44,17 @@ async function assignCategory({ merchant, description, householdId, categories, 
       }],
       maxTokens: 128,
     });
+    console.log(`[categoryAssigner] Claude raw response: ${text}`);
     if (!text) return { category_id: null, source: 'claude', confidence: 0 };
     const parsed = JSON.parse(text);
+    console.log(`[categoryAssigner] Assigned category_id=${parsed.category_id}`);
     return {
       category_id: parsed.category_id || null,
       source: 'claude',
       confidence: 1,
     };
-  } catch {
+  } catch (err) {
+    console.error('[categoryAssigner] Error:', err.message);
     return { category_id: null, source: 'claude', confidence: 0 };
   }
 }
