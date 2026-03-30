@@ -615,6 +615,27 @@ describe('POST /expenses/parse — category_name in response', () => {
   });
 });
 
+describe('GET /expenses with ?month filter', () => {
+  afterEach(async () => {
+    await db.query(`DELETE FROM expenses WHERE merchant IN ('Jan Merchant', 'Feb Merchant')`);
+  });
+
+  it('returns only expenses from the specified month', async () => {
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Jan Merchant', 10.00, '2026-01-15', 'manual', 'confirmed'),
+              ($1, $2, 'Feb Merchant', 20.00, '2026-02-15', 'manual', 'confirmed')`,
+      [userId, householdId]
+    );
+
+    const res = await request(app).get('/expenses?month=2026-01');
+    expect(res.status).toBe(200);
+    expect(res.body.every(e => String(e.date).startsWith('2026-01'))).toBe(true);
+    expect(res.body.some(e => e.merchant === 'Jan Merchant')).toBe(true);
+    expect(res.body.some(e => e.merchant === 'Feb Merchant')).toBe(false);
+  });
+});
+
 describe('POST /expenses/scan — category_name in response', () => {
   it('returns category_name alongside category_id', async () => {
     const catRes = await db.query(
