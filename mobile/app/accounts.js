@@ -27,6 +27,7 @@ export default function AccountsScreen() {
   const [creatingHousehold, setCreatingHousehold] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [generatedInvite, setGeneratedInvite] = useState(null); // { token, email, expiresAt }
   const [joinToken, setJoinToken] = useState('');
   const [joiningHousehold, setJoiningHousehold] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState(null);
@@ -166,17 +167,23 @@ export default function AccountsScreen() {
     if (!inviteEmail.trim()) return;
     setSendingInvite(true);
     try {
-      const result = await api.post('/households/invites', { email: inviteEmail.trim() });
+      const email = inviteEmail.trim().toLowerCase();
+      const result = await api.post('/households/invites', { email });
       setInviteEmail('');
-      await Share.share({
-        message: `Join my household on Expense Tracker!\n\nTap this link or enter the token manually:\nexpensetracker://join?token=${result.token}\n\nToken: ${result.token}`,
-        title: `Join ${householdData?.household?.name || 'my household'}`,
-      });
+      setGeneratedInvite({ token: result.token, email, expiresAt: result.expires_at });
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
       setSendingInvite(false);
     }
+  }
+
+  async function shareInvite() {
+    if (!generatedInvite) return;
+    const householdName = householdData?.household?.name || 'my household';
+    await Share.share({
+      message: `Join ${householdName} on Adlo!\n\nEnter this invite code in Settings → Manage Accounts → Join with invite token:\n\n${generatedInvite.token}\n\nExpires in 7 days. You must accept with ${generatedInvite.email}.`,
+    });
   }
 
   async function joinHousehold() {
@@ -265,26 +272,47 @@ export default function AccountsScreen() {
                 </View>
               ))}
               <Text style={styles.subLabel}>Invite someone</Text>
-              <View style={styles.inputRow}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="their email"
-                  placeholderTextColor="#333"
-                  value={inviteEmail}
-                  onChangeText={setInviteEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity
-                  style={[styles.actionBtn, (!inviteEmail.trim() || sendingInvite) && styles.actionBtnDisabled]}
-                  onPress={sendInvite}
-                  disabled={sendingInvite || !inviteEmail.trim()}
-                >
-                  {sendingInvite
-                    ? <ActivityIndicator color="#f5f5f5" size="small" />
-                    : <Text style={styles.actionBtnText}>Invite</Text>}
-                </TouchableOpacity>
-              </View>
+              {generatedInvite ? (
+                <View style={styles.tokenCard}>
+                  <Text style={styles.tokenLabel}>Invite code for {generatedInvite.email}</Text>
+                  <Text style={styles.tokenValue} selectable>{generatedInvite.token}</Text>
+                  <Text style={styles.tokenExpiry}>
+                    Expires {new Date(generatedInvite.expiresAt).toLocaleDateString()} · single use
+                  </Text>
+                  <View style={styles.tokenActions}>
+                    <TouchableOpacity style={styles.actionBtn} onPress={shareInvite}>
+                      <Text style={styles.actionBtnText}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { borderColor: '#333' }]}
+                      onPress={() => setGeneratedInvite(null)}
+                    >
+                      <Text style={styles.actionBtnText}>New invite</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="their@email.com"
+                    placeholderTextColor="#333"
+                    value={inviteEmail}
+                    onChangeText={setInviteEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={[styles.actionBtn, (!inviteEmail.trim() || sendingInvite) && styles.actionBtnDisabled]}
+                    onPress={sendInvite}
+                    disabled={sendingInvite || !inviteEmail.trim()}
+                  >
+                    {sendingInvite
+                      ? <ActivityIndicator color="#f5f5f5" size="small" />
+                      : <Text style={styles.actionBtnText}>Generate</Text>}
+                  </TouchableOpacity>
+                </View>
+              )}
               <TouchableOpacity
                 style={[styles.leaveBtn, leavingHousehold && { opacity: 0.5 }]}
                 onPress={leaveHousehold}
@@ -411,4 +439,9 @@ const styles = StyleSheet.create({
   actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontSize: 15 },
+  tokenCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a', padding: 14, marginTop: 4 },
+  tokenLabel: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  tokenValue: { color: '#f5f5f5', fontSize: 13, fontFamily: 'monospace', lineHeight: 20, marginBottom: 6 },
+  tokenExpiry: { color: '#555', fontSize: 11, marginBottom: 12 },
+  tokenActions: { flexDirection: 'row', gap: 8 },
 });
