@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, Te
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
+import * as Location from 'expo-location';
 import { api } from '../services/api';
 import { ConfirmField } from '../components/ConfirmField';
 import { LocationPicker } from '../components/LocationPicker';
@@ -38,6 +39,31 @@ export default function ConfirmScreen() {
   useEffect(() => {
     api.get('/expenses/cards').then(setSavedCards).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!merchant?.trim()) return; // only auto-populate when merchant is known
+
+    async function autoPopulateLocation() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+
+        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude } = position.coords;
+
+        const result = await api.get(
+          `/places/search?q=${encodeURIComponent(merchant)}&lat=${latitude}&lng=${longitude}`
+        );
+        if (result?.result) {
+          setLocationData(result.result);
+        }
+      } catch {
+        // Non-fatal — location stays unpopulated, user can add manually
+      }
+    }
+
+    autoPopulateLocation();
+  }, []); // run once on mount; merchant is captured from closure at parse time
 
   const isCameraSource = parsed.source === 'camera';
 
