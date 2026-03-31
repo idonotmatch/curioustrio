@@ -10,6 +10,7 @@ const EmailImportLog = require('../models/emailImportLog');
 const { getAuthUrl, exchangeCode, listRecentMessages, getMessage } = require('../services/gmailClient');
 const { parseEmailExpense } = require('../services/emailParser');
 const { assignCategory } = require('../services/categoryAssigner');
+const ExpenseItem = require('../models/expenseItem');
 
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
@@ -99,6 +100,10 @@ router.post('/import', authenticate, async (req, res, next) => {
           status: 'pending',
           notes: parsed.notes,
         });
+
+        if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+          await ExpenseItem.replaceItems(expense.id, parsed.items.filter(it => it.description));
+        }
 
         await EmailImportLog.create({
           userId: user.id,

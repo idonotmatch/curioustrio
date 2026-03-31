@@ -1,13 +1,16 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useHousehold } from '../../hooks/useHousehold';
 import { ExpenseItem } from '../../components/ExpenseItem';
+import { api } from '../../services/api';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -93,6 +96,23 @@ export default function FeedScreen() {
     refreshHousehold();
   }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold]);
 
+  // Refresh confirmed expenses when tab gains focus (catches approvals from other tabs)
+  useFocusEffect(useCallback(() => {
+    refreshMine();
+    refreshHouseholdExpenses();
+    refreshPersonalBudget();
+    refreshHouseholdBudget();
+    refreshPending();
+  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending]));
+
+  async function dismissPending(id) {
+    try { await api.post(`/expenses/${id}/dismiss`); refreshPending(); } catch { /* ignore */ }
+  }
+
+  async function approvePending(id) {
+    try { await api.post(`/expenses/${id}/approve`); refreshPending(); refreshMine(); } catch { /* ignore */ }
+  }
+
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
   const selectedDate = new Date(selectedMonth + '-02');
@@ -110,7 +130,34 @@ export default function FeedScreen() {
         <View style={styles.pendingSection}>
           <Text style={styles.pendingLabel}>Needs review · {item.items.length}</Text>
           {item.items.slice(0, 3).map(e => (
-            <ExpenseItem key={e.id} expense={e} onDelete={refreshPending} />
+            <Swipeable
+              key={e.id}
+              renderLeftActions={() => (
+                <TouchableOpacity style={styles.approveAction} onPress={() => approvePending(e.id)}>
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                  <Text style={styles.swipeLabel}>Approve</Text>
+                </TouchableOpacity>
+              )}
+              renderRightActions={() => (
+                <TouchableOpacity style={styles.dismissAction} onPress={() => dismissPending(e.id)}>
+                  <Ionicons name="trash-outline" size={16} color="#fff" />
+                  <Text style={styles.swipeLabel}>Dismiss</Text>
+                </TouchableOpacity>
+              )}
+              overshootLeft={false}
+              overshootRight={false}
+            >
+              <TouchableOpacity
+                style={styles.pendingRow}
+                onPress={() => router.push(`/expense/${e.id}`)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.pendingRowMain}>
+                  <Text style={styles.pendingMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
+                </View>
+                <Text style={styles.pendingAmount}>${Number(e.amount).toFixed(2)}</Text>
+              </TouchableOpacity>
+            </Swipeable>
           ))}
           {item.items.length > 3 && (
             <Text style={styles.pendingMore}>+{item.items.length - 3} more</Text>
@@ -218,9 +265,16 @@ const styles = StyleSheet.create({
   list: { padding: 16 },
   empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
 
-  pendingSection: { backgroundColor: '#111', borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#1f1f1f' },
-  pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: '600' },
-  pendingMore: { color: '#888', fontSize: 14, marginTop: 4, textAlign: 'center' },
+  pendingSection: { backgroundColor: '#111', borderRadius: 10, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#1f1f1f' },
+  pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 12 },
+  pendingRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  pendingRowMain: { flex: 1, marginRight: 8 },
+  pendingMerchant: { fontSize: 14, color: '#f5f5f5' },
+  pendingAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
+  pendingMore: { color: '#888', fontSize: 14, paddingVertical: 8, textAlign: 'center' },
+  approveAction: { backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
+  dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
+  swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600' },
 
   fab: {
     position: 'absolute', bottom: 24, right: 24,
