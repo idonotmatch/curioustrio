@@ -26,7 +26,7 @@ async function findByUser(userId, { limit = 50, offset = 0, month } = {}) {
      FROM expenses e
      LEFT JOIN categories  c  ON e.category_id = c.id
      LEFT JOIN categories  pc ON c.parent_id   = pc.id
-     WHERE e.user_id = $1 AND e.status != 'dismissed'
+     WHERE e.user_id = $1 AND e.status = 'confirmed'
      ${monthClause}
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
@@ -127,7 +127,7 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
      LEFT JOIN users       u  ON e.user_id     = u.id
      WHERE (e.household_id = $1
             OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
-       AND e.status != 'dismissed'
+       AND e.status = 'confirmed'
      ${privateClause}
      ${monthClause}
      ORDER BY e.date DESC, e.created_at DESC

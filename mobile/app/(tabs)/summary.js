@@ -8,6 +8,7 @@ import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { useHousehold } from '../../hooks/useHousehold';
+import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { api } from '../../services/api';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -46,6 +47,8 @@ export default function SummaryScreen() {
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
+  const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
+  const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -55,7 +58,8 @@ export default function SummaryScreen() {
     refreshHouseholdExpenses();
     refreshPersonalBudget();
     refreshHouseholdBudget();
-  }, [refreshExpenses, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget]));
+    refreshPending();
+  }, [refreshExpenses, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending]));
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
@@ -242,35 +246,71 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Recent — swipe left to delete */}
-      {recent.length > 0 && (
-        <View style={styles.recent}>
-          <View style={styles.recentHeader}>
-            <Text style={styles.sectionLabel}>Recent · Mine</Text>
+      {/* Recent / Queue tabs */}
+      <View style={styles.recent}>
+        <View style={styles.recentHeader}>
+          <View style={styles.tabRow}>
+            <TouchableOpacity onPress={() => setRecentTab('recent')}>
+              <Text style={[styles.tabLabel, recentTab === 'recent' && styles.tabLabelActive]}>Recent</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setRecentTab('queue')}>
+              <View style={styles.tabWithBadge}>
+                <Text style={[styles.tabLabel, recentTab === 'queue' && styles.tabLabelActive]}>Queue</Text>
+                {pendingExpenses.length > 0 && (
+                  <View style={styles.queueBadge}><Text style={styles.queueBadgeText}>{pendingExpenses.length}</Text></View>
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+          {recentTab === 'recent' && (
             <TouchableOpacity onPress={() => router.navigate('/')}>
               <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
-          </View>
-          {recent.map(e => (
-            <Swipeable
-              key={e.id}
-              renderRightActions={() => renderDeleteAction(e.id)}
-              overshootRight={false}
-            >
-              <TouchableOpacity
-                style={styles.recentRow}
-                onPress={() => router.push(`/expense/${e.id}`)}
-              >
-                <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
-                <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
-                <Text style={[styles.recentAmount, Number(e.amount) < 0 && styles.recentRefund]}>
-                  {Number(e.amount) < 0 ? '−' : ''}${Math.abs(Number(e.amount)).toFixed(2)}
-                </Text>
-              </TouchableOpacity>
-            </Swipeable>
-          ))}
+          )}
         </View>
-      )}
+
+        {recentTab === 'recent' && recent.map(e => (
+          <Swipeable
+            key={e.id}
+            renderRightActions={() => renderDeleteAction(e.id)}
+            overshootRight={false}
+          >
+            <TouchableOpacity
+              style={styles.recentRow}
+              onPress={() => router.push(`/expense/${e.id}`)}
+            >
+              <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
+              <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
+              <Text style={[styles.recentAmount, Number(e.amount) < 0 && styles.recentRefund]}>
+                {Number(e.amount) < 0 ? '−' : ''}${Math.abs(Number(e.amount)).toFixed(2)}
+              </Text>
+            </TouchableOpacity>
+          </Swipeable>
+        ))}
+        {recentTab === 'recent' && recent.length === 0 && (
+          <Text style={styles.emptyText}>No confirmed expenses yet.</Text>
+        )}
+
+        {recentTab === 'queue' && pendingExpenses.slice(0, 10).map(e => (
+          <TouchableOpacity
+            key={e.id}
+            style={[styles.recentRow, styles.queueRow]}
+            onPress={() => router.push(`/expense/${e.id}`)}
+          >
+            <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
+            <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
+            <Text style={styles.recentAmount}>${Math.abs(Number(e.amount)).toFixed(2)}</Text>
+          </TouchableOpacity>
+        ))}
+        {recentTab === 'queue' && pendingExpenses.length === 0 && (
+          <Text style={styles.emptyText}>Queue is empty.</Text>
+        )}
+        {recentTab === 'queue' && pendingExpenses.length > 10 && (
+          <TouchableOpacity onPress={() => router.push('/(tabs)/pending')}>
+            <Text style={styles.seeAll}>+{pendingExpenses.length - 10} more in queue</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </ScrollView>
 
     <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
@@ -352,6 +392,14 @@ const styles = StyleSheet.create({
 
   recent: {},
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  tabRow: { flexDirection: 'row', gap: 16 },
+  tabLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
+  tabLabelActive: { color: '#f5f5f5' },
+  tabWithBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  queueBadge: { backgroundColor: '#f59e0b', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
+  queueBadgeText: { fontSize: 10, color: '#000', fontWeight: '700' },
+  queueRow: { borderLeftWidth: 2, borderLeftColor: '#f59e0b', paddingLeft: 10 },
+  emptyText: { color: '#555', fontSize: 14, paddingVertical: 12 },
   seeAll: { fontSize: 14, color: '#999' },
   recentRow: {
     flexDirection: 'row', alignItems: 'center',

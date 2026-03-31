@@ -108,6 +108,7 @@ router.post('/import', authenticate, async (req, res, next) => {
         });
         imported++;
       } catch (e) {
+        console.error(`[gmail import] failed msg=${msg.id}:`, e.message);
         await EmailImportLog.create({ userId: user.id, messageId: msg.id, status: 'failed' });
         failed++;
       }
