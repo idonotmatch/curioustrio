@@ -75,6 +75,19 @@ export default function AccountsScreen() {
     }
   }
 
+  const [gmailSyncing, setGmailSyncing] = useState(false);
+  async function syncGmail() {
+    setGmailSyncing(true);
+    try {
+      const result = await api.post('/gmail/import', {});
+      Alert.alert('Gmail sync', `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}`);
+    } catch (e) {
+      Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
+    } finally {
+      setGmailSyncing(false);
+    }
+  }
+
   async function handleSignOut() {
     setSigningOut(true);
     try { await signOut(); } catch { setSigningOut(false); }
@@ -389,6 +402,15 @@ export default function AccountsScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+          {gmailStatus?.connected && (
+            <TouchableOpacity
+              style={[styles.actionBtn, gmailSyncing && { opacity: 0.5 }]}
+              onPress={syncGmail}
+              disabled={gmailSyncing}
+            >
+              <Text style={styles.actionBtnText}>{gmailSyncing ? 'Syncing…' : 'Sync now'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Sign out */}
