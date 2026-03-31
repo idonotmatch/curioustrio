@@ -97,6 +97,18 @@ export default function SummaryScreen() {
     }
   }
 
+  const [displayPending, setDisplayPending] = useState([]);
+  useEffect(() => { setDisplayPending(pendingExpenses); }, [pendingExpenses]);
+  const removePending = (id) => setDisplayPending(prev => prev.filter(e => e.id !== id));
+
+  async function dismissPending(id) {
+    try { await api.post(`/expenses/${id}/dismiss`); removePending(id); } catch { /* ignore */ }
+  }
+
+  async function approvePending(id) {
+    try { await api.post(`/expenses/${id}/approve`); removePending(id); refreshExpenses(); } catch { /* ignore */ }
+  }
+
   async function deleteExpense(id) {
     try {
       await api.delete(`/expenses/${id}`);
@@ -291,23 +303,40 @@ export default function SummaryScreen() {
           <Text style={styles.emptyText}>No confirmed expenses yet.</Text>
         )}
 
-        {recentTab === 'queue' && pendingExpenses.slice(0, 10).map(e => (
-          <TouchableOpacity
+        {recentTab === 'queue' && displayPending.slice(0, 10).map(e => (
+          <Swipeable
             key={e.id}
-            style={[styles.recentRow, styles.queueRow]}
-            onPress={() => router.push(`/expense/${e.id}`)}
+            renderLeftActions={() => (
+              <TouchableOpacity style={styles.approveAction} onPress={() => approvePending(e.id)}>
+                <Ionicons name="checkmark" size={18} color="#fff" />
+                <Text style={styles.swipeLabel}>Approve</Text>
+              </TouchableOpacity>
+            )}
+            renderRightActions={() => (
+              <TouchableOpacity style={styles.dismissAction} onPress={() => dismissPending(e.id)}>
+                <Ionicons name="trash-outline" size={18} color="#fff" />
+                <Text style={styles.swipeLabel}>Dismiss</Text>
+              </TouchableOpacity>
+            )}
+            overshootLeft={false}
+            overshootRight={false}
           >
-            <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
-            <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
-            <Text style={styles.recentAmount}>${Math.abs(Number(e.amount)).toFixed(2)}</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.recentRow, styles.queueRow]}
+              onPress={() => router.push(`/expense/${e.id}`)}
+            >
+              <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
+              <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
+              <Text style={styles.recentAmount}>${Math.abs(Number(e.amount)).toFixed(2)}</Text>
+            </TouchableOpacity>
+          </Swipeable>
         ))}
-        {recentTab === 'queue' && pendingExpenses.length === 0 && (
+        {recentTab === 'queue' && displayPending.length === 0 && (
           <Text style={styles.emptyText}>Queue is empty.</Text>
         )}
-        {recentTab === 'queue' && pendingExpenses.length > 10 && (
+        {recentTab === 'queue' && displayPending.length > 10 && (
           <TouchableOpacity onPress={() => router.push('/(tabs)/pending')}>
-            <Text style={styles.seeAll}>+{pendingExpenses.length - 10} more in queue</Text>
+            <Text style={styles.seeAll}>+{displayPending.length - 10} more in queue</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -399,6 +428,9 @@ const styles = StyleSheet.create({
   queueBadge: { backgroundColor: '#f59e0b', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
   queueBadgeText: { fontSize: 10, color: '#000', fontWeight: '700' },
   queueRow: { borderLeftWidth: 2, borderLeftColor: '#f59e0b', paddingLeft: 10 },
+  approveAction: { backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
+  dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
+  swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600' },
   emptyText: { color: '#555', fontSize: 14, paddingVertical: 12 },
   seeAll: { fontSize: 14, color: '#999' },
   recentRow: {
