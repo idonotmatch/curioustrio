@@ -396,21 +396,23 @@ export default function AccountsScreen() {
                     : 'Not connected'}
               </Text>
             </View>
-            <TouchableOpacity style={styles.actionBtn} onPress={connectGmail}>
-              <Text style={styles.actionBtnText}>
-                {gmailStatus?.connected ? 'Reconnect' : 'Connect'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.btnGroup}>
+              {gmailStatus?.connected && (
+                <TouchableOpacity
+                  style={[styles.actionBtn, gmailSyncing && { opacity: 0.5 }]}
+                  onPress={syncGmail}
+                  disabled={gmailSyncing}
+                >
+                  <Text style={styles.actionBtnText}>{gmailSyncing ? 'Syncing…' : 'Sync'}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.actionBtn} onPress={connectGmail}>
+                <Text style={styles.actionBtnText}>
+                  {gmailStatus?.connected ? 'Reconnect' : 'Connect'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          {gmailStatus?.connected && (
-            <TouchableOpacity
-              style={[styles.actionBtn, gmailSyncing && { opacity: 0.5 }]}
-              onPress={syncGmail}
-              disabled={gmailSyncing}
-            >
-              <Text style={styles.actionBtnText}>{gmailSyncing ? 'Syncing…' : 'Sync now'}</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Sign out */}
@@ -456,6 +458,7 @@ const styles = StyleSheet.create({
   leaveBtnText: { color: '#ef4444', fontSize: 14 },
   inputRow: { flexDirection: 'row', gap: 8 },
   input: { flex: 1, backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#1f1f1f' },
+  btnGroup: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
   actionBtnDisabled: { opacity: 0.4 },
   actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },

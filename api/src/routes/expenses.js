@@ -224,6 +224,16 @@ router.post('/:id/dismiss', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/:id/approve', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const expense = await Expense.updateStatus(req.params.id, user.id, 'confirmed');
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    res.json(expense);
+  } catch (err) { next(err); }
+});
+
 // Delete an expense
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
