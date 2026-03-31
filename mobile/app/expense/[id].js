@@ -17,6 +17,7 @@ export default function ExpenseDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [actioning, setActioning] = useState(false);
 
   // Edit state
   const [merchant, setMerchant] = useState('');
@@ -332,6 +333,33 @@ export default function ExpenseDetailScreen() {
         </TouchableOpacity>
       )}
 
+      {!editing && expense.status === 'pending' && (
+        <View style={styles.pendingActions}>
+          <TouchableOpacity
+            style={[styles.approveBtn, actioning && { opacity: 0.5 }]}
+            disabled={actioning}
+            onPress={async () => {
+              setActioning(true);
+              try { await api.post(`/expenses/${id}/approve`); router.back(); }
+              catch (e) { Alert.alert('Error', e.message); setActioning(false); }
+            }}
+          >
+            <Text style={styles.approveBtnText}>Approve</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dismissBtn, actioning && { opacity: 0.5 }]}
+            disabled={actioning}
+            onPress={async () => {
+              setActioning(true);
+              try { await api.post(`/expenses/${id}/dismiss`); router.back(); }
+              catch (e) { Alert.alert('Error', e.message); setActioning(false); }
+            }}
+          >
+            <Text style={styles.dismissBtnText}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
         {deleting
           ? <ActivityIndicator color="#ef4444" size="small" />
@@ -387,6 +415,11 @@ const styles = StyleSheet.create({
 
   saveBtn: { margin: 20, marginBottom: 8, backgroundColor: '#f5f5f5', borderRadius: 10, padding: 14, alignItems: 'center' },
   saveBtnText: { color: '#000', fontWeight: '600', fontSize: 15 },
+  pendingActions: { flexDirection: 'row', marginHorizontal: 20, marginTop: 20, gap: 10 },
+  approveBtn: { flex: 1, backgroundColor: '#22c55e', borderRadius: 10, padding: 14, alignItems: 'center' },
+  approveBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  dismissBtn: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' },
+  dismissBtnText: { color: '#ef4444', fontWeight: '600', fontSize: 15 },
   deleteBtn: { margin: 20, marginTop: 8, padding: 14, alignItems: 'center' },
   deleteBtnText: { color: '#ef4444', fontSize: 14 },
 

@@ -1,11 +1,16 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
+import { useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 
 function FeedIcon({ focused }) {
-  const { expenses } = usePendingExpenses();
+  const { expenses, refresh } = usePendingExpenses();
   const count = expenses?.length ?? 0;
+
+  useEffect(() => {
+    if (focused) refresh();
+  }, [focused]);
   return (
     <View>
       <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
