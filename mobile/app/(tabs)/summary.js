@@ -5,7 +5,9 @@ import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useExpenses } from '../../hooks/useExpenses';
+import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
+import { useHousehold } from '../../hooks/useHousehold';
 import { api } from '../../services/api';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -39,28 +41,35 @@ export default function SummaryScreen() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
-  const { budget, refresh: refreshBudget } = useBudget(selectedMonth);
+  const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
+  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
+  const { memberCount } = useHousehold();
+  const isMultiMember = memberCount > 1;
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Refresh data when tab gains focus
   useFocusEffect(useCallback(() => {
     refreshExpenses();
-    refreshBudget();
-  }, [refreshExpenses, refreshBudget]));
+    refreshHouseholdExpenses();
+    refreshPersonalBudget();
+    refreshHouseholdBudget();
+  }, [refreshExpenses, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget]));
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
+  const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const selectedDate = new Date(selectedMonth + '-02');
-  const limit = budget?.total?.limit ?? 0;
+
+  const limit = personalBudget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
   const over = limit && spent > limit;
 
-  const hLimit = budget?.total?.limit ?? 0;
-  const hSpent = budget?.total?.spent ?? 0;
+  const hLimit = householdBudget?.total?.limit ?? 0;
+  const hSpent = householdSpent;
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit && hSpent > hLimit;
-  const showHousehold = hLimit > 0 && Math.abs(hSpent - spent) > 0.01;
-  const byParent = budget?.by_parent || [];
+  const byParent = householdBudget?.by_parent || [];
   const currentMonthStr = new Date().toISOString().slice(0, 7);
   const recent = (expenses || []).slice(0, 5);
 
@@ -158,8 +167,8 @@ export default function SummaryScreen() {
         )}
       </View>
 
-      {/* Household budget — secondary */}
-      {showHousehold && (
+      {/* Household budget — shown for multi-member households */}
+      {isMultiMember && (
         <View style={styles.householdCard}>
           <View style={styles.householdRow}>
             <Text style={styles.householdLabel}>Household</Text>
