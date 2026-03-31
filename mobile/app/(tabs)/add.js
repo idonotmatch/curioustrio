@@ -2,7 +2,8 @@ import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
+let ImageManipulator;
+try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not available in Expo Go */ }
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 import { useState } from 'react';
@@ -55,18 +56,21 @@ export default function AddScreen() {
       const asset = pickerResult.assets[0];
       setScanLoading(true);
 
-      // Resize to max 1500px on the long edge at 60% quality before encoding.
-      // iPhone photos are 12MP (4032×3024) — even at quality:0.7 the raw base64
-      // easily exceeds 2MB. At 1500px wide a receipt is still perfectly readable
-      // by Claude and the base64 stays well under 500KB.
-      const resized = await ImageManipulator.manipulateAsync(
-        asset.uri,
-        [{ resize: { width: 1500 } }],
-        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-      );
+      // Resize to max 1500px wide at 60% quality before encoding.
+      // Falls back to the original base64 when the native module isn't available
+      // (Expo Go / simulator without a dev build).
+      let imageBase64 = asset.base64;
+      try {
+        const resized = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 1500 } }],
+          { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+        imageBase64 = resized.base64;
+      } catch { /* native module unavailable — use original */ }
 
       const today = new Date().toISOString().split('T')[0];
-      const parsed = await api.post('/expenses/scan', { image_base64: resized.base64, today });
+      const parsed = await api.post('/expenses/scan', { image_base64: imageBase64, today });
       router.push({
         pathname: '/confirm',
         params: { data: JSON.stringify({ ...parsed, source: 'camera', image_uri: asset.uri }) }

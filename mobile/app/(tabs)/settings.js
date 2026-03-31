@@ -27,7 +27,7 @@ export default function SettingsScreen() {
 
   const loadBudget = useCallback(async () => {
     try {
-      const data = await api.get('/budgets');
+      const data = await api.get('/budgets?scope=personal');
       setCurrentBudget(data.total);
       if (data.total?.limit) setBudgetLimit(String(data.total.limit));
     } catch { /* ignore */ }

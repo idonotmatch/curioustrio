@@ -20,8 +20,10 @@ router.get('/', async (req, res, next) => {
     if (!user) return;
 
     const month = req.query.month || new Date().toISOString().slice(0, 7);
+    // ?scope=personal forces the solo path even for household members
+    const useHouseholdPath = user.household_id && req.query.scope !== 'personal';
 
-    if (user.household_id) {
+    if (useHouseholdPath) {
       // Household path: aggregate across all members
       const settings = await BudgetSetting.findByHousehold(user.household_id);
 

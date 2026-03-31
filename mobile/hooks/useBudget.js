@@ -1,13 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
 
-export function useBudget(month) {
+export function useBudget(month, scope) {
   const [budget, setBudget] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
-      const url = month ? `/budgets?month=${month}` : '/budgets';
+      const params = [
+        month && `month=${month}`,
+        scope && `scope=${scope}`,
+      ].filter(Boolean).join('&');
+      const url = params ? `/budgets?${params}` : '/budgets';
       const data = await api.get(url);
       setBudget(data);
     } catch {
@@ -15,7 +19,7 @@ export function useBudget(month) {
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, [month, scope]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

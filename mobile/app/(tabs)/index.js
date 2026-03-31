@@ -22,19 +22,15 @@ function getPastMonths() {
   return months;
 }
 
-function SpendHeader({ total, budget, month, mode, onMonthPress }) {
+function BudgetBar({ spent, budget, label }) {
   const limit = budget?.total?.limit;
-  const pct = limit ? Math.min(total / limit, 1) : null;
-  const over = limit && total > limit;
-  const monthName = MONTH_NAMES[month.getMonth()];
-
+  const pct = limit ? Math.min(spent / limit, 1) : null;
+  const over = limit && spent > limit;
   return (
-    <View style={styles.spendHeader}>
-      <View style={styles.spendRow}>
-        <TouchableOpacity onPress={onMonthPress}>
-          <Text style={styles.spendMonth}>{monthName} {month.getFullYear()}{mode === 'household' ? ' · Household' : ''}</Text>
-        </TouchableOpacity>
-        <Text style={styles.spendAmount}>${total.toFixed(0)}</Text>
+    <View style={styles.budgetSection}>
+      <View style={styles.budgetRow}>
+        <Text style={styles.budgetLabel}>{label}</Text>
+        <Text style={styles.budgetAmount}>${spent.toFixed(0)}</Text>
       </View>
       {pct !== null && (
         <View style={styles.barTrack}>
@@ -44,9 +40,25 @@ function SpendHeader({ total, budget, month, mode, onMonthPress }) {
       {limit && (
         <Text style={styles.spendSub}>
           {over
-            ? `$${(total - limit).toFixed(0)} over budget`
-            : `$${(limit - total).toFixed(0)} remaining of $${limit.toFixed(0)}`}
+            ? `$${(spent - limit).toFixed(0)} over budget`
+            : `$${(limit - spent).toFixed(0)} remaining of $${limit.toFixed(0)}`}
         </Text>
+      )}
+    </View>
+  );
+}
+
+function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, month, onMonthPress }) {
+  const monthName = MONTH_NAMES[month.getMonth()];
+
+  return (
+    <View style={styles.spendHeader}>
+      <TouchableOpacity onPress={onMonthPress} style={styles.monthRow}>
+        <Text style={styles.spendMonth}>{monthName} {month.getFullYear()}</Text>
+      </TouchableOpacity>
+      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
+      {isMultiMember && (
+        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" />
       )}
     </View>
   );
@@ -56,12 +68,13 @@ export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  const { memberCount } = useHousehold();
+  const { memberCount, refresh: refreshHousehold } = useHousehold();
   const isMultiMember = memberCount > 1;
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
-  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHousehold } = useHouseholdExpenses(selectedMonth);
-  const { budget, refresh: refreshBudget } = useBudget(selectedMonth);
+  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
+  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
   const router = useRouter();
 
@@ -73,16 +86,18 @@ export default function FeedScreen() {
 
   const refresh = useCallback(() => {
     refreshMine();
-    refreshHousehold();
-    refreshBudget();
+    refreshHouseholdExpenses();
+    refreshPersonalBudget();
+    refreshHouseholdBudget();
     refreshPending();
-  }, [refreshMine, refreshHousehold, refreshBudget, refreshPending]);
+    refreshHousehold();
+  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold]);
 
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
   const selectedDate = new Date(selectedMonth + '-02');
-  // Server already filtered by selectedMonth — sum all returned expenses
-  const monthlyTotal = displayExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  const myTotal = myExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  const householdTotal = householdExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   const listData = [
     ...(mode === 'mine' && pending?.length > 0 ? [{ _type: 'pending_section', items: pending }] : []),
@@ -127,10 +142,12 @@ export default function FeedScreen() {
       )}
 
       <SpendHeader
-        total={monthlyTotal}
-        budget={budget}
+        myTotal={myTotal}
+        myBudget={personalBudget}
+        householdTotal={householdTotal}
+        householdBudget={householdBudget}
+        isMultiMember={isMultiMember}
         month={selectedDate}
-        mode={mode}
         onMonthPress={() => setShowMonthPicker(true)}
       />
 
@@ -187,13 +204,16 @@ const styles = StyleSheet.create({
   toggleText: { fontSize: 14, color: '#999', fontWeight: '500' },
   toggleTextActive: { color: '#000' },
 
-  spendHeader: { padding: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#111' },
-  spendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 },
+  spendHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: '#111' },
+  monthRow: { marginBottom: 10 },
   spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.3 },
-  spendAmount: { fontSize: 26, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
-  barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 6 },
+  budgetSection: { marginBottom: 12 },
+  budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  budgetLabel: { fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
+  budgetAmount: { fontSize: 22, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
+  barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 4 },
   barFill: { height: 2, borderRadius: 1 },
-  spendSub: { fontSize: 13, color: '#888' },
+  spendSub: { fontSize: 12, color: '#666' },
 
   list: { padding: 16 },
   empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
