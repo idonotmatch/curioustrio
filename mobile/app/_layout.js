@@ -3,25 +3,8 @@ import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
-
-const GMAIL_SYNC_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-
-async function maybeAutoSyncGmail() {
-  try {
-    const status = await api.get('/gmail/status');
-    if (!status?.connected) return;
-    const lastStr = await AsyncStorage.getItem('lastGmailSync');
-    const last = lastStr ? parseInt(lastStr, 10) : 0;
-    if (Date.now() - last < GMAIL_SYNC_INTERVAL_MS) return;
-    await AsyncStorage.setItem('lastGmailSync', String(Date.now()));
-    api.post('/gmail/import', {}).catch(() => {}); // fire-and-forget
-  } catch {
-    // non-fatal
-  }
-}
 
 function AppNavigator() {
   const router = useRouter();
@@ -82,7 +65,6 @@ function AppNavigator() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         checkHousehold(session);
-        maybeAutoSyncGmail();
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         router.replace('/login');
       }

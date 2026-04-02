@@ -29,4 +29,11 @@ async function findByUserId(userId, provider = 'google') {
   return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
 }
 
-module.exports = { upsert, findByUserId };
+async function findAllWithGmail() {
+  const result = await db.query(
+    `SELECT user_id FROM oauth_tokens WHERE provider = 'google'`
+  );
+  return result.rows.map(r => r.user_id);
+}
+
+module.exports = { upsert, findByUserId, findAllWithGmail };

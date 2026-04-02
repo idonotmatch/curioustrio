@@ -3,14 +3,10 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const db = require('../db');
 const User = require('../models/user');
-const Expense = require('../models/expense');
-const Category = require('../models/category');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
-const { getAuthUrl, exchangeCode, listRecentMessages, getMessage } = require('../services/gmailClient');
-const { parseEmailExpense } = require('../services/emailParser');
-const { assignCategory } = require('../services/categoryAssigner');
-const ExpenseItem = require('../models/expenseItem');
+const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
+const { importForUser } = require('../services/gmailImporter');
 
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
@@ -62,67 +58,8 @@ router.post('/import', authenticate, async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
     if (!token) return res.status(403).json({ error: 'Gmail not connected. Visit GET /gmail/auth first.' });
-
-    const messages = await listRecentMessages(user.id);
-    const categories = await Category.findByHousehold(user.household_id);
-    const todayDate = new Date().toISOString().split('T')[0];
-
-    let imported = 0, skipped = 0, failed = 0;
-
-    for (const msg of messages) {
-      const existing = await EmailImportLog.findByMessageId(user.id, msg.id);
-      if (existing) { skipped++; continue; }
-
-      try {
-        const { subject, from, body } = await getMessage(user.id, msg.id);
-        const parsed = await parseEmailExpense(body, subject, from, todayDate);
-
-        if (!parsed) {
-          await EmailImportLog.create({
-            userId: user.id, messageId: msg.id, status: 'skipped',
-            subject, fromAddress: from, skipReason: 'not_expense',
-          });
-          skipped++;
-          continue;
-        }
-
-        const { category_id } = await assignCategory({
-          merchant: parsed.merchant,
-          householdId: user.household_id,
-          categories,
-        });
-
-        const expense = await Expense.create({
-          userId: user.id,
-          householdId: user.household_id,
-          merchant: parsed.merchant,
-          amount: parsed.amount,
-          date: parsed.date,
-          categoryId: category_id,
-          source: 'email',
-          status: 'pending',
-          notes: parsed.notes,
-        });
-
-        if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-          await ExpenseItem.replaceItems(expense.id, parsed.items.filter(it => it.description));
-        }
-
-        await EmailImportLog.create({
-          userId: user.id,
-          messageId: msg.id,
-          expenseId: expense.id,
-          status: 'imported',
-        });
-        imported++;
-      } catch (e) {
-        console.error(`[gmail import] failed msg=${msg.id}:`, e.message);
-        await EmailImportLog.create({ userId: user.id, messageId: msg.id, status: 'failed' });
-        failed++;
-      }
-    }
-
-    res.json({ imported, skipped, failed });
+    const result = await importForUser(user);
+    res.json(result);
   } catch (err) { next(err); }
 });
 

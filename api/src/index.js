@@ -16,6 +16,7 @@ const budgetsRouter = require('./routes/budgets');
 const recurringRouter = require('./routes/recurring');
 const pushRouter = require('./routes/push');
 const placesRouter = require('./routes/places');
+const cronRouter = require('./routes/cron');
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use('/budgets', budgetsRouter);
 app.use('/recurring', recurringRouter);
 app.use('/push', pushRouter);
 app.use('/places', placesRouter);
+app.use('/cron', cronRouter);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
