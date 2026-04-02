@@ -15,7 +15,7 @@ function categoryColor(name) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
-  const clean = dateStr.includes('T') ? dateStr : dateStr + 'T12:00:00';
+  const clean = dateStr.slice(0, 10) + 'T12:00:00';
   const date = new Date(clean);
   if (isNaN(date)) return dateStr;
   const today = new Date();

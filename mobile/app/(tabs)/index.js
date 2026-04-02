@@ -218,6 +218,8 @@ export default function FeedScreen() {
         renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
         contentContainerStyle={styles.list}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           !loading && <Text style={styles.empty}>No expenses yet. Tap + to get started.</Text>
         }
