@@ -49,6 +49,7 @@ export default function SummaryScreen() {
   const isMultiMember = memberCount > 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const [recentTab, setRecentTab] = useState('recent');
+  const [byParentExpanded, setByParentExpanded] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -214,7 +215,17 @@ export default function SummaryScreen() {
               ? `$${(hSpent - hLimit).toFixed(0)} over household budget`
               : `$${(hLimit - hSpent).toFixed(0)} remaining`}
           </Text>
-          {byParent.length > 0 && (
+          {byParent.filter(g => Number(g.spent) > 0 || g.limit).length > 0 && (
+            <TouchableOpacity
+              style={styles.byParentToggle}
+              onPress={() => setByParentExpanded(e => !e)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.byParentToggleText}>By category</Text>
+              <Ionicons name={byParentExpanded ? 'chevron-up' : 'chevron-down'} size={13} color="#444" />
+            </TouchableOpacity>
+          )}
+          {byParentExpanded && (
             <View style={styles.byParentSection}>
               {byParent
                 .filter(g => Number(g.spent) > 0 || g.limit)
@@ -408,7 +419,9 @@ const styles = StyleSheet.create({
   hBarTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 6 },
   hBarFill: { height: 2, borderRadius: 1 },
   hBarLabel: { fontSize: 13, color: '#888' },
-  byParentSection: { marginTop: 12, borderTopWidth: 1, borderTopColor: '#1f1f1f', paddingTop: 10 },
+  byParentToggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1f1f1f' },
+  byParentToggleText: { fontSize: 12, color: '#444', textTransform: 'uppercase', letterSpacing: 0.8 },
+  byParentSection: { marginTop: 8 },
   parentRow: { marginBottom: 8 },
   parentRowTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
   parentName: { fontSize: 14, color: '#aaa' },
