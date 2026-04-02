@@ -37,10 +37,17 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "updates": {
+      "url": "https://u.expo.dev/e3eaf656-8f47-4549-a70f-79590f31d782"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-updates"
     ],
     "extra": {
       "router": {},
