@@ -1,0 +1,16 @@
+name: Gmail Sync
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 minutes
+  workflow_dispatch:           # allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Gmail sync
+        run: |
+          curl -sf -X POST https://adlo-1j98.onrender.com/cron/gmail-sync \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
