@@ -25,8 +25,11 @@ async function importForUser(user) {
     const existing = await EmailImportLog.findByMessageId(user.id, msg.id);
     if (existing) { skipped++; continue; }
 
+    let msgSubject, msgFrom;
     try {
       const { subject, from, body } = await getMessage(user.id, msg.id);
+      msgSubject = subject;
+      msgFrom = from;
       const parsed = await parseEmailExpense(body, subject, from, todayDate);
 
       if (!parsed) {
@@ -69,7 +72,10 @@ async function importForUser(user) {
       imported++;
     } catch (e) {
       console.error(`[gmail import] user=${user.id} msg=${msg.id}:`, e.message);
-      await EmailImportLog.create({ userId: user.id, messageId: msg.id, status: 'failed' });
+      await EmailImportLog.create({
+        userId: user.id, messageId: msg.id, status: 'failed',
+        subject: msgSubject, fromAddress: msgFrom, skipReason: e.message,
+      });
       failed++;
     }
   }

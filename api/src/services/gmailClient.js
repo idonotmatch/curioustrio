@@ -84,14 +84,22 @@ async function getMessage(userId, messageId) {
   const subject = headers.find(h => h.name === 'Subject')?.value || '';
   const from = headers.find(h => h.name === 'From')?.value || '';
 
-  let body = '';
+  let plainBody = '';
+  let htmlBody = '';
   function extractBody(part) {
     if (part.mimeType === 'text/plain' && part.body?.data) {
-      body += Buffer.from(part.body.data, 'base64').toString('utf-8');
+      plainBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
+    } else if (part.mimeType === 'text/html' && part.body?.data) {
+      htmlBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
     }
     if (part.parts) part.parts.forEach(extractBody);
   }
   if (payload) extractBody(payload);
+
+  // Prefer plain text; fall back to HTML with tags stripped
+  const body = plainBody.trim()
+    ? plainBody
+    : htmlBody.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
   return { subject, from, body };
 }
