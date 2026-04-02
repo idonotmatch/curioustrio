@@ -1,4 +1,4 @@
-import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -26,16 +26,43 @@ function getPastMonths() {
   return months;
 }
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 function BudgetBar({ spent, budget, label }) {
+  const [expanded, setExpanded] = useState(false);
   const limit = budget?.total?.limit;
   const pct = limit ? Math.min(spent / limit, 1) : null;
   const over = limit && spent > limit;
+  const byParent = budget?.by_parent;
+  const hasBreakdown = Array.isArray(byParent) && byParent.length > 0;
+
+  function toggle() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(e => !e);
+  }
+
   return (
     <View style={styles.budgetSection}>
-      <View style={styles.budgetRow}>
-        <Text style={styles.budgetLabel}>{label}</Text>
+      <TouchableOpacity
+        style={styles.budgetRow}
+        onPress={hasBreakdown ? toggle : undefined}
+        activeOpacity={hasBreakdown ? 0.7 : 1}
+      >
+        <View style={styles.budgetLabelRow}>
+          <Text style={styles.budgetLabel}>{label}</Text>
+          {hasBreakdown && (
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={11}
+              color="#555"
+              style={{ marginLeft: 4, marginTop: 1 }}
+            />
+          )}
+        </View>
         <Text style={styles.budgetAmount}>${spent.toFixed(0)}</Text>
-      </View>
+      </TouchableOpacity>
       {pct !== null && (
         <View style={styles.barTrack}>
           <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: over ? '#ef4444' : '#4ade80' }]} />
@@ -47,6 +74,24 @@ function BudgetBar({ spent, budget, label }) {
             ? `$${(spent - limit).toFixed(0)} over budget`
             : `$${(limit - spent).toFixed(0)} remaining of $${limit.toFixed(0)}`}
         </Text>
+      )}
+      {expanded && hasBreakdown && (
+        <View style={styles.byParentList}>
+          {byParent
+            .filter(p => p.spent > 0)
+            .sort((a, b) => b.spent - a.spent)
+            .map(p => (
+              <View key={p.group_id} style={styles.byParentRow}>
+                <Text style={styles.byParentName} numberOfLines={1}>{p.name}</Text>
+                <View style={styles.byParentRight}>
+                  <Text style={styles.byParentSpent}>${p.spent.toFixed(0)}</Text>
+                  {p.limit != null && (
+                    <Text style={styles.byParentLimit}> / ${p.limit.toFixed(0)}</Text>
+                  )}
+                </View>
+              </View>
+            ))}
+        </View>
       )}
     </View>
   );
@@ -61,7 +106,7 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
         <Text style={styles.spendMonth}>{monthName} {month.getFullYear()}</Text>
       </TouchableOpacity>
       <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
-      {isMultiMember && (
+      {isMultiMember && householdBudget && (
         <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" />
       )}
     </View>
@@ -272,8 +317,15 @@ const styles = StyleSheet.create({
   spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.3 },
   budgetSection: { marginBottom: 12 },
   budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  budgetLabelRow: { flexDirection: 'row', alignItems: 'center' },
   budgetLabel: { fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
   budgetAmount: { fontSize: 22, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
+  byParentList: { marginTop: 8, gap: 6 },
+  byParentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  byParentName: { fontSize: 13, color: '#888', flex: 1, marginRight: 8 },
+  byParentRight: { flexDirection: 'row', alignItems: 'baseline' },
+  byParentSpent: { fontSize: 13, color: '#ccc', fontWeight: '500' },
+  byParentLimit: { fontSize: 11, color: '#555' },
   barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 4 },
   barFill: { height: 2, borderRadius: 1 },
   spendSub: { fontSize: 12, color: '#666' },

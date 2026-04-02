@@ -46,11 +46,10 @@ export default function SummaryScreen() {
   const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { cacheOnly: true });
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
-  const { memberCount } = useHousehold();
+  const { household, memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const [recentTab, setRecentTab] = useState('recent');
-  const [byParentExpanded, setByParentExpanded] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -73,7 +72,6 @@ export default function SummaryScreen() {
   const hSpent = householdSpent;
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit && hSpent > hLimit;
-  const byParent = householdBudget?.by_parent || [];
   const currentMonthStr = new Date().toISOString().slice(0, 7);
   const recent = (expenses || []).slice(0, 5);
 
@@ -159,11 +157,14 @@ export default function SummaryScreen() {
     >
       {/* Spend vs Budget */}
       <View style={styles.spendCard}>
-        <TouchableOpacity onPress={() => setShowMonthPicker(true)}>
+        <TouchableOpacity onPress={() => setShowMonthPicker(true)} style={styles.spendMonthRow}>
           <Text style={styles.spendMonth}>
             {MONTH_NAMES[selectedDate.getMonth()]} {selectedDate.getFullYear()}
             {selectedMonth !== currentMonthStr ? '  ·  tap to change' : ''}
           </Text>
+          {household?.name ? (
+            <Text style={styles.householdName}>{household.name}</Text>
+          ) : null}
         </TouchableOpacity>
 
         <View style={styles.spendNumbers}>
@@ -206,54 +207,15 @@ export default function SummaryScreen() {
             <Text style={styles.householdLabel}>Household</Text>
             <View style={styles.householdNumbers}>
               <Text style={[styles.householdSpent, hOver && styles.householdOver]}>${hSpent.toFixed(0)}</Text>
-              <Text style={styles.householdLimit}> / ${hLimit.toFixed(0)}</Text>
+              {hLimit > 0 && <Text style={styles.householdLimit}> / ${hLimit.toFixed(0)}</Text>}
             </View>
           </View>
-          <View style={styles.hBarTrack}>
-            <View style={[styles.hBarFill, { width: `${hPct * 100}%`, backgroundColor: hOver ? '#ef4444' : '#4ade80' }]} />
-          </View>
-          <Text style={styles.hBarLabel}>
-            {hOver
-              ? `$${(hSpent - hLimit).toFixed(0)} over household budget`
-              : `$${(hLimit - hSpent).toFixed(0)} remaining`}
-          </Text>
-          {byParent.filter(g => Number(g.spent) > 0 || g.limit).length > 0 && (
-            <TouchableOpacity
-              style={styles.byParentToggle}
-              onPress={() => setByParentExpanded(e => !e)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.byParentToggleText}>By category</Text>
-              <Ionicons name={byParentExpanded ? 'chevron-up' : 'chevron-down'} size={13} color="#444" />
-            </TouchableOpacity>
-          )}
-          {byParentExpanded && (
-            <View style={styles.byParentSection}>
-              {byParent
-                .filter(g => Number(g.spent) > 0 || g.limit)
-                .map(g => {
-                  const pSpent = parseFloat(g.spent) || 0;
-                  const pLimit = g.limit ? parseFloat(g.limit) : null;
-                  const pProgress = pLimit ? Math.min(pSpent / pLimit, 1) : 0;
-                  const pIsOver = pLimit && pSpent > pLimit;
-                  return (
-                    <View key={g.group_id} style={styles.parentRow}>
-                      <View style={styles.parentRowTop}>
-                        <Text style={styles.parentName}>{g.name}</Text>
-                        <Text style={styles.parentSpend}>
-                          ${pSpent.toFixed(0)}{pLimit !== null ? ` / $${pLimit.toFixed(0)}` : ''}
-                        </Text>
-                      </View>
-                      {pLimit !== null && (
-                        <View style={styles.miniBarBg}>
-                          <View style={[styles.miniBarFill, { width: `${pProgress * 100}%`, backgroundColor: pIsOver ? '#ef4444' : '#4ade80' }]} />
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
+          {hLimit > 0 && (
+            <View style={styles.hBarTrack}>
+              <View style={[styles.hBarFill, { width: `${hPct * 100}%`, backgroundColor: hOver ? '#ef4444' : '#4ade80' }]} />
             </View>
           )}
+          {hOver && <Text style={styles.hOverLabel}>${(hSpent - hLimit).toFixed(0)} over</Text>}
         </View>
       )}
 
@@ -399,7 +361,9 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 32 },
-  spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.5, marginBottom: 12 },
+  spendMonthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
+  spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.5 },
+  householdName: { fontSize: 13, color: '#555', letterSpacing: 0.3 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
   spendLabel: { fontSize: 13, color: '#888', marginBottom: 2 },
   spendAmount: { fontSize: 48, color: '#f5f5f5', fontWeight: '600', letterSpacing: -2 },
@@ -411,25 +375,16 @@ const styles = StyleSheet.create({
   barLabel: { fontSize: 13, color: '#888' },
   setBudgetLink: { fontSize: 14, color: '#999', marginTop: 8 },
 
-  householdCard: { marginBottom: 32, backgroundColor: '#111', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#1a1a1a' },
-  householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  householdLabel: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5 },
+  householdCard: { marginBottom: 32, backgroundColor: '#111', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#1a1a1a' },
+  householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  householdLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 0.5 },
   householdNumbers: { flexDirection: 'row', alignItems: 'baseline' },
-  householdSpent: { fontSize: 18, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
+  householdSpent: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
   householdOver: { color: '#ef4444' },
-  householdLimit: { fontSize: 15, color: '#888' },
-  hBarTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 6 },
+  householdLimit: { fontSize: 13, color: '#666' },
+  hBarTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1 },
   hBarFill: { height: 2, borderRadius: 1 },
-  hBarLabel: { fontSize: 13, color: '#888' },
-  byParentToggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1f1f1f' },
-  byParentToggleText: { fontSize: 12, color: '#444', textTransform: 'uppercase', letterSpacing: 0.8 },
-  byParentSection: { marginTop: 8 },
-  parentRow: { marginBottom: 8 },
-  parentRowTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
-  parentName: { fontSize: 14, color: '#aaa' },
-  parentSpend: { fontSize: 14, color: '#aaa' },
-  miniBarBg: { height: 3, backgroundColor: '#222', borderRadius: 2, overflow: 'hidden' },
-  miniBarFill: { height: 3, borderRadius: 2 },
+  hOverLabel: { fontSize: 12, color: '#ef4444', marginTop: 4 },
 
   quickAdd: { marginBottom: 32 },
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
