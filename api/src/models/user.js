@@ -1,5 +1,7 @@
 const db = require('../db');
 
+const COLS = 'id, provider_uid, name, email, household_id, budget_start_day, created_at';
+
 // Upsert by provider_uid.
 async function findOrCreateByProviderUid({ providerUid, name, email }) {
   const result = await db.query(
@@ -9,7 +11,7 @@ async function findOrCreateByProviderUid({ providerUid, name, email }) {
      DO UPDATE SET
        name = COALESCE(EXCLUDED.name, users.name),
        email = COALESCE(EXCLUDED.email, users.email)
-     RETURNING id, provider_uid, name, email, household_id, created_at`,
+     RETURNING ${COLS}`,
     [providerUid, name || null, email || null]
   );
   return result.rows[0];
@@ -17,7 +19,7 @@ async function findOrCreateByProviderUid({ providerUid, name, email }) {
 
 async function findByProviderUid(providerUid) {
   const result = await db.query(
-    'SELECT id, provider_uid, name, email, household_id, created_at FROM users WHERE provider_uid = $1',
+    `SELECT ${COLS} FROM users WHERE provider_uid = $1`,
     [providerUid]
   );
   return result.rows[0] || null;
@@ -25,7 +27,7 @@ async function findByProviderUid(providerUid) {
 
 async function findByEmail(email) {
   const result = await db.query(
-    'SELECT id, provider_uid, name, email, household_id, created_at FROM users WHERE email = $1',
+    `SELECT ${COLS} FROM users WHERE email = $1`,
     [email]
   );
   return result.rows[0] || null;
@@ -33,7 +35,7 @@ async function findByEmail(email) {
 
 async function findById(id) {
   const result = await db.query(
-    'SELECT id, provider_uid, name, email, household_id, created_at FROM users WHERE id = $1',
+    `SELECT ${COLS} FROM users WHERE id = $1`,
     [id]
   );
   return result.rows[0] || null;
@@ -41,8 +43,7 @@ async function findById(id) {
 
 async function updateProviderUid(userId, providerUid) {
   const result = await db.query(
-    `UPDATE users SET provider_uid = $1 WHERE id = $2
-     RETURNING id, provider_uid, name, email, household_id, created_at`,
+    `UPDATE users SET provider_uid = $1 WHERE id = $2 RETURNING ${COLS}`,
     [providerUid, userId]
   );
   return result.rows[0] || null;
@@ -50,9 +51,16 @@ async function updateProviderUid(userId, providerUid) {
 
 async function setHouseholdId(userId, householdId) {
   const result = await db.query(
-    `UPDATE users SET household_id = $1 WHERE id = $2
-     RETURNING id, provider_uid, name, email, household_id, created_at`,
+    `UPDATE users SET household_id = $1 WHERE id = $2 RETURNING ${COLS}`,
     [householdId, userId]
+  );
+  return result.rows[0] || null;
+}
+
+async function updateSettings(userId, { budgetStartDay }) {
+  const result = await db.query(
+    `UPDATE users SET budget_start_day = $1 WHERE id = $2 RETURNING ${COLS}`,
+    [budgetStartDay, userId]
   );
   return result.rows[0] || null;
 }
@@ -64,4 +72,5 @@ module.exports = {
   findById,
   updateProviderUid,
   setHouseholdId,
+  updateSettings,
 };

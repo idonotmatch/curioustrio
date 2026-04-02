@@ -42,4 +42,25 @@ router.post('/sync', authenticate, async (req, res, next) => {
   }
 });
 
+router.patch('/settings', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { budget_start_day } = req.body;
+    if (budget_start_day !== undefined) {
+      const day = parseInt(budget_start_day, 10);
+      if (isNaN(day) || day < 1 || day > 28) {
+        return res.status(400).json({ error: 'budget_start_day must be between 1 and 28' });
+      }
+      const updated = await User.updateSettings(user.id, { budgetStartDay: day });
+      return res.json(updated);
+    }
+
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

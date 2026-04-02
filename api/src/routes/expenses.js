@@ -151,7 +151,8 @@ router.get('/', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const { month } = req.query;
-    const expenses = await Expense.findByUser(user.id, { month });
+    const startDay = user.budget_start_day || 1;
+    const expenses = await Expense.findByUser(user.id, { month, startDay });
     res.json(expenses);
   } catch (err) { next(err); }
 });
@@ -162,9 +163,10 @@ router.get('/household', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const { month } = req.query;
+    const startDay = user.budget_start_day || 1;
     const expenses = user.household_id
-      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month })
-      : await Expense.findByUser(user.id, { month });
+      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay })
+      : await Expense.findByUser(user.id, { month, startDay });
     res.json(expenses);
   } catch (err) { next(err); }
 });

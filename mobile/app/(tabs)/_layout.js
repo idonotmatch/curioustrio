@@ -3,7 +3,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
-import { MonthProvider } from '../../contexts/MonthContext';
+import { MonthProvider, useMonth, currentPeriod } from '../../contexts/MonthContext';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 function FeedIcon({ focused }) {
   const { expenses, refresh } = usePendingExpenses();
@@ -34,9 +35,22 @@ const styles = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
 });
 
+// Syncs the user's budget_start_day into MonthContext once user data loads.
+function StartDaySyncer() {
+  const { user } = useCurrentUser();
+  const { setStartDay, setSelectedMonth } = useMonth();
+  useEffect(() => {
+    const day = user?.budget_start_day || 1;
+    setStartDay(day);
+    setSelectedMonth(currentPeriod(day));
+  }, [user?.budget_start_day]);
+  return null;
+}
+
 export default function TabLayout() {
   return (
     <MonthProvider>
+    <StartDaySyncer />
     <Tabs initialRouteName="summary" screenOptions={{
       tabBarStyle: {
         backgroundColor: '#0a0a0a',

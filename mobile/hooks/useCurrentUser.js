@@ -3,15 +3,15 @@ import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 
 export function useCurrentUser() {
-  const [userId, setUserId] = useState(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     loadWithCache(
       'cache:current-user',
       () => api.get('/users/me'),
-      (me) => setUserId(me?.id || null),
+      (me) => setUser(me || null),
     );
   }, []);
 
-  return userId;
+  return { user, userId: user?.id || null };
 }

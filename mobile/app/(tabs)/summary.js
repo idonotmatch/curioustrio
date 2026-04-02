@@ -1,7 +1,7 @@
 import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useMonth } from '../../contexts/MonthContext';
+import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { useState, useCallback, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -40,7 +40,7 @@ function formatDate(dateStr) {
 
 export default function SummaryScreen() {
   const router = useRouter();
-  const { selectedMonth, setSelectedMonth } = useMonth();
+  const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
@@ -63,6 +63,7 @@ export default function SummaryScreen() {
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const selectedDate = new Date(selectedMonth + '-02');
+  const currentMonthStr = currentPeriod(startDay);
 
   const limit = personalBudget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
@@ -72,7 +73,6 @@ export default function SummaryScreen() {
   const hSpent = householdSpent;
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit && hSpent > hLimit;
-  const currentMonthStr = new Date().toISOString().slice(0, 7);
   const recent = (expenses || []).slice(0, 5);
 
   async function handleQuickAdd() {
@@ -159,7 +159,7 @@ export default function SummaryScreen() {
       <View style={styles.spendCard}>
         <TouchableOpacity onPress={() => setShowMonthPicker(true)} style={styles.spendMonthRow}>
           <Text style={styles.spendMonth}>
-            {MONTH_NAMES[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+            {periodLabel(selectedMonth, startDay)}
             {selectedMonth !== currentMonthStr ? '  ·  tap to change' : ''}
           </Text>
           {household?.name ? (
@@ -341,7 +341,7 @@ export default function SummaryScreen() {
               onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
             >
               <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                {MONTH_NAMES[new Date(m + '-02').getMonth()]} {new Date(m + '-02').getFullYear()}
+                {periodLabel(m, startDay)}
               </Text>
             </TouchableOpacity>
           ))}

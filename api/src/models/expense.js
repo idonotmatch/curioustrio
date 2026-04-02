@@ -9,12 +9,24 @@ async function create({ userId, householdId, merchant, description, amount, date
   return result.rows[0];
 }
 
-async function findByUser(userId, { limit = 50, offset = 0, month } = {}) {
+function periodBounds(month, startDay = 1) {
+  const [year, mon] = month.split('-').map(Number);
+  const pad = n => String(n).padStart(2, '0');
+  const fromDate = new Date(year, mon - 1, startDay);
+  const toDate = new Date(year, mon, startDay);
+  return {
+    from: `${fromDate.getFullYear()}-${pad(fromDate.getMonth() + 1)}-${pad(fromDate.getDate())}`,
+    to: `${toDate.getFullYear()}-${pad(toDate.getMonth() + 1)}-${pad(toDate.getDate())}`,
+  };
+}
+
+async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1 } = {}) {
   const params = [userId, limit, offset];
   let monthClause = '';
   if (month) {
-    params.push(month);
-    monthClause = `AND to_char(e.date, 'YYYY-MM') = $${params.length}`;
+    const { from, to } = periodBounds(month, startDay);
+    params.push(from, to);
+    monthClause = `AND e.date >= $${params.length - 1} AND e.date < $${params.length}`;
   }
   const result = await db.query(
     `SELECT e.*,
@@ -101,7 +113,7 @@ async function findById(id) {
   return result.rows[0] || null;
 }
 
-async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month } = {}) {
+async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month, startDay = 1 } = {}) {
   const params = [householdId, limit, offset];
   let privateClause = '';
   if (userId) {
@@ -110,8 +122,9 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
   }
   let monthClause = '';
   if (month) {
-    params.push(month);
-    monthClause = `AND to_char(e.date, 'YYYY-MM') = $${params.length}`;
+    const { from, to } = periodBounds(month, startDay);
+    params.push(from, to);
+    monthClause = `AND e.date >= $${params.length - 1} AND e.date < $${params.length}`;
   }
   const result = await db.query(
     `SELECT e.*,

@@ -28,7 +28,7 @@ function formatDate(dateStr) {
 
 export function ExpenseItem({ expense, showUser = false, onDelete, pending = false }) {
   const router = useRouter();
-  const currentUserId = useCurrentUser();
+  const { userId: currentUserId } = useCurrentUser();
   const isOwn = !currentUserId || String(expense.user_id) === String(currentUserId);
   const color = categoryColor(expense.category_name);
   const isRefund = Number(expense.amount) < 0;

@@ -2,7 +2,7 @@ import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Mod
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useMonth } from '../../contexts/MonthContext';
+import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
@@ -97,13 +97,11 @@ function BudgetBar({ spent, budget, label }) {
   );
 }
 
-function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, month, onMonthPress }) {
-  const monthName = MONTH_NAMES[month.getMonth()];
-
+function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, startDay, onMonthPress }) {
   return (
     <View style={styles.spendHeader}>
       <TouchableOpacity onPress={onMonthPress} style={styles.monthRow}>
-        <Text style={styles.spendMonth}>{monthName} {month.getFullYear()}</Text>
+        <Text style={styles.spendMonth}>{periodLabel(selectedMonth, startDay)}</Text>
       </TouchableOpacity>
       <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
       {isMultiMember && householdBudget && (
@@ -116,7 +114,7 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
-  const { selectedMonth, setSelectedMonth } = useMonth();
+  const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const { memberCount, refresh: refreshHousehold } = useHousehold();
   const isMultiMember = memberCount > 1;
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -253,7 +251,8 @@ export default function FeedScreen() {
         householdTotal={householdTotal}
         householdBudget={householdBudget}
         isMultiMember={isMultiMember}
-        month={selectedDate}
+        selectedMonth={selectedMonth}
+        startDay={startDay}
         onMonthPress={() => setShowMonthPicker(true)}
       />
 
@@ -289,7 +288,7 @@ export default function FeedScreen() {
                 onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
               >
                 <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                  {MONTH_NAMES_FULL[new Date(m + '-02').getMonth()]} {new Date(m + '-02').getFullYear()}
+                  {periodLabel(m, startDay)}
                 </Text>
               </TouchableOpacity>
             ))}
