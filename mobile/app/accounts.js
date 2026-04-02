@@ -75,6 +75,20 @@ export default function AccountsScreen() {
     }
   }
 
+  const [importLog, setImportLog] = useState([]);
+  const [importLogExpanded, setImportLogExpanded] = useState(false);
+  const [importLogLoading, setImportLogLoading] = useState(false);
+
+  async function loadImportLog() {
+    setImportLogLoading(true);
+    try {
+      const data = await api.get('/gmail/import-log?limit=50');
+      setImportLog(data);
+    } catch { /* non-fatal */ } finally {
+      setImportLogLoading(false);
+    }
+  }
+
   const [gmailSyncing, setGmailSyncing] = useState(false);
   async function syncGmail() {
     setGmailSyncing(true);
@@ -415,6 +429,60 @@ export default function AccountsScreen() {
           </View>
         </View>
 
+        {/* Gmail import log */}
+        {gmailStatus?.connected && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.logToggleRow}
+              onPress={() => {
+                const next = !importLogExpanded;
+                setImportLogExpanded(next);
+                if (next && importLog.length === 0) loadImportLog();
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sectionTitle}>IMPORT LOG</Text>
+              <Ionicons name={importLogExpanded ? 'chevron-up' : 'chevron-down'} size={13} color="#444" />
+            </TouchableOpacity>
+            {importLogExpanded && (
+              importLogLoading ? (
+                <ActivityIndicator color="#555" style={{ alignSelf: 'flex-start', marginTop: 8 }} />
+              ) : importLog.length === 0 ? (
+                <Text style={styles.emptyText}>No import history yet.</Text>
+              ) : (
+                importLog.map(entry => (
+                  <View key={entry.id} style={styles.logRow}>
+                    <View style={styles.logRowLeft}>
+                      <Text style={styles.logSubject} numberOfLines={1}>
+                        {entry.subject || '(no subject)'}
+                      </Text>
+                      <Text style={styles.logFrom} numberOfLines={1}>
+                        {entry.from_address || '—'}
+                      </Text>
+                    </View>
+                    <View style={styles.logRowRight}>
+                      <Text style={[
+                        styles.logStatus,
+                        entry.status === 'imported' && styles.logStatusImported,
+                        entry.status === 'failed' && styles.logStatusFailed,
+                      ]}>
+                        {entry.status === 'skipped' && entry.skip_reason === 'not_expense'
+                          ? 'not expense'
+                          : entry.status === 'skipped'
+                            ? 'skipped'
+                            : entry.status}
+                      </Text>
+                      <Text style={styles.logDate}>
+                        {new Date(entry.imported_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )
+            )}
+          </View>
+        )}
+
         {/* Sign out */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>SESSION</Text>
@@ -464,6 +532,16 @@ const styles = StyleSheet.create({
   actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontSize: 15 },
+  logToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#111' },
+  logRowLeft: { flex: 1, marginRight: 12 },
+  logSubject: { color: '#f5f5f5', fontSize: 13 },
+  logFrom: { color: '#555', fontSize: 11, marginTop: 2 },
+  logRowRight: { alignItems: 'flex-end' },
+  logStatus: { fontSize: 11, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  logStatusImported: { color: '#4ade80' },
+  logStatusFailed: { color: '#ef4444' },
+  logDate: { color: '#444', fontSize: 11, marginTop: 2 },
   tokenCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a', padding: 14, marginTop: 4 },
   tokenLabel: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
   tokenValue: { color: '#f5f5f5', fontSize: 13, fontFamily: 'monospace', lineHeight: 20, marginBottom: 6 },

@@ -78,7 +78,10 @@ router.post('/import', authenticate, async (req, res, next) => {
         const parsed = await parseEmailExpense(body, subject, from, todayDate);
 
         if (!parsed) {
-          await EmailImportLog.create({ userId: user.id, messageId: msg.id, status: 'skipped' });
+          await EmailImportLog.create({
+            userId: user.id, messageId: msg.id, status: 'skipped',
+            subject, fromAddress: from, skipReason: 'not_expense',
+          });
           skipped++;
           continue;
         }
@@ -120,6 +123,17 @@ router.post('/import', authenticate, async (req, res, next) => {
     }
 
     res.json({ imported, skipped, failed });
+  } catch (err) { next(err); }
+});
+
+// GET /gmail/import-log — recent import log for the authenticated user
+router.get('/import-log', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const logs = await EmailImportLog.listByUser(user.id, limit);
+    res.json(logs);
   } catch (err) { next(err); }
 });
 

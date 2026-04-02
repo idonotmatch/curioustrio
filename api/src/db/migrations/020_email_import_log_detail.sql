@@ -1,0 +1,4 @@
+ALTER TABLE email_import_log
+  ADD COLUMN IF NOT EXISTS subject TEXT,
+  ADD COLUMN IF NOT EXISTS from_address TEXT,
+  ADD COLUMN IF NOT EXISTS skip_reason TEXT;
