@@ -2,6 +2,7 @@ import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Mod
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useMonth } from '../../contexts/MonthContext';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
@@ -70,7 +71,7 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const { selectedMonth, setSelectedMonth } = useMonth();
   const { memberCount, refresh: refreshHousehold } = useHousehold();
   const isMultiMember = memberCount > 1;
   const [showMonthPicker, setShowMonthPicker] = useState(false);

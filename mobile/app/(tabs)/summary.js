@@ -1,6 +1,7 @@
 import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useMonth } from '../../contexts/MonthContext';
 import { useState, useCallback, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -39,7 +40,7 @@ function formatDate(dateStr) {
 
 export default function SummaryScreen() {
   const router = useRouter();
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const { selectedMonth, setSelectedMonth } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);

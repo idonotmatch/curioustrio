@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { MonthProvider } from '../../contexts/MonthContext';
 
 function FeedIcon({ focused }) {
   const { expenses, refresh } = usePendingExpenses();
@@ -35,6 +36,7 @@ const styles = StyleSheet.create({
 
 export default function TabLayout() {
   return (
+    <MonthProvider>
     <Tabs initialRouteName="summary" screenOptions={{
       tabBarStyle: {
         backgroundColor: '#0a0a0a',
@@ -69,5 +71,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </MonthProvider>
   );
 }
