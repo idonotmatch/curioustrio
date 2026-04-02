@@ -68,6 +68,8 @@ async function importForUser(user) {
         messageId: msg.id,
         expenseId: expense.id,
         status: 'imported',
+        subject: msgSubject,
+        fromAddress: msgFrom,
       });
       imported++;
     } catch (e) {
