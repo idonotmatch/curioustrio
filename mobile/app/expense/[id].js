@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { invalidateCache } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 
 export default function ExpenseDetailScreen() {
@@ -59,6 +60,7 @@ export default function ExpenseDetailScreen() {
   async function handleSave() {
     setSaving(true);
     try {
+      const expenseMonth = (date || '').slice(0, 7) || new Date().toISOString().slice(0, 7);
       const updated = await api.patch(`/expenses/${id}`, {
         merchant,
         amount: parseFloat(amount),
@@ -76,6 +78,8 @@ export default function ExpenseDetailScreen() {
       setExpense(updated);
       setEditing(false);
       setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })));
+      invalidateCache(`cache:expenses:${expenseMonth}`);
+      invalidateCache(`cache:budget:${expenseMonth}:personal`);
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -90,7 +94,12 @@ export default function ExpenseDetailScreen() {
         text: 'Delete', style: 'destructive', onPress: async () => {
           setDeleting(true);
           try {
+            const month = (expense?.date || '').slice(0, 7);
             await api.delete(`/expenses/${id}`);
+            if (month) {
+              invalidateCache(`cache:expenses:${month}`);
+              invalidateCache(`cache:budget:${month}:personal`);
+            }
             router.back();
           } catch (e) {
             Alert.alert('Error', e.message);

@@ -1,8 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
-import { loadWithCache } from '../services/cache';
+import { loadWithCache, loadCacheOnly } from '../services/cache';
 
-export function useBudget(month, scope) {
+// cacheOnly: true for personal scope (only local user mutates it).
+//            false (default) for household scope (other members can change it).
+export function useBudget(month, scope, { cacheOnly = false } = {}) {
   const [budget, setBudget] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -12,13 +14,14 @@ export function useBudget(month, scope) {
       scope && `scope=${scope}`,
     ].filter(Boolean).join('&');
     const url = params ? `/budgets?${params}` : '/budgets';
-    await loadWithCache(
+    const loader = cacheOnly ? loadCacheOnly : loadWithCache;
+    await loader(
       `cache:budget:${month || 'all'}:${scope || 'default'}`,
       () => api.get(url),
       (data) => { setBudget(data); setLoading(false); },
       () => { setBudget(null); setLoading(false); },
     );
-  }, [month, scope]);
+  }, [month, scope, cacheOnly]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

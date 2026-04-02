@@ -43,7 +43,7 @@ export default function SummaryScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { cacheOnly: true });
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
@@ -52,14 +52,12 @@ export default function SummaryScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Refresh data when tab gains focus
+  // Only household data and pending need focus-refresh — personal expenses are cache-authoritative.
   useFocusEffect(useCallback(() => {
-    refreshExpenses();
     refreshHouseholdExpenses();
-    refreshPersonalBudget();
     refreshHouseholdBudget();
     refreshPending();
-  }, [refreshExpenses, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending]));
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending]));
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
@@ -106,7 +104,22 @@ export default function SummaryScreen() {
   }
 
   async function approvePending(id) {
-    try { await api.post(`/expenses/${id}/approve`); removePending(id); refreshExpenses(); } catch { /* ignore */ }
+    try {
+      const exp = pendingExpenses.find(e => e.id === id);
+      await api.post(`/expenses/${id}/approve`);
+      removePending(id);
+      // Approving moves a pending expense into confirmed — invalidate personal cache for that month.
+      if (exp?.date) {
+        const month = exp.date.slice(0, 7);
+        const { invalidateCache } = await import('../../services/cache');
+        await Promise.all([
+          invalidateCache(`cache:expenses:${month}`),
+          invalidateCache(`cache:budget:${month}:personal`),
+        ]);
+      }
+      refreshExpenses();
+      refreshPersonalBudget();
+    } catch { /* ignore */ }
   }
 
   async function deleteExpense(id) {

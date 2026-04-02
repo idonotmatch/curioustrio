@@ -1,12 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
- * Stale-while-revalidate cache helper.
+ * Stale-while-revalidate: serve cache immediately, always background-fetch.
+ * Use for data that can be updated by other parties (household members, server-side sync).
  *
  * 1. If a cached value exists, calls onData immediately (instant render, no spinner).
  * 2. Always fetches fresh data in the background regardless of cache age.
  * 3. Calls onData again with fresh data and writes it back to cache.
- * 4. Calls onError if the network fetch fails (and no cache was served).
+ * 4. Calls onError if the network fetch fails and no cache was served.
  */
 export async function loadWithCache(key, fetcher, onData, onError) {
   let served = false;
@@ -28,6 +29,36 @@ export async function loadWithCache(key, fetcher, onData, onError) {
     AsyncStorage.setItem(key, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
   } catch (err) {
     if (!served && onError) onError(err);
+  }
+}
+
+/**
+ * Cache-first: serve cache if it exists and skip the network call entirely.
+ * Use for data only the local user can mutate (personal expenses, personal budget).
+ * After any mutation, call invalidateCache(key) so the next load re-fetches once.
+ *
+ * 1. If a cached value exists, calls onData immediately and returns — no network call.
+ * 2. If no cache (first load or after invalidation), fetches, caches, then calls onData.
+ * 3. Calls onError if fetch fails and no cache was served.
+ */
+export async function loadCacheOnly(key, fetcher, onData, onError) {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (raw) {
+      const { data } = JSON.parse(raw);
+      onData(data);
+      return; // cache hit — skip network entirely
+    }
+  } catch {
+    // cache read failure is non-fatal — fall through to network
+  }
+
+  try {
+    const fresh = await fetcher();
+    onData(fresh);
+    AsyncStorage.setItem(key, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+  } catch (err) {
+    if (onError) onError(err);
   }
 }
 

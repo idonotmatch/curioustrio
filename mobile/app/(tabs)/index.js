@@ -76,7 +76,7 @@ export default function FeedScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { cacheOnly: true });
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
   const router = useRouter();
@@ -96,21 +96,34 @@ export default function FeedScreen() {
     refreshHousehold();
   }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold]);
 
-  // Refresh confirmed expenses when tab gains focus (catches approvals from other tabs)
+  // Only household data and pending need focus-refresh — personal expenses are cache-authoritative.
   useFocusEffect(useCallback(() => {
-    refreshMine();
     refreshHouseholdExpenses();
-    refreshPersonalBudget();
     refreshHouseholdBudget();
     refreshPending();
-  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending]));
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending]));
 
   async function dismissPending(id) {
     try { await api.post(`/expenses/${id}/dismiss`); refreshPending(); } catch { /* ignore */ }
   }
 
   async function approvePending(id) {
-    try { await api.post(`/expenses/${id}/approve`); refreshPending(); refreshMine(); } catch { /* ignore */ }
+    try {
+      const exp = pending.find(e => e.id === id);
+      await api.post(`/expenses/${id}/approve`);
+      refreshPending();
+      // Approving moves a pending expense into confirmed — invalidate personal cache for that month.
+      if (exp?.date) {
+        const month = exp.date.slice(0, 7);
+        const { invalidateCache } = await import('../../services/cache');
+        await Promise.all([
+          invalidateCache(`cache:expenses:${month}`),
+          invalidateCache(`cache:budget:${month}:personal`),
+        ]);
+      }
+      refreshMine();
+      refreshPersonalBudget();
+    } catch { /* ignore */ }
   }
 
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));

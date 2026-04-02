@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { api } from '../services/api';
+import { invalidateCache } from '../services/cache';
 import { ConfirmField } from '../components/ConfirmField';
 import { LocationPicker } from '../components/LocationPicker';
 import { useCategories } from '../hooks/useCategories';
@@ -123,6 +124,7 @@ export default function ConfirmScreen() {
         }
       }
 
+      const expenseMonth = (expense.date || new Date().toISOString().slice(0, 10)).slice(0, 7);
       await api.post('/expenses/confirm', {
         merchant: merchant.trim() || null,
         description: description.trim() || null,
@@ -144,6 +146,10 @@ export default function ConfirmScreen() {
               .map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null }))
           : undefined,
       });
+      await Promise.all([
+        invalidateCache(`cache:expenses:${expenseMonth}`),
+        invalidateCache(`cache:budget:${expenseMonth}:personal`),
+      ]);
       router.replace('/(tabs)');
     } catch (err) {
       Alert.alert('Error', err.message);
