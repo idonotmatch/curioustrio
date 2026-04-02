@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
+import { loadWithCache } from '../services/cache';
 
 export function useExpenses(month) {
   const [expenses, setExpenses] = useState([]);
@@ -7,17 +8,13 @@ export function useExpenses(month) {
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const url = month ? `/expenses?month=${month}` : '/expenses';
-      const data = await api.get(url);
-      setExpenses(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    setError(null);
+    await loadWithCache(
+      `cache:expenses:${month || 'all'}`,
+      () => api.get(month ? `/expenses?month=${month}` : '/expenses'),
+      (data) => { setExpenses(data); setLoading(false); },
+      (err) => { setError(err.message); setLoading(false); },
+    );
   }, [month]);
 
   useEffect(() => { refresh(); }, [refresh]);

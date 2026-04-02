@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
+import { loadWithCache } from '../services/cache';
 
 // Returns household info. memberCount is 0 if the user has no household.
 export function useHousehold() {
@@ -11,20 +12,21 @@ export function useHousehold() {
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const data = await api.get('/households/me');
-        setHousehold(data.household);
-        setMembers(data.members || []);
-      } catch {
+    loadWithCache(
+      'cache:household',
+      () => api.get('/households/me'),
+      (data) => {
+        setHousehold(data?.household ?? null);
+        setMembers(data?.members ?? []);
+        setLoading(false);
+      },
+      () => {
         // 404 = not in a household; other errors are non-fatal
         setHousehold(null);
         setMembers([]);
-      } finally {
         setLoading(false);
-      }
-    }
-    load();
+      },
+    );
   }, [refreshKey]);
 
   return { household, members, memberCount: members.length, loading, refresh };

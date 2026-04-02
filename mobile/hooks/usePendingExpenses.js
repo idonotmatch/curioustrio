@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
+import { loadWithCache } from '../services/cache';
 
 export function usePendingExpenses() {
   const [expenses, setExpenses] = useState([]);
@@ -7,16 +8,13 @@ export function usePendingExpenses() {
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await api.get('/expenses/pending');
-      setExpenses(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    setError(null);
+    await loadWithCache(
+      'cache:expenses:pending',
+      () => api.get('/expenses/pending'),
+      (data) => { setExpenses(data); setLoading(false); },
+      (err) => { setError(err.message); setLoading(false); },
+    );
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
