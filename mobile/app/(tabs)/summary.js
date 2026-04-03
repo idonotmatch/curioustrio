@@ -38,6 +38,22 @@ function formatDate(dateStr) {
   return `${MONTH_SHORT[date.getMonth()]} ${date.getDate()}`;
 }
 
+function formatRelativeTime(value) {
+  if (!value) return null;
+  const diffMs = Date.now() - new Date(value).getTime();
+  if (Number.isNaN(diffMs)) return null;
+  const minutes = Math.max(0, Math.floor(diffMs / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes === 1) return '1 minute ago';
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+
 export default function SummaryScreen() {
   const router = useRouter();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
@@ -53,13 +69,28 @@ export default function SummaryScreen() {
   const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [gmailImportSummary, setGmailImportSummary] = useState(null);
+
+  const loadGmailImportSummary = useCallback(async () => {
+    try {
+      const data = await api.get('/gmail/import-summary?days=30');
+      setGmailImportSummary(data);
+    } catch {
+      setGmailImportSummary(null);
+    }
+  }, []);
 
   // Only household data and pending need focus-refresh — personal expenses are cache-authoritative.
   useFocusEffect(useCallback(() => {
     refreshHouseholdExpenses();
     refreshHouseholdBudget();
     refreshPending();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending]));
+    loadGmailImportSummary();
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending, loadGmailImportSummary]));
+
+  useEffect(() => {
+    if (recentTab === 'queue') loadGmailImportSummary();
+  }, [recentTab, loadGmailImportSummary]);
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
@@ -320,6 +351,13 @@ export default function SummaryScreen() {
             </TouchableOpacity>
           </Swipeable>
         ))}
+        {recentTab === 'queue' && (
+          <Text style={styles.queueStatus}>
+            {gmailImportSummary?.last_imported_at
+              ? `Last Gmail refresh ${formatRelativeTime(gmailImportSummary.last_imported_at)}`
+              : 'Gmail not refreshed yet'}
+          </Text>
+        )}
         {recentTab === 'queue' && displayPending.length === 0 && (
           <Text style={styles.emptyText}>Queue is empty.</Text>
         )}
@@ -412,6 +450,7 @@ const styles = StyleSheet.create({
   tabWithBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   queueBadge: { backgroundColor: '#f59e0b', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
   queueBadgeText: { fontSize: 10, color: '#000', fontWeight: '700' },
+  queueStatus: { fontSize: 12, color: '#666', marginBottom: 10 },
   queueRow: { borderLeftWidth: 2, borderLeftColor: '#f59e0b', paddingLeft: 10 },
   approveAction: { backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
   dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },

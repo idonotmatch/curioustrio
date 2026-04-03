@@ -67,21 +67,57 @@ export default function AccountsScreen() {
     if (gmailStatus?.connected) loadImportSummary();
   }, [gmailStatus?.connected]);
 
-  function formatImportReason(reason) {
-    switch (reason) {
-      case 'heuristic_skip': return 'filtered';
-      case 'classifier_not_expense': return 'not expense';
-      case 'classifier_uncertain': return 'uncertain';
-      case 'missing_amount': return 'missing amount';
+  function getImportReasonMeta(reason) {
+    const normalized = (reason || '').trim();
+    switch (normalized) {
+      case 'heuristic_skip': return { label: 'filtered', detail: null };
+      case 'classifier_not_expense': return { label: 'not expense', detail: null };
+      case 'classifier_uncertain': return { label: 'uncertain', detail: null };
+      case 'missing_amount': return { label: 'missing amount', detail: null };
+      case 'missing structured receipt': return { label: 'uncertain', detail: null };
+      case 'Network error': return { label: 'failed', detail: null };
       default:
-        return (reason || 'other').replace(/_/g, ' ');
+        if (!normalized) return { label: 'other', detail: null };
+        if (normalized.includes('not a purchase') || normalized.includes('shipping') || normalized.includes('tracking')) {
+          return { label: 'not expense', detail: normalized };
+        }
+        if (normalized.length > 32 || normalized.includes(' ')) {
+          return { label: 'skipped', detail: normalized };
+        }
+        return { label: normalized.replace(/_/g, ' '), detail: null };
     }
+  }
+
+  function formatImportReason(reason) {
+    return getImportReasonMeta(reason).label;
   }
 
   function formatLogStatus(entry) {
     if (entry.status === 'imported' && /needs review/i.test(entry.notes || '')) return 'needs review';
-    if (entry.status === 'skipped') return formatImportReason(entry.skip_reason);
+    if (entry.status === 'skipped') return getImportReasonMeta(entry.skip_reason).label;
+    if (entry.status === 'failed') return 'failed';
     return entry.status;
+  }
+
+  function formatLogDetail(entry) {
+    if (entry.status === 'imported') return null;
+    return getImportReasonMeta(entry.skip_reason).detail;
+  }
+
+  function formatRelativeTime(value) {
+    if (!value) return null;
+    const diffMs = Date.now() - new Date(value).getTime();
+    if (Number.isNaN(diffMs)) return null;
+    const minutes = Math.max(0, Math.floor(diffMs / 60000));
+    if (minutes < 1) return 'just now';
+    if (minutes === 1) return '1 minute ago';
+    if (minutes < 60) return `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours === 1) return '1 hour ago';
+    if (hours < 24) return `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return '1 day ago';
+    return `${days} days ago`;
   }
 
   async function connectGmail() {
@@ -500,6 +536,9 @@ export default function AccountsScreen() {
                   </View>
                 )}
                 <Text style={styles.summaryWindow}>Last {importSummary.window_days} days</Text>
+                {formatRelativeTime(importSummary.last_imported_at) ? (
+                  <Text style={styles.summaryWindow}>Last refresh {formatRelativeTime(importSummary.last_imported_at)}</Text>
+                ) : null}
               </>
             ) : null
           )}
@@ -535,6 +574,11 @@ export default function AccountsScreen() {
                       <Text style={styles.logFrom} numberOfLines={1}>
                         {entry.from_address || '—'}
                       </Text>
+                      {formatLogDetail(entry) ? (
+                        <Text style={styles.logDetail} numberOfLines={1}>
+                          {formatLogDetail(entry)}
+                        </Text>
+                      ) : null}
                     </View>
                     <View style={styles.logRowRight}>
                       <Text style={[
@@ -617,6 +661,7 @@ const styles = StyleSheet.create({
   logRowLeft: { flex: 1, marginRight: 12 },
   logSubject: { color: '#f5f5f5', fontSize: 13 },
   logFrom: { color: '#555', fontSize: 11, marginTop: 2 },
+  logDetail: { color: '#555', fontSize: 11, marginTop: 4 },
   logRowRight: { alignItems: 'flex-end' },
   logStatus: { fontSize: 11, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   logStatusImported: { color: '#4ade80' },

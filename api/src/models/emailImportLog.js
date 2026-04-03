@@ -47,7 +47,8 @@ async function summarizeByUser(userId, days = 30) {
            AND e.notes ILIKE '%needs review%'
        ) AS imported_pending_review,
        COUNT(*) FILTER (WHERE l.status = 'skipped') AS skipped,
-       COUNT(*) FILTER (WHERE l.status = 'failed') AS failed
+       COUNT(*) FILTER (WHERE l.status = 'failed') AS failed,
+       MAX(l.imported_at) AS last_imported_at
      FROM email_import_log l
      LEFT JOIN expenses e ON e.id = l.expense_id
      WHERE l.user_id = $1
@@ -73,6 +74,7 @@ async function summarizeByUser(userId, days = 30) {
     imported_pending_review: Number(row.imported_pending_review || 0),
     skipped: Number(row.skipped || 0),
     failed: Number(row.failed || 0),
+    last_imported_at: row.last_imported_at || null,
     reasons: reasonsResult.rows.map(r => ({
       reason: r.reason,
       count: Number(r.count || 0),

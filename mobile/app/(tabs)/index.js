@@ -105,9 +105,9 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
       <TouchableOpacity onPress={onMonthPress} style={styles.monthRow}>
         <Text style={styles.spendMonth}>{periodLabel(selectedMonth, transactionStartDay)}</Text>
       </TouchableOpacity>
-      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" periodText={periodLabel(selectedMonth, transactionStartDay)} />
+      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
       {isMultiMember && householdBudget && (
-        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" periodText={periodLabel(selectedMonth, transactionStartDay)} />
+        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" />
       )}
     </View>
   );

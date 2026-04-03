@@ -254,6 +254,7 @@ describe('GET /gmail/import-summary', () => {
       skipped: 1,
       failed: 1,
     });
+    expect(res.body.last_imported_at).toBeTruthy();
     expect(res.body.reasons).toEqual(expect.arrayContaining([
       { reason: 'Network error', count: 1 },
       { reason: 'classifier_uncertain', count: 1 },
