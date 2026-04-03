@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
-import { MonthProvider, useMonth, currentPeriod } from '../../contexts/MonthContext';
+import { useMonth, currentPeriod } from '../../contexts/MonthContext';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 function FeedIcon({ focused }) {
@@ -49,42 +49,42 @@ function StartDaySyncer() {
 
 export default function TabLayout() {
   return (
-    <MonthProvider>
-    <StartDaySyncer />
-    <Tabs initialRouteName="summary" screenOptions={{
-      tabBarStyle: {
-        backgroundColor: '#0a0a0a',
-        borderTopColor: '#111',
-        height: 60,
-        paddingBottom: 8,
-      },
-      headerShown: false,
-      tabBarShowLabel: false,
-    }}>
-      <Tabs.Screen
-        name="summary"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{ tabBarIcon: ({ focused }) => <FeedIcon focused={focused} /> }}
-      />
-      <Tabs.Screen name="household" options={{ href: null }} />
-      <Tabs.Screen name="pending" options={{ href: null }} />
-      <Tabs.Screen name="add" options={{ href: null }} />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
-          ),
-        }}
-      />
-    </Tabs>
-    </MonthProvider>
+    <>
+      <StartDaySyncer />
+      <Tabs initialRouteName="summary" screenOptions={{
+        tabBarStyle: {
+          backgroundColor: '#0a0a0a',
+          borderTopColor: '#111',
+          height: 60,
+          paddingBottom: 8,
+        },
+        headerShown: false,
+        tabBarShowLabel: false,
+      }}>
+        <Tabs.Screen
+          name="summary"
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="index"
+          options={{ tabBarIcon: ({ focused }) => <FeedIcon focused={focused} /> }}
+        />
+        <Tabs.Screen name="household" options={{ href: null }} />
+        <Tabs.Screen name="pending" options={{ href: null }} />
+        <Tabs.Screen name="add" options={{ href: null }} />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
+            ),
+          }}
+        />
+      </Tabs>
+    </>
   );
 }
