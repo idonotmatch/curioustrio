@@ -21,6 +21,13 @@ async function getUser(req) {
   return User.findByProviderUid(req.userId);
 }
 
+function parseStartDay(value, fallback) {
+  if (value === undefined) return fallback;
+  const day = parseInt(value, 10);
+  if (!Number.isInteger(day) || day < 1 || day > 28) return null;
+  return day;
+}
+
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -169,7 +176,8 @@ router.get('/', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const { month } = req.query;
-    const startDay = user.budget_start_day || 1;
+    const startDay = parseStartDay(req.query.start_day, user.budget_start_day || 1);
+    if (startDay === null) return res.status(400).json({ error: 'start_day must be between 1 and 28' });
     const expenses = await Expense.findByUser(user.id, { month, startDay });
     res.json(expenses);
   } catch (err) { next(err); }
@@ -182,7 +190,8 @@ router.get('/household', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const { month } = req.query;
     const household = user.household_id ? await Household.findById(user.household_id) : null;
-    const startDay = household?.budget_start_day || user.budget_start_day || 1;
+    const startDay = parseStartDay(req.query.start_day, household?.budget_start_day || user.budget_start_day || 1);
+    if (startDay === null) return res.status(400).json({ error: 'start_day must be between 1 and 28' });
     const expenses = user.household_id
       ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay })
       : await Expense.findByUser(user.id, { month, startDay });

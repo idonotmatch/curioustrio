@@ -99,16 +99,15 @@ function BudgetBar({ spent, budget, label, periodText }) {
   );
 }
 
-function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, startDay, householdStartDay, mode, onMonthPress }) {
-  const activeStartDay = mode === 'household' ? householdStartDay : startDay;
+function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, transactionStartDay, onMonthPress }) {
   return (
     <View style={styles.spendHeader}>
       <TouchableOpacity onPress={onMonthPress} style={styles.monthRow}>
-        <Text style={styles.spendMonth}>{periodLabel(selectedMonth, activeStartDay)}</Text>
+        <Text style={styles.spendMonth}>{periodLabel(selectedMonth, transactionStartDay)}</Text>
       </TouchableOpacity>
-      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" periodText={periodLabel(selectedMonth, startDay)} />
+      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" periodText={periodLabel(selectedMonth, transactionStartDay)} />
       {isMultiMember && householdBudget && (
-        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" periodText={periodLabel(selectedMonth, householdStartDay)} />
+        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" periodText={periodLabel(selectedMonth, transactionStartDay)} />
       )}
     </View>
   );
@@ -117,18 +116,24 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
-  const { selectedMonth, setSelectedMonth, startDay } = useMonth();
+  const { startDay } = useMonth();
   const { household, memberCount, refresh: refreshHousehold } = useHousehold();
   const householdStartDay = household?.budget_start_day || 1;
   const isMultiMember = memberCount > 1;
+  const transactionStartDay = isMultiMember ? householdStartDay : startDay;
+  const [selectedMonth, setSelectedMonth] = useState(() => currentPeriod(transactionStartDay));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
-  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
-  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
-  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
+  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
+  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay);
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
+  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay });
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
+
+  useEffect(() => {
+    setSelectedMonth(currentPeriod(transactionStartDay));
+  }, [transactionStartDay]);
 
   const expenses = mode === 'mine' ? myExpenses : householdExpenses;
   const loading = mode === 'mine' ? myLoading : householdLoading;
@@ -235,9 +240,7 @@ export default function FeedScreen() {
         householdBudget={householdBudget}
         isMultiMember={isMultiMember}
         selectedMonth={selectedMonth}
-        startDay={startDay}
-        householdStartDay={householdStartDay}
-        mode={mode}
+        transactionStartDay={transactionStartDay}
         onMonthPress={() => setShowMonthPicker(true)}
       />
 
@@ -291,7 +294,7 @@ export default function FeedScreen() {
                 onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
               >
                 <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                  {periodLabel(m, mode === 'household' ? householdStartDay : startDay)}
+                  {periodLabel(m, transactionStartDay)}
                 </Text>
               </TouchableOpacity>
             ))}

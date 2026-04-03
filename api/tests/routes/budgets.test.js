@@ -77,6 +77,23 @@ describe('GET /budgets — solo user', () => {
     expect(res.body.total.spent).toBe(75);
     expect(res.body.total.remaining).toBe(425);
   });
+
+  it('uses start_day override when provided', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [soloUserId]
+    );
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES ($1, 75, '2026-02-10', 'manual', 'confirmed')`,
+      [soloUserId]
+    );
+
+    const res = await request(app).get('/budgets?month=2026-01&start_day=15');
+    expect(res.status).toBe(200);
+    expect(res.body.total.limit).toBe(500);
+    expect(res.body.total.spent).toBe(75);
+  });
 });
 
 describe('PUT /budgets/total', () => {

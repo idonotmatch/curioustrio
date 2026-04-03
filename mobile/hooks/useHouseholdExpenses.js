@@ -2,20 +2,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 
-export function useHouseholdExpenses(month) {
+export function useHouseholdExpenses(month, startDayOverride) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
     setError(null);
+    const params = [
+      month && `month=${month}`,
+      startDayOverride && `start_day=${startDayOverride}`,
+    ].filter(Boolean).join('&');
+    const url = params ? `/expenses/household?${params}` : '/expenses/household';
     await loadWithCache(
-      `cache:household-expenses:${month || 'all'}`,
-      () => api.get(month ? `/expenses/household?month=${month}` : '/expenses/household'),
+      `cache:household-expenses:${month || 'all'}:${startDayOverride || 'default'}`,
+      () => api.get(url),
       (data) => { setExpenses(data); setLoading(false); },
       (err) => { setError(err.message); setLoading(false); },
     );
-  }, [month]);
+  }, [month, startDayOverride]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

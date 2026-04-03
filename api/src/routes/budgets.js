@@ -14,6 +14,13 @@ async function requireUser(req, res) {
   return user;
 }
 
+function parseStartDay(value, fallback) {
+  if (value === undefined) return fallback;
+  const day = parseInt(value, 10);
+  if (!Number.isInteger(day) || day < 1 || day > 28) return null;
+  return day;
+}
+
 // Given a YYYY-MM period key and a budget start day, return the [from, to) date strings.
 // e.g. periodBounds('2026-04', 15) => { from: '2026-04-15', to: '2026-05-15' }
 // e.g. periodBounds('2026-04', 1)  => { from: '2026-04-01', to: '2026-05-01' }
@@ -40,7 +47,8 @@ router.get('/', async (req, res, next) => {
 
     if (useHouseholdPath) {
       const household = await Household.findById(user.household_id);
-      const startDay = household?.budget_start_day || 1;
+      const startDay = parseStartDay(req.query.start_day, household?.budget_start_day || 1);
+      if (startDay === null) return res.status(400).json({ error: 'start_day must be between 1 and 28' });
       const { from, to } = periodBounds(month, startDay);
       // Household path: aggregate across all members
       const settings = await BudgetSetting.findByHousehold(user.household_id);
@@ -98,7 +106,8 @@ router.get('/', async (req, res, next) => {
         period: { from, to },
       });
     } else {
-      const startDay = user.budget_start_day || 1;
+      const startDay = parseStartDay(req.query.start_day, user.budget_start_day || 1);
+      if (startDay === null) return res.status(400).json({ error: 'start_day must be between 1 and 28' });
       const { from, to } = periodBounds(month, startDay);
       // Solo user path
       const settings = await BudgetSetting.findByUser(user.id);
