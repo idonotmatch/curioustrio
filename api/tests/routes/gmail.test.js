@@ -13,6 +13,7 @@ jest.mock('../../src/services/gmailClient', () => ({
   getMessage: jest.fn(),
 }));
 jest.mock('../../src/services/emailParser', () => ({
+  classifyEmailExpense: jest.fn(),
   parseEmailExpense: jest.fn(),
 }));
 jest.mock('../../src/services/categoryAssigner', () => ({
@@ -21,7 +22,7 @@ jest.mock('../../src/services/categoryAssigner', () => ({
 
 const app = require('../../src/index');
 const { exchangeCode, listRecentMessages, getMessage } = require('../../src/services/gmailClient');
-const { parseEmailExpense } = require('../../src/services/emailParser');
+const { classifyEmailExpense, parseEmailExpense } = require('../../src/services/emailParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 
 let householdId;
@@ -55,6 +56,7 @@ beforeEach(async () => {
   listRecentMessages.mockReset();
   getMessage.mockReset();
   parseEmailExpense.mockReset();
+  classifyEmailExpense.mockReset();
   assignCategory.mockReset();
   // Clean state between tests
   await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
@@ -136,6 +138,9 @@ describe('POST /gmail/import', () => {
       { id: 'msg2' },
     ]);
     getMessage.mockResolvedValue({ subject: 'Order Confirmation', from: 'orders@amazon.com', body: 'Total: $29.99' });
+    classifyEmailExpense
+      .mockResolvedValueOnce({ disposition: 'expense', merchant: 'Amazon', reason: 'receipt' })
+      .mockResolvedValueOnce({ disposition: 'not_expense', merchant: null, reason: 'classifier_not_expense' });
     parseEmailExpense
       .mockResolvedValueOnce({ merchant: 'Amazon', amount: 29.99, date: '2026-03-21', notes: null })
       .mockResolvedValueOnce(null);
@@ -182,5 +187,33 @@ describe('POST /gmail/import', () => {
     expect(res.status).toBe(200);
     expect(res.body.failed).toBe(1);
     expect(res.body.imported).toBe(0);
+  });
+
+  it('imports uncertain emails into pending when a likely amount can be recovered', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'uncertain-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your order details',
+      from: 'orders@example.com',
+      body: 'Thanks for your purchase. Grand total: $41.22. We will send tracking soon.',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'uncertain', merchant: 'Example', reason: 'missing structured receipt' });
+    parseEmailExpense.mockResolvedValue(null);
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+
+    const expense = await db.query(`SELECT merchant, amount, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
+    expect(expense.rows[0].merchant).toBe('Example');
+    expect(Number(expense.rows[0].amount)).toBe(41.22);
+    expect(expense.rows[0].notes).toMatch(/needs review/i);
   });
 });

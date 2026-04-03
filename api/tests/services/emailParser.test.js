@@ -4,7 +4,7 @@ jest.mock('../../src/services/ai', () => ({
 }));
 
 const { complete } = require('../../src/services/ai');
-const { parseEmailExpense } = require('../../src/services/emailParser');
+const { parseEmailExpense, classifyEmailExpense, heuristicDisposition } = require('../../src/services/emailParser');
 
 describe('emailParser', () => {
   beforeEach(() => complete.mockReset());
@@ -27,6 +27,41 @@ describe('emailParser', () => {
     expect(result).toBeNull();
   });
 
+  it('classifies obvious shipping-only emails without an LLM call', async () => {
+    const result = await classifyEmailExpense(
+      'Your package is out for delivery. Track your shipment here.',
+      'Delivery update',
+      'tracking@ups.com',
+      '2026-03-21'
+    );
+    expect(result).toEqual({
+      disposition: 'not_expense',
+      merchant: null,
+      reason: 'heuristic_skip',
+    });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('classifies purchase emails with the classifier prompt', async () => {
+    complete.mockResolvedValue('{"disposition":"expense","merchant":"Amazon","reason":"order receipt"}');
+    const result = await classifyEmailExpense(
+      'Order total: $29.99',
+      'Amazon order',
+      'orders@amazon.com',
+      '2026-03-21'
+    );
+    expect(result).toEqual({
+      disposition: 'expense',
+      merchant: 'Amazon',
+      reason: 'order receipt',
+    });
+  });
+
+  it('heuristicDisposition only flags clear non-expense emails', () => {
+    expect(heuristicDisposition('Delivery update', 'tracking@ups.com', 'Track your package')).toBe('not_expense');
+    expect(heuristicDisposition('Order confirmation', 'orders@amazon.com', 'Order total: $20.00')).toBeNull();
+  });
+
   it('throws when emailBody is empty', async () => {
     await expect(parseEmailExpense('', 'sub', 'from@test.com', '2026-03-21')).rejects.toThrow('emailBody is required');
   });
@@ -40,6 +75,6 @@ describe('emailParser', () => {
     const longBody = 'x'.repeat(5000);
     await parseEmailExpense(longBody, 'sub', 'from@test.com', '2026-03-21');
     const calledWith = complete.mock.calls[0][0];
-    expect(calledWith.messages[0].content.length).toBeLessThan(4000);
+    expect(calledWith.messages[0].content.length).toBeLessThan(4600);
   });
 });

@@ -5,10 +5,35 @@ const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const PushToken = require('../models/pushToken');
 const { listRecentMessages, getMessage } = require('./gmailClient');
-const { parseEmailExpense } = require('./emailParser');
+const { classifyEmailExpense, parseEmailExpense } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
 const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
+
+function guessMerchant(subject = '', fromAddress = '') {
+  const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
+  if (fromMatch?.[1]) {
+    return fromMatch[1]
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+  const subjectMatch = subject.match(/^([^:-]{3,40})/);
+  return subjectMatch ? subjectMatch[1].trim() : 'Email import';
+}
+
+function findLikelyAmount(body = '') {
+  const patterns = [
+    /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund total)[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
+    /\btotal\b[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = body.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  const allMoney = [...body.matchAll(/\$\s?(-?\d+(?:\.\d{2})?)/g)];
+  if (allMoney.length > 0) return Number(allMoney[allMoney.length - 1][1]);
+  return null;
+}
 
 /**
  * Run a Gmail import for a single user.
@@ -31,15 +56,37 @@ async function importForUser(user) {
       const { subject, from, body } = await getMessage(user.id, msg.id);
       msgSubject = subject;
       msgFrom = from;
-      const parsed = await parseEmailExpense(body, subject, from, todayDate);
+      const classification = await classifyEmailExpense(body, subject, from, todayDate);
 
-      if (!parsed) {
+      if (classification.disposition === 'not_expense') {
         await EmailImportLog.create({
           userId: user.id, messageId: msg.id, status: 'skipped',
-          subject, fromAddress: from, skipReason: 'not_expense',
+          subject, fromAddress: from, skipReason: classification.reason || 'classifier_not_expense',
         });
         skipped++;
         continue;
+      }
+
+      let parsed = await parseEmailExpense(body, subject, from, todayDate);
+
+      if (!parsed) {
+        const fallbackAmount = findLikelyAmount(body);
+        if (!fallbackAmount) {
+          await EmailImportLog.create({
+            userId: user.id, messageId: msg.id, status: 'skipped',
+            subject, fromAddress: from, skipReason: classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount',
+          });
+          skipped++;
+          continue;
+        }
+        const fallbackExpense = {
+          merchant: classification.merchant || guessMerchant(subject, from),
+          amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
+          date: todayDate,
+          notes: 'Imported from Gmail — needs review',
+          items: null,
+        };
+        parsed = fallbackExpense;
       }
 
       const { category_id } = await assignCategory({
