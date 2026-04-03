@@ -1,4 +1,4 @@
-const { parseReceipt } = require('../../src/services/receiptParser');
+const { parseReceipt, cleanParsedReceipt } = require('../../src/services/receiptParser');
 
 // Mock Claude SDK - singleton instance shared across all constructor calls
 jest.mock('@anthropic-ai/sdk', () => {
@@ -31,6 +31,8 @@ describe('parseReceipt', () => {
     expect(result.amount).toBe(87.43);
     expect(result.date).toBe('2026-03-21');
     expect(result.notes).toBeNull();
+    expect(result.parse_status).toBe('partial');
+    expect(result.review_fields).toContain('items');
   });
 
   it('returns null when Claude returns "null"', async () => {
@@ -72,6 +74,33 @@ describe('parseReceipt', () => {
       content: []
     });
     const result = await parseReceipt('fakebase64data', '2026-03-21');
+    expect(result).toBeNull();
+  });
+
+  it('marks missing date as partial and defaults to today', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Target',
+      amount: 28.5,
+      date: null,
+      notes: null,
+      items: null,
+    }, '2026-03-21');
+
+    expect(result.date).toBe('2026-03-21');
+    expect(result.parse_status).toBe('partial');
+    expect(result.review_fields).toEqual(expect.arrayContaining(['date', 'items']));
+    expect(result.field_confidence.date).toBe('medium');
+  });
+
+  it('returns null when amount is missing even if other fields exist', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Target',
+      amount: null,
+      date: '2026-03-21',
+      notes: null,
+      items: null,
+    }, '2026-03-21');
+
     expect(result).toBeNull();
   });
 });

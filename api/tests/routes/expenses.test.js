@@ -515,7 +515,13 @@ describe('DELETE /expenses/:id', () => {
 describe('POST /expenses/scan', () => {
   it('returns parsed expense with source camera', async () => {
     parseReceipt.mockResolvedValue({
-      merchant: 'Whole Foods', amount: 87.32, date: '2026-03-21', notes: null
+      merchant: 'Whole Foods',
+      amount: 87.32,
+      date: '2026-03-21',
+      notes: null,
+      parse_status: 'complete',
+      review_fields: [],
+      field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
     });
     assignCategory.mockResolvedValueOnce({
       category_id: null, source: 'default', confidence: 0,
@@ -528,6 +534,30 @@ describe('POST /expenses/scan', () => {
     expect(res.body.source).toBe('camera');
     expect(res.body.merchant).toBe('Whole Foods');
     expect(res.body.amount).toBe(87.32);
+  });
+
+  it('returns partial receipt data when merchant and amount are usable', async () => {
+    parseReceipt.mockResolvedValue({
+      merchant: null,
+      amount: 18.25,
+      date: '2026-03-21',
+      notes: null,
+      parse_status: 'partial',
+      review_fields: ['merchant', 'items'],
+      field_confidence: { merchant: 'low', amount: 'high', date: 'high', items: 'low' },
+    });
+    assignCategory.mockResolvedValueOnce({
+      category_id: null, source: 'default', confidence: 0,
+    });
+
+    const res = await request(app)
+      .post('/expenses/scan')
+      .set('Authorization', 'Bearer test')
+      .send({ image_base64: 'base64data' });
+    expect(res.status).toBe(200);
+    expect(res.body.parse_status).toBe('partial');
+    expect(res.body.review_fields).toEqual(expect.arrayContaining(['merchant', 'items']));
+    expect(res.body.amount).toBe(18.25);
   });
 
   it('returns 400 when image_base64 missing', async () => {
@@ -663,7 +693,13 @@ describe('POST /expenses/scan — category_name in response', () => {
     );
     const catId = catRes.rows[0].id;
     parseReceipt.mockResolvedValueOnce({
-      merchant: 'Whole Foods', amount: 87.32, date: '2026-03-21', notes: null,
+      merchant: 'Whole Foods',
+      amount: 87.32,
+      date: '2026-03-21',
+      notes: null,
+      parse_status: 'complete',
+      review_fields: [],
+      field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
     });
     assignCategory.mockResolvedValueOnce({ category_id: catId, source: 'memory', confidence: 4 });
 

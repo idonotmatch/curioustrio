@@ -70,7 +70,14 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
     });
     const matchedCat = categories.find(c => c.id === category_id);
 
-    res.json({ ...parsed, source: 'camera', category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
+    res.json({
+      ...parsed,
+      source: 'camera',
+      category_id,
+      category_name: matchedCat?.name || null,
+      category_source: source,
+      category_confidence: confidence,
+    });
   } catch (err) { next(err); }
 });
 

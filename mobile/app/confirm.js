@@ -38,6 +38,8 @@ export default function ConfirmScreen() {
       ? parsed.items.map(it => ({ description: it.description || '', amount: it.amount != null ? String(it.amount) : '' }))
       : []
   );
+  const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
+  const hasReviewHint = reviewFields.length > 0;
 
   useEffect(() => {
     api.get('/expenses/cards').then(setSavedCards).catch(() => {});
@@ -203,6 +205,14 @@ export default function ConfirmScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {hasReviewHint ? (
+        <View style={styles.reviewBanner}>
+          <Text style={styles.reviewBannerTitle}>Review before saving</Text>
+          <Text style={styles.reviewBannerText}>
+            Double-check {reviewFields.join(', ')}.
+          </Text>
+        </View>
+      ) : null}
       {/* Merchant / Description — editable */}
       <View style={styles.editableRow}>
         <Text style={styles.editableLabel}>{merchant.trim() ? 'MERCHANT' : 'DESCRIPTION'}</Text>
@@ -483,6 +493,17 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20 },
+  reviewBanner: {
+    backgroundColor: '#171717',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  reviewBannerText: { color: '#888', fontSize: 12 },
 
   editableRow: {
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,

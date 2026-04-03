@@ -11,6 +11,46 @@ Return ONLY a JSON object with these fields:
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
 
+function cleanParsedReceipt(parsed, todayDate) {
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  const merchant = typeof parsed.merchant === 'string' ? parsed.merchant.trim() : '';
+  const amount = Number(parsed.amount);
+  const rawDate = typeof parsed.date === 'string' ? parsed.date.trim() : '';
+  const hasValidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate);
+  const items = Array.isArray(parsed.items) ? parsed.items : null;
+
+  const normalized = {
+    merchant: merchant || null,
+    amount: Number.isFinite(amount) && amount !== 0 ? amount : null,
+    date: hasValidDate ? rawDate : todayDate,
+    notes: typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null,
+    items,
+  };
+
+  const review_fields = [];
+  const field_confidence = {
+    merchant: normalized.merchant ? 'high' : 'low',
+    amount: normalized.amount != null ? 'high' : 'low',
+    date: hasValidDate ? 'high' : 'medium',
+    items: items?.length ? 'medium' : 'low',
+  };
+
+  if (!normalized.merchant) review_fields.push('merchant');
+  if (normalized.amount == null) review_fields.push('amount');
+  if (!hasValidDate) review_fields.push('date');
+  if (!items?.length) review_fields.push('items');
+
+  if (normalized.amount == null) return null;
+
+  return {
+    ...normalized,
+    parse_status: review_fields.length > 0 ? 'partial' : 'complete',
+    review_fields,
+    field_confidence,
+  };
+}
+
 async function parseReceipt(imageBase64, todayDate) {
   if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
     throw new Error('imageBase64 must be a non-empty string');
@@ -30,10 +70,10 @@ async function parseReceipt(imageBase64, todayDate) {
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   if (!cleaned || cleaned === 'null') return null;
   try {
-    return JSON.parse(cleaned);
+    return cleanParsedReceipt(JSON.parse(cleaned), todayDate);
   } catch {
     return null;
   }
 }
 
-module.exports = { parseReceipt };
+module.exports = { parseReceipt, cleanParsedReceipt };
