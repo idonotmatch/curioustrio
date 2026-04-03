@@ -226,7 +226,20 @@ export default function FeedScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Mine / Household toggle — only shown for multi-member households */}
+      <SpendHeader
+        myTotal={myTotal}
+        myBudget={personalBudget}
+        householdTotal={householdTotal}
+        householdBudget={householdBudget}
+        isMultiMember={isMultiMember}
+        selectedMonth={selectedMonth}
+        startDay={startDay}
+        householdStartDay={householdStartDay}
+        mode={mode}
+        onMonthPress={() => setShowMonthPicker(true)}
+      />
+
+      {/* Mine / Household toggle — filters the expense list only */}
       {isMultiMember && (
         <View style={styles.toggleRow}>
           <TouchableOpacity
@@ -243,19 +256,6 @@ export default function FeedScreen() {
           </TouchableOpacity>
         </View>
       )}
-
-      <SpendHeader
-        myTotal={myTotal}
-        myBudget={personalBudget}
-        householdTotal={householdTotal}
-        householdBudget={householdBudget}
-        isMultiMember={isMultiMember}
-        selectedMonth={selectedMonth}
-        startDay={startDay}
-        householdStartDay={householdStartDay}
-        mode={mode}
-        onMonthPress={() => setShowMonthPicker(true)}
-      />
 
       <FlatList
         data={listData}
@@ -306,7 +306,7 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
 
-  toggleRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  toggleRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 },
   toggleChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#111', borderWidth: 1, borderColor: '#222' },
   toggleChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   toggleText: { fontSize: 14, color: '#999', fontWeight: '500' },
