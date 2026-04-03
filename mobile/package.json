@@ -9,28 +9,30 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~5.0.4",
+    "@expo/metro-runtime": "^55.0.9",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-community/datetimepicker": "^9.1.0",
+    "@react-native-community/datetimepicker": "^8.6.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@supabase/supabase-js": "^2.99.3",
-    "expo": "~55.0.8",
-    "expo-apple-authentication": "^55.0.9",
-    "expo-image-manipulator": "^55.0.11",
-    "expo-image-picker": "^55.0.13",
-    "expo-linking": "~55.0.8",
-    "expo-location": "^55.1.4",
-    "expo-media-library": "^55.0.10",
-    "expo-notifications": "^55.0.13",
-    "expo-router": "~55.0.7",
-    "expo-secure-store": "~55.0.9",
-    "expo-status-bar": "~55.0.4",
+    "expo": "^55.0.9",
+    "expo-apple-authentication": "^55.0.11",
+    "expo-constants": "^55.0.11",
+    "expo-font": "^55.0.6",
+    "expo-image-manipulator": "^55.0.13",
+    "expo-image-picker": "^55.0.16",
+    "expo-linking": "^55.0.11",
+    "expo-location": "^55.1.6",
+    "expo-media-library": "^55.0.12",
+    "expo-notifications": "^55.0.16",
+    "expo-router": "^55.0.10",
+    "expo-secure-store": "^55.0.11",
+    "expo-status-bar": "^55.0.5",
     "expo-updates": "^55.0.18",
-    "expo-web-browser": "^55.0.10",
+    "expo-web-browser": "^55.0.12",
     "react": "19.2.0",
     "react-dom": "^19.2.0",
-    "react-native": "0.83.2",
+    "react-native": "^0.83.4",
     "react-native-gesture-handler": "^2.30.0",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
@@ -39,5 +41,10 @@
   "private": true,
   "devDependencies": {
     "jest": "^30.3.0"
+  },
+  "expo": {
+    "install": {
+      "exclude": ["jest"]
+    }
   }
 }
