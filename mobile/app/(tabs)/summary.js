@@ -105,20 +105,16 @@ export default function SummaryScreen() {
 
   async function approvePending(id) {
     try {
-      const exp = pendingExpenses.find(e => e.id === id);
       await api.post(`/expenses/${id}/approve`);
       removePending(id);
-      // Approving moves a pending expense into confirmed — invalidate personal cache for that month.
-      if (exp?.date) {
-        const month = exp.date.slice(0, 7);
-        const { invalidateCache } = await import('../../services/cache');
-        await Promise.all([
-          invalidateCache(`cache:expenses:${month}`),
-          invalidateCache(`cache:budget:${month}:personal`),
-        ]);
-      }
+      const { invalidateCacheByPrefix } = await import('../../services/cache');
+      await Promise.all([
+        invalidateCacheByPrefix('cache:expenses:'),
+        invalidateCacheByPrefix('cache:budget:'),
+      ]);
       refreshExpenses();
       refreshPersonalBudget();
+      refreshHouseholdBudget();
     } catch { /* ignore */ }
   }
 
@@ -126,7 +122,8 @@ export default function SummaryScreen() {
     try {
       await api.delete(`/expenses/${id}`);
       refreshExpenses();
-      refreshBudget();
+      refreshPersonalBudget();
+      refreshHouseholdBudget();
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not delete expense');
     }
