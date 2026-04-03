@@ -30,7 +30,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-function BudgetBar({ spent, budget, label }) {
+function BudgetBar({ spent, budget, label, periodText }) {
   const [expanded, setExpanded] = useState(false);
   const limit = budget?.total?.limit;
   const pct = limit ? Math.min(spent / limit, 1) : null;
@@ -52,6 +52,7 @@ function BudgetBar({ spent, budget, label }) {
       >
         <View style={styles.budgetLabelRow}>
           <Text style={styles.budgetLabel}>{label}</Text>
+          {periodText ? <Text style={styles.budgetPeriod}> · {periodText}</Text> : null}
           {hasBreakdown && (
             <Ionicons
               name={expanded ? 'chevron-up' : 'chevron-down'}
@@ -97,15 +98,16 @@ function BudgetBar({ spent, budget, label }) {
   );
 }
 
-function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, startDay, onMonthPress }) {
+function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, startDay, householdStartDay, mode, onMonthPress }) {
+  const activeStartDay = mode === 'household' ? householdStartDay : startDay;
   return (
     <View style={styles.spendHeader}>
       <TouchableOpacity onPress={onMonthPress} style={styles.monthRow}>
-        <Text style={styles.spendMonth}>{periodLabel(selectedMonth, startDay)}</Text>
+        <Text style={styles.spendMonth}>{periodLabel(selectedMonth, activeStartDay)}</Text>
       </TouchableOpacity>
-      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
+      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" periodText={periodLabel(selectedMonth, startDay)} />
       {isMultiMember && householdBudget && (
-        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" />
+        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" periodText={periodLabel(selectedMonth, householdStartDay)} />
       )}
     </View>
   );
@@ -115,7 +117,8 @@ export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
-  const { memberCount, refresh: refreshHousehold } = useHousehold();
+  const { household, memberCount, refresh: refreshHousehold } = useHousehold();
+  const householdStartDay = household?.budget_start_day || 1;
   const isMultiMember = memberCount > 1;
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
@@ -249,6 +252,8 @@ export default function FeedScreen() {
         isMultiMember={isMultiMember}
         selectedMonth={selectedMonth}
         startDay={startDay}
+        householdStartDay={householdStartDay}
+        mode={mode}
         onMonthPress={() => setShowMonthPicker(true)}
       />
 
@@ -284,7 +289,7 @@ export default function FeedScreen() {
                 onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
               >
                 <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                  {periodLabel(m, startDay)}
+                  {periodLabel(m, mode === 'household' ? householdStartDay : startDay)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -314,6 +319,7 @@ const styles = StyleSheet.create({
   budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
   budgetLabelRow: { flexDirection: 'row', alignItems: 'center' },
   budgetLabel: { fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
+  budgetPeriod: { fontSize: 11, color: '#555' },
   budgetAmount: { fontSize: 22, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
   byParentList: { marginTop: 8, gap: 6 },
   byParentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

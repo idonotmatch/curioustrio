@@ -13,8 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useHousehold } from '../../hooks/useHousehold';
 import { useMonth, currentPeriod } from '../../contexts/MonthContext';
-import { invalidateCache } from '../../services/cache';
+import { invalidateCache, invalidateCacheByPrefix } from '../../services/cache';
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -29,6 +30,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { recurring, loading: recurringLoading, refresh: refreshRecurring } = useRecurring();
   const { user } = useCurrentUser();
+  const { household, memberCount, refresh: refreshHousehold } = useHousehold();
   const { setStartDay, setSelectedMonth } = useMonth();
 
   const [budgetLimit, setBudgetLimit] = useState('');
@@ -43,6 +45,10 @@ export default function SettingsScreen() {
   const [customDay, setCustomDay] = useState(1);
   const [periodSaving, setPeriodSaving] = useState(false);
   const [showDayPicker, setShowDayPicker] = useState(false);
+  const [householdPeriodType, setHouseholdPeriodType] = useState('calendar');
+  const [householdCustomDay, setHouseholdCustomDay] = useState(1);
+  const [householdPeriodSaving, setHouseholdPeriodSaving] = useState(false);
+  const [showHouseholdDayPicker, setShowHouseholdDayPicker] = useState(false);
 
   // Seed period state from loaded user
   useEffect(() => {
@@ -52,6 +58,14 @@ export default function SettingsScreen() {
       setCustomDay(day === 1 ? 15 : day); // default custom suggestion to 15th
     }
   }, [user?.budget_start_day]);
+
+  useEffect(() => {
+    if (household) {
+      const day = household.budget_start_day || 1;
+      setHouseholdPeriodType(day === 1 ? 'calendar' : 'custom');
+      setHouseholdCustomDay(day === 1 ? 15 : day);
+    }
+  }, [household?.budget_start_day]);
 
   const loadBudget = useCallback(async () => {
     try {
@@ -111,6 +125,22 @@ export default function SettingsScreen() {
     }
   }
 
+  async function saveHouseholdPeriod() {
+    const day = householdPeriodType === 'calendar' ? 1 : householdCustomDay;
+    setHouseholdPeriodSaving(true);
+    try {
+      await api.patch('/households/me', { budget_start_day: day });
+      await invalidateCache('cache:household');
+      await invalidateCacheByPrefix('cache:budget:');
+      await invalidateCacheByPrefix('cache:household-expenses:');
+      refreshHousehold();
+    } catch {
+      // silent — household budget period is secondary
+    } finally {
+      setHouseholdPeriodSaving(false);
+    }
+  }
+
   async function removeRecurring(id) {
     try {
       await api.delete(`/recurring/${id}`);
@@ -121,6 +151,9 @@ export default function SettingsScreen() {
   const currentDay = user?.budget_start_day || 1;
   const pendingDay = periodType === 'calendar' ? 1 : customDay;
   const periodChanged = pendingDay !== currentDay;
+  const currentHouseholdDay = household?.budget_start_day || 1;
+  const pendingHouseholdDay = householdPeriodType === 'calendar' ? 1 : householdCustomDay;
+  const householdPeriodChanged = pendingHouseholdDay !== currentHouseholdDay;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
@@ -150,6 +183,69 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         {budgetMsg ? <Text style={budgetMsgIsError ? styles.msgError : styles.msgText}>{budgetMsg}</Text> : null}
       </View>
+
+      {memberCount > 1 && household ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>HOUSEHOLD BUDGET PERIOD</Text>
+          <Text style={styles.subText}>Shared budget reset day for the household bar.</Text>
+
+          <TouchableOpacity
+            style={[styles.optionRow, householdPeriodType === 'calendar' && styles.optionRowActive]}
+            onPress={() => { setHouseholdPeriodType('calendar'); setShowHouseholdDayPicker(false); }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.radio, householdPeriodType === 'calendar' && styles.radioActive]} />
+            <Text style={styles.optionLabel}>Calendar month</Text>
+            <Text style={styles.optionSub}>1st of each month</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.optionRow, householdPeriodType === 'custom' && styles.optionRowActive]}
+            onPress={() => { setHouseholdPeriodType('custom'); setShowHouseholdDayPicker(true); }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.radio, householdPeriodType === 'custom' && styles.radioActive]} />
+            <Text style={styles.optionLabel}>Custom day</Text>
+            {householdPeriodType === 'custom' ? (
+              <TouchableOpacity onPress={() => setShowHouseholdDayPicker(s => !s)} style={styles.dayChip}>
+                <Text style={styles.dayChipText}>{ordinal(householdCustomDay)}</Text>
+                <Ionicons name={showHouseholdDayPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#888" />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.optionSub}>pick a day</Text>
+            )}
+          </TouchableOpacity>
+
+          {householdPeriodType === 'custom' && showHouseholdDayPicker && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.dayPickerRow}
+              contentContainerStyle={{ gap: 6, paddingVertical: 4 }}
+            >
+              {DAY_OPTIONS.map(d => (
+                <TouchableOpacity
+                  key={d}
+                  style={[styles.dayOption, householdCustomDay === d && styles.dayOptionActive]}
+                  onPress={() => { setHouseholdCustomDay(d); setShowHouseholdDayPicker(false); }}
+                >
+                  <Text style={[styles.dayOptionText, householdCustomDay === d && styles.dayOptionTextActive]}>{d}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {householdPeriodChanged && (
+            <TouchableOpacity
+              style={[styles.button, styles.buttonSmall, householdPeriodSaving && styles.buttonDisabled]}
+              onPress={saveHouseholdPeriod}
+              disabled={householdPeriodSaving}
+            >
+              <Text style={styles.buttonText}>{householdPeriodSaving ? 'Saving...' : 'Save Household Period'}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : null}
 
       {/* Budget Period */}
       <View style={styles.section}>

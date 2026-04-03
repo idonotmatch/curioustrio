@@ -55,10 +55,18 @@ router.get('/me', authenticate, async (req, res, next) => {
 
 router.patch('/me', authenticate, async (req, res, next) => {
   try {
-    const { name } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
     const user = await User.findByProviderUid(req.userId);
     if (!user?.household_id) return res.status(404).json({ error: 'Not in a household' });
+    const { name, budget_start_day } = req.body;
+    if (budget_start_day !== undefined) {
+      const day = parseInt(budget_start_day, 10);
+      if (isNaN(day) || day < 1 || day > 28) {
+        return res.status(400).json({ error: 'budget_start_day must be between 1 and 28' });
+      }
+      const household = await Household.updateSettings(user.household_id, { budgetStartDay: day });
+      return res.status(200).json(household);
+    }
+    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
     const household = await Household.updateName(user.household_id, name.trim());
     return res.status(200).json(household);
   } catch (err) {

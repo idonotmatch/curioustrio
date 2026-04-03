@@ -48,6 +48,7 @@ export default function SummaryScreen() {
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { household, memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
+  const householdStartDay = household?.budget_start_day || 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
@@ -201,7 +202,10 @@ export default function SummaryScreen() {
       {isMultiMember && (
         <View style={styles.householdCard}>
           <View style={styles.householdRow}>
-            <Text style={styles.householdLabel}>Household</Text>
+            <View>
+              <Text style={styles.householdLabel}>Household</Text>
+              <Text style={styles.householdPeriod}>{periodLabel(selectedMonth, householdStartDay)}</Text>
+            </View>
             <View style={styles.householdNumbers}>
               <Text style={[styles.householdSpent, hOver && styles.householdOver]}>${hSpent.toFixed(0)}</Text>
               {hLimit > 0 && <Text style={styles.householdLimit}> / ${hLimit.toFixed(0)}</Text>}
@@ -375,6 +379,7 @@ const styles = StyleSheet.create({
   householdCard: { marginBottom: 32, backgroundColor: '#111', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#1a1a1a' },
   householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   householdLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 0.5 },
+  householdPeriod: { fontSize: 12, color: '#777', marginTop: 2 },
   householdNumbers: { flexDirection: 'row', alignItems: 'baseline' },
   householdSpent: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
   householdOver: { color: '#ef4444' },

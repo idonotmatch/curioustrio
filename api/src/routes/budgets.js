@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
+const Household = require('../models/household');
 const BudgetSetting = require('../models/budgetSetting');
 const db = require('../db');
 
@@ -34,12 +35,13 @@ router.get('/', async (req, res, next) => {
     if (!user) return;
 
     const month = req.query.month || new Date().toISOString().slice(0, 7);
-    const startDay = user.budget_start_day || 1;
-    const { from, to } = periodBounds(month, startDay);
     // ?scope=personal forces the solo path even for household members
     const useHouseholdPath = user.household_id && req.query.scope !== 'personal';
 
     if (useHouseholdPath) {
+      const household = await Household.findById(user.household_id);
+      const startDay = household?.budget_start_day || 1;
+      const { from, to } = periodBounds(month, startDay);
       // Household path: aggregate across all members
       const settings = await BudgetSetting.findByHousehold(user.household_id);
 
@@ -96,6 +98,8 @@ router.get('/', async (req, res, next) => {
         period: { from, to },
       });
     } else {
+      const startDay = user.budget_start_day || 1;
+      const { from, to } = periodBounds(month, startDay);
       // Solo user path
       const settings = await BudgetSetting.findByUser(user.id);
 

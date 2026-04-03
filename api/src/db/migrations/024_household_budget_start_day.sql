@@ -1,0 +1,2 @@
+ALTER TABLE households
+  ADD COLUMN IF NOT EXISTS budget_start_day INTEGER NOT NULL DEFAULT 1;

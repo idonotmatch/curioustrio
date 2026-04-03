@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
+const Household = require('../models/household');
 const Expense = require('../models/expense');
 const Category = require('../models/category');
 const MerchantMapping = require('../models/merchantMapping');
@@ -173,7 +174,8 @@ router.get('/household', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const { month } = req.query;
-    const startDay = user.budget_start_day || 1;
+    const household = user.household_id ? await Household.findById(user.household_id) : null;
+    const startDay = household?.budget_start_day || user.budget_start_day || 1;
     const expenses = user.household_id
       ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay })
       : await Expense.findByUser(user.id, { month, startDay });
