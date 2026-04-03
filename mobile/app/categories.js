@@ -37,7 +37,7 @@ export default function CategoriesScreen() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const data = await api.get('/categories');
+      const data = await api.get('/categories?include_hidden=1');
       setCategories(data.categories || []);
       const count = data.pending_suggestions_count || 0;
       setPendingCount(count);
@@ -117,21 +117,35 @@ export default function CategoriesScreen() {
     }
   }
 
-  async function deleteCategory(id, name) {
+  async function deleteCategory(cat) {
+    const action = cat.is_default ? 'Hide' : 'Delete';
+    const message = cat.is_default
+      ? `Hide "${cat.name}" for your household? Existing expenses will keep it, and you can restore it later.`
+      : `Delete "${cat.name}"? Expenses will keep this category. Child categories will be moved to Ungrouped.`;
     Alert.alert(
-      'Delete category',
-      `Delete "${name}"? Expenses will keep this category. Child categories will be moved to Ungrouped.`,
+      `${action} category`,
+      message,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete', style: 'destructive', onPress: async () => {
+          text: action, style: cat.is_default ? 'default' : 'destructive', onPress: async () => {
             setErrorMsg('');
-            try { await api.delete(`/categories/${id}`); load(); }
+            try { await api.delete(`/categories/${cat.id}`); load(); }
             catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
           },
         },
       ]
     );
+  }
+
+  async function restoreCategory(id) {
+    setErrorMsg('');
+    try {
+      await api.post(`/categories/${id}/restore`, {});
+      load();
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    }
   }
 
   async function saveMove(id) {
@@ -186,7 +200,8 @@ export default function CategoriesScreen() {
   }
 
   const custom = categories.filter(c => c.household_id !== null);
-  const defaults = categories.filter(c => c.household_id === null);
+  const defaults = categories.filter(c => c.household_id === null && !c.hidden);
+  const hiddenDefaults = categories.filter(c => c.household_id === null && c.hidden);
   const parentOptions = custom.filter(c => !c.parent_id);
 
   const referencedParentIds = new Set(custom.filter(c => c.parent_id).map(c => c.parent_id));
@@ -207,10 +222,10 @@ export default function CategoriesScreen() {
     return (
       <TouchableOpacity
         style={styles.deleteSwipe}
-        onPress={() => deleteCategory(cat.id, cat.name)}
+        onPress={() => deleteCategory(cat)}
       >
-        <Ionicons name="trash-outline" size={16} color="#fff" />
-        <Text style={styles.deleteSwipeText}>Delete</Text>
+        <Ionicons name={cat.is_default ? 'eye-off-outline' : 'trash-outline'} size={16} color="#fff" />
+        <Text style={styles.deleteSwipeText}>{cat.is_default ? 'Hide' : 'Delete'}</Text>
       </TouchableOpacity>
     );
   }
@@ -241,7 +256,7 @@ export default function CategoriesScreen() {
                 onSubmitEditing={() => saveCategory(cat.id)}
                 returnKeyType="done"
               />
-              {isLeaf && parentOptions.length > 0 && (
+              {isLeaf && parentOptions.length > 0 && cat.household_id !== null && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editParentPicker}>
                   <View style={styles.editParentRow}>
                     <TouchableOpacity
@@ -268,7 +283,10 @@ export default function CategoriesScreen() {
               )}
             </View>
           ) : (
-            <Text style={styles.catName}>{cat.name}</Text>
+            <View style={styles.catLabelWrap}>
+              <Text style={styles.catName}>{cat.name}</Text>
+              {cat.is_default ? <Text style={styles.defaultTag}>Default</Text> : null}
+            </View>
           )}
           <View style={styles.actions}>
             {isEditing ? (
@@ -500,7 +518,10 @@ export default function CategoriesScreen() {
                       returnKeyType="done"
                     />
                   ) : (
-                    <Text style={styles.parentLabel}>{parent.name}</Text>
+                    <View style={styles.catLabelWrap}>
+                      <Text style={styles.parentLabel}>{parent.name}</Text>
+                      {parent.is_default ? <Text style={styles.defaultTag}>Default</Text> : null}
+                    </View>
                   )}
                   <View style={styles.actions}>
                     {editingCatId === parent.id ? (
@@ -532,12 +553,25 @@ export default function CategoriesScreen() {
 
             {/* Default categories */}
             <Text style={[styles.sectionLabel, { marginTop: 32 }]}>DEFAULTS</Text>
-            <Text style={styles.defaultsNote}>Built-in categories shared across all households.</Text>
-            {defaults.map(cat => (
-              <View key={cat.id} style={[styles.row, { opacity: 0.4 }]}>
-                <Text style={styles.catName}>{cat.name}</Text>
-              </View>
-            ))}
+            <Text style={styles.defaultsNote}>Built-in categories shared across all households. You can rename or hide them for your household.</Text>
+            {defaults.map(cat => renderCatRow(cat))}
+
+            {hiddenDefaults.length > 0 && (
+              <>
+                <Text style={[styles.sectionLabel, { marginTop: 24 }]}>HIDDEN DEFAULTS</Text>
+                {hiddenDefaults.map(cat => (
+                  <View key={cat.id} style={styles.row}>
+                    <View style={styles.catLabelWrap}>
+                      <Text style={styles.catName}>{cat.name}</Text>
+                      <Text style={styles.defaultTag}>Hidden</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => restoreCategory(cat.id)}>
+                      <Text style={styles.rowActionText}>Restore</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -591,7 +625,9 @@ const styles = StyleSheet.create({
   // Category rows
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111', backgroundColor: '#0a0a0a' },
   rowIndented: { paddingLeft: 16 },
+  catLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 },
   catName: { flex: 1, fontSize: 15, color: '#f5f5f5' },
+  defaultTag: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
   actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   rowActionText: { color: '#777', fontSize: 13 },
   saveText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },

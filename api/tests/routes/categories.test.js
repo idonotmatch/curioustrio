@@ -15,6 +15,23 @@ beforeEach(async () => {
 
 afterAll(() => db.pool.end());
 
+async function ensureHouseholdUser() {
+  const userRes = await db.query("SELECT id, household_id FROM users WHERE provider_uid = 'auth0|test-user-123'");
+  if (userRes.rows[0]?.household_id) return { userId: userRes.rows[0].id, householdId: userRes.rows[0].household_id, created: false };
+
+  const householdRes = await db.query("INSERT INTO households (name) VALUES ('Default Category Test HH') RETURNING id");
+  const householdId = householdRes.rows[0].id;
+  if (userRes.rows.length) {
+    await db.query("UPDATE users SET household_id = $1 WHERE id = $2", [householdId, userRes.rows[0].id]);
+    return { userId: userRes.rows[0].id, householdId, created: true };
+  }
+  const inserted = await db.query(
+    "INSERT INTO users (provider_uid, name, email, household_id) VALUES ('auth0|test-user-123', 'Test User', 'test@example.com', $1) RETURNING id",
+    [householdId]
+  );
+  return { userId: inserted.rows[0].id, householdId, created: true };
+}
+
 describe('GET /categories', () => {
   it('returns categories for the user household', async () => {
     const res = await request(app).get('/categories');
@@ -63,6 +80,28 @@ describe('PATCH /categories/:id', () => {
       .send({ name: 'Ghost' });
 
     expect(res.status).toBe(404);
+  });
+
+  it('renames a default category only for the current household', async () => {
+    const { householdId, created } = await ensureHouseholdUser();
+    const defaultRes = await db.query(
+      `INSERT INTO categories (household_id, name) VALUES (NULL, 'Default Rename Test') RETURNING id`
+    );
+
+    const res = await request(app)
+      .patch(`/categories/${defaultRes.rows[0].id}`)
+      .send({ name: 'Household Label' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Household Label');
+    expect(res.body.hidden).toBe(false);
+
+    await db.query(`DELETE FROM category_household_overrides WHERE category_id = $1`, [defaultRes.rows[0].id]);
+    await db.query(`DELETE FROM categories WHERE id = $1`, [defaultRes.rows[0].id]);
+    if (created) {
+      await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-user-123'`);
+      await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    }
   });
 });
 
@@ -181,6 +220,35 @@ describe('DELETE /categories/:id', () => {
       .delete(`/categories/${created.body.id}`);
 
     expect(res.status).toBe(204);
+  });
+
+  it('hides a default category for the household instead of deleting it globally', async () => {
+    const { householdId, created } = await ensureHouseholdUser();
+    const defaultRes = await db.query(
+      `INSERT INTO categories (household_id, name) VALUES (NULL, 'Default Hide Test') RETURNING id`
+    );
+
+    const res = await request(app).delete(`/categories/${defaultRes.rows[0].id}`);
+    expect(res.status).toBe(204);
+
+    const list = await request(app).get('/categories');
+    expect(list.body.categories.some(c => c.id === defaultRes.rows[0].id)).toBe(false);
+
+    const hiddenList = await request(app).get('/categories?include_hidden=1');
+    const hidden = hiddenList.body.categories.find(c => c.id === defaultRes.rows[0].id);
+    expect(hidden).toBeTruthy();
+    expect(hidden.hidden).toBe(true);
+
+    const restore = await request(app).post(`/categories/${defaultRes.rows[0].id}/restore`);
+    expect(restore.status).toBe(200);
+    expect(restore.body.hidden).toBe(false);
+
+    await db.query(`DELETE FROM category_household_overrides WHERE category_id = $1`, [defaultRes.rows[0].id]);
+    await db.query(`DELETE FROM categories WHERE id = $1`, [defaultRes.rows[0].id]);
+    if (created) {
+      await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-user-123'`);
+      await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    }
   });
 });
 

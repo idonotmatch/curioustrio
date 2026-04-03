@@ -120,7 +120,8 @@ async function suggestQuickCreateParent({ householdId, name, merchant, descripti
 router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
-    const categories = await Category.findByHousehold(user?.household_id);
+    const includeHidden = req.query.include_hidden === '1' || req.query.include_hidden === 'true';
+    const categories = await Category.findByHousehold(user?.household_id, { includeHidden });
     const pending_suggestions_count = user?.household_id
       ? await CategorySuggestion.countPending(user.household_id)
       : 0;
@@ -240,6 +241,22 @@ router.patch('/:id', async (req, res, next) => {
     const { name, icon, color } = req.body;
     const parentId = 'parent_id' in req.body ? req.body.parent_id : undefined;
     const sortOrder = 'sort_order' in req.body ? req.body.sort_order : undefined;
+    const user = await getUser(req);
+    const existing = await Category.findAccessibleById(req.params.id, user?.household_id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    if (user?.household_id && existing.is_default) {
+      if (parentId !== undefined || icon !== undefined || color !== undefined || sortOrder !== undefined) {
+        return res.status(400).json({ error: 'Default categories can only be renamed for your household' });
+      }
+      if (!name) return res.status(400).json({ error: 'name required' });
+      const category = await Category.renameDefaultForHousehold({
+        id: req.params.id,
+        householdId: user?.household_id,
+        displayName: name,
+      });
+      return res.json(category);
+    }
     if (parentId && parentId === req.params.id) {
       return res.status(400).json({ error: 'A category cannot be its own parent' });
     }
@@ -252,7 +269,6 @@ router.patch('/:id', async (req, res, next) => {
       if (!parentCat.rows.length) return res.status(404).json({ error: 'Parent category not found' });
       if (parentCat.rows[0].parent_id) return res.status(400).json({ error: 'Cannot use a child category as a parent' });
     }
-    const user = await getUser(req);
     const category = await Category.update({
       id: req.params.id,
       householdId: user?.household_id,
@@ -289,8 +305,20 @@ router.post('/:id/merge', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     const user = await getUser(req);
-    await Category.remove({ id: req.params.id, householdId: user?.household_id });
+    const result = await Category.remove({ id: req.params.id, householdId: user?.household_id });
+    if (!result) return res.status(404).json({ error: 'Not found' });
     res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/restore', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    const category = await Category.findAccessibleById(req.params.id, user?.household_id);
+    if (!category || !category.is_default) return res.status(404).json({ error: 'Not found' });
+    await Category.restoreDefault({ id: req.params.id, householdId: user?.household_id });
+    const restored = await Category.findByHousehold(user?.household_id, { includeHidden: true });
+    res.json(restored.find(c => c.id === req.params.id) || null);
   } catch (err) { next(err); }
 });
 

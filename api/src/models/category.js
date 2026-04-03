@@ -1,15 +1,47 @@
 const db = require('../db');
 
-async function findByHousehold(householdId) {
+async function findByHousehold(householdId, { includeHidden = false } = {}) {
   const result = await db.query(
-    `SELECT c.*, p.name AS parent_name
+    `SELECT c.id,
+            c.household_id,
+            COALESCE(oco.display_name, c.name) AS name,
+            c.name AS base_name,
+            c.icon,
+            c.color,
+            c.parent_id,
+            c.sort_order,
+            c.created_at,
+            (c.household_id IS NULL AND $1 IS NOT NULL) AS is_default,
+            COALESCE(oco.hidden, FALSE) AS hidden,
+            COALESCE(opo.display_name, p.name) AS parent_name
      FROM categories c
+     LEFT JOIN category_household_overrides oco
+       ON oco.category_id = c.id AND oco.household_id = $1
      LEFT JOIN categories p ON c.parent_id = p.id
+     LEFT JOIN category_household_overrides opo
+       ON opo.category_id = p.id AND opo.household_id = $1
      WHERE c.household_id = $1 OR c.household_id IS NULL
+       ${includeHidden ? '' : 'AND COALESCE(oco.hidden, FALSE) = FALSE'}
      ORDER BY c.sort_order ASC, c.name ASC`,
     [householdId]
   );
   return result.rows;
+}
+
+async function findAccessibleById(id, householdId) {
+  const result = await db.query(
+    `SELECT c.*,
+            (c.household_id IS NULL AND $2 IS NOT NULL) AS is_default,
+            COALESCE(o.hidden, FALSE) AS hidden,
+            o.display_name
+     FROM categories c
+     LEFT JOIN category_household_overrides o
+       ON o.category_id = c.id AND o.household_id = $2
+     WHERE c.id = $1
+       AND (c.household_id = $2 OR c.household_id IS NULL)`,
+    [id, householdId]
+  );
+  return result.rows[0] || null;
 }
 
 async function create({ householdId, name, icon, color, parentId = null }) {
@@ -49,11 +81,47 @@ async function update({ id, householdId, name, icon, color, parentId, sortOrder 
   return result.rows[0] || null;
 }
 
-async function remove({ id, householdId }) {
-  await db.query(
-    'DELETE FROM categories WHERE id = $1 AND household_id = $2',
-    [id, householdId]
+async function upsertOverride({ categoryId, householdId, hidden, displayName }) {
+  const result = await db.query(
+    `INSERT INTO category_household_overrides (household_id, category_id, hidden, display_name)
+     VALUES ($1, $2, COALESCE($3, FALSE), $4)
+     ON CONFLICT (household_id, category_id)
+     DO UPDATE SET
+       hidden = COALESCE($3, category_household_overrides.hidden),
+       display_name = COALESCE($4, category_household_overrides.display_name),
+       updated_at = NOW()
+     RETURNING *`,
+    [householdId, categoryId, hidden, displayName && displayName.trim() ? displayName.trim() : null]
   );
+  return result.rows[0] || null;
+}
+
+async function hideDefault({ id, householdId }) {
+  await upsertOverride({ categoryId: id, householdId, hidden: true });
+}
+
+async function restoreDefault({ id, householdId }) {
+  await upsertOverride({ categoryId: id, householdId, hidden: false });
+}
+
+async function renameDefaultForHousehold({ id, householdId, displayName }) {
+  await upsertOverride({ categoryId: id, householdId, hidden: false, displayName });
+  return findByHousehold(householdId, { includeHidden: true }).then(rows => rows.find(c => c.id === id) || null);
+}
+
+async function remove({ id, householdId }) {
+  const category = await findAccessibleById(id, householdId);
+  if (!category) return null;
+  if (householdId && category.is_default) {
+    await hideDefault({ id, householdId });
+    return { hidden: true, category_id: id };
+  }
+  if (householdId) {
+    await db.query('DELETE FROM categories WHERE id = $1 AND household_id = $2', [id, householdId]);
+  } else {
+    await db.query('DELETE FROM categories WHERE id = $1 AND household_id IS NULL', [id]);
+  }
+  return { deleted: true, category_id: id };
 }
 
 async function merge({ sourceId, targetId, householdId }) {
@@ -123,4 +191,15 @@ async function merge({ sourceId, targetId, householdId }) {
   }
 }
 
-module.exports = { findByHousehold, create, update, remove, merge };
+module.exports = {
+  findByHousehold,
+  findAccessibleById,
+  create,
+  update,
+  upsertOverride,
+  hideDefault,
+  restoreDefault,
+  renameDefaultForHousehold,
+  remove,
+  merge,
+};
