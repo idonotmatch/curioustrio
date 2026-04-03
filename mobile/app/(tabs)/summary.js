@@ -353,8 +353,8 @@ export default function SummaryScreen() {
         ))}
         {recentTab === 'queue' && (
           <Text style={styles.queueStatus}>
-            {gmailImportSummary?.last_imported_at
-              ? `Last Gmail refresh ${formatRelativeTime(gmailImportSummary.last_imported_at)}`
+            {gmailImportSummary?.last_synced_at
+              ? `Last Gmail refresh ${formatRelativeTime(gmailImportSummary.last_synced_at)}`
               : 'Gmail not refreshed yet'}
           </Text>
         )}
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
   dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
   swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600' },
   emptyText: { color: '#555', fontSize: 14, paddingVertical: 12 },
-  seeAll: { fontSize: 14, color: '#999' },
+  seeAll: { fontSize: 14, color: '#999', minWidth: 72, textAlign: 'right', paddingRight: 12 },
   recentRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111',

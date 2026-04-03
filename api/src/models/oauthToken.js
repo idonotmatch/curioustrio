@@ -36,4 +36,18 @@ async function findAllWithGmail() {
   return result.rows.map(r => r.user_id);
 }
 
-module.exports = { upsert, findByUserId, findAllWithGmail };
+async function markSynced(userId, provider = 'google') {
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET last_synced_at = NOW(),
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider]
+  );
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+}
+
+module.exports = { upsert, findByUserId, findAllWithGmail, markSynced };

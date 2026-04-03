@@ -69,7 +69,7 @@ describe('GET /gmail/status', () => {
   it('returns { connected: false } when no token', async () => {
     const res = await request(app).get('/gmail/status');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ connected: false });
+    expect(res.body).toEqual({ connected: false, last_synced_at: null });
   });
 
   it('returns { connected: true } when token exists', async () => {
@@ -80,7 +80,8 @@ describe('GET /gmail/status', () => {
     );
     const res = await request(app).get('/gmail/status');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ connected: true });
+    expect(res.body.connected).toBe(true);
+    expect(res.body.last_synced_at).toBeNull();
   });
 });
 
@@ -157,6 +158,8 @@ describe('POST /gmail/import', () => {
       skipped_existing: 0,
       skipped_reasons: { classifier_not_expense: 1 },
     });
+    const token = await db.query(`SELECT last_synced_at FROM oauth_tokens WHERE user_id = $1`, [userId]);
+    expect(token.rows[0].last_synced_at).toBeTruthy();
   });
 
   it('skips already-imported messages', async () => {
@@ -255,6 +258,7 @@ describe('GET /gmail/import-summary', () => {
       failed: 1,
     });
     expect(res.body.last_imported_at).toBeTruthy();
+    expect(res.body.last_synced_at).toBeNull();
     expect(res.body.reasons).toEqual(expect.arrayContaining([
       { reason: 'Network error', count: 1 },
       { reason: 'classifier_uncertain', count: 1 },

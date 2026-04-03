@@ -38,6 +38,7 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
         if (!user) continue;
 
         const { imported, skipped, failed } = await importForUser(user);
+        await OAuthToken.markSynced(userId);
         totalImported += imported;
         totalSkipped += skipped;
         totalFailed += failed;

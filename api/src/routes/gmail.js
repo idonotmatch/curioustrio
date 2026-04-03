@@ -48,7 +48,7 @@ router.get('/status', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
-    res.json({ connected: !!token });
+    res.json({ connected: !!token, last_synced_at: token?.last_synced_at || null });
   } catch (err) { next(err); }
 });
 
@@ -60,6 +60,7 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
     const token = await OAuthToken.findByUserId(user.id);
     if (!token) return res.status(403).json({ error: 'Gmail not connected. Visit GET /gmail/auth first.' });
     const result = await importForUser(user);
+    await OAuthToken.markSynced(user.id);
     res.json(result);
   } catch (err) { next(err); }
 });
@@ -71,7 +72,8 @@ router.get('/import-summary', authenticate, async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const days = Math.min(parseInt(req.query.days, 10) || 30, 365);
     const summary = await EmailImportLog.summarizeByUser(user.id, days);
-    res.json(summary);
+    const token = await OAuthToken.findByUserId(user.id);
+    res.json({ ...summary, last_synced_at: token?.last_synced_at || null });
   } catch (err) { next(err); }
 });
 

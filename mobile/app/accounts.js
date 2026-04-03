@@ -503,6 +503,11 @@ export default function AccountsScreen() {
                     ? (gmailStatus.email ? gmailStatus.email : 'Connected')
                     : 'Not connected'}
               </Text>
+              {gmailStatus?.connected && formatRelativeTime(importSummary?.last_synced_at || gmailStatus?.last_synced_at) ? (
+                <Text style={styles.rowSub}>
+                  Last refresh {formatRelativeTime(importSummary?.last_synced_at || gmailStatus?.last_synced_at)}
+                </Text>
+              ) : null}
             </View>
             <View style={styles.btnGroup}>
               {gmailStatus?.connected && (
@@ -556,9 +561,6 @@ export default function AccountsScreen() {
                   </View>
                 )}
                 <Text style={styles.summaryWindow}>Last {importSummary.window_days} days</Text>
-                {formatRelativeTime(importSummary.last_imported_at) ? (
-                  <Text style={styles.summaryWindow}>Last refresh {formatRelativeTime(importSummary.last_imported_at)}</Text>
-                ) : null}
               </>
             ) : null
           )}

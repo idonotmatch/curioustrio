@@ -1,0 +1,2 @@
+ALTER TABLE oauth_tokens
+  ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
