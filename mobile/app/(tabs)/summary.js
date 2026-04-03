@@ -44,7 +44,7 @@ export default function SummaryScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { cacheOnly: true });
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { household, memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;

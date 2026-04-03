@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
+import { invalidateCacheByPrefix } from '../services/cache';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -62,6 +63,11 @@ export function ExpenseItem({ expense, showUser = false, onDelete, pending = fal
       onPress={async () => {
         try {
           await api.delete(`/expenses/${expense.id}`);
+          await Promise.all([
+            invalidateCacheByPrefix('cache:expenses:'),
+            invalidateCacheByPrefix('cache:budget:'),
+            invalidateCacheByPrefix('cache:household-expenses:'),
+          ]);
           onDelete?.(expense.id);
         } catch {
           // item stays in list if delete fails
