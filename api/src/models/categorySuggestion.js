@@ -12,10 +12,31 @@ async function getPending(householdId) {
   const result = await db.query(
     `SELECT cs.id,
             leaf.id   AS leaf_id,   leaf.name   AS leaf_name,
-            parent.id AS parent_id, parent.name AS parent_name
+            parent.id AS parent_id, parent.name AS parent_name,
+            COALESCE(expense_counts.expense_count, 0) AS expense_count,
+            COALESCE(expense_counts.sample_merchants, ARRAY[]::text[]) AS sample_merchants
      FROM category_suggestions cs
      JOIN categories leaf   ON cs.leaf_id           = leaf.id
      JOIN categories parent ON cs.suggested_parent_id = parent.id
+     LEFT JOIN (
+       SELECT
+         e.category_id,
+         COUNT(*)::int AS expense_count,
+         ARRAY(
+           SELECT DISTINCT e2.merchant
+           FROM expenses e2
+           WHERE e2.category_id = e.category_id
+             AND e2.merchant IS NOT NULL
+             AND e2.merchant <> ''
+           ORDER BY e2.merchant
+           LIMIT 3
+         ) AS sample_merchants
+       FROM expenses e
+       WHERE e.household_id = $1
+         AND e.status = 'confirmed'
+         AND e.category_id IS NOT NULL
+       GROUP BY e.category_id
+     ) expense_counts ON expense_counts.category_id = leaf.id
      WHERE cs.household_id = $1 AND cs.status = 'pending'
      ORDER BY cs.created_at`,
     [householdId]
@@ -24,6 +45,8 @@ async function getPending(householdId) {
     id: r.id,
     leaf:             { id: r.leaf_id,   name: r.leaf_name },
     suggested_parent: { id: r.parent_id, name: r.parent_name },
+    expense_count: Number(r.expense_count) || 0,
+    sample_merchants: Array.isArray(r.sample_merchants) ? r.sample_merchants.filter(Boolean) : [],
   }));
 }
 

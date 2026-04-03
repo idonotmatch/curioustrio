@@ -138,6 +138,24 @@ router.patch('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/:id/merge', async (req, res, next) => {
+  try {
+    const { target_category_id } = req.body;
+    if (!target_category_id) return res.status(400).json({ error: 'target_category_id required' });
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'No household' });
+    const result = await Category.merge({
+      sourceId: req.params.id,
+      targetId: target_category_id,
+      householdId: user.household_id,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
 // DELETE /categories/:id
 router.delete('/:id', async (req, res, next) => {
   try {

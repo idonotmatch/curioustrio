@@ -12,7 +12,7 @@ export default function CategoriesScreen() {
   const [categories, setCategories] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [suggestions, setSuggestions] = useState([]);
-  const [dismissed, setDismissed] = useState(false);
+  const [snoozedSuggestionIds, setSnoozedSuggestionIds] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Add form
@@ -25,6 +25,11 @@ export default function CategoriesScreen() {
   const [editingCatId, setEditingCatId] = useState(null);
   const [editingCatName, setEditingCatName] = useState('');
   const [editingParentId, setEditingParentId] = useState(undefined);
+  const [movingCatId, setMovingCatId] = useState(null);
+  const [movingParentId, setMovingParentId] = useState(null);
+  const [mergingCatId, setMergingCatId] = useState(null);
+  const [mergeTargetId, setMergeTargetId] = useState(null);
+  const [categoryActionLoading, setCategoryActionLoading] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -49,6 +54,10 @@ export default function CategoriesScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    setSnoozedSuggestionIds(prev => prev.filter(id => suggestions.some(s => s.id === id)));
+  }, [suggestions]);
+
   async function addCategory() {
     if (!newCatName.trim()) return;
     if (newCatType === 'leaf' && !newCatParentId) {
@@ -72,10 +81,26 @@ export default function CategoriesScreen() {
   }
 
   function startEditing(cat) {
+    setMovingCatId(null);
+    setMergingCatId(null);
     setEditingCatId(cat.id);
     setEditingCatName(cat.name);
     // Only track parent for leaf categories
     setEditingParentId(cat.parent_id ? cat.parent_id : undefined);
+  }
+
+  function startMoving(cat) {
+    setEditingCatId(null);
+    setMergingCatId(null);
+    setMovingCatId(cat.id);
+    setMovingParentId(cat.parent_id || null);
+  }
+
+  function startMerging(cat) {
+    setEditingCatId(null);
+    setMovingCatId(null);
+    setMergingCatId(cat.id);
+    setMergeTargetId(null);
   }
 
   async function saveCategory(id) {
@@ -109,6 +134,37 @@ export default function CategoriesScreen() {
     );
   }
 
+  async function saveMove(id) {
+    setCategoryActionLoading(true);
+    setErrorMsg('');
+    try {
+      await api.patch(`/categories/${id}`, { parent_id: movingParentId });
+      setMovingCatId(null);
+      setMovingParentId(null);
+      load();
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    } finally {
+      setCategoryActionLoading(false);
+    }
+  }
+
+  async function mergeCategory(id) {
+    if (!mergeTargetId) return;
+    setCategoryActionLoading(true);
+    setErrorMsg('');
+    try {
+      await api.post(`/categories/${id}/merge`, { target_category_id: mergeTargetId });
+      setMergingCatId(null);
+      setMergeTargetId(null);
+      load();
+    } catch (e) {
+      setErrorMsg(e.message || 'Something went wrong');
+    } finally {
+      setCategoryActionLoading(false);
+    }
+  }
+
   async function acceptSuggestion(id) {
     setErrorMsg('');
     try {
@@ -123,6 +179,10 @@ export default function CategoriesScreen() {
       await api.post(`/categories/suggestions/${id}/reject`);
       load();
     } catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
+  }
+
+  function snoozeSuggestion(id) {
+    setSnoozedSuggestionIds(prev => prev.includes(id) ? prev : [...prev, id]);
   }
 
   const custom = categories.filter(c => c.household_id !== null);
@@ -141,6 +201,7 @@ export default function CategoriesScreen() {
     ...Object.values(childrenByParent).flat().map(c => c.id),
   ]);
   const ungrouped = custom.filter(c => !renderedIds.has(c.id));
+  const visibleSuggestions = suggestions.filter(s => !snoozedSuggestionIds.includes(s.id));
 
   function renderDeleteAction(cat) {
     return (
@@ -156,7 +217,12 @@ export default function CategoriesScreen() {
 
   function renderCatRow(cat, indented = false) {
     const isEditing = editingCatId === cat.id;
+    const isMoving = movingCatId === cat.id;
+    const isMerging = mergingCatId === cat.id;
     const isLeaf = !!cat.parent_id;
+    const mergeTargets = custom.filter(c => c.id !== cat.id);
+    const moveTargets = parentOptions.filter(p => p.id !== cat.id);
+    const canWorkflow = cat.household_id !== null;
 
     return (
       <Swipeable
@@ -215,12 +281,91 @@ export default function CategoriesScreen() {
                 </TouchableOpacity>
               </>
             ) : (
-              <TouchableOpacity onPress={() => startEditing(cat)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="pencil-outline" size={16} color="#555" />
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity onPress={() => startEditing(cat)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="pencil-outline" size={16} color="#555" />
+                </TouchableOpacity>
+                {canWorkflow && (
+                  <>
+                    <TouchableOpacity onPress={() => startMoving(cat)}>
+                      <Text style={styles.rowActionText}>Move</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => startMerging(cat)}>
+                      <Text style={styles.rowActionText}>Merge</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
             )}
           </View>
         </View>
+        {isMoving && (
+          <View style={styles.workflowBlock}>
+            <Text style={styles.workflowLabel}>Move under</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editParentPicker}>
+              <View style={styles.editParentRow}>
+                <TouchableOpacity
+                  style={[styles.parentChip, movingParentId === null && styles.parentChipActive]}
+                  onPress={() => setMovingParentId(null)}
+                >
+                  <Text style={[styles.parentChipText, movingParentId === null && styles.parentChipTextActive]}>
+                    Ungrouped
+                  </Text>
+                </TouchableOpacity>
+                {moveTargets.map(p => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.parentChip, movingParentId === p.id && styles.parentChipActive]}
+                    onPress={() => setMovingParentId(p.id)}
+                  >
+                    <Text style={[styles.parentChipText, movingParentId === p.id && styles.parentChipTextActive]}>
+                      {p.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            <View style={styles.workflowActions}>
+              <TouchableOpacity onPress={() => saveMove(cat.id)} disabled={categoryActionLoading}>
+                <Text style={styles.saveText}>{categoryActionLoading ? 'Saving...' : 'Save move'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setMovingCatId(null); setMovingParentId(null); }}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        {isMerging && (
+          <View style={styles.workflowBlock}>
+            <Text style={styles.workflowLabel}>Merge into</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editParentPicker}>
+              <View style={styles.editParentRow}>
+                {mergeTargets.map(target => (
+                  <TouchableOpacity
+                    key={target.id}
+                    style={[styles.parentChip, mergeTargetId === target.id && styles.parentChipActive]}
+                    onPress={() => setMergeTargetId(target.id)}
+                  >
+                    <Text style={[styles.parentChipText, mergeTargetId === target.id && styles.parentChipTextActive]}>
+                      {target.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            <Text style={styles.workflowHint}>Past expenses and merchant memory will move to the selected category.</Text>
+            <View style={styles.workflowActions}>
+              <TouchableOpacity onPress={() => mergeCategory(cat.id)} disabled={!mergeTargetId || categoryActionLoading}>
+                <Text style={[styles.saveText, (!mergeTargetId || categoryActionLoading) && styles.disabledActionText]}>
+                  {categoryActionLoading ? 'Merging...' : 'Merge'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setMergingCatId(null); setMergeTargetId(null); }}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </Swipeable>
     );
   }
@@ -301,22 +446,33 @@ export default function CategoriesScreen() {
             </View>
 
             {/* Suggestions card */}
-            {pendingCount > 0 && !dismissed && (
+            {visibleSuggestions.length > 0 && (
               <View style={styles.suggestCard}>
                 <View style={styles.suggestHeader}>
                   <Text style={styles.suggestTitle}>Suggested groupings</Text>
-                  <TouchableOpacity onPress={() => setDismissed(true)}>
-                    <Text style={styles.dismissText}>Dismiss</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.suggestCount}>{visibleSuggestions.length} to review</Text>
                 </View>
-                {suggestions.map(s => (
+                {visibleSuggestions.map(s => (
                   <View key={s.id} style={styles.suggestRow}>
-                    <Text style={styles.suggestLabel}>
-                      {s.leaf.name} → {s.suggested_parent.name}
-                    </Text>
+                    <View style={styles.suggestBody}>
+                      <Text style={styles.suggestLabel}>
+                        {s.leaf.name} → {s.suggested_parent.name}
+                      </Text>
+                      <Text style={styles.suggestMeta}>
+                        {s.expense_count > 0 ? `${s.expense_count} categorized expense${s.expense_count === 1 ? '' : 's'}` : 'No confirmed expenses yet'}
+                      </Text>
+                      {s.sample_merchants?.length > 0 ? (
+                        <Text style={styles.suggestExamples}>
+                          Examples: {s.sample_merchants.join(', ')}
+                        </Text>
+                      ) : null}
+                    </View>
                     <View style={styles.suggestActions}>
                       <TouchableOpacity onPress={() => acceptSuggestion(s.id)}>
                         <Text style={styles.acceptText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => snoozeSuggestion(s.id)}>
+                        <Text style={styles.laterText}>Later</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => rejectSuggestion(s.id)}>
                         <Text style={styles.rejectText}>Reject</Text>
@@ -421,11 +577,15 @@ const styles = StyleSheet.create({
   suggestCard: { backgroundColor: '#111', borderRadius: 10, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: '#2a2a1a' },
   suggestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   suggestTitle: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
-  dismissText: { fontSize: 14, color: '#999' },
-  suggestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  suggestLabel: { flex: 1, color: '#ccc', fontSize: 15 },
-  suggestActions: { flexDirection: 'row', gap: 12 },
+  suggestCount: { fontSize: 13, color: '#777' },
+  suggestRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  suggestBody: { marginBottom: 10 },
+  suggestLabel: { color: '#ccc', fontSize: 15, fontWeight: '500' },
+  suggestMeta: { color: '#9a9a9a', fontSize: 13, marginTop: 4 },
+  suggestExamples: { color: '#777', fontSize: 13, marginTop: 4 },
+  suggestActions: { flexDirection: 'row', gap: 14 },
   acceptText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
+  laterText: { color: '#aaa', fontSize: 14 },
   rejectText: { color: '#999', fontSize: 14 },
 
   // Category rows
@@ -433,14 +593,20 @@ const styles = StyleSheet.create({
   rowIndented: { paddingLeft: 16 },
   catName: { flex: 1, fontSize: 15, color: '#f5f5f5' },
   actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  rowActionText: { color: '#777', fontSize: 13 },
   saveText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
   cancelText: { color: '#999', fontSize: 14 },
+  disabledActionText: { opacity: 0.4 },
 
   // Edit mode within row
   editBlock: { flex: 1, marginRight: 12 },
   editInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
   editParentPicker: { marginTop: 8 },
   editParentRow: { flexDirection: 'row', gap: 6 },
+  workflowBlock: { paddingLeft: 16, paddingRight: 12, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
+  workflowLabel: { color: '#888', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
+  workflowHint: { color: '#666', fontSize: 13, marginTop: 8 },
+  workflowActions: { flexDirection: 'row', gap: 14, alignItems: 'center', marginTop: 10 },
 
   // Parent chips (shared)
   parentChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', marginRight: 2 },

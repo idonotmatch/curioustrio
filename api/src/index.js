@@ -1,4 +1,6 @@
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'test') {
+  require('dotenv').config();
+}
 // Prefer IPv4 DNS results — belt-and-suspenders alongside the pooler URL which
 // already resolves to IPv4 on AWS. This must be called before any network I/O.
 require('dns').setDefaultResultOrder('ipv4first');

@@ -66,6 +66,57 @@ describe('PATCH /categories/:id', () => {
   });
 });
 
+describe('POST /categories/:id/merge', () => {
+  it('merges a leaf category into another category and reassigns expenses', async () => {
+    const target = await request(app).post('/categories').send({ name: 'MergeTarget' });
+    const source = await request(app).post('/categories').send({ name: 'MergeSource' });
+
+    const userRes = await db.query("SELECT id, household_id FROM users WHERE provider_uid = 'auth0|test-user-123'");
+    const userId = userRes.rows[0].id;
+    const householdId = userRes.rows[0].household_id;
+
+    const expenseRes = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status)
+       VALUES ($1, $2, 'Merge Test', 12.34, CURRENT_DATE, $3, 'manual', 'confirmed')
+       RETURNING id`,
+      [userId, householdId, source.body.id]
+    );
+
+    const res = await request(app)
+      .post(`/categories/${source.body.id}/merge`)
+      .send({ target_category_id: target.body.id });
+
+    expect(res.status).toBe(200);
+    expect(res.body.target_id).toBe(target.body.id);
+    expect(res.body.expense_count).toBeGreaterThanOrEqual(1);
+
+    const movedExpense = await db.query('SELECT category_id FROM expenses WHERE id = $1', [expenseRes.rows[0].id]);
+    expect(movedExpense.rows[0].category_id).toBe(target.body.id);
+
+    const sourceCheck = await db.query('SELECT id FROM categories WHERE id = $1', [source.body.id]);
+    expect(sourceCheck.rows).toHaveLength(0);
+
+    await db.query('DELETE FROM expenses WHERE id = $1', [expenseRes.rows[0].id]);
+    await request(app).delete(`/categories/${target.body.id}`);
+  });
+
+  it('rejects merging a category that still has children', async () => {
+    const source = await request(app).post('/categories').send({ name: 'MergeParent' });
+    const child = await request(app).post('/categories').send({ name: 'MergeChild', parent_id: source.body.id });
+    const target = await request(app).post('/categories').send({ name: 'MergeOther' });
+
+    const res = await request(app)
+      .post(`/categories/${source.body.id}/merge`)
+      .send({ target_category_id: target.body.id });
+
+    expect(res.status).toBe(400);
+
+    await request(app).delete(`/categories/${child.body.id}`);
+    await request(app).delete(`/categories/${target.body.id}`);
+    await request(app).delete(`/categories/${source.body.id}`);
+  });
+});
+
 describe('DELETE /categories/:id', () => {
   it('deletes a category and returns 204', async () => {
     const created = await request(app)
@@ -84,6 +135,10 @@ describe('GET /categories/suggestions', () => {
     const res = await request(app).get('/categories/suggestions');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    if (res.body[0]) {
+      expect(res.body[0]).toHaveProperty('expense_count');
+      expect(res.body[0]).toHaveProperty('sample_merchants');
+    }
   });
 });
 
@@ -130,6 +185,25 @@ describe('suggestion accept/reject', () => {
     const res = await request(app).post(`/categories/suggestions/${suggestionId}/accept`);
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+  });
+
+  it('GET /categories/suggestions includes counts and merchant examples', async () => {
+    const userRes = await db.query("SELECT id, household_id FROM users WHERE provider_uid = 'auth0|test-user-123'");
+    const userId = userRes.rows[0].id;
+    const householdId = userRes.rows[0].household_id;
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status)
+       VALUES ($1, $2, 'Trader Joe''s', 25.00, CURRENT_DATE, $3, 'manual', 'confirmed')`,
+      [userId, householdId, leafId]
+    );
+
+    const res = await request(app).get('/categories/suggestions');
+    expect(res.status).toBe(200);
+    const suggestion = res.body.find(s => s.id === suggestionId);
+    expect(suggestion).toBeTruthy();
+    expect(suggestion.expense_count).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(suggestion.sample_merchants)).toBe(true);
   });
 
   it('POST /categories/suggestions/:id/reject returns ok', async () => {

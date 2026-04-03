@@ -56,4 +56,71 @@ async function remove({ id, householdId }) {
   );
 }
 
-module.exports = { findByHousehold, create, update, remove };
+async function merge({ sourceId, targetId, householdId }) {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const sourceRes = await client.query(
+      'SELECT id, name FROM categories WHERE id = $1 AND household_id = $2',
+      [sourceId, householdId]
+    );
+    const targetRes = await client.query(
+      'SELECT id, name FROM categories WHERE id = $1 AND household_id = $2',
+      [targetId, householdId]
+    );
+
+    if (!sourceRes.rows.length || !targetRes.rows.length) {
+      const err = new Error('Category not found');
+      err.status = 404;
+      throw err;
+    }
+    if (sourceId === targetId) {
+      const err = new Error('Cannot merge a category into itself');
+      err.status = 400;
+      throw err;
+    }
+
+    const childRes = await client.query(
+      'SELECT COUNT(*)::int AS count FROM categories WHERE household_id = $1 AND parent_id = $2',
+      [householdId, sourceId]
+    );
+    if (childRes.rows[0].count > 0) {
+      const err = new Error('Only categories without children can be merged');
+      err.status = 400;
+      throw err;
+    }
+
+    const expenseRes = await client.query(
+      'UPDATE expenses SET category_id = $1 WHERE category_id = $2',
+      [targetId, sourceId]
+    );
+    const mappingRes = await client.query(
+      'UPDATE merchant_mappings SET category_id = $1, updated_at = NOW() WHERE household_id = $2 AND category_id = $3',
+      [targetId, householdId, sourceId]
+    );
+    await client.query(
+      'DELETE FROM category_suggestions WHERE household_id = $1 AND (leaf_id = $2 OR suggested_parent_id = $2)',
+      [householdId, sourceId]
+    );
+    await client.query(
+      'DELETE FROM categories WHERE id = $1 AND household_id = $2',
+      [sourceId, householdId]
+    );
+
+    await client.query('COMMIT');
+    return {
+      source_id: sourceId,
+      target_id: targetId,
+      expense_count: expenseRes.rowCount,
+      mapping_count: mappingRes.rowCount,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { findByHousehold, create, update, remove, merge };

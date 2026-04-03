@@ -1,3 +1,4 @@
+process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/expense_tracker_test';
 process.env.SUPABASE_JWKS_URI = 'https://qybozqtugexupxqavtjj.supabase.co/auth/v1/.well-known/jwks.json';
 process.env.ANTHROPIC_API_KEY = 'test-key';
