@@ -149,6 +149,25 @@ describe('POST /expenses/confirm', () => {
     expect(descriptions).toContain('Widget B');
   });
 
+  it('persists place_name and address when location data is provided', async () => {
+    const res = await request(app)
+      .post('/expenses/confirm')
+      .send({
+        merchant: 'Trader Joe\'s',
+        amount: 42.00,
+        date: '2026-03-20',
+        source: 'manual',
+        place_name: 'Trader Joe\'s',
+        address: '123 Main St, SF, CA',
+        mapkit_stable_id: '37.7749,-122.4194',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.expense.place_name).toBe("Trader Joe's");
+    expect(res.body.expense.address).toBe('123 Main St, SF, CA');
+    expect(res.body.expense.mapkit_stable_id).toBe('37.7749,-122.4194');
+  });
+
   it('returns 400 when an item has an empty description', async () => {
     const res = await request(app)
       .post('/expenses/confirm')

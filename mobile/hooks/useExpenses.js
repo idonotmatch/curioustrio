@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import { loadCacheOnly } from '../services/cache';
+import { loadWithCache } from '../services/cache';
 
-// Personal expenses — only the local user writes these.
-// Cache is authoritative; network is only hit on first load or after invalidation.
-// After any mutation, call invalidateCache(`cache:expenses:${month}`) before navigating away.
+// Personal expenses can be mutated from multiple devices for the same account.
+// Serve cache immediately, but always revalidate so "Mine" stays in sync across
+// phone + simulator without waiting for a local cache invalidation.
 export function useExpenses(month) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ export function useExpenses(month) {
 
   const refresh = useCallback(async () => {
     setError(null);
-    await loadCacheOnly(
+    await loadWithCache(
       `cache:expenses:${month || 'all'}`,
       () => api.get(month ? `/expenses?month=${month}` : '/expenses'),
       (data) => { setExpenses(data); setLoading(false); },

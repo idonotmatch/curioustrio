@@ -1,10 +1,10 @@
 const db = require('../db');
 
-async function create({ userId, householdId, merchant, description, amount, date, categoryId, source, status = 'pending', notes, mapkitStableId, linkedExpenseId = null, paymentMethod = 'unknown', cardLast4 = null, cardLabel = null, isPrivate = false }) {
+async function create({ userId, householdId, merchant, description, amount, date, categoryId, source, status = 'pending', notes, placeName = null, address = null, mapkitStableId, linkedExpenseId = null, paymentMethod = 'unknown', cardLast4 = null, cardLabel = null, isPrivate = false }) {
   const result = await db.query(
-    `INSERT INTO expenses (user_id, household_id, merchant, description, amount, date, category_id, source, status, notes, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label, is_private)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-    [userId, householdId, merchant, description, amount, date, categoryId, source, status, notes, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel, isPrivate]
+    `INSERT INTO expenses (user_id, household_id, merchant, description, amount, date, category_id, source, status, notes, place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label, is_private)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+    [userId, householdId, merchant, description, amount, date, categoryId, source, status, notes, placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel, isPrivate]
   );
   return result.rows[0];
 }
@@ -177,4 +177,3 @@ async function updateStatusByHousehold(id, householdId, status) {
 }
 
 module.exports = { create, findByUser, updateStatus, findPotentialDuplicates, findByMapkitStableId, findById, findByHousehold, update, updateStatusByHousehold };
-

@@ -280,7 +280,7 @@ export default function ConfirmScreen() {
         </View>
       )}
 
-      <LocationPicker onLocation={setLocationData} locationData={locationData} />
+      <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
 
       {(items.length > 0 || parsed?.source === 'camera' || parsed?.source === 'email') && (
         <View style={styles.itemsSection}>

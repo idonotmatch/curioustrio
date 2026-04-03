@@ -1,14 +1,27 @@
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { useState } from 'react';
-import { getLocation } from '../services/locationService';
+import { getCoords, getLocation } from '../services/locationService';
+import { api } from '../services/api';
 
-export function LocationPicker({ onLocation, locationData }) {
+export function LocationPicker({ onLocation, locationData, merchant }) {
   const [loading, setLoading] = useState(false);
 
   async function handlePress() {
     setLoading(true);
     try {
-      const result = await getLocation();
+      let result = null;
+      if (merchant?.trim()) {
+        const coords = await getCoords();
+        if (coords) {
+          const lookup = await api.get(
+            `/places/search?q=${encodeURIComponent(merchant)}&lat=${coords.latitude}&lng=${coords.longitude}`
+          );
+          result = lookup?.result || null;
+        }
+      }
+      if (!result) {
+        result = await getLocation();
+      }
       if (result) onLocation(result);
     } catch (e) {
       // silently fail — location is optional

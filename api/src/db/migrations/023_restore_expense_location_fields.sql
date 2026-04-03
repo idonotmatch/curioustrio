@@ -1,0 +1,3 @@
+ALTER TABLE expenses
+  ADD COLUMN IF NOT EXISTS place_name TEXT,
+  ADD COLUMN IF NOT EXISTS address TEXT;

@@ -1,8 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { Ionicons } from '@expo/vector-icons';
 
 // Muted category color palette — seeded by category name
 const CATEGORY_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316'];
@@ -32,6 +34,27 @@ export function ExpenseItem({ expense, showUser = false, onDelete, pending = fal
   const isOwn = !currentUserId || String(expense.user_id) === String(currentUserId);
   const color = categoryColor(expense.category_name);
   const isRefund = Number(expense.amount) < 0;
+  const [itemsExpanded, setItemsExpanded] = useState(false);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [items, setItems] = useState(null);
+
+  async function toggleItems() {
+    if (itemsExpanded) {
+      setItemsExpanded(false);
+      return;
+    }
+    setItemsExpanded(true);
+    if (items !== null) return;
+    setItemsLoading(true);
+    try {
+      const detail = await api.get(`/expenses/${expense.id}`);
+      setItems(Array.isArray(detail.items) ? detail.items : []);
+    } catch {
+      setItems([]);
+    } finally {
+      setItemsLoading(false);
+    }
+  }
 
   const renderRightActions = () => (
     <TouchableOpacity
@@ -51,45 +74,74 @@ export function ExpenseItem({ expense, showUser = false, onDelete, pending = fal
 
   return (
     <Swipeable renderRightActions={isOwn ? renderRightActions : undefined}>
-      <TouchableOpacity
-        style={[styles.container, pending && styles.containerPending]}
-        onPress={() => router.push(`/expense/${expense.id}`)}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : color }]} />
-        <View style={styles.left}>
-          <Text style={styles.merchant} numberOfLines={1}>{expense.merchant}</Text>
-          <View style={styles.metaRow}>
-            <View style={[styles.dot, { backgroundColor: color }]} />
-            <Text style={styles.meta}>
-              {expense.category_parent_name || expense.category_name || 'Uncategorized'}
-              {showUser && expense.user_name ? ` · ${expense.user_name}` : ''}
-              {' · '}{formatDate(expense.date)}
-              {expense.place_name ? ` · 📍 ${expense.place_name}` : ''}
-            </Text>
+      <View style={[styles.container, pending && styles.containerPending]}>
+        <TouchableOpacity
+          style={styles.rowPress}
+          onPress={() => router.push(`/expense/${expense.id}`)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : color }]} />
+          <View style={styles.left}>
+            <Text style={styles.merchant} numberOfLines={1}>{expense.merchant}</Text>
+            <View style={styles.metaRow}>
+              <View style={[styles.dot, { backgroundColor: color }]} />
+              <Text style={styles.meta}>
+                {expense.category_parent_name || expense.category_name || 'Uncategorized'}
+                {showUser && expense.user_name ? ` · ${expense.user_name}` : ''}
+                {' · '}{formatDate(expense.date)}
+                {expense.place_name ? ` · 📍 ${expense.place_name}` : ''}
+              </Text>
+            </View>
           </View>
-          {expense.item_count > 0 && (
+          <Text style={[styles.amount, isRefund && styles.amountRefund]}>
+            {isRefund ? '−' : ''}${Math.abs(Number(expense.amount)).toFixed(2)}
+          </Text>
+        </TouchableOpacity>
+        {expense.item_count > 0 && (
+          <TouchableOpacity style={styles.itemToggleRow} onPress={toggleItems} activeOpacity={0.7}>
             <Text style={styles.itemCount}>
               {expense.item_count} {expense.item_count === 1 ? 'item' : 'items'}
             </Text>
-          )}
-        </View>
-        <Text style={[styles.amount, isRefund && styles.amountRefund]}>
-          {isRefund ? '−' : ''}${Math.abs(Number(expense.amount)).toFixed(2)}
-        </Text>
-      </TouchableOpacity>
+            <Ionicons
+              name={itemsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={12}
+              color="#777"
+            />
+          </TouchableOpacity>
+        )}
+        {itemsExpanded && expense.item_count > 0 && (
+          <View style={styles.itemsPanel}>
+            {itemsLoading ? (
+              <ActivityIndicator size="small" color="#777" style={{ paddingVertical: 8 }} />
+            ) : items?.length ? (
+              items.map((item, index) => (
+                <View key={`${expense.id}-${index}`} style={styles.itemRow}>
+                  <Text style={styles.itemName} numberOfLines={1}>{item.description}</Text>
+                  <Text style={styles.itemAmount}>
+                    {item.amount != null ? `$${Number(item.amount).toFixed(2)}` : ''}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.itemEmpty}>No item details available</Text>
+            )}
+          </View>
+        )}
+      </View>
     </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#111',
     borderRadius: 10,
     marginBottom: 6,
     overflow: 'hidden',
+  },
+  rowPress: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   containerPending: {
     backgroundColor: '#141008',
@@ -115,6 +167,15 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   amountRefund: { color: '#4ade80' },
+  itemToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginLeft: 3,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+  },
   deleteAction: {
     backgroundColor: '#ef4444',
     justifyContent: 'center',
@@ -125,4 +186,21 @@ const styles = StyleSheet.create({
   },
   deleteText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   itemCount: { fontSize: 12, color: '#888', marginTop: 2 },
+  itemsPanel: {
+    borderTopWidth: 1,
+    borderTopColor: '#1b1b1b',
+    marginLeft: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    gap: 12,
+  },
+  itemName: { flex: 1, color: '#cfcfcf', fontSize: 13 },
+  itemAmount: { color: '#a8a8a8', fontSize: 12 },
+  itemEmpty: { color: '#777', fontSize: 12 },
 });
