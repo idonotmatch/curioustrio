@@ -31,6 +31,8 @@ export default function ConfirmScreen() {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [catSearch, setCatSearch] = useState('');
   const [catCreating, setCatCreating] = useState(false);
+  const [catSuggestion, setCatSuggestion] = useState(null);
+  const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
       ? parsed.items.map(it => ({ description: it.description || '', amount: it.amount != null ? String(it.amount) : '' }))
@@ -87,17 +89,55 @@ export default function ConfirmScreen() {
   function selectCategory(cat) {
     setExpense(prev => ({ ...prev, category_id: cat?.id || null, category_name: cat?.name || null }));
     setCatSearch('');
+    setCatSuggestion(null);
     setShowCategoryPicker(false);
   }
+
+  useEffect(() => {
+    const name = catSearch.trim();
+    const exactMatch = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!name || exactMatch) {
+      setCatSuggestion(null);
+      setCatSuggestionLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCatSuggestionLoading(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ name });
+        if (merchant.trim()) params.set('merchant', merchant.trim());
+        if (description.trim()) params.set('description', description.trim());
+        const suggestion = await api.get(`/categories/quick-parent-suggestion?${params.toString()}`);
+        if (!cancelled) setCatSuggestion(suggestion);
+      } catch {
+        if (!cancelled) setCatSuggestion(null);
+      } finally {
+        if (!cancelled) setCatSuggestionLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [catSearch, merchant, description, categories]);
 
   async function createAndSelectCategory() {
     const name = catSearch.trim();
     if (!name) return;
     setCatCreating(true);
     try {
-      const newCat = await api.post('/categories/quick', { name });
+      const newCat = await api.post('/categories/quick', {
+        name,
+        merchant: merchant.trim() || null,
+        description: description.trim() || null,
+        preferred_parent_id: catSuggestion?.parent_id || null,
+      });
       setExpense(prev => ({ ...prev, category_id: newCat.id, category_name: newCat.name }));
       setCatSearch('');
+      setCatSuggestion(null);
       setShowCategoryPicker(false);
       refreshCategories();
     } catch (e) {
@@ -251,10 +291,27 @@ export default function ConfirmScreen() {
               >
                 {catCreating
                   ? <ActivityIndicator size="small" color="#000" />
-                  : <Text style={styles.catCreateText}>+ Create</Text>}
+                  : <Text style={styles.catCreateText}>
+                      {catSuggestion?.parent_name && catSuggestion.source !== 'fallback_uncategorized' && catSuggestion.source !== 'created_uncategorized'
+                        ? `+ Create under ${catSuggestion.parent_name}`
+                        : '+ Create'}
+                    </Text>}
               </TouchableOpacity>
             )}
           </View>
+          {catSearch.trim() && !categories.find(c => c.name.toLowerCase() === catSearch.trim().toLowerCase()) ? (
+            <View style={styles.catSuggestionRow}>
+              {catSuggestionLoading ? (
+                <ActivityIndicator size="small" color="#666" />
+              ) : catSuggestion?.parent_name ? (
+                <Text style={styles.catSuggestionText}>
+                  {catSuggestion.source === 'fallback_uncategorized' || catSuggestion.source === 'created_uncategorized'
+                    ? `Will group under ${catSuggestion.parent_name} for now`
+                    : `Suggested parent: ${catSuggestion.parent_name}`}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {/* Chips */}
           <View style={styles.catChipsWrap}>
             {!catSearch && (
@@ -449,6 +506,8 @@ const styles = StyleSheet.create({
   catSearchInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
   catCreateBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },
   catCreateText: { color: '#000', fontSize: 14, fontWeight: '600' },
+  catSuggestionRow: { minHeight: 18, justifyContent: 'center' },
+  catSuggestionText: { color: '#777', fontSize: 12 },
   catChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   catChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
   catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },

@@ -66,6 +66,60 @@ describe('PATCH /categories/:id', () => {
   });
 });
 
+describe('quick category creation', () => {
+  it('suggests a likely parent from merchant memory', async () => {
+    const parent = await request(app).post('/categories').send({ name: 'Food' });
+    const child = await request(app).post('/categories').send({ name: 'Groceries', parent_id: parent.body.id });
+
+    const userRes = await db.query("SELECT household_id FROM users WHERE provider_uid = 'auth0|test-user-123'");
+    const householdId = userRes.rows[0].household_id;
+    await db.query(
+      `INSERT INTO merchant_mappings (household_id, merchant_name, category_id, hit_count)
+       VALUES ($1, LOWER($2), $3, 3)
+       ON CONFLICT (household_id, merchant_name)
+       DO UPDATE SET category_id = EXCLUDED.category_id, hit_count = EXCLUDED.hit_count`,
+      [householdId, 'Trader Joe\'s', child.body.id]
+    );
+
+    const suggestion = await request(app)
+      .get('/categories/quick-parent-suggestion')
+      .query({ name: 'Produce Run', merchant: "Trader Joe's" });
+
+    expect(suggestion.status).toBe(200);
+    expect(suggestion.body.parent_id).toBe(parent.body.id);
+    expect(suggestion.body.parent_name).toBe('Food');
+    expect(suggestion.body.source).toBe('merchant_memory');
+
+    const created = await request(app)
+      .post('/categories/quick')
+      .send({ name: 'Produce Run', merchant: "Trader Joe's" });
+
+    expect(created.status).toBe(201);
+    expect(created.body.parent_id).toBe(parent.body.id);
+    expect(created.body.parent_name).toBe('Food');
+
+    await db.query(
+      `DELETE FROM merchant_mappings WHERE household_id = $1 AND merchant_name = LOWER($2)`,
+      [householdId, 'Trader Joe\'s']
+    );
+    await request(app).delete(`/categories/${created.body.id}`);
+    await request(app).delete(`/categories/${child.body.id}`);
+    await request(app).delete(`/categories/${parent.body.id}`);
+  });
+
+  it('falls back to Uncategorized when no strong parent match exists', async () => {
+    const created = await request(app)
+      .post('/categories/quick')
+      .send({ name: 'Random New Bucket' });
+
+    expect(created.status).toBe(201);
+    expect(created.body.parent_name).toBe('Uncategorized');
+    expect(['fallback_uncategorized', 'created_uncategorized']).toContain(created.body.quick_create_source);
+
+    await request(app).delete(`/categories/${created.body.id}`);
+  });
+});
+
 describe('POST /categories/:id/merge', () => {
   it('merges a leaf category into another category and reassigns expenses', async () => {
     const target = await request(app).post('/categories').send({ name: 'MergeTarget' });

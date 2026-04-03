@@ -5,12 +5,115 @@ const db = require('../db');
 const User = require('../models/user');
 const Category = require('../models/category');
 const CategorySuggestion = require('../models/categorySuggestion');
+const MerchantMapping = require('../models/merchantMapping');
 const categorySuggester = require('../services/categorySuggester');
 
 router.use(authenticate);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);
+}
+
+function normalizeText(value = '') {
+  return value.toLowerCase().replace(/[^a-z0-9\s&]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function scoreTokenOverlap(a = '', b = '') {
+  const aTokens = new Set(normalizeText(a).split(' ').filter(t => t.length >= 3));
+  const bTokens = new Set(normalizeText(b).split(' ').filter(t => t.length >= 3));
+  if (!aTokens.size || !bTokens.size) return 0;
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) overlap++;
+  }
+  return overlap;
+}
+
+function keywordScore(text, keywords) {
+  const normalized = normalizeText(text);
+  if (!normalized) return 0;
+  return keywords.reduce((score, keyword) => score + (normalized.includes(keyword) ? 1 : 0), 0);
+}
+
+function findFallbackParent(categories) {
+  return categories.find(c => !c.parent_id && c.name.toLowerCase() === 'uncategorized') || null;
+}
+
+function resolveTopLevelCategory(categories, categoryId) {
+  const category = categories.find(c => c.id === categoryId);
+  if (!category) return null;
+  if (!category.parent_id) return category;
+  return categories.find(c => c.id === category.parent_id) || null;
+}
+
+function rankParentCandidates(categories, text) {
+  const parents = categories.filter(c => !c.parent_id);
+  const aliasGroups = [
+    { keys: ['grocery', 'grocer', 'supermarket', 'market', 'food'], terms: ['grocery', 'grocer', 'supermarket', 'market', 'whole foods', 'trader joe', 'food'] },
+    { keys: ['dining', 'restaurant', 'eat', 'food', 'coffee', 'cafe'], terms: ['restaurant', 'dining', 'takeout', 'lunch', 'dinner', 'coffee', 'cafe', 'meal'] },
+    { keys: ['travel', 'transport', 'car', 'auto', 'gas', 'commute'], terms: ['uber', 'lyft', 'flight', 'hotel', 'train', 'transit', 'gas', 'parking', 'toll', 'airline'] },
+    { keys: ['shopping', 'retail', 'store'], terms: ['amazon', 'shopping', 'retail', 'store', 'apparel', 'clothing'] },
+    { keys: ['health', 'medical', 'pharmacy', 'wellness'], terms: ['pharmacy', 'doctor', 'dental', 'medical', 'health'] },
+    { keys: ['home', 'housing', 'utilities', 'bills'], terms: ['rent', 'utility', 'electric', 'internet', 'home'] },
+    { keys: ['entertainment', 'fun', 'media'], terms: ['movie', 'streaming', 'spotify', 'netflix', 'entertainment'] },
+  ];
+
+  return parents
+    .map(parent => {
+      const parentName = normalizeText(parent.name);
+      let score = scoreTokenOverlap(text, parent.name) * 3;
+      if (parentName && normalizeText(text).includes(parentName)) score += 4;
+      for (const group of aliasGroups) {
+        if (group.keys.some(key => parentName.includes(key))) {
+          score += keywordScore(text, group.terms);
+        }
+      }
+      return { parent, score };
+    })
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+async function suggestQuickCreateParent({ householdId, name, merchant, description, preferredParentId }) {
+  const categories = await Category.findByHousehold(householdId);
+  const parents = categories.filter(c => !c.parent_id);
+  const fallbackParent = findFallbackParent(categories);
+
+  if (preferredParentId) {
+    const explicitParent = parents.find(c => c.id === preferredParentId);
+    if (explicitParent) return { parent: explicitParent, source: 'explicit' };
+  }
+
+  if (merchant) {
+    const mapping = await MerchantMapping.findByMerchant(householdId, merchant);
+    if (mapping) {
+      const mappedParent = resolveTopLevelCategory(categories, mapping.category_id);
+      if (mappedParent) return { parent: mappedParent, source: 'merchant_memory' };
+    }
+  }
+
+  const categoryLikeText = [name, merchant, description].filter(Boolean).join(' ');
+  const siblingMatches = categories
+    .filter(c => c.parent_id)
+    .map(c => ({
+      parent: parents.find(parent => parent.id === c.parent_id) || null,
+      score: scoreTokenOverlap(categoryLikeText, c.name),
+    }))
+    .filter(entry => entry.parent && entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+  if (siblingMatches[0]?.score >= 1) {
+    return { parent: siblingMatches[0].parent, source: 'sibling_match' };
+  }
+
+  const rankedParents = rankParentCandidates(parents, categoryLikeText);
+  if (rankedParents[0]?.score >= 2) {
+    return { parent: rankedParents[0].parent, source: 'keyword_match' };
+  }
+
+  if (fallbackParent) return { parent: fallbackParent, source: 'fallback_uncategorized' };
+
+  const createdFallback = await Category.create({ householdId, name: 'Uncategorized' });
+  return { parent: createdFallback, source: 'created_uncategorized' };
 }
 
 // GET /categories — { categories, pending_suggestions_count }
@@ -57,30 +160,56 @@ router.post('/suggestions/:id/reject', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// POST /categories/quick — create a leaf category under "Uncategorized" parent (for inline creation from expense entry)
-router.post('/quick', async (req, res, next) => {
+// GET /categories/quick-parent-suggestion — preview the likely parent for inline category creation
+router.get('/quick-parent-suggestion', async (req, res, next) => {
   try {
-    const { name } = req.body;
+    const name = (req.query.name || '').trim();
+    const merchant = (req.query.merchant || '').trim();
+    const description = (req.query.description || '').trim();
     if (!name) return res.status(400).json({ error: 'name required' });
     const user = await getUser(req);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
 
-    // Find or create "Uncategorized" parent
-    let parent = await db.query(
-      `SELECT id FROM categories WHERE household_id = $1 AND name = 'Uncategorized' AND parent_id IS NULL LIMIT 1`,
-      [user.household_id]
-    );
-    if (!parent.rows.length) {
-      const created = await Category.create({ householdId: user.household_id, name: 'Uncategorized' });
-      parent = { rows: [{ id: created.id }] };
-    }
+    const { parent, source } = await suggestQuickCreateParent({
+      householdId: user.household_id,
+      name,
+      merchant,
+      description,
+    });
+    res.json({
+      parent_id: parent?.id || null,
+      parent_name: parent?.name || null,
+      source,
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /categories/quick — create a leaf category with a suggested parent (for inline creation from expense entry)
+router.post('/quick', async (req, res, next) => {
+  try {
+    const { name, merchant, description, preferred_parent_id } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+
+    const { parent, source } = await suggestQuickCreateParent({
+      householdId: user.household_id,
+      name: name.trim(),
+      merchant: merchant?.trim(),
+      description: description?.trim(),
+      preferredParentId: preferred_parent_id || null,
+    });
 
     const category = await Category.create({
       householdId: user.household_id,
       name: name.trim(),
-      parentId: parent.rows[0].id,
+      parentId: parent?.id || null,
     });
-    res.status(201).json(category);
+    res.status(201).json({
+      ...category,
+      parent_name: parent?.name || null,
+      quick_create_source: source,
+    });
   } catch (err) { next(err); }
 });
 
