@@ -127,7 +127,10 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
         >
           <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : color }]} />
           <View style={styles.left}>
-            <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
+            <View style={styles.headerRow}>
+              <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
+              <Text style={styles.metaText}>{formatDate(localExpense.date)}</Text>
+            </View>
             <View style={styles.metaRow}>
               <TouchableOpacity
                 style={[styles.categoryChip, categoryPickerOpen && styles.categoryChipActive, !isOwn && styles.categoryChipStatic]}
@@ -149,17 +152,14 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
                   )
                 ) : null}
               </TouchableOpacity>
-              <Text style={styles.metaText}>{formatDate(localExpense.date)}</Text>
-              {localExpense.place_name ? <Text style={styles.metaText} numberOfLines={1}>· {localExpense.place_name}</Text> : null}
-            </View>
-            {showUser ? (
-              <View style={styles.ownerRow}>
+              {showUser ? (
                 <View style={[styles.ownerChip, isOwn && styles.ownerChipOwn]}>
                   <Text style={[styles.ownerChipText, isOwn && styles.ownerChipTextOwn]}>{ownerLabel}</Text>
                 </View>
-                {localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
-              </View>
-            ) : null}
+              ) : null}
+              {showUser && localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
+              {localExpense.place_name ? <Text style={styles.metaText} numberOfLines={1}>· {localExpense.place_name}</Text> : null}
+            </View>
           </View>
           <Text style={[styles.amount, isRefund && styles.amountRefund]}>
             {isRefund ? '−' : ''}${Math.abs(Number(localExpense.amount)).toFixed(2)}
@@ -249,7 +249,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 12,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   merchant: {
+    flexShrink: 1,
     fontSize: 15,
     color: '#f5f5f5',
     fontWeight: '500',
@@ -300,12 +306,6 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 12,
     color: '#888',
-  },
-  ownerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
   },
   ownerChip: {
     backgroundColor: '#181818',
