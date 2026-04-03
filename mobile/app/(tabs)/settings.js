@@ -81,27 +81,34 @@ export default function SettingsScreen() {
       {/* Budget */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>BUDGET</Text>
-        {currentBudget && (
-          <Text style={styles.subText}>
-            Current: ${Math.round(currentBudget.limit)}/mo · Spent: ${Math.round(currentBudget.spent)}
-          </Text>
-        )}
-        <TextInput
-          style={styles.input}
-          value={budgetLimit}
-          onChangeText={setBudgetLimit}
-          placeholder="Monthly limit (e.g. 2000)"
-          placeholderTextColor="#555"
-          keyboardType="numeric"
-        />
-        <TouchableOpacity
-          style={[styles.button, budgetSaving && styles.buttonDisabled]}
-          onPress={saveBudget}
-          disabled={budgetSaving}
-        >
-          <Text style={styles.buttonText}>{budgetSaving ? 'Saving...' : 'Save Budget'}</Text>
-        </TouchableOpacity>
+        <View style={styles.budgetRow}>
+          <View style={styles.budgetRowLeft}>
+            <Text style={styles.navRowText}>Monthly budget</Text>
+          </View>
+          <View style={styles.budgetRowRight}>
+            <View style={styles.budgetInputShell}>
+              <Text style={styles.budgetPrefix}>$</Text>
+              <TextInput
+                style={styles.budgetInput}
+                value={budgetLimit}
+                onChangeText={setBudgetLimit}
+                placeholder="2000"
+                placeholderTextColor="#555"
+                keyboardType="numeric"
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.inlineSaveButton, budgetSaving && styles.buttonDisabled]}
+              onPress={saveBudget}
+              disabled={budgetSaving}
+            >
+              <Text style={styles.inlineSaveText}>{budgetSaving ? '...' : 'Save'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {budgetMsg ? <Text style={budgetMsgIsError ? styles.msgError : styles.msgText}>{budgetMsg}</Text> : null}
+
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/budget-period')}>
           <View>
             <Text style={styles.navRowText}>Budget period</Text>
@@ -162,13 +169,17 @@ const styles = StyleSheet.create({
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
   sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   subText: { color: '#666', fontSize: 13, marginBottom: 12 },
-  input: { backgroundColor: '#111', borderWidth: 1, borderColor: '#333', borderRadius: 8, color: '#fff', padding: 12, fontSize: 16, marginBottom: 10 },
-  button: { backgroundColor: '#fff', borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  buttonSmall: { marginTop: 14 },
+  budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  budgetRowLeft: { flex: 1, paddingRight: 4 },
+  budgetRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  budgetInputShell: { width: 124, flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', borderWidth: 1, borderColor: '#222', borderRadius: 10, paddingHorizontal: 12, minHeight: 42 },
+  budgetPrefix: { color: '#666', fontSize: 16, marginRight: 4 },
+  budgetInput: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', paddingVertical: 8 },
+  inlineSaveButton: { minHeight: 42, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center' },
+  inlineSaveText: { color: '#0a0a0a', fontSize: 14, fontWeight: '600' },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#0a0a0a', fontWeight: '600', fontSize: 15 },
-  msgText: { color: '#bbb', fontSize: 14, marginTop: 6, textAlign: 'center' },
-  msgError: { color: '#ef4444', fontSize: 14, marginTop: 6, textAlign: 'center' },
+  msgText: { color: '#bbb', fontSize: 13, marginTop: 10 },
+  msgError: { color: '#ef4444', fontSize: 13, marginTop: 10 },
 
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   rowInfo: { flex: 1, marginRight: 12 },
