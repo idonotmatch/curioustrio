@@ -1,5 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { useEffect } from 'react';
@@ -9,9 +10,9 @@ import { supabase } from '../lib/supabase';
 function AppNavigator() {
   const router = useRouter();
 
-  // Push notification registration (independent of auth)
+  // Push notification + location permission registration (independent of auth)
   useEffect(() => {
-    async function registerForPushNotifications() {
+    async function requestPermissions() {
       try {
         const { status: existing } = await Notifications.getPermissionsAsync();
         let finalStatus = existing;
@@ -19,16 +20,24 @@ function AppNavigator() {
           const { status } = await Notifications.requestPermissionsAsync();
           finalStatus = status;
         }
-        if (finalStatus !== 'granted') return;
-
-        const tokenData = await Notifications.getExpoPushTokenAsync();
-        const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-        await api.post('/push/register', { token: tokenData.data, platform });
+        if (finalStatus === 'granted') {
+          const tokenData = await Notifications.getExpoPushTokenAsync();
+          const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+          await api.post('/push/register', { token: tokenData.data, platform });
+        }
+      } catch {
+        // Non-fatal
+      }
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          await Location.requestForegroundPermissionsAsync();
+        }
       } catch {
         // Non-fatal
       }
     }
-    registerForPushNotifications();
+    requestPermissions();
   }, []);
 
   // Auth state listener

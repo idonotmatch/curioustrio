@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, Te
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
-import * as Location from 'expo-location';
+import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
 import { invalidateCache } from '../services/cache';
 import { ConfirmField } from '../components/ConfirmField';
@@ -46,11 +46,9 @@ export default function ConfirmScreen() {
 
     async function autoPopulateLocation() {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-
-        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const { latitude, longitude } = position.coords;
+        const coords = await getCoords();
+        if (!coords) return;
+        const { latitude, longitude } = coords;
 
         const result = await api.get(
           `/places/search?q=${encodeURIComponent(merchant)}&lat=${latitude}&lng=${longitude}`

@@ -29,11 +29,22 @@ function getSignedJwt() {
   return cachedJwt;
 }
 
-async function searchPlace(query, lat, lng) {
+function metersToDegrees(meters, lat) {
+  const latDeg = meters / 111320;
+  const lngDeg = meters / (111320 * Math.cos(lat * Math.PI / 180));
+  return { latDeg, lngDeg };
+}
+
+async function searchPlace(query, lat, lng, radiusMeters = 500) {
   const token = getSignedJwt();
   const url = new URL(MAPKIT_SEARCH_URL);
   url.searchParams.set('q', query);
   url.searchParams.set('userLocation', `${lat},${lng}`);
+  url.searchParams.set('searchLocation', `${lat},${lng}`);
+  const { latDeg, lngDeg } = metersToDegrees(radiusMeters, lat);
+  const north = lat + latDeg, south = lat - latDeg;
+  const east = lng + lngDeg, west = lng - lngDeg;
+  url.searchParams.set('searchRegion', `${north},${east},${south},${west}`);
   url.searchParams.set('limitToCountries', 'US');
   url.searchParams.set('resultTypeFilter', 'Poi');
   url.searchParams.set('lang', 'en-US');

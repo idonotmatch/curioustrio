@@ -6,7 +6,7 @@ Return ONLY a JSON object with these fields:
 - amount (number): the total paid (including tax and fees)
 - date (ISO date string YYYY-MM-DD)
 - notes (string or null)
-- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null }. Include product lines AND fees (tax, tip, service charge, etc.) as separate named items so that the items sum to the total amount. Omit subtotal lines (they are redundant). Set to null if line items are not clearly visible.
+- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (tax, tip, service charge, etc.) as separate named items so that the items sum to the total amount. Omit subtotal lines (they are redundant). For fee/tax/tip lines set upc/sku/brand/product_size/pack_size/unit to null. Set to null if line items are not clearly visible.
 
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;

@@ -7,6 +7,7 @@ const PushToken = require('../models/pushToken');
 const { listRecentMessages, getMessage } = require('./gmailClient');
 const { parseEmailExpense } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
+const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 
 /**
@@ -60,7 +61,13 @@ async function importForUser(user) {
       });
 
       if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-        await ExpenseItem.replaceItems(expense.id, parsed.items.filter(it => it.description));
+        const itemsWithProducts = await Promise.all(
+          parsed.items.filter(it => it.description).map(async (item) => {
+            const product_id = await resolveProduct(item, parsed.merchant);
+            return { ...item, product_id };
+          })
+        );
+        await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
       }
 
       await EmailImportLog.create({

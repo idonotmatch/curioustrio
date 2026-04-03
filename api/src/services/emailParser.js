@@ -6,7 +6,7 @@ Return ONLY a JSON object with:
 - amount (number): the FINAL total actually charged to the payment method — this must include subtotal, shipping, tax, and any other fees. Do NOT use the subtotal. If the email shows "Order total: $53.42" or "Total charged: $53.42", use that number.
 - date (ISO date string YYYY-MM-DD)
 - notes (string or null)
-- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. Set to null if the email does not list individual items.
+- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. For fee/tax/shipping lines set upc/sku/brand/product_size/pack_size/unit to null. Set items to null if the email does not list individual items.
 
 If the email describes a refund or return, set amount as a negative number.
 If the email is not purchase/refund related, return null.

@@ -2,13 +2,13 @@ const db = require('../db');
 
 async function createBulk(expenseId, items) {
   if (!items || items.length === 0) return [];
-  const values = items.map((_, i) => `($1, $${i * 3 + 2}, $${i * 3 + 3}, $${i * 3 + 4})`);
+  const values = items.map((_, i) => `($1, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4}, $${i * 4 + 5})`);
   const params = [expenseId];
   items.forEach((item, i) => {
-    params.push(item.description, item.amount ?? null, item.sort_order ?? i);
+    params.push(item.description, item.amount ?? null, item.sort_order ?? i, item.product_id ?? null);
   });
   const result = await db.query(
-    `INSERT INTO expense_items (expense_id, description, amount, sort_order)
+    `INSERT INTO expense_items (expense_id, description, amount, sort_order, product_id)
      VALUES ${values.join(', ')}
      RETURNING *`,
     params
@@ -31,13 +31,13 @@ async function replaceItems(expenseId, items) {
     await client.query('DELETE FROM expense_items WHERE expense_id = $1', [expenseId]);
     let rows = [];
     if (items && items.length > 0) {
-      const values = items.map((_, i) => `($1, $${i * 3 + 2}, $${i * 3 + 3}, $${i * 3 + 4})`);
+      const values = items.map((_, i) => `($1, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4}, $${i * 4 + 5})`);
       const params = [expenseId];
       items.forEach((item, i) => {
-        params.push(item.description, item.amount ?? null, i);
+        params.push(item.description, item.amount ?? null, i, item.product_id ?? null);
       });
       const result = await client.query(
-        `INSERT INTO expense_items (expense_id, description, amount, sort_order)
+        `INSERT INTO expense_items (expense_id, description, amount, sort_order, product_id)
          VALUES ${values.join(', ')}
          RETURNING *`,
         params

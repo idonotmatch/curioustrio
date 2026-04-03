@@ -7,7 +7,7 @@ router.use(authenticate);
 
 router.get('/search', async (req, res, next) => {
   try {
-    const { q, lat, lng } = req.query;
+    const { q, lat, lng, radius } = req.query;
     if (!q || !lat || !lng) {
       return res.status(400).json({ error: 'q, lat, and lng are required' });
     }
@@ -16,7 +16,8 @@ router.get('/search', async (req, res, next) => {
     if (isNaN(parsedLat) || isNaN(parsedLng)) {
       return res.status(400).json({ error: 'lat and lng must be numbers' });
     }
-    const result = await searchPlace(q, parsedLat, parsedLng);
+    const radiusMeters = radius ? Math.min(Math.max(parseInt(radius), 100), 5000) : 500;
+    const result = await searchPlace(q, parsedLat, parsedLng, radiusMeters);
     res.json({ result });
   } catch (err) { next(err); }
 });

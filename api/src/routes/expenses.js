@@ -11,6 +11,7 @@ const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
 const detectDuplicates = require('../services/duplicateDetector');
+const { resolveProduct } = require('../services/productResolver');
 const db = require('../db');
 
 router.use(authenticate);
@@ -111,7 +112,13 @@ router.post('/confirm', async (req, res, next) => {
     });
 
     if (Array.isArray(items) && items.length > 0) {
-      await ExpenseItem.createBulk(expense.id, items);
+      const resolvedItems = await Promise.all(
+        items.map(async (item) => {
+          const product_id = await resolveProduct(item, merchant);
+          return { ...item, product_id };
+        })
+      );
+      await ExpenseItem.createBulk(expense.id, resolvedItems);
     }
 
     // Update merchant memory
