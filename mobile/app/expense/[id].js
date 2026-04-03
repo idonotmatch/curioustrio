@@ -1,9 +1,10 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert, Switch, Linking
+  StyleSheet, ActivityIndicator, Alert, Switch, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { invalidateCache } from '../../services/cache';
@@ -151,9 +152,21 @@ export default function ExpenseDetailScreen() {
       {/* Fields */}
       <View style={styles.section}>
         <Row label="Date">
-          {editing
-            ? <TextInput style={styles.editInputInline} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor="#444" />
-            : <Text style={styles.value}>{formattedDate}</Text>}
+          {editing ? (
+            <DateTimePicker
+              value={date ? new Date(date + 'T12:00:00') : new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'compact' : 'default'}
+              maximumDate={new Date()}
+              onChange={(_, selected) => {
+                if (selected) setDate(selected.toISOString().slice(0, 10));
+              }}
+              themeVariant="dark"
+              style={styles.datePicker}
+            />
+          ) : (
+            <Text style={styles.value}>{formattedDate}</Text>
+          )}
         </Row>
         <Row label="Source"><Text style={styles.value}>{sourceLabel[expense.source] || expense.source}</Text></Row>
         {expense.place_name && (
@@ -293,6 +306,25 @@ export default function ExpenseDetailScreen() {
               >
                 <Text style={styles.addItemText}>+ Add item</Text>
               </TouchableOpacity>
+              {(() => {
+                const itemSum = itemsEdits.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+                const total = parseFloat(amount) || 0;
+                const hasAmounts = itemsEdits.some(it => it.amount !== '');
+                if (!hasAmounts || total === 0) return null;
+                const diff = total - itemSum;
+                const balanced = Math.abs(diff) < 0.01;
+                return (
+                  <View style={styles.itemBalance}>
+                    <Text style={[styles.itemBalanceText, balanced ? styles.itemBalanceOk : styles.itemBalanceWarn]}>
+                      {balanced
+                        ? '✓ Items match total'
+                        : diff > 0
+                          ? `$${diff.toFixed(2)} unaccounted`
+                          : `$${Math.abs(diff).toFixed(2)} over total`}
+                    </Text>
+                  </View>
+                );
+              })()}
             </>
           ) : (
             items.map((item, i) => (
@@ -401,6 +433,7 @@ const styles = StyleSheet.create({
   editInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
   editAmount: { width: 100 },
   editInputInline: { color: '#f5f5f5', fontSize: 14, textAlign: 'right', flex: 1, padding: 4 },
+  datePicker: { marginRight: -8 },
 
   section: { paddingHorizontal: 20 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
@@ -445,4 +478,8 @@ const styles = StyleSheet.create({
   itemRemoveText: { color: '#555', fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingHorizontal: 14, paddingVertical: 10 },
   addItemText: { color: '#555', fontSize: 13 },
+  itemBalance: { paddingHorizontal: 14, paddingBottom: 10 },
+  itemBalanceText: { fontSize: 12 },
+  itemBalanceOk: { color: '#4ade80' },
+  itemBalanceWarn: { color: '#f59e0b' },
 });

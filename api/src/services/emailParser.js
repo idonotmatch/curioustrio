@@ -3,10 +3,10 @@ const { complete } = require('./ai');
 const SYSTEM_PROMPT = `You are a receipt email parser. Extract purchase data from email receipts, order confirmations, and refund notifications.
 Return ONLY a JSON object with:
 - merchant (string)
-- amount (number): the total charged or refunded (negative for refunds)
+- amount (number): the FINAL total actually charged to the payment method — this must include subtotal, shipping, tax, and any other fees. Do NOT use the subtotal. If the email shows "Order total: $53.42" or "Total charged: $53.42", use that number.
 - date (ISO date string YYYY-MM-DD)
 - notes (string or null)
-- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null }. Set to null if the email does not list individual items.
+- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. Set to null if the email does not list individual items.
 
 If the email describes a refund or return, set amount as a negative number.
 If the email is not purchase/refund related, return null.
