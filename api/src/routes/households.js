@@ -113,9 +113,14 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
       return res.status(409).json({ error: 'Already in a household' });
     }
 
-    if (invite.invited_email_hash && user.email &&
-        invite.invited_email_hash !== hashEmail(user.email)) {
-      return res.status(403).json({ error: 'This invite was sent to a different email address' });
+    // If the invite was targeted at a specific email, the joining user must have
+    // a matching email. A user with no email (e.g. Apple Sign In without sharing
+    // their email) cannot accept a targeted invite — otherwise any anonymous or
+    // no-email account could claim any invite link.
+    if (invite.invited_email_hash) {
+      if (!user.email || invite.invited_email_hash !== hashEmail(user.email)) {
+        return res.status(403).json({ error: 'This invite was sent to a different email address' });
+      }
     }
 
     const client = await pool.connect();

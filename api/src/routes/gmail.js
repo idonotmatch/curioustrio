@@ -7,6 +7,7 @@ const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
 const { importForUser } = require('../services/gmailImporter');
+const { standard } = require('../middleware/rateLimit');
 
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
@@ -52,7 +53,7 @@ router.get('/status', authenticate, async (req, res, next) => {
 });
 
 // POST /gmail/import — trigger email import for authenticated user
-router.post('/import', authenticate, async (req, res, next) => {
+router.post('/import', authenticate, standard, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });

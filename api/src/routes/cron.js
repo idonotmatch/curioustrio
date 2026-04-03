@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const { importForUser } = require('../services/gmailImporter');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
+// Uses timing-safe comparison to prevent secret enumeration via timing attacks.
 function cronAuth(req, res, next) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -13,7 +15,10 @@ function cronAuth(req, res, next) {
     return res.status(500).json({ error: 'Cron not configured' });
   }
   const auth = req.headers['authorization'] || '';
-  if (auth !== `Bearer ${secret}`) {
+  const expected = `Bearer ${secret}`;
+  const valid = auth.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(auth), Buffer.from(expected));
+  if (!valid) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();

@@ -245,7 +245,11 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     const ownedByUser = expense.user_id === user?.id;
     const ownedByHousehold = user?.household_id && expense.household_id === user.household_id;
     if (!ownedByUser && !ownedByHousehold) return res.status(404).json({ error: 'Expense not found' });
-    await db.query('DELETE FROM expenses WHERE id = $1', [req.params.id]);
+    // Re-assert ownership in the DELETE itself to close the TOCTOU window.
+    await db.query(
+      `DELETE FROM expenses WHERE id = $1 AND (user_id = $2 OR household_id = $3)`,
+      [req.params.id, user.id, user.household_id || null]
+    );
     res.status(204).end();
   } catch (err) { next(err); }
 });
