@@ -24,6 +24,57 @@ If the input cannot be parsed as an expense or refund, return null.
 Today's date is provided in the user message. If no date is mentioned, use today's date.
 Do not include any text outside the JSON object.`;
 
+function cleanParsedExpense(parsed, todayDate) {
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  const merchant = typeof parsed.merchant === 'string' ? parsed.merchant.trim() : '';
+  const description = typeof parsed.description === 'string' ? parsed.description.trim() : '';
+  const amount = Number(parsed.amount);
+  const rawDate = typeof parsed.date === 'string' ? parsed.date.trim() : '';
+  const hasValidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate);
+  const items = Array.isArray(parsed.items) ? parsed.items : null;
+  const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
+  const cardLabel = typeof parsed.card_label === 'string' && parsed.card_label.trim() ? parsed.card_label.trim() : null;
+
+  const normalized = {
+    merchant: merchant || null,
+    description: description || null,
+    amount: Number.isFinite(amount) && amount !== 0 ? amount : null,
+    date: hasValidDate ? rawDate : todayDate,
+    notes: typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null,
+    payment_method: paymentMethod,
+    card_label: cardLabel,
+    items,
+  };
+
+  const review_fields = [];
+  const field_confidence = {
+    merchant: normalized.merchant ? 'high' : (normalized.description ? 'medium' : 'low'),
+    description: normalized.description ? 'high' : (normalized.merchant ? 'medium' : 'low'),
+    amount: normalized.amount != null ? 'high' : 'low',
+    date: hasValidDate ? 'high' : 'medium',
+    payment_method: normalized.payment_method ? 'medium' : 'low',
+    card_label: normalized.card_label ? 'medium' : 'low',
+    items: items?.length ? 'medium' : 'low',
+  };
+
+  if (!normalized.merchant && !normalized.description) review_fields.push('merchant or description');
+  if (normalized.amount == null) review_fields.push('amount');
+  if (!hasValidDate) review_fields.push('date');
+  if (!normalized.payment_method && normalized.card_label) review_fields.push('payment method');
+
+  if (normalized.amount == null || (!normalized.merchant && !normalized.description)) {
+    return null;
+  }
+
+  return {
+    ...normalized,
+    parse_status: review_fields.length > 0 ? 'partial' : 'complete',
+    review_fields,
+    field_confidence,
+  };
+}
+
 async function parseExpense(input, todayDate) {
   if (!input || typeof input !== 'string' || input.trim().length === 0) {
     return null;
@@ -47,10 +98,10 @@ async function parseExpense(input, todayDate) {
   if (!cleaned || cleaned === 'null') return null;
 
   try {
-    return JSON.parse(cleaned);
+    return cleanParsedExpense(JSON.parse(cleaned), todayDate);
   } catch {
     return null;
   }
 }
 
-module.exports = { parseExpense };
+module.exports = { parseExpense, cleanParsedExpense };

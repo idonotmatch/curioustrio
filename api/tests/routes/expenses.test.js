@@ -61,7 +61,13 @@ afterAll(async () => {
 describe('POST /expenses/parse', () => {
   it('returns parsed expense with category suggestion', async () => {
     parseExpense.mockResolvedValueOnce({
-      merchant: "Trader Joe's", amount: 84.17, date: '2026-03-20', notes: null,
+      merchant: "Trader Joe's",
+      amount: 84.17,
+      date: '2026-03-20',
+      notes: null,
+      parse_status: 'partial',
+      review_fields: ['items'],
+      field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
     });
     assignCategory.mockResolvedValueOnce({
       category_id: 'some-cat-id', source: 'memory', confidence: 4,
@@ -75,6 +81,32 @@ describe('POST /expenses/parse', () => {
     expect(res.body.merchant).toBe("Trader Joe's");
     expect(res.body.amount).toBe(84.17);
     expect(res.body.category_id).toBe('some-cat-id');
+    expect(res.body.parse_status).toBe('partial');
+  });
+
+  it('returns partial parse data when amount and description are usable', async () => {
+    parseExpense.mockResolvedValueOnce({
+      merchant: null,
+      description: 'coffee',
+      amount: 5,
+      date: '2026-03-20',
+      notes: null,
+      parse_status: 'partial',
+      review_fields: ['items'],
+      field_confidence: { merchant: 'medium', description: 'high', amount: 'high', date: 'high', items: 'low' },
+    });
+    assignCategory.mockResolvedValueOnce({
+      category_id: null, source: 'claude', confidence: 0,
+    });
+
+    const res = await request(app)
+      .post('/expenses/parse')
+      .send({ input: 'coffee 5', today: '2026-03-20' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.parse_status).toBe('partial');
+    expect(res.body.description).toBe('coffee');
+    expect(res.body.review_fields).toContain('items');
   });
 
   it('returns 422 when input cannot be parsed', async () => {
@@ -627,7 +659,13 @@ describe('expense response includes category_parent_name', () => {
 describe('POST /expenses/parse — category_name in response', () => {
   it('returns category_name alongside category_id', async () => {
     parseExpense.mockResolvedValueOnce({
-      merchant: "Trader Joe's", amount: 84.17, date: '2026-03-20', notes: null,
+      merchant: "Trader Joe's",
+      amount: 84.17,
+      date: '2026-03-20',
+      notes: null,
+      parse_status: 'partial',
+      review_fields: ['items'],
+      field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
     });
     const catRes = await db.query(
       `INSERT INTO categories (name, household_id) VALUES ('Groceries', $1) RETURNING id, name`,
@@ -650,7 +688,13 @@ describe('POST /expenses/parse — category_name in response', () => {
 
   it('returns category_name: null when no category matched', async () => {
     parseExpense.mockResolvedValueOnce({
-      merchant: 'Unknown Shop', amount: 10, date: '2026-03-20', notes: null,
+      merchant: 'Unknown Shop',
+      amount: 10,
+      date: '2026-03-20',
+      notes: null,
+      parse_status: 'partial',
+      review_fields: ['items'],
+      field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
     });
     assignCategory.mockResolvedValueOnce({ category_id: null, source: 'claude', confidence: 0 });
 

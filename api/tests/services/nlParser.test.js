@@ -1,4 +1,4 @@
-const { parseExpense } = require('../../src/services/nlParser');
+const { parseExpense, cleanParsedExpense } = require('../../src/services/nlParser');
 
 // Mock Claude SDK - singleton instance shared across all constructor calls
 jest.mock('@anthropic-ai/sdk', () => {
@@ -42,6 +42,7 @@ describe('parseExpense', () => {
     expect(result.amount).toBe(242.50);
     expect(result.date).toBe('2026-03-20');
     expect(result.notes).toBeNull();
+    expect(result.parse_status).toBe('complete');
   });
 
   it('returns null for unparseable input', async () => {
@@ -90,5 +91,53 @@ describe('parseExpense', () => {
     expect(result.card_label).toBe('amex platinum');
     expect(result.items).toHaveLength(1);
     expect(result.items[0].description).toBe('Nike running shoes');
+  });
+
+  it('defaults missing date to today and marks parse as partial', () => {
+    const result = cleanParsedExpense({
+      merchant: null,
+      description: 'coffee',
+      amount: 5,
+      date: null,
+      notes: null,
+      payment_method: null,
+      card_label: null,
+      items: null,
+    }, '2026-03-20');
+
+    expect(result.date).toBe('2026-03-20');
+    expect(result.parse_status).toBe('partial');
+    expect(result.review_fields).toContain('date');
+    expect(result.field_confidence.date).toBe('medium');
+  });
+
+  it('returns null when amount is missing', () => {
+    const result = cleanParsedExpense({
+      merchant: 'Trader Joe\'s',
+      description: null,
+      amount: null,
+      date: '2026-03-20',
+      notes: null,
+      payment_method: null,
+      card_label: null,
+      items: null,
+    }, '2026-03-20');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when merchant and description are both missing', () => {
+    const result = cleanParsedExpense({
+      merchant: null,
+      description: null,
+      amount: 14,
+      date: '2026-03-20',
+      notes: null,
+      payment_method: null,
+      card_label: null,
+      items: null,
+    }, '2026-03-20');
+
+    expect(result).toBeNull();
   });
 });
