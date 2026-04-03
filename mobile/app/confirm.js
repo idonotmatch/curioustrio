@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
-import { invalidateCache } from '../services/cache';
+import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
 import { ConfirmField } from '../components/ConfirmField';
 import { LocationPicker } from '../components/LocationPicker';
 import { useCategories } from '../hooks/useCategories';
@@ -147,6 +147,11 @@ export default function ConfirmScreen() {
       await Promise.all([
         invalidateCache(`cache:expenses:${expenseMonth}`),
         invalidateCache(`cache:budget:${expenseMonth}:personal`),
+        // Personal feeds are cache-first and keyed by budget period, which may
+        // differ from the expense's calendar month when the user uses a custom
+        // budget reset day. Clearing by prefix guarantees "Mine" refetches.
+        invalidateCacheByPrefix('cache:expenses:'),
+        invalidateCacheByPrefix('cache:budget:'),
       ]);
       router.replace('/(tabs)');
     } catch (err) {
