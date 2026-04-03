@@ -64,6 +64,17 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /gmail/import-summary — aggregate recent import outcomes for the authenticated user
+router.get('/import-summary', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 365);
+    const summary = await EmailImportLog.summarizeByUser(user.id, days);
+    res.json(summary);
+  } catch (err) { next(err); }
+});
+
 // GET /gmail/import-log — recent import log for the authenticated user
 router.get('/import-log', authenticate, async (req, res, next) => {
   try {

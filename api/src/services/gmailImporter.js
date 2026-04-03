@@ -37,7 +37,7 @@ function findLikelyAmount(body = '') {
 
 /**
  * Run a Gmail import for a single user.
- * Returns { imported, skipped, failed }.
+ * Returns { imported, skipped, failed, outcomes }.
  * All errors are caught per-message — a bad email never aborts the run.
  */
 async function importForUser(user) {
@@ -46,10 +46,25 @@ async function importForUser(user) {
   const todayDate = new Date().toISOString().split('T')[0];
 
   let imported = 0, skipped = 0, failed = 0;
+  const outcomes = {
+    imported_parsed: 0,
+    imported_pending_review: 0,
+    skipped_existing: 0,
+    skipped_reasons: {},
+    failed_reasons: {},
+  };
+
+  function increment(bucket, key) {
+    bucket[key] = (bucket[key] || 0) + 1;
+  }
 
   for (const msg of messages) {
     const existing = await EmailImportLog.findByMessageId(user.id, msg.id);
-    if (existing) { skipped++; continue; }
+    if (existing) {
+      skipped++;
+      outcomes.skipped_existing++;
+      continue;
+    }
 
     let msgSubject, msgFrom;
     try {
@@ -59,24 +74,29 @@ async function importForUser(user) {
       const classification = await classifyEmailExpense(body, subject, from, todayDate);
 
       if (classification.disposition === 'not_expense') {
+        const skipReason = classification.reason || 'classifier_not_expense';
         await EmailImportLog.create({
           userId: user.id, messageId: msg.id, status: 'skipped',
-          subject, fromAddress: from, skipReason: classification.reason || 'classifier_not_expense',
+          subject, fromAddress: from, skipReason,
         });
         skipped++;
+        increment(outcomes.skipped_reasons, skipReason);
         continue;
       }
 
       let parsed = await parseEmailExpense(body, subject, from, todayDate);
+      let importedAsPendingReview = false;
 
       if (!parsed) {
         const fallbackAmount = findLikelyAmount(body);
         if (!fallbackAmount) {
+          const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';
           await EmailImportLog.create({
             userId: user.id, messageId: msg.id, status: 'skipped',
-            subject, fromAddress: from, skipReason: classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount',
+            subject, fromAddress: from, skipReason,
           });
           skipped++;
+          increment(outcomes.skipped_reasons, skipReason);
           continue;
         }
         const fallbackExpense = {
@@ -87,6 +107,7 @@ async function importForUser(user) {
           items: null,
         };
         parsed = fallbackExpense;
+        importedAsPendingReview = true;
       }
 
       const { category_id } = await assignCategory({
@@ -126,8 +147,14 @@ async function importForUser(user) {
         fromAddress: msgFrom,
       });
       imported++;
+      if (importedAsPendingReview || /needs review/i.test(parsed.notes || '')) {
+        outcomes.imported_pending_review++;
+      } else {
+        outcomes.imported_parsed++;
+      }
     } catch (e) {
       console.error(`[gmail import] user=${user.id} msg=${msg.id}:`, e.message);
+      increment(outcomes.failed_reasons, e.code || e.message || 'unknown_error');
       await EmailImportLog.create({
         userId: user.id, messageId: msg.id, status: 'failed',
         subject: msgSubject, fromAddress: msgFrom, skipReason: e.message,
@@ -156,7 +183,7 @@ async function importForUser(user) {
     }
   }
 
-  return { imported, skipped, failed };
+  return { imported, skipped, failed, outcomes };
 }
 
 module.exports = { importForUser };

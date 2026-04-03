@@ -151,6 +151,12 @@ describe('POST /gmail/import', () => {
     expect(res.body.imported).toBe(1);
     expect(res.body.skipped).toBe(1);
     expect(res.body.failed).toBe(0);
+    expect(res.body.outcomes).toMatchObject({
+      imported_parsed: 1,
+      imported_pending_review: 0,
+      skipped_existing: 0,
+      skipped_reasons: { classifier_not_expense: 1 },
+    });
   });
 
   it('skips already-imported messages', async () => {
@@ -171,6 +177,7 @@ describe('POST /gmail/import', () => {
     expect(res.body.skipped).toBe(1);
     expect(res.body.imported).toBe(0);
     expect(getMessage).not.toHaveBeenCalled();
+    expect(res.body.outcomes.skipped_existing).toBe(1);
   });
 
   it('counts failed when getMessage throws', async () => {
@@ -187,6 +194,7 @@ describe('POST /gmail/import', () => {
     expect(res.status).toBe(200);
     expect(res.body.failed).toBe(1);
     expect(res.body.imported).toBe(0);
+    expect(res.body.outcomes.failed_reasons['Network error']).toBe(1);
   });
 
   it('imports uncertain emails into pending when a likely amount can be recovered', async () => {
@@ -210,10 +218,45 @@ describe('POST /gmail/import', () => {
     expect(res.status).toBe(200);
     expect(res.body.imported).toBe(1);
     expect(res.body.skipped).toBe(0);
+    expect(res.body.outcomes.imported_pending_review).toBe(1);
 
     const expense = await db.query(`SELECT merchant, amount, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
     expect(expense.rows[0].merchant).toBe('Example');
     expect(Number(expense.rows[0].amount)).toBe(41.22);
     expect(expense.rows[0].notes).toMatch(/needs review/i);
+  });
+});
+
+describe('GET /gmail/import-summary', () => {
+  it('returns recent aggregate import outcomes', async () => {
+    const importedExpense = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source, notes)
+       VALUES ($1, $2, 'Example', 12.34, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review')
+       RETURNING id`,
+      [userId, householdId]
+    );
+
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, skip_reason)
+       VALUES
+         ($1, 'summary-imported', $2, 'imported', NULL),
+         ($1, 'summary-skipped', NULL, 'skipped', 'classifier_uncertain'),
+         ($1, 'summary-failed', NULL, 'failed', 'Network error')`,
+      [userId, importedExpense.rows[0].id]
+    );
+
+    const res = await request(app).get('/gmail/import-summary?days=30');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      window_days: 30,
+      imported: 1,
+      imported_pending_review: 1,
+      skipped: 1,
+      failed: 1,
+    });
+    expect(res.body.reasons).toEqual(expect.arrayContaining([
+      { reason: 'Network error', count: 1 },
+      { reason: 'classifier_uncertain', count: 1 },
+    ]));
   });
 });

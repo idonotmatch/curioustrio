@@ -63,6 +63,27 @@ export default function AccountsScreen() {
     });
   }, [loadGmailStatus, loadHousehold]);
 
+  useEffect(() => {
+    if (gmailStatus?.connected) loadImportSummary();
+  }, [gmailStatus?.connected]);
+
+  function formatImportReason(reason) {
+    switch (reason) {
+      case 'heuristic_skip': return 'filtered';
+      case 'classifier_not_expense': return 'not expense';
+      case 'classifier_uncertain': return 'uncertain';
+      case 'missing_amount': return 'missing amount';
+      default:
+        return (reason || 'other').replace(/_/g, ' ');
+    }
+  }
+
+  function formatLogStatus(entry) {
+    if (entry.status === 'imported' && /needs review/i.test(entry.notes || '')) return 'needs review';
+    if (entry.status === 'skipped') return formatImportReason(entry.skip_reason);
+    return entry.status;
+  }
+
   async function connectGmail() {
     try {
       const data = await api.get('/gmail/auth');
@@ -76,8 +97,10 @@ export default function AccountsScreen() {
   }
 
   const [importLog, setImportLog] = useState([]);
+  const [importSummary, setImportSummary] = useState(null);
   const [importLogExpanded, setImportLogExpanded] = useState(false);
   const [importLogLoading, setImportLogLoading] = useState(false);
+  const [importSummaryLoading, setImportSummaryLoading] = useState(false);
 
   async function loadImportLog() {
     setImportLogLoading(true);
@@ -89,12 +112,29 @@ export default function AccountsScreen() {
     }
   }
 
+  async function loadImportSummary() {
+    setImportSummaryLoading(true);
+    try {
+      const data = await api.get('/gmail/import-summary?days=30');
+      setImportSummary(data);
+    } catch {
+      setImportSummary(null);
+    } finally {
+      setImportSummaryLoading(false);
+    }
+  }
+
   const [gmailSyncing, setGmailSyncing] = useState(false);
   async function syncGmail() {
     setGmailSyncing(true);
     try {
       const result = await api.post('/gmail/import', {});
-      Alert.alert('Gmail sync', `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}`);
+      await Promise.all([loadImportLog(), loadImportSummary()]);
+      const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
+      Alert.alert(
+        'Gmail sync',
+        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} need review` : ''}`
+      );
     } catch (e) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
     } finally {
@@ -427,6 +467,42 @@ export default function AccountsScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          {gmailStatus?.connected && (
+            importSummaryLoading ? (
+              <ActivityIndicator color="#555" style={{ alignSelf: 'flex-start', marginTop: 12 }} />
+            ) : importSummary ? (
+              <>
+                <View style={styles.summaryGrid}>
+                  <View style={styles.summaryCard}>
+                    <Text style={styles.summaryValue}>{importSummary.imported}</Text>
+                    <Text style={styles.summaryLabel}>Imported</Text>
+                  </View>
+                  <View style={styles.summaryCard}>
+                    <Text style={styles.summaryValue}>{importSummary.imported_pending_review}</Text>
+                    <Text style={styles.summaryLabel}>Need review</Text>
+                  </View>
+                  <View style={styles.summaryCard}>
+                    <Text style={styles.summaryValue}>{importSummary.skipped}</Text>
+                    <Text style={styles.summaryLabel}>Skipped</Text>
+                  </View>
+                  <View style={styles.summaryCard}>
+                    <Text style={styles.summaryValue}>{importSummary.failed}</Text>
+                    <Text style={styles.summaryLabel}>Failed</Text>
+                  </View>
+                </View>
+                {Array.isArray(importSummary.reasons) && importSummary.reasons.length > 0 && (
+                  <View style={styles.reasonWrap}>
+                    {importSummary.reasons.slice(0, 4).map(item => (
+                      <View key={item.reason} style={styles.reasonChip}>
+                        <Text style={styles.reasonChipText}>{formatImportReason(item.reason)} · {item.count}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                <Text style={styles.summaryWindow}>Last {importSummary.window_days} days</Text>
+              </>
+            ) : null
+          )}
         </View>
 
         {/* Gmail import log */}
@@ -466,11 +542,7 @@ export default function AccountsScreen() {
                         entry.status === 'imported' && styles.logStatusImported,
                         entry.status === 'failed' && styles.logStatusFailed,
                       ]}>
-                        {entry.status === 'skipped' && entry.skip_reason === 'not_expense'
-                          ? 'not expense'
-                          : entry.status === 'skipped'
-                            ? 'skipped'
-                            : entry.status}
+                        {formatLogStatus(entry)}
                       </Text>
                       <Text style={styles.logDate}>
                         {new Date(entry.imported_at).toLocaleDateString()}
@@ -530,6 +602,14 @@ const styles = StyleSheet.create({
   actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
   actionBtnDisabled: { opacity: 0.4 },
   actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  summaryCard: { minWidth: 76, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1e1e1e', paddingHorizontal: 12, paddingVertical: 10 },
+  summaryValue: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
+  summaryLabel: { color: '#666', fontSize: 11, marginTop: 2 },
+  reasonWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  reasonChip: { borderRadius: 999, borderWidth: 1, borderColor: '#1f1f1f', backgroundColor: '#111', paddingHorizontal: 10, paddingVertical: 6 },
+  reasonChipText: { color: '#777', fontSize: 11 },
+  summaryWindow: { color: '#444', fontSize: 11, marginTop: 10 },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontSize: 15 },
   logToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
