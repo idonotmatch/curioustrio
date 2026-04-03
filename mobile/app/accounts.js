@@ -92,6 +92,24 @@ export default function AccountsScreen() {
     return getImportReasonMeta(reason).label;
   }
 
+  function summarizeReasonChips(reasons = []) {
+    const grouped = new Map();
+    for (const item of reasons) {
+      const meta = getImportReasonMeta(item.reason);
+      const existing = grouped.get(meta.label) || { label: meta.label, count: 0, rawReasons: new Set() };
+      existing.count += item.count || 0;
+      existing.rawReasons.add(item.reason);
+      grouped.set(meta.label, existing);
+    }
+    return Array.from(grouped.values())
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+      .map(entry => ({
+        label: entry.label,
+        count: entry.count,
+        detail: entry.rawReasons.size > 1 ? `${entry.rawReasons.size} reasons` : null,
+      }));
+  }
+
   function formatLogStatus(entry) {
     if (entry.status === 'imported' && /needs review/i.test(entry.notes || '')) return 'needs review';
     if (entry.status === 'skipped') return getImportReasonMeta(entry.skip_reason).label;
@@ -528,9 +546,11 @@ export default function AccountsScreen() {
                 </View>
                 {Array.isArray(importSummary.reasons) && importSummary.reasons.length > 0 && (
                   <View style={styles.reasonWrap}>
-                    {importSummary.reasons.slice(0, 4).map(item => (
-                      <View key={item.reason} style={styles.reasonChip}>
-                        <Text style={styles.reasonChipText}>{formatImportReason(item.reason)} · {item.count}</Text>
+                    {summarizeReasonChips(importSummary.reasons).slice(0, 4).map(item => (
+                      <View key={item.label} style={styles.reasonChip}>
+                        <Text style={styles.reasonChipText}>
+                          {item.label} · {item.count}{item.detail ? ` · ${item.detail}` : ''}
+                        </Text>
                       </View>
                     ))}
                   </View>
