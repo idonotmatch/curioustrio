@@ -3,12 +3,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
+import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { BudgetBar } from '../../components/BudgetBar';
 
 export default function HouseholdScreen() {
   const { expenses, loading, refresh } = useHouseholdExpenses();
   const { budget } = useBudget();
+  const { categories } = useCategories();
   const router = useRouter();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
 
@@ -33,7 +35,7 @@ export default function HouseholdScreen() {
       <FlatList
         data={displayExpenses}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <ExpenseItem expense={item} showUser onDelete={handleDelete} />}
+        renderItem={({ item }) => <ExpenseItem expense={item} categories={categories} showUser onDelete={handleDelete} />}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
         contentContainerStyle={styles.list}
         ListEmptyComponent={

@@ -10,6 +10,7 @@ import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useHousehold } from '../../hooks/useHousehold';
+import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { api } from '../../services/api';
 
@@ -126,6 +127,7 @@ export default function FeedScreen() {
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
+  const { categories } = useCategories();
   const router = useRouter();
 
   const expenses = mode === 'mine' ? myExpenses : householdExpenses;
@@ -221,7 +223,7 @@ export default function FeedScreen() {
         </View>
       );
     }
-    return <ExpenseItem expense={item} onDelete={handleDelete} showUser={mode === 'household'} />;
+    return <ExpenseItem expense={item} categories={categories} onDelete={handleDelete} showUser={mode === 'household'} />;
   };
 
   return (
