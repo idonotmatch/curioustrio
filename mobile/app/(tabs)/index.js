@@ -120,7 +120,7 @@ export default function FeedScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth);
   const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { cacheOnly: true });
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
   const router = useRouter();
@@ -140,12 +140,12 @@ export default function FeedScreen() {
     refreshHousehold();
   }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold]);
 
-  // Only household data and pending need focus-refresh — personal expenses are cache-authoritative.
   useFocusEffect(useCallback(() => {
     refreshHouseholdExpenses();
     refreshHouseholdBudget();
+    refreshPersonalBudget();
     refreshPending();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending]));
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending]));
 
   async function dismissPending(id) {
     try { await api.post(`/expenses/${id}/dismiss`); refreshPending(); } catch { /* ignore */ }

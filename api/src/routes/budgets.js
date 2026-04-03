@@ -111,6 +111,28 @@ router.get('/', async (req, res, next) => {
       }
       const totalSpent = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
 
+      const parentSpendResult = await db.query(
+        `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
+         FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+         WHERE e.user_id = $1 AND e.status = 'confirmed' AND e.date >= $2 AND e.date < $3
+         GROUP BY group_id`,
+        [user.id, from, to]
+      );
+      const groupIds = parentSpendResult.rows.map(r => r.group_id).filter(Boolean);
+      const catNames = {};
+      if (groupIds.length > 0) {
+        const catRes = await db.query('SELECT id, name FROM categories WHERE id = ANY($1)', [groupIds]);
+        for (const row of catRes.rows) catNames[row.id] = row.name;
+      }
+      const by_parent = parentSpendResult.rows
+        .filter(r => r.group_id)
+        .map(r => {
+          const spent = Number(r.spent);
+          const setting = settings.find(s => s.category_id === r.group_id);
+          const limit = setting ? Number(setting.monthly_limit) : null;
+          return { group_id: r.group_id, name: catNames[r.group_id] || 'Unknown', spent, limit, remaining: limit !== null ? limit - spent : null };
+        });
+
       const totalSetting = settings.find(s => s.category_id === null);
       const categorySummaries = settings
         .filter(s => s.category_id !== null)
@@ -124,7 +146,7 @@ router.get('/', async (req, res, next) => {
           ? { limit: Number(totalSetting.monthly_limit), spent: totalSpent, remaining: Number(totalSetting.monthly_limit) - totalSpent }
           : null,
         categories: categorySummaries,
-        by_parent: [],
+        by_parent,
         period: { from, to },
       });
     }
