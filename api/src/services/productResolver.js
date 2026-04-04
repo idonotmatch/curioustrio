@@ -1,4 +1,5 @@
 const Product = require('../models/product');
+const { normalizeItemMetadata } = require('./itemNormalizer');
 
 /**
  * Given a parsed item with optional product fields, find or create a product record.
@@ -11,6 +12,7 @@ const Product = require('../models/product');
  */
 async function resolveProduct(item, merchant) {
   const { description, upc, sku, brand, product_size, pack_size, unit } = item;
+  const normalized = normalizeItemMetadata(item);
 
   if (!description) return null;
 
@@ -50,7 +52,7 @@ async function resolveProduct(item, merchant) {
     }
 
     // 3. Try higher-confidence description matching when we have brand/size hints.
-    if (description && (brand || product_size || pack_size || unit)) {
+    if (canMatchByNormalizedDetails({ merchant, normalized, brand, product_size, pack_size, unit })) {
       const existing = await Product.findByNormalizedDetails({
         name: description,
         merchant,
@@ -74,7 +76,7 @@ async function resolveProduct(item, merchant) {
     }
 
     // 4. Create new when we have a stable identifier or enough descriptive structure.
-    const hasStructuredIdentity = !!(upc || sku || description && (brand || product_size || pack_size || unit));
+    const hasStructuredIdentity = !!(upc || sku || canMatchByNormalizedDetails({ merchant, normalized, brand, product_size, pack_size, unit }));
     if (!hasStructuredIdentity) return null;
 
     const product = await Product.create({
@@ -93,6 +95,14 @@ async function resolveProduct(item, merchant) {
     console.error('productResolver error (non-fatal):', err.message);
     return null;
   }
+}
+
+function canMatchByNormalizedDetails({ merchant, normalized, brand, product_size, pack_size, unit }) {
+  if (!normalized.comparable_key || !normalized.normalized_name) return false;
+  if (brand || product_size || pack_size || unit) return true;
+
+  const tokenCount = normalized.normalized_name.split(' ').filter(Boolean).length;
+  return !!merchant && tokenCount >= 2 && normalized.normalized_name.length >= 8;
 }
 
 const NON_PRODUCT_PATTERNS = /^(tax|hst|gst|pst|vat|tip|gratuity|service charge|service fee|delivery fee|shipping|handling|bag fee|surcharge|discount|coupon|savings|subtotal|total)/i;

@@ -47,4 +47,30 @@ describe('productResolver', () => {
     });
     expect(productId).toBe('product-123');
   });
+
+  it('matches a product by normalized description when merchant context is strong', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue({
+      id: 'product-456',
+      name: 'Organic Bananas',
+      merchant: 'Whole Foods',
+    });
+    Product.update.mockResolvedValue({});
+
+    const productId = await resolveProduct({
+      description: 'Organic Bananas',
+      amount: 2.99,
+    }, 'Whole Foods');
+
+    expect(Product.findByNormalizedDetails).toHaveBeenCalledWith({
+      name: 'Organic Bananas',
+      merchant: 'Whole Foods',
+      brand: undefined,
+      productSize: undefined,
+      packSize: undefined,
+      unit: undefined,
+    });
+    expect(productId).toBe('product-456');
+  });
 });

@@ -1,17 +1,27 @@
 const db = require('../db');
+const { normalizeItemMetadata } = require('../services/itemNormalizer');
+
+function hydrateItem(item = {}, index = 0) {
+  return {
+    ...item,
+    sort_order: item.sort_order ?? index,
+    ...normalizeItemMetadata(item),
+  };
+}
 
 async function createBulk(expenseId, items) {
   if (!items || items.length === 0) return [];
-  const values = items.map((_, i) => {
-    const offset = i * 10;
-    return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11})`;
+  const preparedItems = items.map((item, i) => hydrateItem(item, i));
+  const values = preparedItems.map((_, i) => {
+    const offset = i * 16;
+    return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17})`;
   });
   const params = [expenseId];
-  items.forEach((item, i) => {
+  preparedItems.forEach((item) => {
     params.push(
       item.description,
       item.amount ?? null,
-      item.sort_order ?? i,
+      item.sort_order,
       item.product_id ?? null,
       item.upc ?? null,
       item.sku ?? null,
@@ -19,10 +29,19 @@ async function createBulk(expenseId, items) {
       item.product_size ?? null,
       item.pack_size ?? null,
       item.unit ?? null,
+      item.normalized_name ?? null,
+      item.normalized_brand ?? null,
+      item.normalized_size_value ?? null,
+      item.normalized_size_unit ?? null,
+      item.normalized_pack_size ?? null,
+      item.comparable_key ?? null,
     );
   });
   const result = await db.query(
-    `INSERT INTO expense_items (expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit)
+    `INSERT INTO expense_items (
+       expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit,
+       normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size, comparable_key
+     )
      VALUES ${values.join(', ')}
      RETURNING *`,
     params
@@ -45,16 +64,17 @@ async function replaceItems(expenseId, items) {
     await client.query('DELETE FROM expense_items WHERE expense_id = $1', [expenseId]);
     let rows = [];
     if (items && items.length > 0) {
-      const values = items.map((_, i) => {
-        const offset = i * 10;
-        return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11})`;
+      const preparedItems = items.map((item, i) => hydrateItem(item, i));
+      const values = preparedItems.map((_, i) => {
+        const offset = i * 16;
+        return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17})`;
       });
       const params = [expenseId];
-      items.forEach((item, i) => {
+      preparedItems.forEach((item) => {
         params.push(
           item.description,
           item.amount ?? null,
-          i,
+          item.sort_order,
           item.product_id ?? null,
           item.upc ?? null,
           item.sku ?? null,
@@ -62,10 +82,19 @@ async function replaceItems(expenseId, items) {
           item.product_size ?? null,
           item.pack_size ?? null,
           item.unit ?? null,
+          item.normalized_name ?? null,
+          item.normalized_brand ?? null,
+          item.normalized_size_value ?? null,
+          item.normalized_size_unit ?? null,
+          item.normalized_pack_size ?? null,
+          item.comparable_key ?? null,
         );
       });
       const result = await client.query(
-        `INSERT INTO expense_items (expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit)
+        `INSERT INTO expense_items (
+           expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit,
+           normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size, comparable_key
+         )
          VALUES ${values.join(', ')}
          RETURNING *`,
         params
