@@ -140,16 +140,36 @@ describe('GET /insights', () => {
     await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
        VALUES
-       ($1, $2, 'Trader Joe''s', 240, ($3 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 120, ($4 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 100, ($5 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 90, ($6 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 620, ($7 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 560, ($8 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 540, ($9 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 530, ($10 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 520, ($11 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 510, ($12 || '-05')::date, 'manual', 'confirmed')`,
+       ($1, $2, 'Trader Joe''s', 120, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 70, ($3 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 50, ($3 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 50, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($4 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 35, ($5 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 35, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($6 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($6 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 260, ($7 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 220, ($7 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 140, ($7 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 240, ($8 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 200, ($8 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($8 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 230, ($9 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 190, ($9 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($9 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 220, ($10 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 190, ($10 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($10 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 220, ($11 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 180, ($11 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($11 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 210, ($12 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 180, ($12 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($12 || '-14')::date, 'manual', 'confirmed')`,
       [userId, householdId, month, prior1, prior2, prior3, prior6, prior5, prior4, prior3, prior2, prior1]
     );
 
@@ -169,10 +189,18 @@ describe('GET /insights', () => {
     await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
        VALUES
-       ($1, $2, 'Trader Joe''s', 200, ($3 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 80, ($4 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 90, ($5 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 95, ($6 || '-01')::date, 'manual', 'confirmed')`,
+       ($1, $2, 'Trader Joe''s', 100, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 60, ($3 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($3 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($4 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 35, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($5 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 35, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($6 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($6 || '-05')::date, 'manual', 'confirmed')`,
       [userId, householdId, month, prior1, prior2, prior3]
     );
 
@@ -197,11 +225,21 @@ describe('GET /insights', () => {
     await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
        VALUES
-       ($1, $2, 'Trader Joe''s', 620, ($3 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 560, ($4 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 540, ($5 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 530, ($6 || '-05')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 520, ($7 || '-05')::date, 'manual', 'confirmed')`,
+       ($1, $2, 'Trader Joe''s', 260, ($3 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 220, ($3 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 140, ($3 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 240, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 200, ($4 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($4 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 230, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 190, ($5 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($5 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 220, ($6 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 190, ($6 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($6 || '-14')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 220, ($7 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 180, ($7 || '-09')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($7 || '-14')::date, 'manual', 'confirmed')`,
       [userId, householdId, prior1, prior2, prior3, prior4, prior5]
     );
 
@@ -228,10 +266,18 @@ describe('GET /insights', () => {
     await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, category_id, source, status)
        VALUES
-       ($1, $2, 'Whole Foods', 280, ($3 || '-01')::date, $4, 'manual', 'confirmed'),
-       ($1, $2, 'Whole Foods', 100, ($5 || '-01')::date, $4, 'manual', 'confirmed'),
-       ($1, $2, 'Whole Foods', 90, ($6 || '-01')::date, $4, 'manual', 'confirmed'),
-       ($1, $2, 'Whole Foods', 80, ($7 || '-01')::date, $4, 'manual', 'confirmed')`,
+       ($1, $2, 'Whole Foods', 140, ($3 || '-01')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 80, ($3 || '-03')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 60, ($3 || '-05')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 40, ($5 || '-01')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 35, ($5 || '-03')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 25, ($5 || '-05')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 35, ($6 || '-01')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 30, ($6 || '-03')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 25, ($6 || '-05')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 30, ($7 || '-01')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 30, ($7 || '-03')::date, $4, 'manual', 'confirmed'),
+       ($1, $2, 'Whole Foods', 20, ($7 || '-05')::date, $4, 'manual', 'confirmed')`,
       [userId, householdId, month, categoryId, prior1, prior2, prior3]
     );
 

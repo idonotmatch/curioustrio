@@ -132,6 +132,46 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
   }));
 }
 
+async function periodActivity({ scope, householdId, userId, from, toExclusive }) {
+  if (scope === 'household') {
+    const result = await db.query(
+      `SELECT
+         COUNT(*)::int AS expense_count,
+         COUNT(DISTINCT e.date)::int AS active_day_count
+       FROM expenses e
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.date >= $2
+         AND e.date < $3`,
+      [householdId, from, toExclusive]
+    );
+    return {
+      expense_count: Number(result.rows[0]?.expense_count || 0),
+      active_day_count: Number(result.rows[0]?.active_day_count || 0),
+    };
+  }
+
+  const result = await db.query(
+    `SELECT
+       COUNT(*)::int AS expense_count,
+       COUNT(DISTINCT date)::int AS active_day_count
+     FROM expenses
+     WHERE user_id = $1
+       AND status = 'confirmed'
+       AND date >= $2
+       AND date < $3`,
+    [userId, from, toExclusive]
+  );
+  return {
+    expense_count: Number(result.rows[0]?.expense_count || 0),
+    active_day_count: Number(result.rows[0]?.active_day_count || 0),
+  };
+}
+
+function qualifiesHistoricalPeriod(activity) {
+  return Number(activity?.expense_count || 0) >= 3 && Number(activity?.active_day_count || 0) >= 2;
+}
+
 async function getTotalBudgetLimit({ scope, householdId, userId }) {
   if (scope === 'household') {
     const settings = await BudgetSetting.findByHousehold(householdId);
@@ -220,10 +260,20 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
         from: historicalBounds.from,
         toExclusive: historicalBounds.to,
       });
+      const activity = await periodActivity({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: historicalBounds.from,
+        toExclusive: historicalBounds.to,
+      });
+      if (!qualifiesHistoricalPeriod(activity)) continue;
       historicalPeriods.push({
         month: historicalMonth,
         spent_to_date: spentToDate,
         total_spent: fullSpend,
+        expense_count: activity.expense_count,
+        active_day_count: activity.active_day_count,
       });
     }
   }
@@ -323,7 +373,20 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
         from: priorBounds.from,
         toExclusive: priorBounds.to,
       });
-      adherencePeriods.push({ month: priorMonth, actual_spend: actualSpend });
+      const activity = await periodActivity({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: priorBounds.from,
+        toExclusive: priorBounds.to,
+      });
+      if (!qualifiesHistoricalPeriod(activity)) continue;
+      adherencePeriods.push({
+        month: priorMonth,
+        actual_spend: actualSpend,
+        expense_count: activity.expense_count,
+        active_day_count: activity.active_day_count,
+      });
     }
   }
 
