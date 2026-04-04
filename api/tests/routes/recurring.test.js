@@ -44,7 +44,13 @@ afterAll(async () => {
 
 afterEach(async () => {
   await db.query(`DELETE FROM recurring_expenses WHERE household_id = $1`, [householdId]);
+  await db.query(
+    `DELETE FROM expense_items
+     WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
+    [householdId]
+  );
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
+  await db.query(`DELETE FROM products WHERE merchant = 'Target' OR name = 'Pampers Pure'`);
 });
 
 describe('GET /recurring', () => {
@@ -188,6 +194,51 @@ describe('GET /recurring/item-history', () => {
     const res = await request(app).get('/recurring/item-history');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/group_key/i);
+  });
+});
+
+describe('GET /recurring/watch-candidates', () => {
+  it('returns recurring product candidates within the watch window', async () => {
+    const product = await db.query(
+      `INSERT INTO products (name, brand, merchant, product_size, pack_size, unit)
+       VALUES ('Pampers Pure', 'Pampers', 'Target', '82', '1', 'count')
+       RETURNING id`
+    );
+
+    const dates = [50, 32, 14].map((daysAgo) => {
+      const date = new Date();
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    });
+
+    const expenseIds = [];
+    for (const date of dates) {
+      const result = await db.query(
+        `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+         VALUES ($1, $2, 'Target', 39.23, $3, 'manual', 'confirmed')
+         RETURNING id`,
+        [userId, householdId, date]
+      );
+      expenseIds.push(result.rows[0].id);
+    }
+
+    for (const expenseId of expenseIds) {
+      await db.query(
+        `INSERT INTO expense_items (expense_id, description, amount, brand, product_size, unit, product_id)
+         VALUES ($1, 'Pampers Pure', 39.23, 'Pampers', '82', 'count', $2)`,
+        [expenseId, product.rows[0].id]
+      );
+    }
+
+    const res = await request(app).get('/recurring/watch-candidates');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      kind: 'watch_candidate',
+      item_name: 'Pampers Pure',
+      brand: 'Pampers',
+      status: 'watching',
+    });
   });
 });
 

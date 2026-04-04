@@ -41,6 +41,9 @@ async function loadRecurringItemOccurrences(householdId) {
   for (const row of result.rows) {
     const key = row.product_id ? `product:${row.product_id}` : `comparable:${row.comparable_key}`;
     if (!groups.has(key)) groups.set(key, []);
+    const dateOnly = row.date instanceof Date
+      ? row.date.toISOString().slice(0, 10)
+      : `${row.date}`.slice(0, 10);
     groups.get(key).push({
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
@@ -51,7 +54,7 @@ async function loadRecurringItemOccurrences(householdId) {
       estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
       normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
       normalized_total_size_unit: row.normalized_total_size_unit || null,
-      date: new Date(row.date),
+      date: parseDateOnly(dateOnly),
     });
   }
   return groups;
@@ -229,6 +232,66 @@ async function getRecurringItemHistory(householdId, groupKey) {
   };
 }
 
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function parseDateOnly(dateString) {
+  const [year, month, day] = `${dateString}`.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, 12, 0, 0, 0);
+}
+
+function diffDays(from, to) {
+  return Math.round((to - from) / (1000 * 60 * 60 * 24));
+}
+
+async function detectRecurringWatchCandidates(householdId, options = {}) {
+  const windowDays = Number.isFinite(options.windowDays) ? options.windowDays : 5;
+  const maxOverdueDays = Number.isFinite(options.maxOverdueDays) ? options.maxOverdueDays : 7;
+  const recurringItems = await detectRecurringItems(householdId);
+  const today = parseDateOnly(startOfToday().toISOString().split('T')[0]);
+
+  return recurringItems
+    .filter((item) => item.product_id)
+    .map((item) => {
+      const nextExpectedDate = parseDateOnly(item.next_expected_date);
+      const daysUntilDue = diffDays(today, nextExpectedDate);
+      const watchStartsAt = new Date(nextExpectedDate);
+      watchStartsAt.setDate(watchStartsAt.getDate() - windowDays);
+      const daysUntilWatch = diffDays(today, watchStartsAt);
+
+      let status = 'upcoming';
+      if (daysUntilDue < 0) status = 'overdue';
+      else if (daysUntilDue === 0) status = 'due_today';
+      else if (daysUntilDue <= windowDays) status = 'watching';
+
+      return {
+        kind: 'watch_candidate',
+        group_key: item.group_key,
+        product_id: item.product_id,
+        item_name: item.item_name,
+        brand: item.brand,
+        occurrence_count: item.occurrence_count,
+        average_gap_days: item.average_gap_days,
+        median_amount: item.median_amount,
+        median_unit_price: item.median_unit_price,
+        last_purchased_at: item.last_purchased_at,
+        next_expected_date: item.next_expected_date,
+        watch_starts_at: watchStartsAt.toISOString().split('T')[0],
+        days_until_watch: daysUntilWatch,
+        days_until_due: daysUntilDue,
+        status,
+        merchants: item.merchants,
+        normalized_total_size_value: item.normalized_total_size_value,
+        normalized_total_size_unit: item.normalized_total_size_unit,
+      };
+    })
+    .filter((item) => item.days_until_due <= windowDays && item.days_until_due >= -maxOverdueDays)
+    .sort((a, b) => a.days_until_due - b.days_until_due || b.occurrence_count - a.occurrence_count);
+}
+
 async function detectRecurringItemSignals(householdId) {
   const groups = await loadRecurringItemOccurrences(householdId);
   const signals = [];
@@ -333,4 +396,10 @@ async function detectRecurringItemSignals(householdId) {
   return signals.sort((a, b) => Math.abs(b.delta_percent) - Math.abs(a.delta_percent));
 }
 
-module.exports = { detectRecurring, detectRecurringItems, detectRecurringItemSignals, getRecurringItemHistory };
+module.exports = {
+  detectRecurring,
+  detectRecurringItems,
+  detectRecurringItemSignals,
+  getRecurringItemHistory,
+  detectRecurringWatchCandidates,
+};

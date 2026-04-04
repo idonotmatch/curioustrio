@@ -4,8 +4,10 @@ const {
   detectRecurringItems,
   detectRecurringItemSignals,
   getRecurringItemHistory,
+  detectRecurringWatchCandidates,
 } = require('../../src/services/recurringDetector');
 const ExpenseItem = require('../../src/models/expenseItem');
+const Product = require('../../src/models/product');
 
 let testHouseholdId;
 let testUserId;
@@ -41,6 +43,7 @@ afterEach(async () => {
     [testHouseholdId]
   );
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [testHouseholdId]);
+  await db.query(`DELETE FROM products WHERE merchant IN ('Target') OR name IN ('Pampers Pure')`);
 });
 
 async function insertExpense(merchant, amount, date) {
@@ -246,5 +249,61 @@ describe('getRecurringItemHistory', () => {
         expect.objectContaining({ merchant: 'Whole Foods', occurrence_count: 2 }),
       ])
     );
+  });
+});
+
+describe('detectRecurringWatchCandidates', () => {
+  it('returns product-backed recurring items entering the watch window', async () => {
+    const product = await Product.create({
+      name: 'Pampers Pure',
+      brand: 'Pampers',
+      merchant: 'Target',
+      productSize: '82',
+      packSize: '1',
+      unit: 'count',
+    });
+
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 50);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 32);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Target', 39.23, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Target', 39.49, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Target', 39.19, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Pampers Pure', amount: 39.23, brand: 'Pampers', product_size: '82', unit: 'count', product_id: product.id }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Pampers Pure', amount: 39.49, brand: 'Pampers', product_size: '82', unit: 'count', product_id: product.id }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Pampers Pure', amount: 39.19, brand: 'Pampers', product_size: '82', unit: 'count', product_id: product.id }]);
+
+    const candidates = await detectRecurringWatchCandidates(testHouseholdId, { windowDays: 5 });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: 'watch_candidate',
+      item_name: 'Pampers Pure',
+      brand: 'Pampers',
+      average_gap_days: 18,
+      status: 'watching',
+    });
+    expect(candidates[0].days_until_due).toBeGreaterThanOrEqual(0);
+    expect(candidates[0].days_until_due).toBeLessThanOrEqual(5);
+  });
+
+  it('does not return comparable-key-only items in the watch list yet', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 36);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 18);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 2);
+
+    const e1 = await insertExpense('Whole Foods', 2.79, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 2.69, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 2.89, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Organic Bananas', amount: 2.79, brand: null, product_size: '6', unit: 'count' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Organic Bananas', amount: 2.69, brand: null, product_size: '6', unit: 'count' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Organic Bananas', amount: 2.89, brand: null, product_size: '6', unit: 'count' }]);
+
+    const candidates = await detectRecurringWatchCandidates(testHouseholdId, { windowDays: 5 });
+    expect(candidates.find((item) => item.item_name === 'Organic Bananas')).toBeFalsy();
   });
 });

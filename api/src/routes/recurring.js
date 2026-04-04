@@ -8,6 +8,7 @@ const {
   detectRecurringItems,
   detectRecurringItemSignals,
   getRecurringItemHistory,
+  detectRecurringWatchCandidates,
 } = require('../services/recurringDetector');
 
 router.use(authenticate);
@@ -59,6 +60,16 @@ router.get('/item-history', async (req, res, next) => {
     const history = await getRecurringItemHistory(user.household_id, groupKey);
     if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
     res.json(history);
+  } catch (err) { next(err); }
+});
+
+router.get('/watch-candidates', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const windowDays = Math.max(1, Math.min(Number(req.query.window_days) || 5, 30));
+    const candidates = await detectRecurringWatchCandidates(user.household_id, { windowDays });
+    res.json(candidates);
   } catch (err) { next(err); }
 });
 
