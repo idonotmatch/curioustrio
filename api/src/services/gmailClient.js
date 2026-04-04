@@ -122,6 +122,9 @@ async function getMessage(userId, messageId) {
 
   const payload = response.data.payload;
   const snippet = response.data.snippet || '';
+  const receivedAt = response.data.internalDate
+    ? new Date(Number(response.data.internalDate)).toISOString().split('T')[0]
+    : null;
   const headers = payload?.headers || [];
   const subject = headers.find(h => h.name === 'Subject')?.value || '';
   const from = headers.find(h => h.name === 'From')?.value || '';
@@ -147,7 +150,7 @@ async function getMessage(userId, messageId) {
   const normalizedHtml = htmlToReadableText(htmlBody);
   const body = normalizedPlain || normalizedHtml || snippet;
 
-  return { subject, from, snippet, body };
+  return { subject, from, snippet, body, receivedAt };
 }
 
 module.exports = {

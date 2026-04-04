@@ -158,10 +158,17 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
   return parseJsonResponse(text);
 }
 
+function clampExpenseDate(candidateDate, maxDate) {
+  if (!candidateDate || !/^\d{4}-\d{2}-\d{2}$/.test(candidateDate)) return maxDate;
+  if (!maxDate || !/^\d{4}-\d{2}-\d{2}$/.test(maxDate)) return candidateDate;
+  return candidateDate > maxDate ? maxDate : candidateDate;
+}
+
 module.exports = {
   parseEmailExpense,
   classifyEmailExpense,
   selectRelevantEmailText,
   heuristicDisposition,
   analyzeEmailSignals,
+  clampExpenseDate,
 };

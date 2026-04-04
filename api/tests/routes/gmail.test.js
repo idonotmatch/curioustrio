@@ -16,6 +16,10 @@ jest.mock('../../src/services/emailParser', () => ({
   classifyEmailExpense: jest.fn(),
   parseEmailExpense: jest.fn(),
   analyzeEmailSignals: jest.fn(),
+  clampExpenseDate: jest.fn((candidateDate, maxDate) => {
+    if (!candidateDate) return maxDate;
+    return candidateDate > maxDate ? maxDate : candidateDate;
+  }),
 }));
 jest.mock('../../src/services/categoryAssigner', () => ({
   assignCategory: jest.fn(),
@@ -59,6 +63,7 @@ beforeEach(async () => {
   parseEmailExpense.mockReset();
   classifyEmailExpense.mockReset();
   analyzeEmailSignals.mockReset();
+  analyzeEmailSignals.mockReturnValue({ shouldSurfaceToReview: false });
   assignCategory.mockReset();
   // Clean state between tests
   await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
@@ -140,7 +145,7 @@ describe('POST /gmail/import', () => {
       { id: 'msg1' },
       { id: 'msg2' },
     ]);
-    getMessage.mockResolvedValue({ subject: 'Order Confirmation', from: 'orders@amazon.com', body: 'Total: $29.99' });
+    getMessage.mockResolvedValue({ subject: 'Order Confirmation', from: 'orders@amazon.com', body: 'Total: $29.99', receivedAt: '2026-03-21' });
     classifyEmailExpense
       .mockResolvedValueOnce({ disposition: 'expense', merchant: 'Amazon', reason: 'receipt' })
       .mockResolvedValueOnce({ disposition: 'not_expense', merchant: null, reason: 'classifier_not_expense' });
@@ -214,6 +219,8 @@ describe('POST /gmail/import', () => {
       subject: 'Your order details',
       from: 'orders@example.com',
       body: 'Thanks for your purchase. Grand total: $41.22. We will send tracking soon.',
+      snippet: 'Grand total: $41.22',
+      receivedAt: '2026-03-21',
     });
     classifyEmailExpense.mockResolvedValue({ disposition: 'uncertain', merchant: 'Example', reason: 'missing structured receipt' });
     parseEmailExpense.mockResolvedValue(null);
@@ -228,6 +235,7 @@ describe('POST /gmail/import', () => {
     const expense = await db.query(`SELECT merchant, amount, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
     expect(expense.rows[0].merchant).toBe('Example');
     expect(Number(expense.rows[0].amount)).toBe(41.22);
+    expect(expense.rows[0].notes).toMatch(/Your order details/i);
     expect(expense.rows[0].notes).toMatch(/needs review/i);
   });
 
@@ -244,6 +252,7 @@ describe('POST /gmail/import', () => {
       from: 'receipts@booking.com',
       body: 'Reservation details. Total charged: $184.22. View in browser.',
       snippet: 'Total charged: $184.22',
+      receivedAt: '2026-03-21',
     });
     classifyEmailExpense.mockResolvedValue({ disposition: 'not_expense', merchant: null, reason: 'classifier_not_expense' });
     analyzeEmailSignals.mockReturnValue({ shouldSurfaceToReview: true });
@@ -255,6 +264,69 @@ describe('POST /gmail/import', () => {
     expect(res.body.imported).toBe(1);
     expect(res.body.skipped).toBe(0);
     expect(res.body.outcomes.imported_pending_review).toBe(1);
+  });
+
+  it('skips likely duplicate expenses even when the Gmail message id is different', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source, notes)
+       VALUES ($1, $2, 'Amazon', 29.99, '2026-03-21', 'pending', 'email', 'Existing import')`,
+      [userId, householdId]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'new-msg-duplicate' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Order Confirmation',
+      from: 'orders@amazon.com',
+      body: 'Order total: $29.99',
+      snippet: 'Order total: $29.99',
+      receivedAt: '2026-03-21',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Amazon', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({ merchant: 'Amazon', amount: 29.99, date: '2026-03-21', notes: 'Order #123' });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(0);
+    expect(res.body.skipped).toBe(1);
+    expect(res.body.outcomes.skipped_reasons.duplicate_expense).toBe(1);
+  });
+
+  it('clamps parsed future dates to the email received date', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'future-date-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Order Confirmation',
+      from: 'orders@amazon.com',
+      body: 'Order total: $29.99. Estimated delivery: April 7.',
+      snippet: 'Estimated delivery April 7',
+      receivedAt: '2026-04-03',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Amazon', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Amazon',
+      amount: 29.99,
+      date: '2026-04-07',
+      notes: 'Order #123. Estimated delivery April 7.',
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+
+    const expense = await db.query(`SELECT date FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
+    expect(expense.rows[0].date.toISOString().split('T')[0]).toBe('2026-04-03');
   });
 });
 

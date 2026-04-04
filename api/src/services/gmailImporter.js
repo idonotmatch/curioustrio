@@ -5,7 +5,7 @@ const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const PushToken = require('../models/pushToken');
 const { listRecentMessages, getMessage } = require('./gmailClient');
-const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals } = require('./emailParser');
+const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals, clampExpenseDate } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
 const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
@@ -33,6 +33,25 @@ function findLikelyAmount(body = '') {
   const allMoney = [...body.matchAll(/\$\s?(-?\d+(?:\.\d{2})?)/g)];
   if (allMoney.length > 0) return Number(allMoney[allMoney.length - 1][1]);
   return null;
+}
+
+function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'needs review' }) {
+  const cleanedSubject = (subject || '').trim();
+  const cleanedSnippet = (snippet || '').replace(/\s+/g, ' ').trim();
+  const fallbackDetail = cleanedSnippet
+    || body
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 160);
+
+  const context = [cleanedSubject, fallbackDetail]
+    .filter(Boolean)
+    .join(' — ')
+    .slice(0, 220);
+
+  return context
+    ? `${context} (${reason})`
+    : `Imported from Gmail (${reason})`;
 }
 
 /**
@@ -68,7 +87,7 @@ async function importForUser(user) {
 
     let msgSubject, msgFrom;
     try {
-      const { subject, from, body, snippet } = await getMessage(user.id, msg.id);
+      const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msg.id);
       msgSubject = subject;
       msgFrom = from;
       const classification = await classifyEmailExpense(body, subject, from, todayDate, snippet);
@@ -91,6 +110,7 @@ async function importForUser(user) {
 
       let parsed = await parseEmailExpense(body, subject, from, todayDate, snippet);
       let importedAsPendingReview = false;
+      const maxExpenseDate = receivedAt && receivedAt < todayDate ? receivedAt : todayDate;
 
       if (!parsed) {
         const fallbackAmount = findLikelyAmount(body);
@@ -107,12 +127,47 @@ async function importForUser(user) {
         const fallbackExpense = {
           merchant: classification.merchant || guessMerchant(subject, from),
           amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
-          date: todayDate,
-          notes: 'Imported from Gmail — needs review',
+          date: maxExpenseDate,
+          notes: buildReviewNotes({
+            subject,
+            snippet,
+            body,
+            reason: 'needs review',
+          }),
           items: null,
         };
         parsed = fallbackExpense;
         importedAsPendingReview = true;
+      }
+
+      parsed.date = clampExpenseDate(parsed.date, maxExpenseDate);
+      if (!parsed.notes || /needs review/i.test(parsed.notes)) {
+        parsed.notes = buildReviewNotes({
+          subject,
+          snippet,
+          body,
+          reason: importedAsPendingReview ? 'needs review' : 'imported from gmail',
+        });
+      }
+
+      const duplicateCandidates = await Expense.findPotentialDuplicates({
+        householdId: user.household_id,
+        merchant: parsed.merchant,
+        amount: parsed.amount,
+        date: parsed.date,
+      });
+      if (duplicateCandidates.length > 0) {
+        await EmailImportLog.create({
+          userId: user.id,
+          messageId: msg.id,
+          status: 'skipped',
+          subject,
+          fromAddress: from,
+          skipReason: 'duplicate_expense',
+        });
+        skipped++;
+        increment(outcomes.skipped_reasons, 'duplicate_expense');
+        continue;
       }
 
       const { category_id } = await assignCategory({

@@ -4,7 +4,7 @@ jest.mock('../../src/services/ai', () => ({
 }));
 
 const { complete } = require('../../src/services/ai');
-const { parseEmailExpense, classifyEmailExpense, heuristicDisposition, selectRelevantEmailText, analyzeEmailSignals } = require('../../src/services/emailParser');
+const { parseEmailExpense, classifyEmailExpense, heuristicDisposition, selectRelevantEmailText, analyzeEmailSignals, clampExpenseDate } = require('../../src/services/emailParser');
 
 describe('emailParser', () => {
   beforeEach(() => complete.mockReset());
@@ -97,5 +97,11 @@ describe('emailParser', () => {
     const result = selectRelevantEmailText('Body with order total $19.00', 'Snippet with merchant');
     expect(result.classifierText).toContain('Snippet with merchant');
     expect(result.extractionText).toContain('Snippet with merchant');
+  });
+
+  it('clamps future parsed dates to the latest allowed charge date', () => {
+    expect(clampExpenseDate('2026-04-07', '2026-04-03')).toBe('2026-04-03');
+    expect(clampExpenseDate('2026-04-01', '2026-04-03')).toBe('2026-04-01');
+    expect(clampExpenseDate(null, '2026-04-03')).toBe('2026-04-03');
   });
 });
