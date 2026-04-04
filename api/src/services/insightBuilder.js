@@ -1,4 +1,5 @@
 const { detectRecurringItemSignals } = require('./recurringDetector');
+const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const InsightState = require('../models/insightState');
 
 function severityForSignal(signal, deltaPercent) {
@@ -54,25 +55,124 @@ function toInsight(signal) {
   };
 }
 
+function paceInsightType(deltaPercent) {
+  return Number(deltaPercent || 0) >= 0 ? 'spend_pace_ahead' : 'spend_pace_behind';
+}
+
+function severityForTrend(type, deltaPercent) {
+  const pct = Math.abs(Number(deltaPercent || 0));
+  if ((type === 'spend_pace_ahead' || type === 'budget_too_low') && pct >= 20) return 'high';
+  if (pct >= 10) return 'medium';
+  return 'low';
+}
+
+function buildTrendInsights(trend, scope) {
+  const insights = [];
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const scopeLabel = scope === 'household' ? 'household' : 'personal';
+
+  const deltaPercent = Number(trend?.pace?.delta_percent || 0);
+  const currentSpendToDate = Number(trend?.pace?.current_spend_to_date || 0);
+  const historicalSpendToDateAvg = Number(trend?.pace?.historical_spend_to_date_avg || 0);
+  if (historicalSpendToDateAvg > 0 && Math.abs(deltaPercent) >= 10) {
+    const type = paceInsightType(deltaPercent);
+    insights.push({
+      id: `${type}:${scopeLabel}:${trend.month}`,
+      type,
+      title: deltaPercent >= 0 ? 'You are spending faster than usual' : 'You are spending slower than usual',
+      body: deltaPercent >= 0
+        ? `You are ${Math.abs(deltaPercent)}% ahead of your usual ${scopeLabel} pace for this point in the period.`
+        : `You are ${Math.abs(deltaPercent)}% below your usual ${scopeLabel} pace for this point in the period.`,
+      severity: severityForTrend(type, deltaPercent),
+      entity_type: 'budget_period',
+      entity_id: `${scopeLabel}:${trend.month}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: trend.month,
+        current_spend_to_date: currentSpendToDate,
+        historical_spend_to_date_avg: historicalSpendToDateAvg,
+        delta_amount: Number(trend?.pace?.delta_amount || 0),
+        delta_percent: deltaPercent,
+        projected_period_total: Number(trend?.pace?.projected_period_total || 0),
+      },
+      actions: [],
+    });
+  }
+
+  const budgetFit = trend?.budget_adherence?.budget_fit;
+  const budgetLimit = Number(trend?.budget_adherence?.budget_limit || 0);
+  const averageActualSpend = Number(trend?.budget_adherence?.average_actual_spend_last_6 || 0);
+  if ((budgetFit === 'too_low' || budgetFit === 'too_high') && budgetLimit > 0 && averageActualSpend > 0) {
+    const deltaPercentBudget = Number((((averageActualSpend - budgetLimit) / budgetLimit) * 100).toFixed(1));
+    insights.push({
+      id: `${budgetFit}:${scopeLabel}:${trend.month}`,
+      type: `budget_${budgetFit}`,
+      title: budgetFit === 'too_low'
+        ? `Your ${scopeLabel} budget may be too low`
+        : `Your ${scopeLabel} budget may be higher than you need`,
+      body: budgetFit === 'too_low'
+        ? `You have gone over this ${scopeLabel} budget in ${trend.budget_adherence.over_budget_periods_last_6} of the last 6 periods.`
+        : `You have stayed well under this ${scopeLabel} budget in ${trend.budget_adherence.under_budget_periods_last_6} of the last 6 periods.`,
+      severity: severityForTrend(`budget_${budgetFit}`, deltaPercentBudget),
+      entity_type: 'budget',
+      entity_id: `${scopeLabel}:total`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: trend.month,
+        budget_limit: budgetLimit,
+        average_actual_spend_last_6: averageActualSpend,
+        projected_over_under: Number(trend?.budget_adherence?.projected_over_under || 0),
+        over_budget_periods_last_6: Number(trend?.budget_adherence?.over_budget_periods_last_6 || 0),
+        under_budget_periods_last_6: Number(trend?.budget_adherence?.under_budget_periods_last_6 || 0),
+        budget_fit: budgetFit,
+      },
+      actions: [],
+    });
+  }
+
+  return insights;
+}
+
 function severityRank(severity) {
   if (severity === 'high') return 3;
   if (severity === 'medium') return 2;
   return 1;
 }
 
-async function buildInsights({ householdId, limit = 10 }) {
-  const recurringSignals = await detectRecurringItemSignals(householdId);
-  return recurringSignals
-    .map(toInsight)
+async function buildInsights({ user, limit = 10 }) {
+  const insightSets = [];
+
+  if (user?.household_id) {
+    const recurringSignals = await detectRecurringItemSignals(user.household_id);
+    insightSets.push(recurringSignals.map(toInsight));
+  }
+
+  if (user?.id) {
+    const personalTrend = await analyzeSpendingTrend({ user, scope: 'personal' });
+    insightSets.push(buildTrendInsights(personalTrend, 'personal'));
+  }
+
+  if (user?.household_id) {
+    const householdTrend = await analyzeSpendingTrend({ user, scope: 'household' });
+    insightSets.push(buildTrendInsights(householdTrend, 'household'));
+  }
+
+  return insightSets
+    .flat()
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }
 
-async function buildInsightsForUser({ userId, householdId, limit = 10 }) {
-  const rawInsights = await buildInsights({ householdId, limit: Math.max(limit * 2, limit) });
-  if (!userId || !rawInsights.length) return rawInsights.slice(0, limit);
+async function buildInsightsForUser({ user, limit = 10 }) {
+  const rawInsights = await buildInsights({ user, limit: Math.max(limit * 2, limit) });
+  if (!user?.id || !rawInsights.length) return rawInsights.slice(0, limit);
 
-  const stateMap = await InsightState.getStateMap(userId, rawInsights.map((insight) => insight.id));
+  const stateMap = await InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id));
   return rawInsights
     .map((insight) => {
       const state = stateMap.get(insight.id);

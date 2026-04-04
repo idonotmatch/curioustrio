@@ -14,9 +14,9 @@ async function getUser(req) {
 router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
-    if (!user?.household_id) return res.json([]);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
-    const insights = await buildInsightsForUser({ userId: user.id, householdId: user.household_id, limit });
+    const insights = await buildInsightsForUser({ user, limit });
     res.json(insights);
   } catch (err) {
     next(err);

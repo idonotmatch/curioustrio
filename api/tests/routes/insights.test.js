@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../../src/index');
 const db = require('../../src/db');
 const ExpenseItem = require('../../src/models/expenseItem');
+const { currentPeriod, shiftPeriod } = require('../../src/services/spendingTrendAnalyzer');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
@@ -30,9 +31,9 @@ beforeAll(async () => {
   householdId = hhResult.rows[0].id;
 
   const userResult = await db.query(
-    `INSERT INTO users (provider_uid, name, email, household_id)
-     VALUES ('auth0|test-insights-user', 'Insights User', 'insights@test.com', $1)
-     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
+    `INSERT INTO users (provider_uid, name, email, household_id, budget_start_day)
+     VALUES ('auth0|test-insights-user', 'Insights User', 'insights@test.com', $1, 1)
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1, budget_start_day = 1
      RETURNING id`,
     [householdId]
   );
@@ -41,6 +42,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await db.query(`DELETE FROM insight_state WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(
     `DELETE FROM expense_items
      WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
@@ -50,6 +52,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-user'`);
   await db.query(`DELETE FROM users WHERE id = $1`, [userId]);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
@@ -114,6 +117,43 @@ describe('GET /insights', () => {
     const second = await request(app).get('/insights?limit=5');
     expect(second.status).toBe(200);
     expect(second.body).toEqual([]);
+  });
+
+  it('returns pace and budget-fit trend insights', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+    const prior4 = shiftPeriod(month, -4);
+    const prior5 = shiftPeriod(month, -5);
+    const prior6 = shiftPeriod(month, -6);
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Trader Joe''s', 240, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 120, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 100, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 90, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 620, ($7 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 560, ($8 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 540, ($9 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 530, ($10 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 520, ($11 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 510, ($12 || '-05')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month, prior1, prior2, prior3, prior6, prior5, prior4, prior3, prior2, prior1]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    expect(res.body.map((insight) => insight.type)).toEqual(
+      expect.arrayContaining(['spend_pace_ahead', 'budget_too_low'])
+    );
   });
 });
 
