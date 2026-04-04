@@ -37,37 +37,52 @@ function metersToDegrees(meters, lat) {
 
 async function searchPlace(query, lat = null, lng = null, radiusMeters = 500) {
   const token = getSignedJwt();
-  const url = new URL(MAPKIT_SEARCH_URL);
-  url.searchParams.set('q', query);
-  if (lat != null && lng != null) {
-    url.searchParams.set('userLocation', `${lat},${lng}`);
-    url.searchParams.set('searchLocation', `${lat},${lng}`);
-    const { latDeg, lngDeg } = metersToDegrees(radiusMeters, lat);
-    const north = lat + latDeg, south = lat - latDeg;
-    const east = lng + lngDeg, west = lng - lngDeg;
-    url.searchParams.set('searchRegion', `${north},${east},${south},${west}`);
+  async function searchOnce({ useLocationBias = false, includePoiFilter = false }) {
+    const url = new URL(MAPKIT_SEARCH_URL);
+    url.searchParams.set('q', query);
+    if (useLocationBias && lat != null && lng != null) {
+      url.searchParams.set('userLocation', `${lat},${lng}`);
+      url.searchParams.set('searchLocation', `${lat},${lng}`);
+      const { latDeg, lngDeg } = metersToDegrees(radiusMeters, lat);
+      const north = lat + latDeg, south = lat - latDeg;
+      const east = lng + lngDeg, west = lng - lngDeg;
+      url.searchParams.set('searchRegion', `${north},${east},${south},${west}`);
+    }
+    url.searchParams.set('limitToCountries', 'US');
+    if (includePoiFilter) {
+      url.searchParams.set('resultTypeFilter', 'Poi');
+    }
+    url.searchParams.set('lang', 'en-US');
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const top = data.results?.[0];
+    if (!top) return null;
+
+    const place_name = top.displayLines?.[0] || query;
+    const address = top.displayLines?.slice(1).join(', ') || '';
+    const { latitude, longitude } = top.coordinate || {};
+    const mapkit_stable_id = latitude != null && longitude != null
+      ? `${latitude.toFixed(4)},${longitude.toFixed(4)}`
+      : null;
+
+    return { place_name, address, mapkit_stable_id };
   }
-  url.searchParams.set('limitToCountries', 'US');
-  url.searchParams.set('resultTypeFilter', 'Poi');
-  url.searchParams.set('lang', 'en-US');
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-
-  const data = await res.json();
-  const top = data.results?.[0];
-  if (!top) return null;
-
-  const place_name = top.displayLines?.[0] || query;
-  const address = top.displayLines?.slice(1).join(', ') || '';
-  const { latitude, longitude } = top.coordinate || {};
-  const mapkit_stable_id = latitude != null
-    ? `${latitude.toFixed(4)},${longitude.toFixed(4)}`
-    : null;
-
-  return { place_name, address, mapkit_stable_id };
+  // Try the tightest/highest-quality match first, but fall back progressively.
+  // Manual search should not fail just because the user is not physically near
+  // the searched location or because the query resolves better as an address
+  // than a POI.
+  return (
+    await searchOnce({ useLocationBias: true, includePoiFilter: true }) ||
+    await searchOnce({ useLocationBias: true, includePoiFilter: false }) ||
+    await searchOnce({ useLocationBias: false, includePoiFilter: true }) ||
+    await searchOnce({ useLocationBias: false, includePoiFilter: false })
+  );
 }
 
 module.exports = { searchPlace };

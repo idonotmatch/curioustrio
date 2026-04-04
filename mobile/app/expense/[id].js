@@ -405,7 +405,7 @@ export default function ExpenseDetailScreen() {
         </View>
       </View>
 
-      {((editing && canEdit) || locationData) ? (
+      {((editing && canEdit) || locationData || expense.place_name || expense.address) ? (
         <View style={styles.locationSection}>
           {editing && canEdit ? (
             <LocationPicker
@@ -413,17 +413,18 @@ export default function ExpenseDetailScreen() {
               locationData={locationData}
               merchant={merchant}
             />
-          ) : expense.place_name ? (
+          ) : (expense.place_name || expense.address) ? (
             (() => {
               const coords = expense.mapkit_stable_id?.split(',').map(Number);
               const hasCoords = coords?.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1]);
+              const locationLabel = expense.place_name || expense.address;
               const mapsUrl = hasCoords
-                ? `maps://?ll=${coords[0]},${coords[1]}&q=${encodeURIComponent(expense.place_name)}`
+                ? `maps://?ll=${coords[0]},${coords[1]}&q=${encodeURIComponent(locationLabel)}`
                 : `maps://?q=${encodeURIComponent(expense.address || expense.place_name)}`;
               return (
                 <TouchableOpacity style={styles.locationCard} onPress={() => Linking.openURL(mapsUrl)}>
                   <View style={styles.locationInfo}>
-                    <Text style={styles.locationName}>{expense.place_name}</Text>
+                    <Text style={styles.locationName}>{locationLabel}</Text>
                     {expense.address ? <Text style={styles.locationAddress}>{expense.address}</Text> : null}
                   </View>
                   <Ionicons name="map-outline" size={18} color="#444" />

@@ -34,17 +34,60 @@ it('returns top place result from MapKit search', async () => {
 });
 
 it('returns null when no results found', async () => {
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ results: [] }),
-  });
+  fetch
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    });
 
   const result = await searchPlace('Nonexistent Place', 37.775, -122.419);
   expect(result).toBeNull();
 });
 
 it('returns null when fetch fails', async () => {
-  fetch.mockResolvedValueOnce({ ok: false });
+  fetch
+    .mockResolvedValueOnce({ ok: false })
+    .mockResolvedValueOnce({ ok: false })
+    .mockResolvedValueOnce({ ok: false })
+    .mockResolvedValueOnce({ ok: false });
   const result = await searchPlace('Test', 37.775, -122.419);
   expect(result).toBeNull();
+});
+
+it('falls back to broader search when local POI search misses', async () => {
+  fetch
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        results: [{
+          displayLines: ['Target', '789 Broadway, New York, NY'],
+          coordinate: { latitude: 40.7306, longitude: -73.9352 },
+        }],
+      }),
+    });
+
+  const result = await searchPlace('Target', 37.775, -122.419);
+  expect(result).not.toBeNull();
+  expect(result.place_name).toBe('Target');
+  expect(fetch).toHaveBeenCalledTimes(3);
 });
