@@ -176,11 +176,13 @@ function AppNavigator() {
   if (!bootstrapped) {
     return (
       <View style={styles.splashContainer}>
-        <Image
-          source={require('../assets/splash-icon.png')}
-          style={styles.splashImage}
-          resizeMode="contain"
-        />
+        <View style={styles.splashImageFrame}>
+          <Image
+            source={require('../assets/splash-icon.png')}
+            style={styles.splashImage}
+            resizeMode="contain"
+          />
+        </View>
       </View>
     );
   }
@@ -221,6 +223,15 @@ const styles = StyleSheet.create({
   splashContainer: {
     flex: 1,
     backgroundColor: '#0a0a0a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashImageFrame: {
+    width: '72%',
+    maxWidth: 320,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   splashImage: {
     width: '100%',
