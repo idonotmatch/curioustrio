@@ -1,5 +1,6 @@
 const db = require('../../src/db');
-const { detectRecurring } = require('../../src/services/recurringDetector');
+const { detectRecurring, detectRecurringItems } = require('../../src/services/recurringDetector');
+const ExpenseItem = require('../../src/models/expenseItem');
 
 let testHouseholdId;
 let testUserId;
@@ -29,15 +30,22 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  await db.query(
+    `DELETE FROM expense_items
+     WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
+    [testHouseholdId]
+  );
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [testHouseholdId]);
 });
 
 async function insertExpense(merchant, amount, date) {
-  await db.query(
+  const result = await db.query(
     `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
-     VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed')`,
+     VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed')
+     RETURNING id`,
     [testUserId, testHouseholdId, merchant, amount, date]
   );
+  return result.rows[0].id;
 }
 
 describe('detectRecurring', () => {
@@ -121,5 +129,37 @@ describe('detectRecurring', () => {
   it('returns empty array for household with no expenses', async () => {
     const candidates = await detectRecurring(testHouseholdId);
     expect(candidates).toEqual([]);
+  });
+});
+
+describe('detectRecurringItems', () => {
+  it('returns recurring item candidates with cadence and unit-price history', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 7.19, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 7.09, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 7.19, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const candidates = await detectRecurringItems(testHouseholdId);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: 'item',
+      item_name: 'Greek Yogurt',
+      brand: 'Fage',
+      frequency: 'monthly',
+      average_gap_days: 14,
+      occurrence_count: 3,
+      normalized_total_size_value: 32,
+      normalized_total_size_unit: 'oz',
+    });
+    expect(candidates[0].median_unit_price).toBeTruthy();
+    expect(candidates[0].merchants).toEqual(['Whole Foods']);
   });
 });
