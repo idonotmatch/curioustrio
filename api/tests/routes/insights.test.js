@@ -4,6 +4,10 @@ const db = require('../../src/db');
 const ExpenseItem = require('../../src/models/expenseItem');
 const { currentPeriod, shiftPeriod } = require('../../src/services/spendingTrendAnalyzer');
 
+jest.mock('../../src/services/pushService', () => ({
+  sendNotifications: jest.fn().mockResolvedValue([]),
+}));
+
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
     req.userId = 'auth0|test-insights-user';
@@ -23,6 +27,17 @@ beforeAll(async () => {
       event_type TEXT NOT NULL CHECK (event_type IN ('shown', 'tapped', 'dismissed', 'acted')),
       metadata JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  );
+
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS insight_notifications (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      insight_id TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT 'push',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, insight_id, channel)
     )`
   );
 
@@ -52,6 +67,8 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM insight_state WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
@@ -65,6 +82,8 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-user'`);
@@ -447,5 +466,36 @@ describe('POST /insights/events', () => {
   it('returns 400 when events are missing', async () => {
     const res = await request(app).post('/insights/events').send({});
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /insights/dispatch-push', () => {
+  it('sends push notifications for eligible unsent insight types and dedupes them', async () => {
+    await db.query(
+      `INSERT INTO push_tokens (user_id, token, platform)
+       VALUES ($1, 'ExponentPushToken[test-insight-token]', 'ios')`,
+      [userId]
+    );
+
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 7.09, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 9.49, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 9.49, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const first = await request(app).post('/insights/dispatch-push').send();
+    expect(first.status).toBe(200);
+    expect(first.body.sent).toBeGreaterThan(0);
+
+    const second = await request(app).post('/insights/dispatch-push').send();
+    expect(second.status).toBe(200);
+    expect(second.body.sent).toBe(0);
   });
 });

@@ -3,7 +3,9 @@ const router = express.Router();
 const crypto = require('crypto');
 const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
+const PushToken = require('../models/pushToken');
 const { importForUser } = require('../services/gmailImporter');
+const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -53,6 +55,32 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
 
     console.log(`[cron/gmail-sync] done — users=${usersProcessed} imported=${totalImported} skipped=${totalSkipped} failed=${totalFailed}`);
     res.json({ users_processed: usersProcessed, total_imported: totalImported, total_skipped: totalSkipped, total_failed: totalFailed });
+  } catch (err) { next(err); }
+});
+
+router.post('/insights-push', cronAuth, async (req, res, next) => {
+  try {
+    const userIds = await PushToken.findAllUserIds();
+    console.log(`[cron/insights-push] starting — ${userIds.length} user(s) with push token(s)`);
+
+    let usersProcessed = 0;
+    let notificationsSent = 0;
+
+    for (const userId of userIds) {
+      try {
+        const user = await User.findById(userId);
+        if (!user) continue;
+        const result = await dispatchInsightPushesForUser(user);
+        usersProcessed++;
+        notificationsSent += Number(result.sent || 0);
+        console.log(`[cron/insights-push] user=${userId} sent=${result.sent || 0} considered=${result.considered || 0}`);
+      } catch (e) {
+        console.error(`[cron/insights-push] user=${userId} error:`, e.message);
+      }
+    }
+
+    console.log(`[cron/insights-push] done — users=${usersProcessed} sent=${notificationsSent}`);
+    res.json({ users_processed: usersProcessed, notifications_sent: notificationsSent });
   } catch (err) { next(err); }
 });
 

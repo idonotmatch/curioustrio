@@ -5,6 +5,7 @@ const User = require('../models/user');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const { buildInsightsForUser } = require('../services/insightBuilder');
+const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 
 router.use(authenticate);
 
@@ -48,6 +49,17 @@ router.post('/events', async (req, res, next) => {
       return res.status(400).json({ error: `events must include insight_id and event_type in ${InsightEvent.allowedEventTypes().join(', ')}` });
     }
     res.status(201).json(logged);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/dispatch-push', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const result = await dispatchInsightPushesForUser(user);
+    res.json(result);
   } catch (err) {
     next(err);
   }

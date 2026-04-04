@@ -29,4 +29,12 @@ async function findByHousehold(householdId) {
   return result.rows;
 }
 
-module.exports = { upsert, findByUser, findByHousehold };
+async function findAllUserIds() {
+  const result = await db.query(
+    `SELECT DISTINCT user_id
+     FROM push_tokens`
+  );
+  return result.rows.map((row) => row.user_id);
+}
+
+module.exports = { upsert, findByUser, findByHousehold, findAllUserIds };
