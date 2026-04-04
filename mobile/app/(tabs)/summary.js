@@ -1,4 +1,4 @@
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
@@ -55,8 +55,41 @@ function formatRelativeTime(value) {
   return `${days} days ago`;
 }
 
+function insightScopeLabel(insight) {
+  if (insight?.metadata?.scope === 'personal') return 'You';
+  if (insight?.metadata?.scope === 'household') return 'Household';
+  return insight?.entity_type === 'item' ? 'Household' : 'You';
+}
+
+function buildMockInsights() {
+  return [
+    {
+      id: 'mock:household-price-spike',
+      title: 'Organic bananas cost more than usual',
+      body: 'This trip came in 20% above your usual price, mostly from higher produce costs this week.',
+      entity_type: 'item',
+      metadata: { scope: 'household' },
+    },
+    {
+      id: 'mock:personal-budget-fit',
+      title: 'Your personal budget may be too low',
+      body: 'You have been outpacing this budget in most recent periods, and this month is trending above your normal pace again.',
+      entity_type: 'budget',
+      metadata: { scope: 'personal' },
+    },
+    {
+      id: 'mock:household-driver',
+      title: 'Groceries are driving the difference',
+      body: 'Groceries are running about $86 higher than your usual household pace so far this period.',
+      entity_type: 'category',
+      metadata: { scope: 'household' },
+    },
+  ];
+}
+
 export default function SummaryScreen() {
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
@@ -68,10 +101,18 @@ export default function SummaryScreen() {
   const householdStartDay = household?.budget_start_day || 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight } = useInsights(3);
+  const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
+  const displayInsights = __DEV__ && insights.length === 0
+    ? buildMockInsights().filter((insight) => !dismissedMockInsightIds.includes(insight.id))
+    : insights;
+  const hasMultipleInsights = displayInsights.length > 1;
+  const insightCardWidth = displayInsights.length <= 1
+    ? Math.max(0, windowWidth - 40)
+    : Math.max(280, windowWidth - 88);
 
   const loadGmailImportSummary = useCallback(async () => {
     try {
@@ -105,11 +146,20 @@ export default function SummaryScreen() {
   }, [recentTab, loadGmailImportSummary]);
 
   useEffect(() => {
+    if (__DEV__ && insights.length === 0) return;
     const unseenIds = insights
       .filter((insight) => insight.state?.status !== 'seen')
       .map((insight) => insight.id);
     if (unseenIds.length) markSeen(unseenIds);
   }, [insights, markSeen]);
+
+  function handleDismissInsight(id) {
+    if (__DEV__ && insights.length === 0) {
+      setDismissedMockInsightIds((current) => [...current, id]);
+      return;
+    }
+    dismissInsight(id);
+  }
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
@@ -276,34 +326,45 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      {insights.length > 0 && (
+      {displayInsights.length > 0 && (
         <View style={styles.insightsSection}>
-          <Text style={styles.sectionLabel}>Insights</Text>
-          {insights.map((insight) => (
-            <View key={insight.id} style={styles.insightCard}>
-              <View style={styles.insightHeader}>
-                <Text style={styles.insightTitle}>{insight.title}</Text>
-                <View style={styles.insightHeaderRight}>
-                  <Text style={[
-                    styles.insightSeverity,
-                    insight.severity === 'high' && styles.insightSeverityHigh,
-                    insight.severity === 'medium' && styles.insightSeverityMedium,
-                  ]}>
-                    {insight.severity}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => dismissInsight(insight.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Dismiss insight: ${insight.title}`}
-                  >
-                    <Ionicons name="close" size={16} color="#666" />
-                  </TouchableOpacity>
+          <View style={styles.insightsHeading}>
+            <Text style={styles.sectionLabel}>Insights</Text>
+            {displayInsights.length > 1 ? (
+              <Text style={styles.insightsHint}>Swipe for more</Text>
+            ) : null}
+          </View>
+          <ScrollView
+            horizontal
+            scrollEnabled={hasMultipleInsights}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.insightsRail,
+              !hasMultipleInsights && styles.insightsRailSingle,
+            ]}
+          >
+            {displayInsights.map((insight) => (
+              <View key={insight.id} style={[styles.insightCard, { width: insightCardWidth }]}>
+                <View style={styles.insightHeader}>
+                  <View style={styles.insightHeaderTop}>
+                    <View style={styles.insightScopeChip}>
+                      <Text style={styles.insightScopeText}>{insightScopeLabel(insight)}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleDismissInsight(insight.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Dismiss insight: ${insight.title}`}
+                    >
+                      <Ionicons name="close" size={16} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.insightTitle}>{insight.title}</Text>
                 </View>
+                <Text style={styles.insightBody}>{insight.body}</Text>
               </View>
-              <Text style={styles.insightBody}>{insight.body}</Text>
-            </View>
-          ))}
+            ))}
+          </ScrollView>
         </View>
       )}
 
@@ -483,6 +544,10 @@ const styles = StyleSheet.create({
   hOverLabel: { fontSize: 12, color: '#ef4444', marginTop: 4 },
 
   insightsSection: { marginBottom: 32 },
+  insightsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  insightsHint: { fontSize: 12, color: '#666' },
+  insightsRail: { paddingRight: 20, gap: 12 },
+  insightsRailSingle: { paddingRight: 0 },
   insightCard: {
     backgroundColor: '#111',
     borderRadius: 12,
@@ -490,14 +555,21 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#1a1a1a',
-    marginBottom: 10,
+    minHeight: 132,
   },
-  insightHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 12 },
-  insightHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  insightTitle: { flex: 1, fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
-  insightSeverity: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1 },
-  insightSeverityHigh: { color: '#ef4444' },
-  insightSeverityMedium: { color: '#f59e0b' },
+  insightHeader: { marginBottom: 8, gap: 10 },
+  insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  insightScopeChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  insightScopeText: { fontSize: 11, color: '#cfcfcf', fontWeight: '600', letterSpacing: 0.3 },
+  insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
 
   quickAdd: { marginBottom: 32 },
