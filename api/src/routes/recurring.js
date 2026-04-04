@@ -3,7 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const RecurringExpense = require('../models/recurringExpense');
-const { detectRecurring, detectRecurringItems } = require('../services/recurringDetector');
+const { detectRecurring, detectRecurringItems, detectRecurringItemSignals } = require('../services/recurringDetector');
 
 router.use(authenticate);
 
@@ -33,6 +33,15 @@ router.post('/detect-items', async (req, res, next) => {
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
     const candidates = await detectRecurringItems(user.household_id);
     res.json(candidates);
+  } catch (err) { next(err); }
+});
+
+router.post('/detect-item-signals', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const signals = await detectRecurringItemSignals(user.household_id);
+    res.json(signals);
   } catch (err) { next(err); }
 });
 

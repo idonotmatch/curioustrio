@@ -129,6 +129,14 @@ describe('POST /recurring/detect-items', () => {
   });
 });
 
+describe('POST /recurring/detect-item-signals', () => {
+  it('returns array (may be empty)', async () => {
+    const res = await request(app).post('/recurring/detect-item-signals');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
 describe('GET /recurring (no household)', () => {
   it('returns 403 when user has no household_id', async () => {
     await db.query(

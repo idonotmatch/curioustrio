@@ -13,6 +13,50 @@ function classifyFrequency(medianGap) {
   return 'yearly';
 }
 
+async function loadRecurringItemOccurrences(householdId) {
+  const result = await db.query(
+    `SELECT
+       ei.product_id,
+       ei.comparable_key,
+       COALESCE(p.name, ei.description) AS item_name,
+       COALESCE(p.brand, ei.brand) AS brand,
+       ei.normalized_total_size_value,
+       ei.normalized_total_size_unit,
+       ei.estimated_unit_price,
+       ei.amount AS item_amount,
+       e.merchant,
+       e.date
+     FROM expense_items ei
+     JOIN expenses e ON e.id = ei.expense_id
+     LEFT JOIN products p ON p.id = ei.product_id
+     WHERE e.household_id = $1
+       AND e.status = 'confirmed'
+       AND e.date >= CURRENT_DATE - INTERVAL '180 days'
+       AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
+     ORDER BY e.date ASC`,
+    [householdId]
+  );
+
+  const groups = new Map();
+  for (const row of result.rows) {
+    const key = row.product_id ? `product:${row.product_id}` : `comparable:${row.comparable_key}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({
+      product_id: row.product_id || null,
+      comparable_key: row.comparable_key || null,
+      item_name: row.item_name,
+      brand: row.brand || null,
+      merchant: row.merchant,
+      item_amount: row.item_amount == null ? null : Number(row.item_amount),
+      estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
+      normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
+      normalized_total_size_unit: row.normalized_total_size_unit || null,
+      date: new Date(row.date),
+    });
+  }
+  return groups;
+}
+
 async function detectRecurring(householdId) {
   const result = await db.query(
     `SELECT LOWER(merchant) as merchant, amount, date
@@ -70,46 +114,7 @@ async function detectRecurring(householdId) {
 }
 
 async function detectRecurringItems(householdId) {
-  const result = await db.query(
-    `SELECT
-       ei.product_id,
-       ei.comparable_key,
-       COALESCE(p.name, ei.description) AS item_name,
-       COALESCE(p.brand, ei.brand) AS brand,
-       ei.normalized_total_size_value,
-       ei.normalized_total_size_unit,
-       ei.estimated_unit_price,
-       ei.amount AS item_amount,
-       e.merchant,
-       e.date
-     FROM expense_items ei
-     JOIN expenses e ON e.id = ei.expense_id
-     LEFT JOIN products p ON p.id = ei.product_id
-     WHERE e.household_id = $1
-       AND e.status = 'confirmed'
-       AND e.date >= CURRENT_DATE - INTERVAL '180 days'
-       AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
-     ORDER BY e.date ASC`,
-    [householdId]
-  );
-
-  const groups = new Map();
-  for (const row of result.rows) {
-    const key = row.product_id ? `product:${row.product_id}` : `comparable:${row.comparable_key}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({
-      product_id: row.product_id || null,
-      comparable_key: row.comparable_key || null,
-      item_name: row.item_name,
-      brand: row.brand || null,
-      merchant: row.merchant,
-      item_amount: row.item_amount == null ? null : Number(row.item_amount),
-      estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
-      normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
-      normalized_total_size_unit: row.normalized_total_size_unit || null,
-      date: new Date(row.date),
-    });
-  }
+  const groups = await loadRecurringItemOccurrences(householdId);
 
   const candidates = [];
   for (const [groupKey, occurrences] of groups.entries()) {
@@ -162,4 +167,108 @@ async function detectRecurringItems(householdId) {
   return candidates.sort((a, b) => b.occurrence_count - a.occurrence_count || a.item_name.localeCompare(b.item_name));
 }
 
-module.exports = { detectRecurring, detectRecurringItems };
+async function detectRecurringItemSignals(householdId) {
+  const groups = await loadRecurringItemOccurrences(householdId);
+  const signals = [];
+  for (const [groupKey, history] of groups.entries()) {
+    if (history.length < 3) continue;
+
+    const sorted = [...history].sort((a, b) => a.date - b.date);
+    const latest = sorted[sorted.length - 1];
+    const baseline = sorted.slice(0, -1);
+    if (baseline.length < 2) continue;
+
+    const baselineDates = baseline.map(x => x.date);
+    const baselineGaps = [];
+    for (let i = 1; i < baselineDates.length; i++) {
+      baselineGaps.push(Math.round((baselineDates[i] - baselineDates[i - 1]) / (1000 * 60 * 60 * 24)));
+    }
+    const medianGap = baselineGaps.length ? median(baselineGaps) : Math.round((latest.date - baseline[baseline.length - 1].date) / (1000 * 60 * 60 * 24));
+    if (medianGap == null) continue;
+    const gapConsistent = baselineGaps.length === 0 || baselineGaps.every(g => Math.abs(g - medianGap) <= 7);
+    if (!gapConsistent) continue;
+
+    const baselineAmounts = baseline.map(x => x.item_amount).filter(v => v != null);
+    const baselineUnitPrices = baseline.map(x => x.estimated_unit_price).filter(v => v != null);
+    const baselineAmount = median(baselineAmounts);
+    const baselineUnitPrice = baselineUnitPrices.length ? median(baselineUnitPrices) : null;
+
+    const latestComparable = latest.estimated_unit_price ?? latest.item_amount;
+    const baselineComparable = baselineUnitPrice ?? baselineAmount;
+    const comparisonType = baselineUnitPrice != null && latest.estimated_unit_price != null ? 'unit_price' : 'price';
+
+    if (latestComparable == null || baselineComparable == null || baselineComparable <= 0) continue;
+
+    const deltaAmount = Number((latestComparable - baselineComparable).toFixed(4));
+    const deltaPercent = Number(((deltaAmount / baselineComparable) * 100).toFixed(1));
+    const absoluteThreshold = comparisonType === 'unit_price' ? 0.05 : 1;
+    const meaningfulDelta = Math.abs(deltaAmount) >= absoluteThreshold && Math.abs(deltaPercent) >= 10;
+
+    if (meaningfulDelta) {
+      signals.push({
+        kind: 'item_price_variance',
+        signal: deltaAmount > 0 ? 'price_spike' : 'better_than_usual',
+        comparison_type: comparisonType,
+        group_key: groupKey,
+        product_id: latest.product_id,
+        comparable_key: latest.comparable_key,
+        item_name: latest.item_name,
+        brand: latest.brand,
+        latest_merchant: latest.merchant,
+        latest_date: latest.date.toISOString().split('T')[0],
+        latest_value: latestComparable,
+        baseline_value: baselineComparable,
+        delta_amount: deltaAmount,
+        delta_percent: deltaPercent,
+      });
+    }
+
+    if (baselineUnitPrices.length >= 2) {
+      const merchantBaselines = {};
+      for (const entry of baseline) {
+        if (entry.estimated_unit_price == null || !entry.merchant) continue;
+        if (!merchantBaselines[entry.merchant]) merchantBaselines[entry.merchant] = [];
+        merchantBaselines[entry.merchant].push(entry.estimated_unit_price);
+      }
+
+      const merchantMedians = Object.entries(merchantBaselines)
+        .map(([merchant, values]) => ({ merchant, median_unit_price: median(values) }))
+        .filter(x => x.median_unit_price != null)
+        .sort((a, b) => a.median_unit_price - b.median_unit_price);
+
+      const currentMerchantMedian = merchantMedians.find(x => x.merchant === latest.merchant);
+      const cheapestMerchant = merchantMedians[0];
+      if (
+        currentMerchantMedian &&
+        cheapestMerchant &&
+        cheapestMerchant.merchant !== latest.merchant
+      ) {
+        const merchantDelta = Number((currentMerchantMedian.median_unit_price - cheapestMerchant.median_unit_price).toFixed(4));
+        const merchantDeltaPercent = Number(((merchantDelta / Math.max(cheapestMerchant.median_unit_price, 0.01)) * 100).toFixed(1));
+        if (merchantDelta >= 0.05 && merchantDeltaPercent >= 10) {
+          signals.push({
+            kind: 'item_price_variance',
+            signal: 'cheaper_elsewhere',
+            comparison_type: 'unit_price',
+            group_key: groupKey,
+            product_id: latest.product_id,
+            comparable_key: latest.comparable_key,
+            item_name: latest.item_name,
+            brand: latest.brand,
+            latest_merchant: latest.merchant,
+            latest_date: latest.date.toISOString().split('T')[0],
+            latest_value: currentMerchantMedian.median_unit_price,
+            baseline_value: cheapestMerchant.median_unit_price,
+            delta_amount: merchantDelta,
+            delta_percent: merchantDeltaPercent,
+            cheaper_merchant: cheapestMerchant.merchant,
+          });
+        }
+      }
+    }
+  }
+
+  return signals.sort((a, b) => Math.abs(b.delta_percent) - Math.abs(a.delta_percent));
+}
+
+module.exports = { detectRecurring, detectRecurringItems, detectRecurringItemSignals };

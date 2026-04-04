@@ -1,5 +1,5 @@
 const db = require('../../src/db');
-const { detectRecurring, detectRecurringItems } = require('../../src/services/recurringDetector');
+const { detectRecurring, detectRecurringItems, detectRecurringItemSignals } = require('../../src/services/recurringDetector');
 const ExpenseItem = require('../../src/models/expenseItem');
 
 let testHouseholdId;
@@ -161,5 +161,48 @@ describe('detectRecurringItems', () => {
     });
     expect(candidates[0].median_unit_price).toBeTruthy();
     expect(candidates[0].merchants).toEqual(['Whole Foods']);
+  });
+});
+
+describe('detectRecurringItemSignals', () => {
+  it('flags a meaningful price spike on the latest recurring purchase', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 7.09, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 9.49, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 9.49, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const signals = await detectRecurringItemSignals(testHouseholdId);
+    expect(signals.some(s => s.signal === 'price_spike' && s.item_name === 'Greek Yogurt')).toBe(true);
+  });
+
+  it('flags cheaper elsewhere when another merchant has a meaningfully lower unit price', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 56);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 42);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 28);
+    const d4 = new Date(today); d4.setDate(d4.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 8.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Trader Joes', 6.99, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Trader Joes', 6.89, d3.toISOString().split('T')[0]);
+    const e4 = await insertExpense('Whole Foods', 9.19, d4.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 8.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 6.89, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e4, [{ description: 'Greek Yogurt', amount: 9.19, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const signals = await detectRecurringItemSignals(testHouseholdId);
+    const cheaperElsewhere = signals.find(s => s.signal === 'cheaper_elsewhere' && s.item_name === 'Greek Yogurt');
+    expect(cheaperElsewhere).toBeTruthy();
+    expect(cheaperElsewhere.cheaper_merchant).toBe('Trader Joes');
   });
 });
