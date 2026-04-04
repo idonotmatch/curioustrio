@@ -217,6 +217,18 @@ export default function CategoriesScreen() {
   ]);
   const ungrouped = custom.filter(c => !renderedIds.has(c.id));
   const visibleSuggestions = suggestions.filter(s => !snoozedSuggestionIds.includes(s.id));
+  const renamedDefaultCount = defaults.filter(c => c.is_default && c.base_name && c.base_name !== c.name).length;
+
+  function renderCategoryTags(cat) {
+    return (
+      <>
+        {cat.is_default ? <Text style={styles.defaultTag}>Default</Text> : <Text style={styles.customTag}>Custom</Text>}
+        {cat.is_default && cat.base_name && cat.base_name !== cat.name ? (
+          <Text style={styles.overrideTag}>Household rename</Text>
+        ) : null}
+      </>
+    );
+  }
 
   function renderDeleteAction(cat) {
     return (
@@ -285,7 +297,7 @@ export default function CategoriesScreen() {
           ) : (
             <View style={styles.catLabelWrap}>
               <Text style={styles.catName}>{cat.name}</Text>
-              {cat.is_default ? <Text style={styles.defaultTag}>Default</Text> : null}
+              {renderCategoryTags(cat)}
             </View>
           )}
           <View style={styles.actions}>
@@ -520,7 +532,7 @@ export default function CategoriesScreen() {
                   ) : (
                     <View style={styles.catLabelWrap}>
                       <Text style={styles.parentLabel}>{parent.name}</Text>
-                      {parent.is_default ? <Text style={styles.defaultTag}>Default</Text> : null}
+                      {renderCategoryTags(parent)}
                     </View>
                   )}
                   <View style={styles.actions}>
@@ -553,17 +565,32 @@ export default function CategoriesScreen() {
 
             {/* Default categories */}
             <Text style={[styles.sectionLabel, { marginTop: 32 }]}>DEFAULTS</Text>
-            <Text style={styles.defaultsNote}>Built-in categories shared across all households. You can rename or hide them for your household.</Text>
+            <Text style={styles.defaultsNote}>
+              Built-in categories shared across all households. Rename changes only your household label, and Hide removes it from your picker without changing old expenses.
+            </Text>
+            {(renamedDefaultCount > 0 || hiddenDefaults.length > 0) && (
+              <View style={styles.defaultsSummaryCard}>
+                <Text style={styles.defaultsSummaryTitle}>Household overrides</Text>
+                <Text style={styles.defaultsSummaryText}>
+                  {renamedDefaultCount > 0
+                    ? `${renamedDefaultCount} renamed`
+                    : 'No renamed defaults yet'}
+                  {hiddenDefaults.length > 0 ? ` · ${hiddenDefaults.length} hidden` : ''}
+                </Text>
+              </View>
+            )}
             {defaults.map(cat => renderCatRow(cat))}
 
             {hiddenDefaults.length > 0 && (
               <>
                 <Text style={[styles.sectionLabel, { marginTop: 24 }]}>HIDDEN DEFAULTS</Text>
+                <Text style={styles.hiddenDefaultsNote}>Restore any built-in category you want back in your household list.</Text>
                 {hiddenDefaults.map(cat => (
                   <View key={cat.id} style={styles.row}>
                     <View style={styles.catLabelWrap}>
                       <Text style={styles.catName}>{cat.name}</Text>
-                      <Text style={styles.defaultTag}>Hidden</Text>
+                      <Text style={styles.defaultTag}>Default</Text>
+                      <Text style={styles.hiddenTag}>Hidden</Text>
                     </View>
                     <TouchableOpacity onPress={() => restoreCategory(cat.id)}>
                       <Text style={styles.rowActionText}>Restore</Text>
@@ -586,6 +613,18 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   empty: { color: '#888', fontSize: 15, marginBottom: 12 },
   defaultsNote: { color: '#888', fontSize: 14, marginBottom: 10 },
+  hiddenDefaultsNote: { color: '#777', fontSize: 13, marginBottom: 8 },
+  defaultsSummaryCard: {
+    backgroundColor: '#111',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1d1d1d',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  defaultsSummaryTitle: { color: '#d4d4d4', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  defaultsSummaryText: { color: '#767676', fontSize: 13 },
 
   // Add section
   addSection: { marginBottom: 28 },
@@ -625,9 +664,12 @@ const styles = StyleSheet.create({
   // Category rows
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111', backgroundColor: '#0a0a0a' },
   rowIndented: { paddingLeft: 16 },
-  catLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 },
+  catLabelWrap: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, flex: 1, marginRight: 8 },
   catName: { flex: 1, fontSize: 15, color: '#f5f5f5' },
   defaultTag: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  customTag: { color: '#555', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  overrideTag: { color: '#8f8f8f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  hiddenTag: { color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
   actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   rowActionText: { color: '#777', fontSize: 13 },
   saveText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },

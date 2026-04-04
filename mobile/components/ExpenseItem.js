@@ -53,6 +53,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
   const categoryLabel = localExpense.category_parent_name || localExpense.category_name || 'Uncategorized';
   const ownerLabel = isOwn ? 'You' : (localExpense.user_name || 'Household member');
   const categoryOptions = categories.filter(c => !c.parent_id || c.parent_name);
+  const dateLabel = formatDate(localExpense.date);
 
   async function toggleItems() {
     if (itemsExpanded) {
@@ -129,9 +130,10 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           <View style={styles.left}>
             <View style={styles.headerRow}>
               <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
-              <Text style={styles.metaText}>{formatDate(localExpense.date)}</Text>
             </View>
             <View style={styles.metaRow}>
+              <Text style={styles.metaText}>{dateLabel}</Text>
+              <Text style={styles.metaDivider}>·</Text>
               <TouchableOpacity
                 style={[styles.categoryChip, categoryPickerOpen && styles.categoryChipActive, !isOwn && styles.categoryChipStatic]}
                 onPress={isOwn && !pending ? () => setCategoryPickerOpen(open => !open) : undefined}
@@ -152,14 +154,23 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
                   )
                 ) : null}
               </TouchableOpacity>
-              {showUser ? (
-                <View style={[styles.ownerChip, isOwn && styles.ownerChipOwn]}>
-                  <Text style={[styles.ownerChipText, isOwn && styles.ownerChipTextOwn]}>{ownerLabel}</Text>
-                </View>
+              {localExpense.place_name ? (
+                <>
+                  <Text style={styles.metaDivider}>·</Text>
+                  <Text style={styles.metaText} numberOfLines={1}>{localExpense.place_name}</Text>
+                </>
               ) : null}
-              {showUser && localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
-              {localExpense.place_name ? <Text style={styles.metaText} numberOfLines={1}>· {localExpense.place_name}</Text> : null}
             </View>
+            {(showUser || localExpense.is_private) ? (
+              <View style={styles.ownerRow}>
+                {showUser ? (
+                  <View style={[styles.ownerChip, isOwn && styles.ownerChipOwn]}>
+                    <Text style={[styles.ownerChipText, isOwn && styles.ownerChipTextOwn]}>{ownerLabel}</Text>
+                  </View>
+                ) : null}
+                {showUser && localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
+              </View>
+            ) : null}
           </View>
           <Text style={[styles.amount, isRefund && styles.amountRefund]}>
             {isRefund ? '−' : ''}${Math.abs(Number(localExpense.amount)).toFixed(2)}
@@ -252,10 +263,10 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 2,
   },
   merchant: {
-    flexShrink: 1,
+    flex: 1,
     fontSize: 15,
     color: '#f5f5f5',
     fontWeight: '500',
@@ -265,8 +276,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 4,
+  },
+  ownerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
-    marginTop: 6,
+    marginTop: 7,
   },
   dot: {
     width: 5,
@@ -277,13 +295,13 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '65%',
+    maxWidth: '58%',
     backgroundColor: '#161616',
     borderWidth: 1,
     borderColor: '#222',
     borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
   },
   categoryChipActive: {
     borderColor: '#333',
@@ -305,28 +323,35 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#888',
+    color: '#7c7c7c',
+  },
+  metaDivider: {
+    fontSize: 12,
+    color: '#4d4d4d',
   },
   ownerChip: {
-    backgroundColor: '#181818',
+    backgroundColor: '#151515',
+    borderWidth: 1,
+    borderColor: '#202020',
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
   ownerChipOwn: {
     backgroundColor: '#1a2230',
+    borderColor: '#26314a',
   },
   ownerChipText: {
-    color: '#a8a8a8',
-    fontSize: 11,
+    color: '#9f9f9f',
+    fontSize: 10,
     fontWeight: '600',
   },
   ownerChipTextOwn: {
     color: '#cfe0ff',
   },
   privateLabel: {
-    color: '#777',
-    fontSize: 11,
+    color: '#6f6f6f',
+    fontSize: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
@@ -377,7 +402,10 @@ const styles = StyleSheet.create({
     gap: 6,
     marginLeft: 3,
     paddingHorizontal: 12,
+    paddingTop: 4,
     paddingBottom: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#181818',
   },
   deleteAction: {
     backgroundColor: '#ef4444',
@@ -394,8 +422,7 @@ const styles = StyleSheet.create({
   },
   itemCount: {
     fontSize: 12,
-    color: '#888',
-    marginTop: 2,
+    color: '#787878',
   },
   itemsPanel: {
     borderTopWidth: 1,

@@ -122,6 +122,10 @@ export default function ExpenseDetailScreen() {
   })();
   const sourceLabel = { manual: 'Manual entry', camera: 'Receipt scan', email: 'Email import', refund: 'Refund' };
   const isRefund = Number(expense.amount) < 0;
+  const categoryLabel = expense.category_parent_name || expense.category_name || 'Uncategorized';
+  const ownerLabel = expense.user_name || 'You';
+  const sourceText = sourceLabel[expense.source] || expense.source;
+  const reviewState = expense.status === 'pending' && /needs review/i.test(expense.notes || '');
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -147,9 +151,37 @@ export default function ExpenseDetailScreen() {
             <Text style={[styles.amount, isRefund && styles.amountRefund]}>
               {isRefund ? '−' : ''}${Math.abs(Number(expense.amount)).toFixed(2)}
             </Text>
+            <View style={styles.heroMetaWrap}>
+              <View style={styles.heroMetaChip}>
+                <Text style={styles.heroMetaText}>{formattedDate}</Text>
+              </View>
+              <View style={styles.heroMetaChip}>
+                <Text style={styles.heroMetaText}>{categoryLabel}</Text>
+              </View>
+              <View style={styles.heroMetaChip}>
+                <Text style={styles.heroMetaText}>{sourceText}</Text>
+              </View>
+              {expense.user_name ? (
+                <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
+                  <Text style={styles.heroMetaText}>{ownerLabel}</Text>
+                </View>
+              ) : null}
+              {expense.is_private ? (
+                <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
+                  <Text style={styles.heroMetaText}>Private</Text>
+                </View>
+              ) : null}
+            </View>
           </>
         )}
       </View>
+
+      {reviewState ? (
+        <View style={styles.reviewBanner}>
+          <Text style={styles.reviewBannerTitle}>Needs review</Text>
+          <Text style={styles.reviewBannerText}>This import was surfaced for review before it is counted in your confirmed expenses.</Text>
+        </View>
+      ) : null}
 
       {/* Fields */}
       <View style={styles.section}>
@@ -170,10 +202,7 @@ export default function ExpenseDetailScreen() {
             <Text style={styles.value}>{formattedDate}</Text>
           )}
         </Row>
-        <Row label="Source"><Text style={styles.value}>{sourceLabel[expense.source] || expense.source}</Text></Row>
-        {expense.place_name && (
-          <Row label="Location"><Text style={styles.value}>{expense.place_name}{expense.address ? `\n${expense.address}` : ''}</Text></Row>
-        )}
+        <Row label="Source"><Text style={styles.value}>{sourceText}</Text></Row>
         <Row label="Notes">
           {editing
             ? <TextInput style={styles.editInputInline} value={notes} onChangeText={setNotes} placeholder="Add a note" placeholderTextColor="#444" multiline />
@@ -195,7 +224,7 @@ export default function ExpenseDetailScreen() {
               </View>
             </ScrollView>
           ) : (
-            <Text style={styles.value}>{expense.category_name || '—'}</Text>
+            <Text style={styles.value}>{categoryLabel}</Text>
           )}
         </Row>
 
@@ -430,6 +459,32 @@ const styles = StyleSheet.create({
   merchant: { fontSize: 20, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
   amount: { fontSize: 36, color: '#f5f5f5', fontWeight: '600', marginTop: 4, letterSpacing: -1 },
   amountRefund: { color: '#4ade80' },
+  heroMetaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  heroMetaChip: {
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#202020',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  heroMetaChipMuted: {
+    backgroundColor: '#101010',
+  },
+  heroMetaText: { color: '#a4a4a4', fontSize: 12, fontWeight: '500' },
+  reviewBanner: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: -4,
+    backgroundColor: '#15120a',
+    borderWidth: 1,
+    borderColor: '#2c220f',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
 
   editRow: { flexDirection: 'row', gap: 10 },
   editInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },

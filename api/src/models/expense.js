@@ -103,10 +103,12 @@ async function findById(id) {
             c.icon  AS category_icon,
             c.color AS category_color,
             pc.name AS category_parent_name,
-            (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count
+            (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count,
+            u.name AS user_name
      FROM expenses e
      LEFT JOIN categories  c  ON e.category_id = c.id
      LEFT JOIN categories  pc ON c.parent_id   = pc.id
+     LEFT JOIN users       u  ON e.user_id     = u.id
      WHERE e.id = $1`,
     [id]
   );
