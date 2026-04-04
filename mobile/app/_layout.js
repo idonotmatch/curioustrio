@@ -2,8 +2,9 @@ import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
@@ -12,9 +13,51 @@ function AppNavigator() {
   const router = useRouter();
   const [bootstrapped, setBootstrapped] = useState(false);
   const resolvingSessionRef = useRef(false);
+  const gmailSyncInFlightRef = useRef(false);
+  const lastGmailAutoSyncAttemptRef = useRef(0);
+
+  async function cacheCurrentUser(user) {
+    if (!user) return;
+    try {
+      await AsyncStorage.setItem('cache:current-user', JSON.stringify({ data: user, ts: Date.now() }));
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async function loadCachedCurrentUser() {
+    try {
+      const raw = await AsyncStorage.getItem('cache:current-user');
+      if (!raw) return null;
+      return JSON.parse(raw)?.data || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function maybeAutoSyncGmail(token) {
+    if (!token || gmailSyncInFlightRef.current) return;
+    const now = Date.now();
+    if (now - lastGmailAutoSyncAttemptRef.current < 5 * 60 * 1000) return;
+    lastGmailAutoSyncAttemptRef.current = now;
+    gmailSyncInFlightRef.current = true;
+    try {
+      const status = await api.get('/gmail/status', { token });
+      if (!status?.connected) return;
+      const lastSyncedAt = status.last_synced_at ? new Date(status.last_synced_at).getTime() : 0;
+      const stale = !lastSyncedAt || Number.isNaN(lastSyncedAt) || (now - lastSyncedAt) >= 30 * 60 * 1000;
+      if (!stale) return;
+      await api.post('/gmail/import', {}, { token });
+    } catch {
+      // Non-fatal
+    } finally {
+      gmailSyncInFlightRef.current = false;
+    }
+  }
 
   // Push notification + location permission registration (independent of auth)
   useEffect(() => {
+    if (!bootstrapped) return;
     async function requestPermissions() {
       try {
         const { status: existing } = await Notifications.getPermissionsAsync();
@@ -41,11 +84,11 @@ function AppNavigator() {
       }
     }
     requestPermissions();
-  }, []);
+  }, [bootstrapped]);
 
   // Auth state listener
   useEffect(() => {
-    async function routeAuthenticatedSession(session) {
+    async function syncSessionInBackground(session) {
       if (resolvingSessionRef.current) return;
       resolvingSessionRef.current = true;
       try {
@@ -72,15 +115,32 @@ function AppNavigator() {
           }
         }
 
+        if (me) await cacheCurrentUser(me);
+
         if (!isAnon && me && !me.household_id) {
+          router.replace('/onboarding');
+        }
+      } finally {
+        resolvingSessionRef.current = false;
+      }
+    }
+
+    async function routeAuthenticatedSession(session) {
+      const isAnon = session.user.is_anonymous === true;
+      const cachedUser = await loadCachedCurrentUser();
+      const safeCachedUser = cachedUser?.provider_uid === session.user.id ? cachedUser : null;
+
+      if (!bootstrapped) {
+        if (!isAnon && safeCachedUser && !safeCachedUser.household_id) {
           router.replace('/onboarding');
         } else {
           router.replace('/(tabs)/summary');
         }
-      } finally {
-        resolvingSessionRef.current = false;
         setBootstrapped(true);
       }
+
+      syncSessionInBackground(session);
+      maybeAutoSyncGmail(session.access_token);
     }
 
     // Subscribe to auth state changes.
@@ -96,6 +156,21 @@ function AppNavigator() {
     });
 
     return () => subscription.unsubscribe();
+  }, [bootstrapped]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state !== 'active') return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          maybeAutoSyncGmail(session.access_token);
+        }
+      } catch {
+        // Non-fatal
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   if (!bootstrapped) {
