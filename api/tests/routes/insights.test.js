@@ -16,6 +16,17 @@ let userId;
 
 beforeAll(async () => {
   await db.query(
+    `CREATE TABLE IF NOT EXISTS insight_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      insight_id TEXT NOT NULL,
+      event_type TEXT NOT NULL CHECK (event_type IN ('shown', 'tapped', 'dismissed', 'acted')),
+      metadata JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  );
+
+  await db.query(
     `CREATE TABLE IF NOT EXISTS insight_state (
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       insight_id TEXT NOT NULL,
@@ -41,6 +52,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM insight_state WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(
@@ -53,6 +65,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-user'`);
   await db.query(`DELETE FROM users WHERE id = $1`, [userId]);
@@ -140,6 +153,14 @@ describe('GET /insights', () => {
     const second = await request(app).get('/insights?limit=5');
     expect(second.status).toBe(200);
     expect(second.body).toEqual([]);
+
+    const dismissEvents = await db.query(
+      `SELECT COUNT(*)::int AS count
+       FROM insight_events
+       WHERE user_id = $1 AND event_type = 'dismissed'`,
+      [userId]
+    );
+    expect(dismissEvents.rows[0].count).toBe(first.body.length);
   });
 
   it('returns pace and budget-fit trend insights', async () => {
@@ -390,6 +411,41 @@ describe('POST /insights/seen', () => {
 
   it('returns 400 without ids', async () => {
     const res = await request(app).post('/insights/seen').send({});
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /insights/events', () => {
+  it('records batched insight events', async () => {
+    const res = await request(app)
+      .post('/insights/events')
+      .send({
+        events: [
+          { insight_id: 'demo-insight-1', event_type: 'shown' },
+          { insight_id: 'demo-insight-1', event_type: 'tapped', metadata: { source: 'summary' } },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveLength(2);
+
+    const events = await db.query(
+      `SELECT insight_id, event_type
+       FROM insight_events
+       WHERE user_id = $1
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+    expect(events.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ insight_id: 'demo-insight-1', event_type: 'shown' }),
+        expect.objectContaining({ insight_id: 'demo-insight-1', event_type: 'tapped' }),
+      ])
+    );
+  });
+
+  it('returns 400 when events are missing', async () => {
+    const res = await request(app).post('/insights/events').send({});
     expect(res.status).toBe(400);
   });
 });

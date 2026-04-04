@@ -37,7 +37,22 @@ export function useInsights(limit = 5) {
     setInsights((current) => current.filter((insight) => insight.id !== id));
   }, []);
 
+  const logEvents = useCallback(async (events = []) => {
+    const clean = events
+      .map((event) => ({
+        insight_id: `${event?.insight_id || ''}`.trim(),
+        event_type: `${event?.event_type || ''}`.trim(),
+        metadata: event?.metadata ?? undefined,
+      }))
+      .filter((event) => event.insight_id && event.event_type);
+
+    if (!clean.length) return;
+    try {
+      await api.post('/insights/events', { events: clean });
+    } catch {}
+  }, []);
+
   useEffect(() => { refresh(); }, [refresh]);
 
-  return { insights, loading, refresh, markSeen, dismiss };
+  return { insights, loading, refresh, markSeen, dismiss, logEvents };
 }

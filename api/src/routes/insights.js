@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const InsightState = require('../models/insightState');
+const InsightEvent = require('../models/insightEvent');
 const { buildInsightsForUser } = require('../services/insightBuilder');
 
 router.use(authenticate);
@@ -36,11 +37,32 @@ router.post('/seen', async (req, res, next) => {
   }
 });
 
+router.post('/events', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const events = Array.isArray(req.body?.events) ? req.body.events : [];
+    if (!events.length) return res.status(400).json({ error: 'events array is required' });
+    const logged = await InsightEvent.createBatch(user.id, events.slice(0, 50));
+    if (!logged.length) {
+      return res.status(400).json({ error: `events must include insight_id and event_type in ${InsightEvent.allowedEventTypes().join(', ')}` });
+    }
+    res.status(201).json(logged);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/:id/dismiss', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     await InsightState.dismiss(user.id, req.params.id);
+    await InsightEvent.createBatch(user.id, [{
+      insight_id: req.params.id,
+      event_type: 'dismissed',
+      metadata: null,
+    }]);
     res.status(204).send();
   } catch (err) {
     next(err);

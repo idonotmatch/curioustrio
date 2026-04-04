@@ -2,7 +2,7 @@ import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useExpenses } from '../../hooks/useExpenses';
@@ -100,7 +100,7 @@ export default function SummaryScreen() {
   const isMultiMember = memberCount > 1;
   const householdStartDay = household?.budget_start_day || 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
-  const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight } = useInsights(3);
+  const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight, logEvents } = useInsights(3);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
@@ -113,6 +113,7 @@ export default function SummaryScreen() {
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
     : Math.max(280, windowWidth - 88);
+  const loggedShownInsightIds = useRef(new Set());
 
   const loadGmailImportSummary = useCallback(async () => {
     try {
@@ -153,12 +154,53 @@ export default function SummaryScreen() {
     if (unseenIds.length) markSeen(unseenIds);
   }, [insights, markSeen]);
 
+  useEffect(() => {
+    if (__DEV__ && insights.length === 0) return;
+    const idsToLog = displayInsights
+      .map((insight) => insight.id)
+      .filter((id) => id && !loggedShownInsightIds.current.has(id));
+    if (!idsToLog.length) return;
+    idsToLog.forEach((id) => loggedShownInsightIds.current.add(id));
+    logEvents(idsToLog.map((id) => ({
+      insight_id: id,
+      event_type: 'shown',
+      metadata: { surface: 'summary' },
+    })));
+  }, [displayInsights, insights.length, logEvents]);
+
   function handleDismissInsight(id) {
     if (__DEV__ && insights.length === 0) {
       setDismissedMockInsightIds((current) => [...current, id]);
       return;
     }
     dismissInsight(id);
+  }
+
+  async function handlePressInsight(insight) {
+    if (!insight?.id) return;
+    if (__DEV__ && insights.length === 0) {
+      Alert.alert(insight.title, insight.body);
+      return;
+    }
+
+    await logEvents([{
+      insight_id: insight.id,
+      event_type: 'tapped',
+      metadata: { surface: 'summary', type: insight.type },
+    }]);
+
+    if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
+      router.push({
+        pathname: '/recurring-item',
+        params: {
+          group_key: insight.metadata.group_key,
+          title: insight.metadata.item_name || insight.title,
+        },
+      });
+      return;
+    }
+
+    Alert.alert(insight.title, insight.body);
   }
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
@@ -344,14 +386,22 @@ export default function SummaryScreen() {
             ]}
           >
             {displayInsights.map((insight) => (
-              <View key={insight.id} style={[styles.insightCard, { width: insightCardWidth }]}>
+              <TouchableOpacity
+                key={insight.id}
+                style={[styles.insightCard, { width: insightCardWidth }]}
+                activeOpacity={0.92}
+                onPress={() => handlePressInsight(insight)}
+              >
                 <View style={styles.insightHeader}>
                   <View style={styles.insightHeaderTop}>
                     <View style={styles.insightScopeChip}>
                       <Text style={styles.insightScopeText}>{insightScopeLabel(insight)}</Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => handleDismissInsight(insight.id)}
+                      onPress={(event) => {
+                        event?.stopPropagation?.();
+                        handleDismissInsight(insight.id);
+                      }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       accessibilityRole="button"
                       accessibilityLabel={`Dismiss insight: ${insight.title}`}
@@ -362,7 +412,7 @@ export default function SummaryScreen() {
                   <Text style={styles.insightTitle}>{insight.title}</Text>
                 </View>
                 <Text style={styles.insightBody}>{insight.body}</Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
