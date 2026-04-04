@@ -95,6 +95,25 @@ describe('GET /insights', () => {
     });
   });
 
+  it('returns recurring repurchase due insights for items entering the watch window', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 52);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 34);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 16);
+
+    const e1 = await insertExpense('Target', 38.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Target', 39.49, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Target', 39.29, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Pampers Pure Size 6', amount: 38.99, brand: 'Pampers', pack_size: '82', unit: 'count' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Pampers Pure Size 6', amount: 39.49, brand: 'Pampers', pack_size: '82', unit: 'count' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Pampers Pure Size 6', amount: 39.29, brand: 'Pampers', pack_size: '82', unit: 'count' }]);
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    expect(res.body.map((insight) => insight.type)).toContain('recurring_repurchase_due');
+  });
+
   it('hides dismissed insights for the user', async () => {
     const today = new Date();
     const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
@@ -303,6 +322,34 @@ describe('GET /insights', () => {
     expect(res.body.map((insight) => insight.type)).toEqual(
       expect.arrayContaining(['top_category_driver', 'recurring_cost_pressure'])
     );
+  });
+
+  it('returns one-off variance insights when unusual merchants dominate the month', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Trader Joe''s', 60, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 50, ($3 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($3 || '-06')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 50, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($4 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($4 || '-06')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 45, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($5 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($5 || '-06')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Apple', 299, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'REI', 189, ($6 || '-03')::date, 'manual', 'confirmed')`,
+      [userId, householdId, prior1, prior2, prior3, month]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    expect(res.body.map((insight) => insight.type)).toContain('one_offs_driving_variance');
   });
 
   it('does not emit trend insights when there is not enough historical data yet', async () => {

@@ -132,6 +132,48 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
   }));
 }
 
+async function merchantSpendByPeriod({ scope, householdId, userId, from, toExclusive }) {
+  if (scope === 'household') {
+    const result = await db.query(
+      `SELECT
+         COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
+         COALESCE(NULLIF(TRIM(e.merchant), ''), 'Unknown') AS merchant_name,
+         COALESCE(SUM(e.amount), 0) AS spent
+       FROM expenses e
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.date >= $2
+         AND e.date < $3
+       GROUP BY merchant_key, merchant_name`,
+      [householdId, from, toExclusive]
+    );
+    return result.rows.map((row) => ({
+      merchant_key: row.merchant_key,
+      merchant_name: row.merchant_name,
+      spent: Number(row.spent || 0),
+    }));
+  }
+
+  const result = await db.query(
+    `SELECT
+       COALESCE(NULLIF(TRIM(LOWER(merchant)), ''), 'unknown') AS merchant_key,
+       COALESCE(NULLIF(TRIM(merchant), ''), 'Unknown') AS merchant_name,
+       COALESCE(SUM(amount), 0) AS spent
+     FROM expenses
+     WHERE user_id = $1
+       AND status = 'confirmed'
+       AND date >= $2
+       AND date < $3
+     GROUP BY merchant_key, merchant_name`,
+    [userId, from, toExclusive]
+  );
+  return result.rows.map((row) => ({
+    merchant_key: row.merchant_key,
+    merchant_name: row.merchant_name,
+    spent: Number(row.spent || 0),
+  }));
+}
+
 async function periodActivity({ scope, householdId, userId, from, toExclusive }) {
   if (scope === 'household') {
     const result = await db.query(
@@ -293,6 +335,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
     : null;
 
   let topDrivers = [];
+  let varianceBreakdown = null;
   if (historicalPeriods.length) {
     const currentCategoryRows = await categorySpendByPeriod({
       scope: effectiveScope,
@@ -352,6 +395,71 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
       .filter((driver) => Math.abs(driver.delta_amount) >= 20)
       .sort((a, b) => Math.abs(b.delta_amount) - Math.abs(a.delta_amount))
       .slice(0, 3);
+
+    const currentMerchantRows = await merchantSpendByPeriod({
+      scope: effectiveScope,
+      householdId: user.household_id,
+      userId: user.id,
+      from: bounds.from,
+      toExclusive: dateOnly(addDays(bounds.fromDate, elapsedDays)),
+    });
+    const currentMerchantMap = new Map(currentMerchantRows.map((row) => [row.merchant_key, row]));
+    const historicalMerchantTotals = new Map();
+
+    for (const period of historicalPeriods) {
+      const historicalBounds = periodBounds(period.month, startDay);
+      const historicalElapsedDays = Math.min(elapsedDays, diffDays(historicalBounds.fromDate, historicalBounds.toDate));
+      const rows = await merchantSpendByPeriod({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: historicalBounds.from,
+        toExclusive: dateOnly(addDays(historicalBounds.fromDate, historicalElapsedDays)),
+      });
+      for (const row of rows) {
+        const existing = historicalMerchantTotals.get(row.merchant_key) || {
+          merchant_key: row.merchant_key,
+          merchant_name: row.merchant_name,
+          spent: 0,
+        };
+        existing.spent += row.spent;
+        historicalMerchantTotals.set(row.merchant_key, existing);
+      }
+    }
+
+    const oneOffDrivers = [];
+    let oneOffDeltaAmount = 0;
+    let recurringDeltaAmount = 0;
+
+    for (const [merchantKey, current] of currentMerchantMap.entries()) {
+      const historical = historicalMerchantTotals.get(merchantKey);
+      const currentSpent = Number(current?.spent || 0);
+      const historicalAvg = historicalPeriods.length
+        ? Number((((historical?.spent || 0) / historicalPeriods.length)).toFixed(2))
+        : 0;
+      const merchantDelta = Number((currentSpent - historicalAvg).toFixed(2));
+      if (merchantDelta <= 0) continue;
+
+      if (historicalAvg === 0 && currentSpent >= 25) {
+        oneOffDeltaAmount += merchantDelta;
+        oneOffDrivers.push({
+          merchant_key: merchantKey,
+          merchant_name: current.merchant_name,
+          current_spend_to_date: currentSpent,
+          delta_amount: merchantDelta,
+        });
+      } else {
+        recurringDeltaAmount += merchantDelta;
+      }
+    }
+
+    varianceBreakdown = {
+      one_off_delta_amount: Number(oneOffDeltaAmount.toFixed(2)),
+      recurring_delta_amount: Number(recurringDeltaAmount.toFixed(2)),
+      top_one_off_merchants: oneOffDrivers
+        .sort((a, b) => b.delta_amount - a.delta_amount)
+        .slice(0, 3),
+    };
   }
 
   const budgetLimit = await getTotalBudgetLimit({
@@ -427,6 +535,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
       projected_period_total: projectedPeriodTotal,
       historical_period_count: historicalPeriods.length,
       top_drivers: topDrivers,
+      variance_breakdown: varianceBreakdown,
       historical_periods: historicalPeriods,
     },
     budget_adherence: {

@@ -1,4 +1,4 @@
-const { detectRecurringItemSignals } = require('./recurringDetector');
+const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('./recurringDetector');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const InsightState = require('../models/insightState');
 const Household = require('../models/household');
@@ -52,6 +52,39 @@ function toInsight(signal) {
     created_at: createdAt,
     expires_at: expiresAt,
     metadata: signal,
+    actions: [],
+  };
+}
+
+function toRepurchaseDueInsight(candidate) {
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+  const itemName = candidate.item_name || 'A recurring purchase';
+  let title = `${itemName} may be due soon`;
+  let body = `You usually buy this about every ${candidate.average_gap_days} days, and it looks like you may need it again in ${candidate.days_until_due} days.`;
+
+  if (candidate.status === 'due_today') {
+    title = `${itemName} may be due today`;
+    body = `You usually buy this about every ${candidate.average_gap_days} days, and today lines up with your usual repurchase timing.`;
+  } else if (candidate.status === 'overdue') {
+    title = `${itemName} may already be due`;
+    body = `You usually buy this about every ${candidate.average_gap_days} days, and you are about ${Math.abs(candidate.days_until_due)} days past the usual repurchase window.`;
+  }
+
+  return {
+    id: `recurring_repurchase_due:${candidate.group_key}:${candidate.next_expected_date}`,
+    type: 'recurring_repurchase_due',
+    title,
+    body,
+    severity: candidate.status === 'overdue' || candidate.days_until_due <= 1 ? 'high' : 'medium',
+    entity_type: 'item',
+    entity_id: candidate.group_key,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    metadata: {
+      ...candidate,
+      scope: 'household',
+    },
     actions: [],
   };
 }
@@ -125,6 +158,39 @@ function buildTrendInsights(trend, scope) {
         month: trend.month,
         direction: driverDirection,
         ...topDriver,
+      },
+      actions: [],
+    });
+  }
+
+  const varianceBreakdown = trend?.pace?.variance_breakdown;
+  const oneOffDeltaAmount = Number(varianceBreakdown?.one_off_delta_amount || 0);
+  const recurringDeltaAmount = Number(varianceBreakdown?.recurring_delta_amount || 0);
+  const topOneOffMerchants = varianceBreakdown?.top_one_off_merchants || [];
+  if (
+    paceHistoryCount >= 3 &&
+    oneOffDeltaAmount >= 50 &&
+    oneOffDeltaAmount > recurringDeltaAmount * 1.25
+  ) {
+    const merchantNames = topOneOffMerchants.slice(0, 2).map((merchant) => merchant.merchant_name);
+    insights.push({
+      id: `one_offs:${scopeLabel}:${trend.month}:${merchantNames.join('|') || 'variance'}`,
+      type: 'one_offs_driving_variance',
+      title: 'One-off purchases are driving the difference',
+      body: merchantNames.length
+        ? `${merchantNames.join(' and ')} are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period.`
+        : `A few unusual purchases are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period.`,
+      severity: oneOffDeltaAmount >= 100 ? 'high' : 'medium',
+      entity_type: 'budget_period',
+      entity_id: `${scopeLabel}:${trend.month}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: trend.month,
+        one_off_delta_amount: oneOffDeltaAmount,
+        recurring_delta_amount: recurringDeltaAmount,
+        top_one_off_merchants: topOneOffMerchants,
       },
       actions: [],
     });
@@ -204,6 +270,21 @@ function dedupeInsights(insights) {
           insight.metadata?.delta_amount,
         ].join(':');
       }
+      if (insight.type === 'one_offs_driving_variance') {
+        return [
+          insight.type,
+          insight.metadata?.month,
+          insight.metadata?.one_off_delta_amount,
+          (insight.metadata?.top_one_off_merchants || []).map((merchant) => merchant.merchant_key).join('|'),
+        ].join(':');
+      }
+      if (insight.type === 'recurring_repurchase_due') {
+        return [
+          insight.type,
+          insight.metadata?.group_key,
+          insight.metadata?.next_expected_date,
+        ].join(':');
+      }
       return `${insight.title}:${insight.body}`;
     })();
     const existing = picked.get(key);
@@ -233,6 +314,13 @@ async function buildInsights({ user, limit = 10 }) {
   if (user?.household_id) {
     recurringSignals = await detectRecurringItemSignals(user.household_id);
     insightSets.push(recurringSignals.map(toInsight));
+    const watchCandidates = await detectRecurringWatchCandidates(user.household_id);
+    insightSets.push(
+      watchCandidates
+        .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
+        .slice(0, 3)
+        .map(toRepurchaseDueInsight)
+    );
 
     const spikeSignals = recurringSignals.filter((signal) => signal.signal === 'price_spike');
     const totalRecurringDelta = spikeSignals.reduce((sum, signal) => sum + Math.max(Number(signal.delta_amount || 0), 0), 0);
@@ -251,8 +339,8 @@ async function buildInsights({ user, limit = 10 }) {
         type: 'recurring_cost_pressure',
         title: 'Recurring purchases are getting more expensive',
         body: topItems.length
-          ? `${topItems.join(' and ')} are above their usual price, adding pressure to this period's spend.`
-          : 'Several recurring purchases are above their usual price right now.',
+          ? `${topItems.join(' and ')} are above their usual price, adding about $${Number(totalRecurringDelta.toFixed(2))} of extra spend versus your recent baseline.`
+          : `Several recurring purchases are above their usual price, adding about $${Number(totalRecurringDelta.toFixed(2))} of extra spend versus your recent baseline.`,
         severity: totalRecurringDelta >= 10 || spikeSignals.length >= 3 ? 'high' : 'medium',
         entity_type: 'household',
         entity_id: user.household_id,
