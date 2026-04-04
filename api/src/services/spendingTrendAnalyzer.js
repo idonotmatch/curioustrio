@@ -83,6 +83,52 @@ async function sumSpend({ scope, householdId, userId, from, toExclusive }) {
   return Number(result.rows[0]?.spent || 0);
 }
 
+async function categorySpendByPeriod({ scope, householdId, userId, from, toExclusive }) {
+  if (scope === 'household') {
+    const result = await db.query(
+      `SELECT
+         COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name,
+         COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+         COALESCE(SUM(e.amount), 0) AS spent
+       FROM expenses e
+       LEFT JOIN categories c ON e.category_id = c.id
+       LEFT JOIN categories pc ON c.parent_id = pc.id
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.date >= $2
+         AND e.date < $3
+       GROUP BY category_key, category_name`,
+      [householdId, from, toExclusive]
+    );
+    return result.rows.map((row) => ({
+      category_key: row.category_key,
+      category_name: row.category_name,
+      spent: Number(row.spent || 0),
+    }));
+  }
+
+  const result = await db.query(
+    `SELECT
+       COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name,
+       COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+       COALESCE(SUM(e.amount), 0) AS spent
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN categories pc ON c.parent_id = pc.id
+     WHERE e.user_id = $1
+       AND e.status = 'confirmed'
+       AND e.date >= $2
+       AND e.date < $3
+     GROUP BY category_key, category_name`,
+    [userId, from, toExclusive]
+  );
+  return result.rows.map((row) => ({
+    category_key: row.category_key,
+    category_name: row.category_name,
+    spent: Number(row.spent || 0),
+  }));
+}
+
 async function getTotalBudgetLimit({ scope, householdId, userId }) {
   if (scope === 'household') {
     const settings = await BudgetSetting.findByHousehold(householdId);
@@ -193,6 +239,68 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
     ? Number((((currentSpendToDate - historicalSpendToDateAvg) / historicalSpendToDateAvg) * 100).toFixed(1))
     : null;
 
+  let topDrivers = [];
+  if (historicalPeriods.length) {
+    const currentCategoryRows = await categorySpendByPeriod({
+      scope: effectiveScope,
+      householdId: user.household_id,
+      userId: user.id,
+      from: bounds.from,
+      toExclusive: dateOnly(addDays(bounds.fromDate, elapsedDays)),
+    });
+    const currentCategoryMap = new Map(currentCategoryRows.map((row) => [row.category_key, row]));
+    const historicalCategoryTotals = new Map();
+
+    for (const period of historicalPeriods) {
+      const historicalBounds = periodBounds(period.month, startDay);
+      const historicalElapsedDays = Math.min(elapsedDays, diffDays(historicalBounds.fromDate, historicalBounds.toDate));
+      const rows = await categorySpendByPeriod({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: historicalBounds.from,
+        toExclusive: dateOnly(addDays(historicalBounds.fromDate, historicalElapsedDays)),
+      });
+      for (const row of rows) {
+        const existing = historicalCategoryTotals.get(row.category_key) || {
+          category_key: row.category_key,
+          category_name: row.category_name,
+          spent: 0,
+        };
+        existing.spent += row.spent;
+        historicalCategoryTotals.set(row.category_key, existing);
+      }
+    }
+
+    const allCategoryKeys = new Set([
+      ...currentCategoryMap.keys(),
+      ...historicalCategoryTotals.keys(),
+    ]);
+
+    topDrivers = [...allCategoryKeys]
+      .map((categoryKey) => {
+        const current = currentCategoryMap.get(categoryKey);
+        const historical = historicalCategoryTotals.get(categoryKey);
+        const currentSpent = Number(current?.spent || 0);
+        const historicalAvg = Number(((historical?.spent || 0) / historicalPeriods.length).toFixed(2));
+        const driverDelta = Number((currentSpent - historicalAvg).toFixed(2));
+        const driverDeltaPercent = historicalAvg > 0
+          ? Number(((driverDelta / historicalAvg) * 100).toFixed(1))
+          : null;
+        return {
+          category_key: categoryKey,
+          category_name: current?.category_name || historical?.category_name || 'Uncategorized',
+          current_spend_to_date: currentSpent,
+          historical_spend_to_date_avg: historicalAvg,
+          delta_amount: driverDelta,
+          delta_percent: driverDeltaPercent,
+        };
+      })
+      .filter((driver) => Math.abs(driver.delta_amount) >= 20)
+      .sort((a, b) => Math.abs(b.delta_amount) - Math.abs(a.delta_amount))
+      .slice(0, 3);
+  }
+
   const budgetLimit = await getTotalBudgetLimit({
     scope: effectiveScope,
     householdId: user.household_id,
@@ -252,6 +360,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
       delta_percent: deltaPercent,
       projected_period_total: projectedPeriodTotal,
       historical_period_count: historicalPeriods.length,
+      top_drivers: topDrivers,
       historical_periods: historicalPeriods,
     },
     budget_adherence: {

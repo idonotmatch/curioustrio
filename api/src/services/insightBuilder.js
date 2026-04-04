@@ -102,6 +102,31 @@ function buildTrendInsights(trend, scope) {
     });
   }
 
+  const topDriver = trend?.pace?.top_drivers?.[0];
+  if (topDriver && Math.abs(Number(topDriver.delta_amount || 0)) >= 20) {
+    const driverDirection = Number(topDriver.delta_amount) >= 0 ? 'higher' : 'lower';
+    insights.push({
+      id: `top_driver:${scopeLabel}:${trend.month}:${topDriver.category_key}`,
+      type: 'top_category_driver',
+      title: `${topDriver.category_name} is driving the difference`,
+      body: Number(topDriver.delta_amount) >= 0
+        ? `${topDriver.category_name} is running $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} higher than your usual ${scopeLabel} pace so far this period.`
+        : `${topDriver.category_name} is running $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} lower than your usual ${scopeLabel} pace so far this period.`,
+      severity: severityForTrend('top_category_driver', topDriver.delta_percent || topDriver.delta_amount),
+      entity_type: 'category',
+      entity_id: topDriver.category_key,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: trend.month,
+        direction: driverDirection,
+        ...topDriver,
+      },
+      actions: [],
+    });
+  }
+
   const budgetFit = trend?.budget_adherence?.budget_fit;
   const budgetLimit = Number(trend?.budget_adherence?.budget_limit || 0);
   const averageActualSpend = Number(trend?.budget_adherence?.average_actual_spend_last_6 || 0);
@@ -146,10 +171,45 @@ function severityRank(severity) {
 
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
+  let recurringSignals = [];
 
   if (user?.household_id) {
-    const recurringSignals = await detectRecurringItemSignals(user.household_id);
+    recurringSignals = await detectRecurringItemSignals(user.household_id);
     insightSets.push(recurringSignals.map(toInsight));
+
+    const spikeSignals = recurringSignals.filter((signal) => signal.signal === 'price_spike');
+    const totalRecurringDelta = spikeSignals.reduce((sum, signal) => sum + Math.max(Number(signal.delta_amount || 0), 0), 0);
+    const maxRecurringDeltaPercent = spikeSignals.reduce(
+      (max, signal) => Math.max(max, Math.abs(Number(signal.delta_percent || 0))),
+      0
+    );
+    if (spikeSignals.length >= 2 || totalRecurringDelta >= 2 || maxRecurringDeltaPercent >= 15) {
+      const topItems = spikeSignals
+        .slice()
+        .sort((a, b) => Math.abs(Number(b.delta_amount || 0)) - Math.abs(Number(a.delta_amount || 0)))
+        .slice(0, 2)
+        .map((signal) => signal.item_name);
+      insightSets.push([{
+        id: `recurring_cost_pressure:${user.household_id}:${spikeSignals.map((signal) => signal.group_key).join('|')}`,
+        type: 'recurring_cost_pressure',
+        title: 'Recurring purchases are getting more expensive',
+        body: topItems.length
+          ? `${topItems.join(' and ')} are above their usual price, adding pressure to this period's spend.`
+          : 'Several recurring purchases are above their usual price right now.',
+        severity: totalRecurringDelta >= 10 || spikeSignals.length >= 3 ? 'high' : 'medium',
+        entity_type: 'household',
+        entity_id: user.household_id,
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        metadata: {
+          scope: 'household',
+          spike_count: spikeSignals.length,
+          total_delta_amount: Number(totalRecurringDelta.toFixed(2)),
+          items: topItems,
+        },
+        actions: [],
+      }]);
+    }
   }
 
   if (user?.id) {
