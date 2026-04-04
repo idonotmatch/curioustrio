@@ -160,6 +160,56 @@ describe('GET /insights', () => {
     );
   });
 
+  it('deduplicates repeated trend cards across personal and household scopes', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Trader Joe''s', 200, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 80, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 90, ($5 || '-01')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month, prior1, prior2]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    expect(res.body.filter((insight) => insight.type === 'spend_pace_ahead')).toHaveLength(1);
+  });
+
+  it('uses the real historical period count in budget insight copy', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+    const prior4 = shiftPeriod(month, -4);
+    const prior5 = shiftPeriod(month, -5);
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Trader Joe''s', 620, ($3 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 560, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 540, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 530, ($6 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 520, ($7 || '-05')::date, 'manual', 'confirmed')`,
+      [userId, householdId, prior1, prior2, prior3, prior4, prior5]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    const budgetInsight = res.body.find((insight) => insight.type === 'budget_too_low');
+    expect(budgetInsight).toBeTruthy();
+    expect(budgetInsight.body).toContain('last 4 periods');
+  });
+
   it('returns explanatory driver insights for category variance and recurring cost pressure', async () => {
     const month = currentPeriod(1);
     const prior1 = shiftPeriod(month, -1);

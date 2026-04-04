@@ -11,6 +11,9 @@ function dateOnly(value) {
 }
 
 function parseDateOnly(value) {
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
   const [year, month, day] = `${value}`.split('-').map(Number);
   return new Date(year, (month || 1) - 1, day || 1, 12, 0, 0, 0);
 }
@@ -335,7 +338,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
     : null;
 
   let budgetFit = null;
-  if (budgetLimit != null && averageActualSpend != null && adherencePeriods.length >= 3) {
+  if (budgetLimit != null && averageActualSpend != null && adherencePeriods.length >= 4) {
     if (overBudgetPeriods >= 4) budgetFit = 'too_low';
     else if (underBudgetPeriods >= 5 && averageActualSpend <= budgetLimit * 0.85) budgetFit = 'too_high';
     else budgetFit = 'on_track';

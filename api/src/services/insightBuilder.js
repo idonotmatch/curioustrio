@@ -75,7 +75,8 @@ function buildTrendInsights(trend, scope) {
   const deltaPercent = Number(trend?.pace?.delta_percent || 0);
   const currentSpendToDate = Number(trend?.pace?.current_spend_to_date || 0);
   const historicalSpendToDateAvg = Number(trend?.pace?.historical_spend_to_date_avg || 0);
-  if (historicalSpendToDateAvg > 0 && Math.abs(deltaPercent) >= 10) {
+  const paceHistoryCount = Number(trend?.pace?.historical_period_count || 0);
+  if (historicalSpendToDateAvg > 0 && paceHistoryCount >= 2 && Math.abs(deltaPercent) >= 10) {
     const type = paceInsightType(deltaPercent);
     insights.push({
       id: `${type}:${scopeLabel}:${trend.month}`,
@@ -94,6 +95,7 @@ function buildTrendInsights(trend, scope) {
         month: trend.month,
         current_spend_to_date: currentSpendToDate,
         historical_spend_to_date_avg: historicalSpendToDateAvg,
+        historical_period_count: paceHistoryCount,
         delta_amount: Number(trend?.pace?.delta_amount || 0),
         delta_percent: deltaPercent,
         projected_period_total: Number(trend?.pace?.projected_period_total || 0),
@@ -130,7 +132,8 @@ function buildTrendInsights(trend, scope) {
   const budgetFit = trend?.budget_adherence?.budget_fit;
   const budgetLimit = Number(trend?.budget_adherence?.budget_limit || 0);
   const averageActualSpend = Number(trend?.budget_adherence?.average_actual_spend_last_6 || 0);
-  if ((budgetFit === 'too_low' || budgetFit === 'too_high') && budgetLimit > 0 && averageActualSpend > 0) {
+  const budgetHistoryCount = Number(trend?.budget_adherence?.historical_period_count || 0);
+  if ((budgetFit === 'too_low' || budgetFit === 'too_high') && budgetLimit > 0 && averageActualSpend > 0 && budgetHistoryCount >= 4) {
     const deltaPercentBudget = Number((((averageActualSpend - budgetLimit) / budgetLimit) * 100).toFixed(1));
     insights.push({
       id: `${budgetFit}:${scopeLabel}:${trend.month}`,
@@ -139,8 +142,8 @@ function buildTrendInsights(trend, scope) {
         ? `Your ${scopeLabel} budget may be too low`
         : `Your ${scopeLabel} budget may be higher than you need`,
       body: budgetFit === 'too_low'
-        ? `You have gone over this ${scopeLabel} budget in ${trend.budget_adherence.over_budget_periods_last_6} of the last 6 periods.`
-        : `You have stayed well under this ${scopeLabel} budget in ${trend.budget_adherence.under_budget_periods_last_6} of the last 6 periods.`,
+        ? `You have gone over this ${scopeLabel} budget in ${trend.budget_adherence.over_budget_periods_last_6} of the last ${budgetHistoryCount} periods.`
+        : `You have stayed well under this ${scopeLabel} budget in ${trend.budget_adherence.under_budget_periods_last_6} of the last ${budgetHistoryCount} periods.`,
       severity: severityForTrend(`budget_${budgetFit}`, deltaPercentBudget),
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -154,6 +157,7 @@ function buildTrendInsights(trend, scope) {
         projected_over_under: Number(trend?.budget_adherence?.projected_over_under || 0),
         over_budget_periods_last_6: Number(trend?.budget_adherence?.over_budget_periods_last_6 || 0),
         under_budget_periods_last_6: Number(trend?.budget_adherence?.under_budget_periods_last_6 || 0),
+        historical_period_count: budgetHistoryCount,
         budget_fit: budgetFit,
       },
       actions: [],
@@ -167,6 +171,28 @@ function severityRank(severity) {
   if (severity === 'high') return 3;
   if (severity === 'medium') return 2;
   return 1;
+}
+
+function dedupeInsights(insights) {
+  const picked = new Map();
+  for (const insight of insights) {
+    const key = `${insight.type}:${insight.title}`;
+    const existing = picked.get(key);
+    if (!existing) {
+      picked.set(key, insight);
+      continue;
+    }
+    const existingRank = severityRank(existing.severity);
+    const incomingRank = severityRank(insight.severity);
+    if (incomingRank > existingRank) {
+      picked.set(key, insight);
+      continue;
+    }
+    if (incomingRank === existingRank && new Date(insight.created_at) > new Date(existing.created_at)) {
+      picked.set(key, insight);
+    }
+  }
+  return [...picked.values()];
 }
 
 async function buildInsights({ user, limit = 10 }) {
@@ -222,8 +248,15 @@ async function buildInsights({ user, limit = 10 }) {
     insightSets.push(buildTrendInsights(householdTrend, 'household'));
   }
 
-  return insightSets
-    .flat()
+  const deduped = dedupeInsights(
+    insightSets
+      .flat()
+      .filter(Boolean)
+      .filter((insight) => !!insight?.id)
+      .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
+  );
+
+  return deduped
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }
