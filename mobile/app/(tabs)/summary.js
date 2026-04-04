@@ -67,7 +67,7 @@ export default function SummaryScreen() {
   const isMultiMember = memberCount > 1;
   const householdStartDay = household?.budget_start_day || 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
-  const { insights, refresh: refreshInsights } = useInsights(3);
+  const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight } = useInsights(3);
   const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -94,6 +94,13 @@ export default function SummaryScreen() {
   useEffect(() => {
     if (recentTab === 'queue') loadGmailImportSummary();
   }, [recentTab, loadGmailImportSummary]);
+
+  useEffect(() => {
+    const unseenIds = insights
+      .filter((insight) => insight.state?.status !== 'seen')
+      .map((insight) => insight.id);
+    if (unseenIds.length) markSeen(unseenIds);
+  }, [insights, markSeen]);
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
@@ -267,13 +274,23 @@ export default function SummaryScreen() {
             <View key={insight.id} style={styles.insightCard}>
               <View style={styles.insightHeader}>
                 <Text style={styles.insightTitle}>{insight.title}</Text>
-                <Text style={[
-                  styles.insightSeverity,
-                  insight.severity === 'high' && styles.insightSeverityHigh,
-                  insight.severity === 'medium' && styles.insightSeverityMedium,
-                ]}>
-                  {insight.severity}
-                </Text>
+                <View style={styles.insightHeaderRight}>
+                  <Text style={[
+                    styles.insightSeverity,
+                    insight.severity === 'high' && styles.insightSeverityHigh,
+                    insight.severity === 'medium' && styles.insightSeverityMedium,
+                  ]}>
+                    {insight.severity}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => dismissInsight(insight.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Dismiss insight: ${insight.title}`}
+                  >
+                    <Ionicons name="close" size={16} color="#666" />
+                  </TouchableOpacity>
+                </View>
               </View>
               <Text style={styles.insightBody}>{insight.body}</Text>
             </View>
@@ -467,6 +484,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   insightHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 12 },
+  insightHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   insightTitle: { flex: 1, fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
   insightSeverity: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1 },
   insightSeverityHigh: { color: '#ef4444' },

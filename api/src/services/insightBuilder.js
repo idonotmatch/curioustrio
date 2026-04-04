@@ -1,4 +1,5 @@
 const { detectRecurringItemSignals } = require('./recurringDetector');
+const InsightState = require('../models/insightState');
 
 function severityForSignal(signal, deltaPercent) {
   const pct = Math.abs(Number(deltaPercent || 0));
@@ -67,4 +68,24 @@ async function buildInsights({ householdId, limit = 10 }) {
     .slice(0, limit);
 }
 
-module.exports = { buildInsights };
+async function buildInsightsForUser({ userId, householdId, limit = 10 }) {
+  const rawInsights = await buildInsights({ householdId, limit: Math.max(limit * 2, limit) });
+  if (!userId || !rawInsights.length) return rawInsights.slice(0, limit);
+
+  const stateMap = await InsightState.getStateMap(userId, rawInsights.map((insight) => insight.id));
+  return rawInsights
+    .map((insight) => {
+      const state = stateMap.get(insight.id);
+      return state ? {
+        ...insight,
+        state: {
+          status: state.status,
+          updated_at: state.updated_at,
+        },
+      } : insight;
+    })
+    .filter((insight) => insight.state?.status !== 'dismissed')
+    .slice(0, limit);
+}
+
+module.exports = { buildInsights, buildInsightsForUser };

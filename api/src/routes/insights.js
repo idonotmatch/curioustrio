@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
-const { buildInsights } = require('../services/insightBuilder');
+const InsightState = require('../models/insightState');
+const { buildInsightsForUser } = require('../services/insightBuilder');
 
 router.use(authenticate);
 
@@ -15,8 +16,32 @@ router.get('/', async (req, res, next) => {
     const user = await getUser(req);
     if (!user?.household_id) return res.json([]);
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
-    const insights = await buildInsights({ householdId: user.household_id, limit });
+    const insights = await buildInsightsForUser({ userId: user.id, householdId: user.household_id, limit });
     res.json(insights);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/seen', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => `${id}`.trim()).filter(Boolean) : [];
+    if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
+    await InsightState.markSeen(user.id, ids);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/dismiss', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    await InsightState.dismiss(user.id, req.params.id);
+    res.status(204).send();
   } catch (err) {
     next(err);
   }
