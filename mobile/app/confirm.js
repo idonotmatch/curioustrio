@@ -35,7 +35,11 @@ export default function ConfirmScreen() {
   const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
-      ? parsed.items.map(it => ({ description: it.description || '', amount: it.amount != null ? String(it.amount) : '' }))
+      ? parsed.items.map(it => ({
+          ...it,
+          description: it.description || '',
+          amount: it.amount != null ? String(it.amount) : '',
+        }))
       : []
   );
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
@@ -95,7 +99,7 @@ export default function ConfirmScreen() {
     setItems(prev => prev.map((it, i) => i === index ? { ...it, [field]: value } : it));
   }
   function handleAddItem() {
-    setItems(prev => [...prev, { description: '', amount: '' }]);
+    setItems(prev => [...prev, { description: '', amount: '', upc: null, sku: null, brand: null, product_size: null, pack_size: null, unit: null }]);
   }
   function handleRemoveItem(index) {
     setItems(prev => prev.filter((_, i) => i !== index));
@@ -204,7 +208,16 @@ export default function ConfirmScreen() {
         items: items.length > 0
           ? items
               .filter(it => it.description.trim())
-              .map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null }))
+              .map(it => ({
+                description: it.description.trim(),
+                amount: it.amount ? parseFloat(it.amount) : null,
+                upc: it.upc || null,
+                sku: it.sku || null,
+                brand: it.brand || null,
+                product_size: it.product_size || null,
+                pack_size: it.pack_size || null,
+                unit: it.unit || null,
+              }))
           : undefined,
       });
       await Promise.all([

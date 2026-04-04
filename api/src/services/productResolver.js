@@ -49,8 +49,33 @@ async function resolveProduct(item, merchant) {
       }
     }
 
-    // 3. Create new (only if we have at least UPC or SKU — otherwise too ambiguous)
-    if (!upc && !sku) return null;
+    // 3. Try higher-confidence description matching when we have brand/size hints.
+    if (description && (brand || product_size || pack_size || unit)) {
+      const existing = await Product.findByNormalizedDetails({
+        name: description,
+        merchant,
+        brand,
+        productSize: product_size,
+        packSize: pack_size,
+        unit,
+      });
+      if (existing) {
+        const updates = {};
+        if (!existing.upc && upc) updates.upc = upc;
+        if (!existing.sku && sku) updates.sku = sku;
+        if (!existing.brand && brand) updates.brand = brand;
+        if (!existing.product_size && product_size) updates.product_size = product_size;
+        if (!existing.pack_size && pack_size) updates.pack_size = pack_size;
+        if (!existing.unit && unit) updates.unit = unit;
+        if (!existing.merchant && merchant) updates.merchant = merchant;
+        if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
+        return existing.id;
+      }
+    }
+
+    // 4. Create new when we have a stable identifier or enough descriptive structure.
+    const hasStructuredIdentity = !!(upc || sku || description && (brand || product_size || pack_size || unit));
+    if (!hasStructuredIdentity) return null;
 
     const product = await Product.create({
       name: description,

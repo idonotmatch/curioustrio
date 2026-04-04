@@ -163,8 +163,8 @@ describe('POST /expenses/confirm', () => {
         date: '2026-03-20',
         source: 'manual',
         items: [
-          { description: 'Widget A', amount: 10.00 },
-          { description: 'Widget B', amount: 20.00 },
+          { description: 'Widget A', amount: 10.00, sku: 'WIDGET-A', brand: 'Widgets Inc', product_size: '12', unit: 'oz' },
+          { description: 'Widget B', amount: 20.00, upc: '123456789012' },
         ],
       });
 
@@ -179,6 +179,11 @@ describe('POST /expenses/confirm', () => {
     const descriptions = getRes.body.items.map(i => i.description);
     expect(descriptions).toContain('Widget A');
     expect(descriptions).toContain('Widget B');
+    const widgetA = getRes.body.items.find(i => i.description === 'Widget A');
+    expect(widgetA.sku).toBe('WIDGET-A');
+    expect(widgetA.brand).toBe('Widgets Inc');
+    expect(widgetA.product_size).toBe('12');
+    expect(widgetA.unit).toBe('oz');
   });
 
   it('persists place_name and address when location data is provided', async () => {

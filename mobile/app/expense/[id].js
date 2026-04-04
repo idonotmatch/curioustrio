@@ -63,6 +63,7 @@ export default function ExpenseDetailScreen() {
             : null
         );
         setItemsEdits((e.items || []).map(it => ({
+          ...it,
           description: it.description,
           amount: it.amount != null ? String(it.amount) : '',
         })));
@@ -95,12 +96,25 @@ export default function ExpenseDetailScreen() {
         mapkit_stable_id: locationData?.mapkit_stable_id || null,
         items: itemsEdits
           .filter(it => it.description.trim())
-          .map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })),
+          .map(it => ({
+            description: it.description.trim(),
+            amount: it.amount ? parseFloat(it.amount) : null,
+            upc: it.upc || null,
+            sku: it.sku || null,
+            brand: it.brand || null,
+            product_size: it.product_size || null,
+            pack_size: it.pack_size || null,
+            unit: it.unit || null,
+          })),
       });
       const refreshed = await api.get(`/expenses/${id}`);
       setExpense(refreshed);
       setEditing(false);
-      setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })));
+      setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({
+        ...it,
+        description: it.description.trim(),
+        amount: it.amount ? parseFloat(it.amount) : null,
+      })));
       setLocationData(
         refreshed.place_name || refreshed.address || refreshed.mapkit_stable_id
           ? {

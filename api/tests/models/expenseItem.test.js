@@ -55,6 +55,25 @@ describe('ExpenseItem.createBulk', () => {
     const rows = await ExpenseItem.createBulk(expenseId, [{ description: 'Unknown price', amount: null }]);
     expect(rows[0].amount).toBeNull();
   });
+
+  it('persists parsed metadata fields on items', async () => {
+    const rows = await ExpenseItem.createBulk(expenseId, [{
+      description: 'Sparkling Water',
+      amount: 5.99,
+      upc: '123456789012',
+      sku: 'SW-12',
+      brand: 'Water Co',
+      product_size: '12',
+      pack_size: '8',
+      unit: 'oz',
+    }]);
+    expect(rows[0].upc).toBe('123456789012');
+    expect(rows[0].sku).toBe('SW-12');
+    expect(rows[0].brand).toBe('Water Co');
+    expect(rows[0].product_size).toBe('12');
+    expect(rows[0].pack_size).toBe('8');
+    expect(rows[0].unit).toBe('oz');
+  });
 });
 
 describe('ExpenseItem.findByExpenseId', () => {
