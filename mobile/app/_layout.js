@@ -2,7 +2,7 @@ import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState, Image, Platform, View } from 'react-native';
+import { AppState, Image, Platform, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
@@ -175,10 +175,10 @@ function AppNavigator() {
 
   if (!bootstrapped) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={styles.splashContainer}>
         <Image
           source={require('../assets/splash-icon.png')}
-          style={{ width: 220, height: 220 }}
+          style={styles.splashImage}
           resizeMode="contain"
         />
       </View>
@@ -216,3 +216,14 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
+  splashImage: {
+    width: '100%',
+    height: '100%',
+  },
+});

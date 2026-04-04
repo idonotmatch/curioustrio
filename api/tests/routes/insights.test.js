@@ -155,6 +155,26 @@ describe('GET /insights', () => {
       expect.arrayContaining(['spend_pace_ahead', 'budget_too_low'])
     );
   });
+
+  it('does not emit trend insights when there is not enough historical data yet', async () => {
+    const month = currentPeriod(1);
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [userId]
+    );
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Corner Store', 85, ($3 || '-01')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    expect(res.body.map((insight) => insight.type)).not.toEqual(
+      expect.arrayContaining(['spend_pace_ahead', 'spend_pace_behind', 'budget_too_low', 'budget_too_high'])
+    );
+  });
 });
 
 describe('POST /insights/seen', () => {

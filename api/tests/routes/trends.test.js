@@ -109,4 +109,13 @@ describe('GET /trends/summary', () => {
     expect(res.body.pace.current_spend_to_date).toBe(150);
     expect(res.body.budget_adherence.budget_limit).toBe(700);
   });
+
+  it('does not fabricate historical trend windows before the user started logging data', async () => {
+    const res = await request(app).get('/trends/summary?scope=personal&month=2026-04');
+    expect(res.status).toBe(200);
+    expect(res.body.pace.historical_period_count).toBe(0);
+    expect(res.body.pace.historical_spend_to_date_avg).toBeNull();
+    expect(res.body.budget_adherence.historical_period_count).toBe(0);
+    expect(res.body.budget_adherence.budget_fit).toBeNull();
+  });
 });

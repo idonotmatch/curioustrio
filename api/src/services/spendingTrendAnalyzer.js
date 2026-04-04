@@ -94,6 +94,28 @@ async function getTotalBudgetLimit({ scope, householdId, userId }) {
   return total ? Number(total.monthly_limit) : null;
 }
 
+async function getFirstConfirmedExpenseDate({ scope, householdId, userId }) {
+  if (scope === 'household') {
+    const result = await db.query(
+      `SELECT MIN(e.date) AS first_date
+       FROM expenses e
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'`,
+      [householdId]
+    );
+    return result.rows[0]?.first_date || null;
+  }
+
+  const result = await db.query(
+    `SELECT MIN(date) AS first_date
+     FROM expenses
+     WHERE user_id = $1
+       AND status = 'confirmed'`,
+    [userId]
+  );
+  return result.rows[0]?.first_date || null;
+}
+
 async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) {
   const effectiveScope = scope === 'household' && user.household_id ? 'household' : 'personal';
   let startDay = user.budget_start_day || 1;
@@ -104,6 +126,12 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
 
   const targetMonth = month || currentPeriod(startDay);
   const bounds = periodBounds(targetMonth, startDay);
+  const firstConfirmedExpenseDate = await getFirstConfirmedExpenseDate({
+    scope: effectiveScope,
+    householdId: user.household_id,
+    userId: user.id,
+  });
+  const firstConfirmedExpenseAt = firstConfirmedExpenseDate ? parseDateOnly(firstConfirmedExpenseDate) : null;
   const now = new Date();
   const currentKey = currentPeriod(startDay);
   const isCurrentPeriod = targetMonth === currentKey;
@@ -123,29 +151,32 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
   });
 
   const historicalPeriods = [];
-  for (let i = 1; i <= 3; i++) {
-    const historicalMonth = shiftPeriod(targetMonth, -i);
-    const historicalBounds = periodBounds(historicalMonth, startDay);
-    const historicalElapsedDays = Math.min(elapsedDays, diffDays(historicalBounds.fromDate, historicalBounds.toDate));
-    const spentToDate = await sumSpend({
-      scope: effectiveScope,
-      householdId: user.household_id,
-      userId: user.id,
-      from: historicalBounds.from,
-      toExclusive: dateOnly(addDays(historicalBounds.fromDate, historicalElapsedDays)),
-    });
-    const fullSpend = await sumSpend({
-      scope: effectiveScope,
-      householdId: user.household_id,
-      userId: user.id,
-      from: historicalBounds.from,
-      toExclusive: historicalBounds.to,
-    });
-    historicalPeriods.push({
-      month: historicalMonth,
-      spent_to_date: spentToDate,
-      total_spent: fullSpend,
-    });
+  if (firstConfirmedExpenseAt) {
+    for (let i = 1; i <= 3; i++) {
+      const historicalMonth = shiftPeriod(targetMonth, -i);
+      const historicalBounds = periodBounds(historicalMonth, startDay);
+      if (historicalBounds.fromDate < firstConfirmedExpenseAt) continue;
+      const historicalElapsedDays = Math.min(elapsedDays, diffDays(historicalBounds.fromDate, historicalBounds.toDate));
+      const spentToDate = await sumSpend({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: historicalBounds.from,
+        toExclusive: dateOnly(addDays(historicalBounds.fromDate, historicalElapsedDays)),
+      });
+      const fullSpend = await sumSpend({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: historicalBounds.from,
+        toExclusive: historicalBounds.to,
+      });
+      historicalPeriods.push({
+        month: historicalMonth,
+        spent_to_date: spentToDate,
+        total_spent: fullSpend,
+      });
+    }
   }
 
   const historicalSpendToDateAvg = historicalPeriods.length
@@ -169,17 +200,20 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
   });
 
   const adherencePeriods = [];
-  for (let i = 1; i <= 6; i++) {
-    const priorMonth = shiftPeriod(targetMonth, -i);
-    const priorBounds = periodBounds(priorMonth, startDay);
-    const actualSpend = await sumSpend({
-      scope: effectiveScope,
-      householdId: user.household_id,
-      userId: user.id,
-      from: priorBounds.from,
-      toExclusive: priorBounds.to,
-    });
-    adherencePeriods.push({ month: priorMonth, actual_spend: actualSpend });
+  if (firstConfirmedExpenseAt) {
+    for (let i = 1; i <= 6; i++) {
+      const priorMonth = shiftPeriod(targetMonth, -i);
+      const priorBounds = periodBounds(priorMonth, startDay);
+      if (priorBounds.fromDate < firstConfirmedExpenseAt) continue;
+      const actualSpend = await sumSpend({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: priorBounds.from,
+        toExclusive: priorBounds.to,
+      });
+      adherencePeriods.push({ month: priorMonth, actual_spend: actualSpend });
+    }
   }
 
   const averageActualSpend = adherencePeriods.length
@@ -193,7 +227,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
     : null;
 
   let budgetFit = null;
-  if (budgetLimit != null && averageActualSpend != null) {
+  if (budgetLimit != null && averageActualSpend != null && adherencePeriods.length >= 3) {
     if (overBudgetPeriods >= 4) budgetFit = 'too_low';
     else if (underBudgetPeriods >= 5 && averageActualSpend <= budgetLimit * 0.85) budgetFit = 'too_high';
     else budgetFit = 'on_track';
@@ -209,6 +243,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
       total_days: totalDays,
       elapsed_ratio: Number((elapsedRatio || 0).toFixed(4)),
       is_current_period: isCurrentPeriod,
+      data_start_date: firstConfirmedExpenseDate,
     },
     pace: {
       current_spend_to_date: currentSpendToDate,
@@ -216,6 +251,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
       delta_amount: deltaAmount,
       delta_percent: deltaPercent,
       projected_period_total: projectedPeriodTotal,
+      historical_period_count: historicalPeriods.length,
       historical_periods: historicalPeriods,
     },
     budget_adherence: {
@@ -225,6 +261,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
       over_budget_periods_last_6: overBudgetPeriods,
       under_budget_periods_last_6: underBudgetPeriods,
       budget_fit: budgetFit,
+      historical_period_count: adherencePeriods.length,
       historical_periods: adherencePeriods,
     },
   };
