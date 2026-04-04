@@ -76,7 +76,7 @@ function buildTrendInsights(trend, scope) {
   const currentSpendToDate = Number(trend?.pace?.current_spend_to_date || 0);
   const historicalSpendToDateAvg = Number(trend?.pace?.historical_spend_to_date_avg || 0);
   const paceHistoryCount = Number(trend?.pace?.historical_period_count || 0);
-  if (historicalSpendToDateAvg > 0 && paceHistoryCount >= 2 && Math.abs(deltaPercent) >= 10) {
+  if (historicalSpendToDateAvg > 0 && paceHistoryCount >= 3 && Math.abs(deltaPercent) >= 10) {
     const type = paceInsightType(deltaPercent);
     insights.push({
       id: `${type}:${scopeLabel}:${trend.month}`,
@@ -105,7 +105,7 @@ function buildTrendInsights(trend, scope) {
   }
 
   const topDriver = trend?.pace?.top_drivers?.[0];
-  if (topDriver && Math.abs(Number(topDriver.delta_amount || 0)) >= 20) {
+  if (paceHistoryCount >= 3 && topDriver && Math.abs(Number(topDriver.delta_amount || 0)) >= 20) {
     const driverDirection = Number(topDriver.delta_amount) >= 0 ? 'higher' : 'lower';
     insights.push({
       id: `top_driver:${scopeLabel}:${trend.month}:${topDriver.category_key}`,
@@ -176,7 +176,35 @@ function severityRank(severity) {
 function dedupeInsights(insights) {
   const picked = new Map();
   for (const insight of insights) {
-    const key = `${insight.type}:${insight.title}`;
+    const key = (() => {
+      if (insight.type === 'spend_pace_ahead' || insight.type === 'spend_pace_behind') {
+        return [
+          insight.type,
+          insight.metadata?.month,
+          insight.metadata?.delta_percent,
+          insight.metadata?.current_spend_to_date,
+          insight.metadata?.historical_spend_to_date_avg,
+        ].join(':');
+      }
+      if (insight.type === 'budget_too_low' || insight.type === 'budget_too_high') {
+        return [
+          insight.type,
+          insight.metadata?.month,
+          insight.metadata?.budget_limit,
+          insight.metadata?.average_actual_spend_last_6,
+          insight.metadata?.historical_period_count,
+        ].join(':');
+      }
+      if (insight.type === 'top_category_driver') {
+        return [
+          insight.type,
+          insight.metadata?.month,
+          insight.metadata?.category_key,
+          insight.metadata?.delta_amount,
+        ].join(':');
+      }
+      return `${insight.title}:${insight.body}`;
+    })();
     const existing = picked.get(key);
     if (!existing) {
       picked.set(key, insight);

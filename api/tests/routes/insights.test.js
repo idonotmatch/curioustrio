@@ -164,14 +164,16 @@ describe('GET /insights', () => {
     const month = currentPeriod(1);
     const prior1 = shiftPeriod(month, -1);
     const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
 
     await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
        VALUES
        ($1, $2, 'Trader Joe''s', 200, ($3 || '-01')::date, 'manual', 'confirmed'),
        ($1, $2, 'Trader Joe''s', 80, ($4 || '-01')::date, 'manual', 'confirmed'),
-       ($1, $2, 'Trader Joe''s', 90, ($5 || '-01')::date, 'manual', 'confirmed')`,
-      [userId, householdId, month, prior1, prior2]
+       ($1, $2, 'Trader Joe''s', 90, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 95, ($6 || '-01')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month, prior1, prior2, prior3]
     );
 
     const res = await request(app).get('/insights?limit=10');
