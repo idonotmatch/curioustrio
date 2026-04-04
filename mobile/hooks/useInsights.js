@@ -5,7 +5,7 @@ import { invalidateCacheByPrefix, loadWithCache } from '../services/cache';
 export function useInsights(limit = 5) {
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
-  const cacheKey = `cache:insights:${limit}`;
+  const cacheKey = `cache:insights:v2:${limit}`;
 
   const refresh = useCallback(async () => {
     await loadWithCache(

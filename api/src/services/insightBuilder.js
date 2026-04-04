@@ -1,6 +1,7 @@
 const { detectRecurringItemSignals } = require('./recurringDetector');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const InsightState = require('../models/insightState');
+const Household = require('../models/household');
 
 function severityForSignal(signal, deltaPercent) {
   const pct = Math.abs(Number(deltaPercent || 0));
@@ -226,6 +227,8 @@ function dedupeInsights(insights) {
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
+  const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
+  const hasMultipleHouseholdMembers = householdMembers.length > 1;
 
   if (user?.household_id) {
     recurringSignals = await detectRecurringItemSignals(user.household_id);
@@ -271,7 +274,7 @@ async function buildInsights({ user, limit = 10 }) {
     insightSets.push(buildTrendInsights(personalTrend, 'personal'));
   }
 
-  if (user?.household_id) {
+  if (user?.household_id && hasMultipleHouseholdMembers) {
     const householdTrend = await analyzeSpendingTrend({ user, scope: 'household' });
     insightSets.push(buildTrendInsights(householdTrend, 'household'));
   }
