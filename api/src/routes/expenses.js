@@ -302,7 +302,8 @@ router.get('/:id', async (req, res, next) => {
 router.patch('/:id', async (req, res, next) => {
   try {
     const { merchant, amount, date, category_id, notes,
-            payment_method, card_last4, card_label, is_private, items } = req.body;
+            payment_method, card_last4, card_label, is_private, items,
+            place_name, address, mapkit_stable_id } = req.body;
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
@@ -314,7 +315,20 @@ router.patch('/:id', async (req, res, next) => {
     }
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const expense = await Expense.update(req.params.id, user.id, { merchant, amount, date, categoryId: category_id, notes, paymentMethod: payment_method, cardLast4: card_last4, cardLabel: card_label, isPrivate: is_private });
+    const expense = await Expense.update(req.params.id, user.id, {
+      merchant,
+      amount,
+      date,
+      categoryId: category_id,
+      notes,
+      paymentMethod: payment_method,
+      cardLast4: card_last4,
+      cardLabel: card_label,
+      isPrivate: is_private,
+      placeName: place_name,
+      address,
+      mapkitStableId: mapkit_stable_id,
+    });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (items !== undefined) {
       await ExpenseItem.replaceItems(req.params.id, Array.isArray(items) ? items : []);

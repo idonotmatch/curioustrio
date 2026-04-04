@@ -152,7 +152,11 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
   return result.rows;
 }
 
-async function update(id, userId, { merchant, amount, date, categoryId, notes, paymentMethod, cardLast4, cardLabel, isPrivate } = {}) {
+async function update(id, userId, {
+  merchant, amount, date, categoryId, notes,
+  paymentMethod, cardLast4, cardLabel, isPrivate,
+  placeName, address, mapkitStableId,
+} = {}) {
   const result = await db.query(
     `UPDATE expenses SET
        merchant = COALESCE($3, merchant),
@@ -163,9 +167,12 @@ async function update(id, userId, { merchant, amount, date, categoryId, notes, p
        payment_method = COALESCE($8, payment_method),
        card_last4 = COALESCE($9, card_last4),
        card_label = COALESCE($10, card_label),
-       is_private = COALESCE($11, is_private)
+       is_private = COALESCE($11, is_private),
+       place_name = COALESCE($12, place_name),
+       address = COALESCE($13, address),
+       mapkit_stable_id = COALESCE($14, mapkit_stable_id)
      WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [id, userId, merchant, amount, date, categoryId, notes, paymentMethod, cardLast4, cardLabel, isPrivate]
+    [id, userId, merchant, amount, date, categoryId, notes, paymentMethod, cardLast4, cardLabel, isPrivate, placeName, address, mapkitStableId]
   );
   return result.rows[0] || null;
 }

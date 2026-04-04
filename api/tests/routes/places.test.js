@@ -32,6 +32,22 @@ describe('GET /places/search', () => {
     expect(res.body.result).toBeNull();
   });
 
+  it('supports search without coordinates', async () => {
+    searchPlace.mockResolvedValueOnce({
+      place_name: 'Target',
+      address: '456 Market St, SF, CA',
+      mapkit_stable_id: '37.7840,-122.4075',
+    });
+
+    const res = await request(app)
+      .get('/places/search')
+      .query({ q: 'Target' });
+
+    expect(res.status).toBe(200);
+    expect(searchPlace).toHaveBeenCalledWith('Target', null, null, 500);
+    expect(res.body.result.place_name).toBe('Target');
+  });
+
   it('returns 400 when query params are missing', async () => {
     const res = await request(app).get('/places/search');
     expect(res.status).toBe(400);

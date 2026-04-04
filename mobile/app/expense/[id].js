@@ -9,11 +9,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { LocationPicker } from '../../components/LocationPicker';
 
 export default function ExpenseDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { categories } = useCategories();
+  const { userId: currentUserId } = useCurrentUser();
   const [expense, setExpense] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -34,6 +37,7 @@ export default function ExpenseDetailScreen() {
   const [items, setItems] = useState([]);
   const [itemsExpanded, setItemsExpanded] = useState(false);
   const [itemsEdits, setItemsEdits] = useState([]);
+  const [locationData, setLocationData] = useState(null);
 
   useEffect(() => {
     api.get(`/expenses/${id}`)
@@ -49,6 +53,15 @@ export default function ExpenseDetailScreen() {
         setCardLabel(e.card_label || '');
         setIsPrivate(e.is_private || false);
         setItems(e.items || []);
+        setLocationData(
+          e.place_name || e.address || e.mapkit_stable_id
+            ? {
+                place_name: e.place_name || '',
+                address: e.address || null,
+                mapkit_stable_id: e.mapkit_stable_id || null,
+              }
+            : null
+        );
         setItemsEdits((e.items || []).map(it => ({
           description: it.description,
           amount: it.amount != null ? String(it.amount) : '',
@@ -58,10 +71,16 @@ export default function ExpenseDetailScreen() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const canEdit = !!currentUserId && !!expense && String(expense.user_id) === String(currentUserId);
+
+  useEffect(() => {
+    if (!canEdit && editing) setEditing(false);
+  }, [canEdit, editing]);
+
   async function handleSave() {
     setSaving(true);
     try {
-      const updated = await api.patch(`/expenses/${id}`, {
+      await api.patch(`/expenses/${id}`, {
         merchant,
         amount: parseFloat(amount),
         date,
@@ -71,13 +90,26 @@ export default function ExpenseDetailScreen() {
         card_last4: cardLast4 || null,
         card_label: cardLabel || null,
         is_private: isPrivate,
+        place_name: locationData?.place_name || null,
+        address: locationData?.address || null,
+        mapkit_stable_id: locationData?.mapkit_stable_id || null,
         items: itemsEdits
           .filter(it => it.description.trim())
           .map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })),
       });
-      setExpense(updated);
+      const refreshed = await api.get(`/expenses/${id}`);
+      setExpense(refreshed);
       setEditing(false);
       setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({ description: it.description.trim(), amount: it.amount ? parseFloat(it.amount) : null })));
+      setLocationData(
+        refreshed.place_name || refreshed.address || refreshed.mapkit_stable_id
+          ? {
+              place_name: refreshed.place_name || '',
+              address: refreshed.address || null,
+              mapkit_stable_id: refreshed.mapkit_stable_id || null,
+            }
+          : null
+      );
       await Promise.all([
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
@@ -131,7 +163,7 @@ export default function ExpenseDetailScreen() {
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{
         title: expense.merchant,
-        headerRight: editing ? undefined : () => (
+        headerRight: editing || !canEdit ? undefined : () => (
           <TouchableOpacity onPress={() => setEditing(true)} style={{ marginRight: 4 }}>
             <Ionicons name="pencil-outline" size={20} color="#f5f5f5" />
           </TouchableOpacity>
@@ -140,7 +172,7 @@ export default function ExpenseDetailScreen() {
 
       {/* Hero */}
       <View style={styles.hero}>
-        {editing ? (
+        {editing && canEdit ? (
           <View style={styles.editRow}>
             <TextInput style={[styles.editInput, { flex: 1 }]} value={merchant} onChangeText={setMerchant} placeholderTextColor="#444" placeholder="Merchant" />
             <TextInput style={[styles.editInput, styles.editAmount]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#444" />
@@ -183,10 +215,10 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {/* Fields */}
-      <View style={styles.section}>
-        <Row label="Date">
-          {editing ? (
+      {editing && canEdit ? (
+        <View style={styles.editDetailsCard}>
+          <Text style={styles.editDetailsTitle}>Details</Text>
+          <Row label="Date">
             <DateTimePicker
               value={date ? new Date(date + 'T12:00:00') : new Date()}
               mode="date"
@@ -198,18 +230,8 @@ export default function ExpenseDetailScreen() {
               themeVariant="dark"
               style={styles.datePicker}
             />
-          ) : (
-            <Text style={styles.value}>{formattedDate}</Text>
-          )}
-        </Row>
-        <Row label="Source"><Text style={styles.value}>{sourceText}</Text></Row>
-        <Row label="Notes">
-          {editing
-            ? <TextInput style={styles.editInputInline} value={notes} onChangeText={setNotes} placeholder="Add a note" placeholderTextColor="#444" multiline />
-            : <Text style={styles.value}>{expense.notes || '—'}</Text>}
-        </Row>
-        <Row label="Category">
-          {editing ? (
+          </Row>
+          <Row label="Category">
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {(categories || []).map(c => (
@@ -223,10 +245,12 @@ export default function ExpenseDetailScreen() {
                 ))}
               </View>
             </ScrollView>
-          ) : (
-            <Text style={styles.value}>{categoryLabel}</Text>
-          )}
-        </Row>
+          </Row>
+        </View>
+      ) : null}
+
+      {/* Fields */}
+      <View style={styles.section}>
 
         <Row label="Payment">
           {editing ? (
@@ -281,15 +305,62 @@ export default function ExpenseDetailScreen() {
           <Text style={styles.label}>Private</Text>
           <Switch
             value={isPrivate}
-            onValueChange={editing ? setIsPrivate : undefined}
-            disabled={!editing}
+            onValueChange={editing && canEdit ? setIsPrivate : undefined}
+            disabled={!editing || !canEdit}
             trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
             thumbColor={isPrivate ? '#fff' : '#555'}
           />
         </View>
       </View>
 
-      {(items.length > 0 || editing) && (
+      {((editing && canEdit) || locationData) ? (
+        <View style={styles.locationSection}>
+          {editing && canEdit ? (
+            <LocationPicker
+              onLocation={setLocationData}
+              locationData={locationData}
+              merchant={merchant}
+            />
+          ) : expense.place_name ? (
+            (() => {
+              const coords = expense.mapkit_stable_id?.split(',').map(Number);
+              const hasCoords = coords?.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1]);
+              const mapsUrl = hasCoords
+                ? `maps://?ll=${coords[0]},${coords[1]}&q=${encodeURIComponent(expense.place_name)}`
+                : `maps://?q=${encodeURIComponent(expense.address || expense.place_name)}`;
+              return (
+                <TouchableOpacity style={styles.locationCard} onPress={() => Linking.openURL(mapsUrl)}>
+                  <View style={styles.locationInfo}>
+                    <Text style={styles.locationName}>{expense.place_name}</Text>
+                    {expense.address ? <Text style={styles.locationAddress}>{expense.address}</Text> : null}
+                  </View>
+                  <Ionicons name="map-outline" size={18} color="#444" />
+                </TouchableOpacity>
+              );
+            })()
+          ) : null}
+        </View>
+      ) : null}
+
+      {((editing && canEdit) || expense.notes) && (
+        <View style={styles.noteCard}>
+          <Text style={styles.noteCardLabel}>Notes</Text>
+          {editing && canEdit ? (
+            <TextInput
+              style={styles.noteInput}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Add a note"
+              placeholderTextColor="#444"
+              multiline
+            />
+          ) : (
+            <Text style={styles.noteText}>{expense.notes}</Text>
+          )}
+        </View>
+      )}
+
+      {(items.length > 0 || (editing && canEdit)) && (
         <TouchableOpacity
           style={styles.itemsHeader}
           onPress={() => setItemsExpanded(e => !e)}
@@ -304,7 +375,7 @@ export default function ExpenseDetailScreen() {
 
       {itemsExpanded && (
         <View style={styles.itemsList}>
-          {editing ? (
+          {editing && canEdit ? (
             <>
               {itemsEdits.map((item, i) => (
                 <View key={i} style={styles.itemEditRow}>
@@ -370,24 +441,6 @@ export default function ExpenseDetailScreen() {
         </View>
       )}
 
-      {/* Location */}
-      {expense.place_name && (() => {
-        const coords = expense.mapkit_stable_id?.split(',').map(Number);
-        const hasCoords = coords?.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1]);
-        const mapsUrl = hasCoords
-          ? `maps://?ll=${coords[0]},${coords[1]}&q=${encodeURIComponent(expense.place_name)}`
-          : `maps://?q=${encodeURIComponent(expense.address || expense.place_name)}`;
-        return (
-          <TouchableOpacity style={styles.locationCard} onPress={() => Linking.openURL(mapsUrl)}>
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationName}>{expense.place_name}</Text>
-              {expense.address ? <Text style={styles.locationAddress}>{expense.address}</Text> : null}
-            </View>
-            <Ionicons name="map-outline" size={18} color="#444" />
-          </TouchableOpacity>
-        );
-      })()}
-
       {/* Duplicate flags */}
       {expense.duplicate_flags?.length > 0 && (
         <View style={styles.dupSection}>
@@ -399,7 +452,7 @@ export default function ExpenseDetailScreen() {
       )}
 
       {/* Actions */}
-      {editing && (
+      {editing && canEdit && (
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
           <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save changes'}</Text>
         </TouchableOpacity>
@@ -432,11 +485,13 @@ export default function ExpenseDetailScreen() {
         </View>
       )}
 
-      <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
-        {deleting
-          ? <ActivityIndicator color="#ef4444" size="small" />
-          : <Text style={styles.deleteBtnText}>Delete expense</Text>}
-      </TouchableOpacity>
+      {canEdit ? (
+        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
+          {deleting
+            ? <ActivityIndicator color="#ef4444" size="small" />
+            : <Text style={styles.deleteBtnText}>Delete expense</Text>}
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }
@@ -485,6 +540,25 @@ const styles = StyleSheet.create({
   },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
+  editDetailsCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#111',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 2,
+  },
+  editDetailsTitle: {
+    color: '#555',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
 
   editRow: { flexDirection: 'row', gap: 10 },
   editInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
@@ -497,13 +571,44 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, color: '#444', width: 90 },
   valueWrap: { flex: 1, alignItems: 'flex-end' },
   value: { fontSize: 14, color: '#f5f5f5', textAlign: 'right' },
+  noteCard: {
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 4,
+    padding: 14,
+    backgroundColor: '#111',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+  },
+  noteCardLabel: {
+    color: '#555',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  noteText: {
+    color: '#f5f5f5',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  noteInput: {
+    color: '#f5f5f5',
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 84,
+    padding: 0,
+    textAlignVertical: 'top',
+  },
 
   catChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#1f1f1f' },
   catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   catChipText: { fontSize: 12, color: '#555' },
   catChipTextActive: { color: '#000', fontWeight: '600' },
 
-  locationCard: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
+  locationSection: { marginHorizontal: 20, marginTop: 4 },
+  locationCard: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
   locationInfo: { flex: 1 },
   locationName: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
   locationAddress: { color: '#555', fontSize: 11, marginTop: 2 },
