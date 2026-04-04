@@ -32,8 +32,35 @@ function cleanText(value) {
   return (value || '').replace(/\s+/g, ' ').trim();
 }
 
-function selectRelevantEmailText(emailBody) {
+function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
+  const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
+  const senderLooksTransactional = /@(amazon|walmart|target|ubereats|instacart|doordash|stripe|shopify|square|paypal|apple|google|expedia|delta|united|airbnb|booking|hilton|marriott|costco|bestbuy|etsy|ebay|wayfair|chewy|seamless|grubhub)\./i.test(fromAddress);
+  const negativeSignals = /(tracking|shipped|out for delivery|delivered|newsletter|unsubscribe|promotion|sale ends|weekly digest|security alert|sign in|password reset|view in browser|manage preferences)/i.test(text);
+  const transactionalContext = /(receipt|order|confirmation|purchase|charged|invoice|payment|refund|return|renewal|booking|subscription|trip|reservation)/i.test(text);
+  const strongMoneySignal = /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund amount|refund total|you paid|charged to)[^$\d]{0,30}\$?\s?-?\d+(?:\.\d{2})?/i.test(text);
+  const mediumMoneySignal = /(?:\btotal\b|\binvoice amount\b|\bpayment received\b|\bamount\b)[^$\d]{0,20}\$?\s?-?\d+(?:\.\d{2})?/i.test(text)
+    || (/\$\s?-?\d+(?:\.\d{2})?/.test(text) && transactionalContext);
+  const weakMoneySignal = /(?:save|from|starting at|under|up to|earn|credit|discount)[^$\d]{0,20}\$?\s?\d+(?:\.\d{2})?/i.test(text)
+    || /\$\s?\d+(?:\.\d{2})?/.test(text);
+
+  const shouldSurfaceToReview = strongMoneySignal
+    || (mediumMoneySignal && (transactionalContext || senderLooksTransactional))
+    || (transactionalContext && senderLooksTransactional && /\$\s?-?\d+(?:\.\d{2})?/.test(text));
+
+  return {
+    senderLooksTransactional,
+    negativeSignals,
+    transactionalContext,
+    strongMoneySignal,
+    mediumMoneySignal,
+    weakMoneySignal,
+    shouldSurfaceToReview,
+  };
+}
+
+function selectRelevantEmailText(emailBody, snippet = '') {
   const cleaned = cleanText(emailBody);
+  const normalizedSnippet = cleanText(snippet);
   if (!cleaned) return { classifierText: '', extractionText: '' };
 
   const top = cleaned.slice(0, 1200);
@@ -46,12 +73,12 @@ function selectRelevantEmailText(emailBody) {
     .slice(0, 12)
     .join('\n');
 
-  const classifierText = [top, bottom && bottom !== top ? bottom : '']
+  const classifierText = [normalizedSnippet, top, bottom && bottom !== top ? bottom : '']
     .filter(Boolean)
     .join('\n...\n')
     .slice(0, 2600);
 
-  const extractionText = [top, keywordLines, bottom && bottom !== top ? bottom : '']
+  const extractionText = [normalizedSnippet, top, keywordLines, bottom && bottom !== top ? bottom : '']
     .filter(Boolean)
     .join('\n...\n')
     .slice(0, 3600);
@@ -60,12 +87,10 @@ function selectRelevantEmailText(emailBody) {
 }
 
 function heuristicDisposition(subject = '', fromAddress = '', emailBody = '') {
-  const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
-  const positive = /(receipt|order|confirmation|purchase|charged|invoice|payment|refund|return|order total|total charged)/i.test(text);
-  const negative = /(tracking|shipped|out for delivery|delivered|newsletter|unsubscribe|promotion|sale ends|weekly digest|security alert|sign in|password reset)/i.test(text);
-  const hasMoney = /(?:\$|usd\s?)\d+(?:[.,]\d{2})?/.test(text);
-
-  if (!positive && negative && !hasMoney) return 'not_expense';
+  const signals = analyzeEmailSignals(subject, fromAddress, emailBody);
+  if (!signals.shouldSurfaceToReview && signals.negativeSignals && !signals.strongMoneySignal && !signals.mediumMoneySignal) {
+    return 'not_expense';
+  }
   return null;
 }
 
@@ -80,7 +105,7 @@ function parseJsonResponse(text) {
   }
 }
 
-async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate) {
+async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate, snippet = '') {
   if (!emailBody || typeof emailBody !== 'string' || emailBody.trim().length === 0) {
     throw new Error('emailBody is required');
   }
@@ -93,7 +118,7 @@ async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate) 
     return { disposition: heuristic, merchant: null, reason: 'heuristic_skip' };
   }
 
-  const { classifierText } = selectRelevantEmailText(emailBody);
+  const { classifierText } = selectRelevantEmailText(emailBody, snippet);
   const text = await complete({
     system: CLASSIFIER_SYSTEM_PROMPT,
     messages: [{
@@ -112,7 +137,7 @@ async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate) 
   };
 }
 
-async function parseEmailExpense(emailBody, subject, fromAddress, todayDate) {
+async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, snippet = '') {
   if (!emailBody || typeof emailBody !== 'string' || emailBody.trim().length === 0) {
     throw new Error('emailBody is required');
   }
@@ -120,7 +145,7 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate) {
     throw new Error('todayDate must be a valid ISO date string (YYYY-MM-DD)');
   }
 
-  const { extractionText } = selectRelevantEmailText(emailBody);
+  const { extractionText } = selectRelevantEmailText(emailBody, snippet);
 
   const text = await complete({
     system: SYSTEM_PROMPT,
@@ -133,4 +158,10 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate) {
   return parseJsonResponse(text);
 }
 
-module.exports = { parseEmailExpense, classifyEmailExpense, selectRelevantEmailText, heuristicDisposition };
+module.exports = {
+  parseEmailExpense,
+  classifyEmailExpense,
+  selectRelevantEmailText,
+  heuristicDisposition,
+  analyzeEmailSignals,
+};

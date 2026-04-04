@@ -40,6 +40,27 @@ export default function ConfirmScreen() {
   );
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
   const hasReviewHint = reviewFields.length > 0;
+  const fieldConfidence = expense?.field_confidence || {};
+
+  function confidenceMeta(field) {
+    const level = fieldConfidence[field];
+    if (level === 'low') return { text: 'Needs review', style: styles.confidenceLow };
+    if (level === 'medium') return { text: 'Double-check', style: styles.confidenceMedium };
+    return null;
+  }
+
+  function reviewNote(field, fallback = 'Double-check this field before saving.') {
+    const meta = confidenceMeta(field);
+    if (!meta) return null;
+    return (
+      <View style={styles.confidenceNoteRow}>
+        <View style={[styles.confidencePill, meta.style]}>
+          <Text style={styles.confidencePillText}>{meta.text}</Text>
+        </View>
+        <Text style={styles.confidenceHint}>{fallback}</Text>
+      </View>
+    );
+  }
 
   useEffect(() => {
     api.get('/expenses/cards').then(setSavedCards).catch(() => {});
@@ -224,50 +245,62 @@ export default function ConfirmScreen() {
           placeholderTextColor="#444"
         />
       </View>
+      {merchant.trim()
+        ? reviewNote('merchant', 'Merchant was inferred from the parse.')
+        : reviewNote('description', 'Description was inferred from the parse.')}
       {/* If both merchant and description exist (e.g. from receipt scan), show both */}
       {merchant.trim() && description.trim() ? (
+        <>
+          <View style={styles.editableRow}>
+            <Text style={styles.editableLabel}>DESCRIPTION</Text>
+            <TextInput
+              style={styles.editableInput}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Description"
+              placeholderTextColor="#444"
+            />
+          </View>
+          {reviewNote('description', 'Description was inferred from the parse.')}
+        </>
+      ) : null}
+
+      <View style={styles.editableGroup}>
         <View style={styles.editableRow}>
-          <Text style={styles.editableLabel}>DESCRIPTION</Text>
+          <Text style={styles.editableLabel}>AMOUNT</Text>
           <TextInput
             style={styles.editableInput}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Description"
+            value={amountText}
+            onChangeText={value => {
+              setAmountText(value);
+              setExpense(prev => ({
+                ...prev,
+                amount: isRefund
+                  ? -Math.abs(parseFloat(value) || 0)
+                  : Math.abs(parseFloat(value) || 0),
+              }));
+            }}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
             placeholderTextColor="#444"
           />
         </View>
-      ) : null}
-
-      <View style={styles.editableRow}>
-        <Text style={styles.editableLabel}>AMOUNT</Text>
-        <TextInput
-          style={styles.editableInput}
-          value={amountText}
-          onChangeText={value => {
-            setAmountText(value);
-            setExpense(prev => ({
-              ...prev,
-              amount: isRefund
-                ? -Math.abs(parseFloat(value) || 0)
-                : Math.abs(parseFloat(value) || 0),
-            }));
-          }}
-          keyboardType="decimal-pad"
-          placeholder="0.00"
-          placeholderTextColor="#444"
-        />
+        {reviewNote('amount', 'Amount may need a quick check.')}
       </View>
-      <View style={styles.editableRow}>
-        <Text style={styles.editableLabel}>DATE</Text>
-        <TextInput
-          style={styles.editableInput}
-          value={expense.date || ''}
-          onChangeText={value => setExpense(prev => ({ ...prev, date: value }))}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor="#444"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+      <View style={styles.editableGroup}>
+        <View style={styles.editableRow}>
+          <Text style={styles.editableLabel}>DATE</Text>
+          <TextInput
+            style={styles.editableInput}
+            value={expense.date || ''}
+            onChangeText={value => setExpense(prev => ({ ...prev, date: value }))}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor="#444"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+        {reviewNote('date', 'Date was inferred and may need adjusting.')}
       </View>
 
       {/* Category — tappable picker */}
@@ -352,6 +385,7 @@ export default function ConfirmScreen() {
       {(items.length > 0 || parsed?.source === 'camera' || parsed?.source === 'email') && (
         <View style={styles.itemsSection}>
           <Text style={styles.sectionLabel}>ITEMS</Text>
+          {reviewNote('items', 'Line items may be incomplete or approximate.')}
           {items.map((item, i) => (
             <View key={i} style={styles.itemRow}>
               <TextInput
@@ -504,10 +538,46 @@ const styles = StyleSheet.create({
   },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
   reviewBannerText: { color: '#888', fontSize: 12 },
+  editableGroup: { marginBottom: 8 },
+  confidenceNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: -2,
+    marginBottom: 2,
+    paddingHorizontal: 4,
+  },
+  confidencePill: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  confidenceMedium: {
+    backgroundColor: '#241b0a',
+    borderWidth: 1,
+    borderColor: '#4a3412',
+  },
+  confidenceLow: {
+    backgroundColor: '#2a1414',
+    borderWidth: 1,
+    borderColor: '#553030',
+  },
+  confidencePillText: {
+    color: '#d8d8d8',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  confidenceHint: {
+    flex: 1,
+    color: '#6f6f6f',
+    fontSize: 11,
+  },
 
   editableRow: {
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
-    marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   editableLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 80 },
   editableInput: { flex: 1, color: '#fff', fontSize: 15, textAlign: 'right', padding: 0 },

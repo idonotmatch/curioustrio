@@ -5,7 +5,7 @@ const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const PushToken = require('../models/pushToken');
 const { listRecentMessages, getMessage } = require('./gmailClient');
-const { classifyEmailExpense, parseEmailExpense } = require('./emailParser');
+const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
 const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
@@ -68,12 +68,16 @@ async function importForUser(user) {
 
     let msgSubject, msgFrom;
     try {
-      const { subject, from, body } = await getMessage(user.id, msg.id);
+      const { subject, from, body, snippet } = await getMessage(user.id, msg.id);
       msgSubject = subject;
       msgFrom = from;
-      const classification = await classifyEmailExpense(body, subject, from, todayDate);
+      const classification = await classifyEmailExpense(body, subject, from, todayDate, snippet);
+      const signals = analyzeEmailSignals(subject, from, body);
 
       if (classification.disposition === 'not_expense') {
+        if (signals.shouldSurfaceToReview) {
+          classification.disposition = 'uncertain';
+        } else {
         const skipReason = classification.reason || 'classifier_not_expense';
         await EmailImportLog.create({
           userId: user.id, messageId: msg.id, status: 'skipped',
@@ -82,9 +86,10 @@ async function importForUser(user) {
         skipped++;
         increment(outcomes.skipped_reasons, skipReason);
         continue;
+        }
       }
 
-      let parsed = await parseEmailExpense(body, subject, from, todayDate);
+      let parsed = await parseEmailExpense(body, subject, from, todayDate, snippet);
       let importedAsPendingReview = false;
 
       if (!parsed) {

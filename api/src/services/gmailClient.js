@@ -3,6 +3,20 @@ const { google } = require('googleapis');
 const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
 
+const GMAIL_SEARCH_QUERY = [
+  'newer_than:30d',
+  '(',
+  'subject:(receipt OR order OR confirmation OR purchase OR invoice OR payment OR refund OR return OR renewal OR booking OR subscription OR trip)',
+  'OR',
+  '"order total"',
+  'OR',
+  '"total charged"',
+  'OR',
+  '"payment received"',
+  ')',
+  '-category:promotions',
+].join(' ');
+
 function createOAuth2Client() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -65,9 +79,36 @@ async function listRecentMessages(userId, maxResults = 50) {
   const response = await gmail.users.messages.list({
     userId: 'me',
     maxResults,
-    q: 'subject:(receipt OR order OR confirmation OR purchase) newer_than:30d',
+    q: GMAIL_SEARCH_QUERY,
   });
   return response.data.messages || [];
+}
+
+function decodeHtmlEntities(html = '') {
+  return html
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function htmlToReadableText(html = '') {
+  if (!html) return '';
+  return decodeHtmlEntities(html)
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*\/p\s*>/gi, '\n')
+    .replace(/<\s*\/div\s*>/gi, '\n')
+    .replace(/<\s*\/tr\s*>/gi, '\n')
+    .replace(/<\s*(td|th)\b[^>]*>/gi, ' ')
+    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\1\s*>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 async function getMessage(userId, messageId) {
@@ -80,6 +121,7 @@ async function getMessage(userId, messageId) {
   });
 
   const payload = response.data.payload;
+  const snippet = response.data.snippet || '';
   const headers = payload?.headers || [];
   const subject = headers.find(h => h.name === 'Subject')?.value || '';
   const from = headers.find(h => h.name === 'From')?.value || '';
@@ -97,11 +139,23 @@ async function getMessage(userId, messageId) {
   if (payload) extractBody(payload);
 
   // Prefer plain text; fall back to HTML with tags stripped
-  const body = plainBody.trim()
-    ? plainBody
-    : htmlBody.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const normalizedPlain = plainBody
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const normalizedHtml = htmlToReadableText(htmlBody);
+  const body = normalizedPlain || normalizedHtml || snippet;
 
-  return { subject, from, body };
+  return { subject, from, snippet, body };
 }
 
-module.exports = { getAuthUrl, exchangeCode, getAuthenticatedClient, listRecentMessages, getMessage };
+module.exports = {
+  GMAIL_SEARCH_QUERY,
+  getAuthUrl,
+  exchangeCode,
+  getAuthenticatedClient,
+  listRecentMessages,
+  getMessage,
+  htmlToReadableText,
+};

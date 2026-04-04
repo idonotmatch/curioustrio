@@ -4,7 +4,7 @@ jest.mock('../../src/services/ai', () => ({
 }));
 
 const { complete } = require('../../src/services/ai');
-const { parseEmailExpense, classifyEmailExpense, heuristicDisposition } = require('../../src/services/emailParser');
+const { parseEmailExpense, classifyEmailExpense, heuristicDisposition, selectRelevantEmailText, analyzeEmailSignals } = require('../../src/services/emailParser');
 
 describe('emailParser', () => {
   beforeEach(() => complete.mockReset());
@@ -62,6 +62,21 @@ describe('emailParser', () => {
     expect(heuristicDisposition('Order confirmation', 'orders@amazon.com', 'Order total: $20.00')).toBeNull();
   });
 
+  it('treats transaction-like money signals as review-worthy even when the email is noisy', () => {
+    const signals = analyzeEmailSignals(
+      'Your booking is confirmed',
+      'receipts@booking.com',
+      'View in browser. Reservation details below. Total charged: $184.22. Manage preferences.'
+    );
+    expect(signals.strongMoneySignal).toBe(true);
+    expect(signals.shouldSurfaceToReview).toBe(true);
+    expect(heuristicDisposition(
+      'Your booking is confirmed',
+      'receipts@booking.com',
+      'View in browser. Reservation details below. Total charged: $184.22. Manage preferences.'
+    )).toBeNull();
+  });
+
   it('throws when emailBody is empty', async () => {
     await expect(parseEmailExpense('', 'sub', 'from@test.com', '2026-03-21')).rejects.toThrow('emailBody is required');
   });
@@ -76,5 +91,11 @@ describe('emailParser', () => {
     await parseEmailExpense(longBody, 'sub', 'from@test.com', '2026-03-21');
     const calledWith = complete.mock.calls[0][0];
     expect(calledWith.messages[0].content.length).toBeLessThan(4600);
+  });
+
+  it('includes the snippet in relevant email text selection', () => {
+    const result = selectRelevantEmailText('Body with order total $19.00', 'Snippet with merchant');
+    expect(result.classifierText).toContain('Snippet with merchant');
+    expect(result.extractionText).toContain('Snippet with merchant');
   });
 });

@@ -15,6 +15,7 @@ jest.mock('../../src/services/gmailClient', () => ({
 jest.mock('../../src/services/emailParser', () => ({
   classifyEmailExpense: jest.fn(),
   parseEmailExpense: jest.fn(),
+  analyzeEmailSignals: jest.fn(),
 }));
 jest.mock('../../src/services/categoryAssigner', () => ({
   assignCategory: jest.fn(),
@@ -22,7 +23,7 @@ jest.mock('../../src/services/categoryAssigner', () => ({
 
 const app = require('../../src/index');
 const { exchangeCode, listRecentMessages, getMessage } = require('../../src/services/gmailClient');
-const { classifyEmailExpense, parseEmailExpense } = require('../../src/services/emailParser');
+const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals } = require('../../src/services/emailParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 
 let householdId;
@@ -57,6 +58,7 @@ beforeEach(async () => {
   getMessage.mockReset();
   parseEmailExpense.mockReset();
   classifyEmailExpense.mockReset();
+  analyzeEmailSignals.mockReset();
   assignCategory.mockReset();
   // Clean state between tests
   await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
@@ -227,6 +229,32 @@ describe('POST /gmail/import', () => {
     expect(expense.rows[0].merchant).toBe('Example');
     expect(Number(expense.rows[0].amount)).toBe(41.22);
     expect(expense.rows[0].notes).toMatch(/needs review/i);
+  });
+
+  it('surfaces classifier false negatives when the email still has strong transaction signals', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'borderline-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your reservation is confirmed',
+      from: 'receipts@booking.com',
+      body: 'Reservation details. Total charged: $184.22. View in browser.',
+      snippet: 'Total charged: $184.22',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'not_expense', merchant: null, reason: 'classifier_not_expense' });
+    analyzeEmailSignals.mockReturnValue({ shouldSurfaceToReview: true });
+    parseEmailExpense.mockResolvedValue(null);
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+    expect(res.body.outcomes.imported_pending_review).toBe(1);
   });
 });
 
