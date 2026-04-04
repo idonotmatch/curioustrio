@@ -3,6 +3,9 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const RecurringExpense = require('../models/recurringExpense');
+const RecurringPreference = require('../models/recurringPreference');
+const Expense = require('../models/expense');
+const ExpenseItem = require('../models/expenseItem');
 const {
   detectRecurring,
   detectRecurringItems,
@@ -70,6 +73,69 @@ router.get('/watch-candidates', async (req, res, next) => {
     const windowDays = Math.max(1, Math.min(Number(req.query.window_days) || 5, 30));
     const candidates = await detectRecurringWatchCandidates(user.household_id, { windowDays });
     res.json(candidates);
+  } catch (err) { next(err); }
+});
+
+router.get('/preferences', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const expenseId = `${req.query.expense_id || ''}`.trim();
+    if (!expenseId) return res.status(400).json({ error: 'expense_id is required' });
+    const preference = await RecurringPreference.findByExpenseId(user.id, expenseId);
+    res.json(preference || null);
+  } catch (err) { next(err); }
+});
+
+router.post('/preferences', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const expenseId = `${req.body?.expense_id || ''}`.trim();
+    const expectedFrequencyDays = req.body?.expected_frequency_days == null || req.body?.expected_frequency_days === ''
+      ? null
+      : Number(req.body.expected_frequency_days);
+    const notes = req.body?.notes == null ? null : `${req.body.notes}`.trim();
+
+    if (!expenseId) return res.status(400).json({ error: 'expense_id is required' });
+    if (expectedFrequencyDays != null && (!Number.isInteger(expectedFrequencyDays) || expectedFrequencyDays < 1 || expectedFrequencyDays > 365)) {
+      return res.status(400).json({ error: 'expected_frequency_days must be between 1 and 365' });
+    }
+
+    const expense = await Expense.findById(expenseId);
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const ownedByUser = expense.user_id === user.id;
+    const inHousehold = user.household_id && expense.household_id === user.household_id;
+    if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
+
+    const items = await ExpenseItem.findByExpenseId(expense.id);
+    const identifiedItems = items.filter((item) => item.product_id || item.comparable_key);
+    const primaryItem = identifiedItems[0] || items[0] || null;
+
+    const preference = await RecurringPreference.upsert({
+      userId: user.id,
+      householdId: user.household_id,
+      expenseId: expense.id,
+      productId: primaryItem?.product_id || null,
+      comparableKey: primaryItem?.comparable_key || null,
+      merchant: expense.merchant || null,
+      itemName: primaryItem?.description || expense.merchant || null,
+      brand: primaryItem?.brand || null,
+      expectedFrequencyDays,
+      notes,
+    });
+
+    res.status(201).json(preference);
+  } catch (err) { next(err); }
+});
+
+router.delete('/preferences/:id', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const removed = await RecurringPreference.remove(req.params.id, user.id);
+    if (!removed) return res.status(404).json({ error: 'Not found' });
+    res.status(204).send();
   } catch (err) { next(err); }
 });
 

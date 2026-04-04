@@ -14,6 +14,25 @@ let categoryId;
 let userId;
 
 beforeAll(async () => {
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS recurring_preferences (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      household_id UUID REFERENCES households(id) ON DELETE CASCADE,
+      expense_id UUID NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+      product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+      comparable_key TEXT,
+      merchant TEXT,
+      item_name TEXT,
+      brand TEXT,
+      expected_frequency_days INTEGER CHECK (expected_frequency_days IS NULL OR expected_frequency_days > 0),
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, expense_id)
+    )`
+  );
+
   const hhResult = await db.query(
     `INSERT INTO households (name) VALUES ('Recurring Route Test Household') RETURNING id`
   );
@@ -36,6 +55,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.query(`DELETE FROM recurring_preferences WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM recurring_expenses WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-recurring-user'`);
@@ -43,11 +63,16 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  await db.query(`DELETE FROM recurring_preferences WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM recurring_expenses WHERE household_id = $1`, [householdId]);
   await db.query(
     `DELETE FROM expense_items
      WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
     [householdId]
+  );
+  await db.query(
+    `DELETE FROM expense_items
+     WHERE product_id IN (SELECT id FROM products WHERE merchant = 'Target' OR name = 'Pampers Pure')`
   );
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM products WHERE merchant = 'Target' OR name = 'Pampers Pure'`);
@@ -238,6 +263,86 @@ describe('GET /recurring/watch-candidates', () => {
       item_name: 'Pampers Pure',
       brand: 'Pampers',
       status: 'watching',
+    });
+  });
+});
+
+describe('Recurring preferences', () => {
+  it('creates, loads, and removes a manual recurring preference for an expense', async () => {
+    const expense = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Costco', 42.50, CURRENT_DATE, 'manual', 'confirmed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+
+    await db.query(
+      `INSERT INTO expense_items (expense_id, description, amount, brand, comparable_key)
+       VALUES ($1, 'Paper Towels', 42.50, 'Bounty', 'paper towels|brand:bounty')`,
+      [expense.rows[0].id]
+    );
+
+    const createRes = await request(app)
+      .post('/recurring/preferences')
+      .send({
+        expense_id: expense.rows[0].id,
+        expected_frequency_days: 21,
+        notes: 'Usually buy when we are down to one pack',
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.expected_frequency_days).toBe(21);
+
+    const getRes = await request(app)
+      .get('/recurring/preferences')
+      .query({ expense_id: expense.rows[0].id });
+
+    expect(getRes.status).toBe(200);
+    expect(getRes.body).toMatchObject({
+      expense_id: expense.rows[0].id,
+      comparable_key: 'paper towels|brand:bounty',
+      expected_frequency_days: 21,
+    });
+
+    const deleteRes = await request(app).delete(`/recurring/preferences/${createRes.body.id}`);
+    expect(deleteRes.status).toBe(204);
+  });
+
+  it('uses a manual recurring preference to create a watch candidate without long history', async () => {
+    const expenseDate = new Date();
+    expenseDate.setDate(expenseDate.getDate() - 10);
+    const expense = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Target', 39.23, $3, 'manual', 'confirmed')
+       RETURNING id`,
+      [userId, householdId, expenseDate.toISOString().split('T')[0]]
+    );
+    const product = await db.query(
+      `INSERT INTO products (name, brand, merchant, product_size, pack_size, unit)
+       VALUES ('Pampers Pure', 'Pampers', 'Target', '82', '1', 'count')
+       RETURNING id`
+    );
+    await db.query(
+      `INSERT INTO expense_items (expense_id, description, amount, brand, product_size, unit, product_id)
+       VALUES ($1, 'Pampers Pure', 39.23, 'Pampers', '82', 'count', $2)`,
+      [expense.rows[0].id, product.rows[0].id]
+    );
+
+    const prefRes = await request(app)
+      .post('/recurring/preferences')
+      .send({
+        expense_id: expense.rows[0].id,
+        expected_frequency_days: 14,
+      });
+
+    expect(prefRes.status).toBe(201);
+
+    const watchRes = await request(app).get('/recurring/watch-candidates');
+    expect(watchRes.status).toBe(200);
+    expect(watchRes.body[0]).toMatchObject({
+      item_name: 'Pampers Pure',
+      source: 'manual',
+      average_gap_days: 14,
     });
   });
 });

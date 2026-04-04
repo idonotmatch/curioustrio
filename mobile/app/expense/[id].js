@@ -1,6 +1,6 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert, Switch, Linking, Platform
+  StyleSheet, ActivityIndicator, Alert, Switch, Linking, Platform, Modal
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -38,6 +38,10 @@ export default function ExpenseDetailScreen() {
   const [itemsExpanded, setItemsExpanded] = useState(false);
   const [itemsEdits, setItemsEdits] = useState([]);
   const [locationData, setLocationData] = useState(null);
+  const [recurringPreference, setRecurringPreference] = useState(null);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [recurringFrequencyDays, setRecurringFrequencyDays] = useState('');
+  const [recurringNotes, setRecurringNotes] = useState('');
 
   useEffect(() => {
     api.get(`/expenses/${id}`)
@@ -70,6 +74,20 @@ export default function ExpenseDetailScreen() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    api.get(`/recurring/preferences?expense_id=${encodeURIComponent(id)}`)
+      .then((pref) => {
+        setRecurringPreference(pref || null);
+        setRecurringFrequencyDays(pref?.expected_frequency_days ? String(pref.expected_frequency_days) : '');
+        setRecurringNotes(pref?.notes || '');
+      })
+      .catch(() => {
+        setRecurringPreference(null);
+        setRecurringFrequencyDays('');
+        setRecurringNotes('');
+      });
   }, [id]);
 
   const canEdit = !!currentUserId && !!expense && String(expense.user_id) === String(currentUserId);
@@ -159,6 +177,43 @@ export default function ExpenseDetailScreen() {
     ]);
   }
 
+  async function saveRecurringPreference() {
+    try {
+      setActioning(true);
+      const saved = await api.post('/recurring/preferences', {
+        expense_id: id,
+        expected_frequency_days: recurringFrequencyDays.trim() ? parseInt(recurringFrequencyDays.trim(), 10) : null,
+        notes: recurringNotes.trim() || null,
+      });
+      setRecurringPreference(saved);
+      setRecurringFrequencyDays(saved?.expected_frequency_days ? String(saved.expected_frequency_days) : '');
+      setRecurringNotes(saved?.notes || '');
+      setShowRecurringModal(false);
+      await invalidateCacheByPrefix('cache:insights:');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not save recurring details');
+    } finally {
+      setActioning(false);
+    }
+  }
+
+  async function removeRecurringPreference() {
+    if (!recurringPreference?.id) return;
+    try {
+      setActioning(true);
+      await api.delete(`/recurring/preferences/${recurringPreference.id}`);
+      setRecurringPreference(null);
+      setRecurringFrequencyDays('');
+      setRecurringNotes('');
+      setShowRecurringModal(false);
+      await invalidateCacheByPrefix('cache:insights:');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not remove recurring flag');
+    } finally {
+      setActioning(false);
+    }
+  }
+
   if (loading) return <View style={styles.center}><ActivityIndicator color="#555" /></View>;
   if (!expense) return <View style={styles.center}><Text style={styles.muted}>Expense not found.</Text></View>;
 
@@ -226,6 +281,29 @@ export default function ExpenseDetailScreen() {
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerTitle}>Needs review</Text>
           <Text style={styles.reviewBannerText}>This import was surfaced for review before it is counted in your confirmed expenses.</Text>
+        </View>
+      ) : null}
+
+      {canEdit ? (
+        <View style={styles.recurringCard}>
+          <View style={styles.recurringHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.recurringTitle}>Recurring</Text>
+              <Text style={styles.recurringSubtitle}>
+                {recurringPreference
+                  ? recurringPreference.expected_frequency_days
+                    ? `Marked recurring · about every ${recurringPreference.expected_frequency_days} days`
+                    : 'Marked recurring'
+                  : 'Flag this as a common purchase so Adlo can learn from it sooner'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowRecurringModal(true)} disabled={actioning}>
+              <Text style={styles.recurringAction}>{recurringPreference ? 'Edit' : 'Mark'}</Text>
+            </TouchableOpacity>
+          </View>
+          {recurringPreference?.notes ? (
+            <Text style={styles.recurringNotePreview}>{recurringPreference.notes}</Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -520,6 +598,59 @@ export default function ExpenseDetailScreen() {
             : <Text style={styles.deleteBtnText}>Delete expense</Text>}
         </TouchableOpacity>
       ) : null}
+
+      <Modal
+        visible={showRecurringModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRecurringModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Recurring purchase</Text>
+            <Text style={styles.modalSubtitle}>
+              Mark this so Adlo can treat it as a common recurring purchase and make better timing and price recommendations.
+            </Text>
+
+            <Text style={styles.modalLabel}>How often do you usually buy this?</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={recurringFrequencyDays}
+              onChangeText={(value) => setRecurringFrequencyDays(value.replace(/\D/g, '').slice(0, 3))}
+              placeholder="e.g. 14"
+              placeholderTextColor="#555"
+              keyboardType="number-pad"
+            />
+            <Text style={styles.modalHelp}>Days between purchases. Leave blank if you are not sure yet.</Text>
+
+            <Text style={styles.modalLabel}>Anything else we should know?</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalTextarea]}
+              value={recurringNotes}
+              onChangeText={setRecurringNotes}
+              placeholder="Optional note"
+              placeholderTextColor="#555"
+              multiline
+            />
+
+            <View style={styles.modalActions}>
+              {recurringPreference ? (
+                <TouchableOpacity onPress={removeRecurringPreference} disabled={actioning}>
+                  <Text style={styles.modalDelete}>Remove flag</Text>
+                </TouchableOpacity>
+              ) : <View />}
+              <View style={styles.modalRightActions}>
+                <TouchableOpacity onPress={() => setShowRecurringModal(false)} disabled={actioning}>
+                  <Text style={styles.modalCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={saveRecurringPreference} disabled={actioning}>
+                  <Text style={styles.modalSave}>{actioning ? 'Saving…' : 'Save'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -568,6 +699,21 @@ const styles = StyleSheet.create({
   },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
+  recurringCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#111',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    padding: 14,
+  },
+  recurringHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  recurringTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
+  recurringSubtitle: { color: '#777', fontSize: 13, lineHeight: 18, marginTop: 4 },
+  recurringAction: { color: '#8ab4ff', fontSize: 14, fontWeight: '600' },
+  recurringNotePreview: { color: '#b8b8b8', fontSize: 13, lineHeight: 18, marginTop: 10 },
   editDetailsCard: {
     marginHorizontal: 20,
     marginTop: 12,
@@ -672,4 +818,37 @@ const styles = StyleSheet.create({
   itemBalanceText: { fontSize: 12 },
   itemBalanceOk: { color: '#4ade80' },
   itemBalanceWarn: { color: '#f59e0b' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#111',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    padding: 18,
+  },
+  modalTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  modalSubtitle: { color: '#8e8e8e', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
+  modalLabel: { color: '#d5d5d5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  modalInput: {
+    backgroundColor: '#0b0b0b',
+    borderWidth: 1,
+    borderColor: '#262626',
+    borderRadius: 12,
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  modalTextarea: { minHeight: 90, textAlignVertical: 'top' },
+  modalHelp: { color: '#686868', fontSize: 12, marginBottom: 16 },
+  modalActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
+  modalRightActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  modalDelete: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
+  modalCancel: { color: '#8a8a8a', fontSize: 14, fontWeight: '600' },
+  modalSave: { color: '#8ab4ff', fontSize: 14, fontWeight: '700' },
 });

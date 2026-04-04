@@ -1,4 +1,5 @@
 const db = require('../db');
+const RecurringPreference = require('../models/recurringPreference');
 
 function median(values) {
   if (!values.length) return null;
@@ -239,6 +240,9 @@ function startOfToday() {
 }
 
 function parseDateOnly(dateString) {
+  if (dateString instanceof Date) {
+    return new Date(dateString.getFullYear(), dateString.getMonth(), dateString.getDate(), 12, 0, 0, 0);
+  }
   const [year, month, day] = `${dateString}`.split('-').map(Number);
   return new Date(year, (month || 1) - 1, day || 1, 12, 0, 0, 0);
 }
@@ -252,8 +256,7 @@ async function detectRecurringWatchCandidates(householdId, options = {}) {
   const maxOverdueDays = Number.isFinite(options.maxOverdueDays) ? options.maxOverdueDays : 7;
   const recurringItems = await detectRecurringItems(householdId);
   const today = parseDateOnly(startOfToday().toISOString().split('T')[0]);
-
-  return recurringItems
+  const automaticCandidates = recurringItems
     .filter((item) => item.product_id)
     .map((item) => {
       const nextExpectedDate = parseDateOnly(item.next_expected_date);
@@ -288,6 +291,82 @@ async function detectRecurringWatchCandidates(householdId, options = {}) {
         normalized_total_size_unit: item.normalized_total_size_unit,
       };
     })
+    .filter((item) => item.days_until_due <= windowDays && item.days_until_due >= -maxOverdueDays);
+
+  const preferences = await RecurringPreference.findByHousehold(householdId);
+  const automaticByKey = new Map(
+    automaticCandidates.map((candidate) => [candidate.product_id ? `product:${candidate.product_id}` : candidate.group_key, candidate])
+  );
+
+  for (const pref of preferences) {
+    const identityKey = pref.product_id
+      ? `product:${pref.product_id}`
+      : pref.comparable_key
+        ? `comparable:${pref.comparable_key}`
+        : `expense:${pref.expense_id}`;
+    if (automaticByKey.has(identityKey)) {
+      const existing = automaticByKey.get(identityKey);
+      if (pref.expected_frequency_days && pref.expected_frequency_days > 0) {
+        const nextExpectedDate = parseDateOnly(existing.last_purchased_at);
+        nextExpectedDate.setDate(nextExpectedDate.getDate() + pref.expected_frequency_days);
+        const daysUntilDue = diffDays(today, nextExpectedDate);
+        const watchStartsAt = new Date(nextExpectedDate);
+        watchStartsAt.setDate(watchStartsAt.getDate() - windowDays);
+        existing.average_gap_days = pref.expected_frequency_days;
+        existing.next_expected_date = nextExpectedDate.toISOString().split('T')[0];
+        existing.watch_starts_at = watchStartsAt.toISOString().split('T')[0];
+        existing.days_until_watch = diffDays(today, watchStartsAt);
+        existing.days_until_due = daysUntilDue;
+        existing.status = daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'due_today' : daysUntilDue <= windowDays ? 'watching' : 'upcoming';
+      }
+      existing.source = 'manual';
+      existing.notes = pref.notes || existing.notes || null;
+      existing.manual_preference_id = pref.id;
+      continue;
+    }
+
+    if (!pref.expected_frequency_days || pref.expected_frequency_days <= 0) continue;
+    const expenseResult = await db.query(
+      `SELECT date, amount FROM expenses WHERE id = $1 AND household_id = $2`,
+      [pref.expense_id, householdId]
+    );
+    const sourceExpense = expenseResult.rows[0];
+    if (!sourceExpense?.date) continue;
+
+    const lastPurchasedAt = parseDateOnly(sourceExpense.date);
+    const nextExpectedDate = new Date(lastPurchasedAt);
+    nextExpectedDate.setDate(nextExpectedDate.getDate() + pref.expected_frequency_days);
+    const daysUntilDue = diffDays(today, nextExpectedDate);
+    const watchStartsAt = new Date(nextExpectedDate);
+    watchStartsAt.setDate(watchStartsAt.getDate() - windowDays);
+    if (daysUntilDue > windowDays || daysUntilDue < -maxOverdueDays) continue;
+
+    automaticByKey.set(identityKey, {
+      kind: 'watch_candidate',
+      group_key: pref.product_id ? `product:${pref.product_id}` : pref.comparable_key ? `comparable:${pref.comparable_key}` : `manual:${pref.expense_id}`,
+      product_id: pref.product_id,
+      item_name: pref.item_name || pref.merchant || 'Recurring purchase',
+      brand: pref.brand || null,
+      occurrence_count: 1,
+      average_gap_days: pref.expected_frequency_days,
+      median_amount: sourceExpense.amount == null ? null : Number(sourceExpense.amount),
+      median_unit_price: null,
+      last_purchased_at: lastPurchasedAt.toISOString().split('T')[0],
+      next_expected_date: nextExpectedDate.toISOString().split('T')[0],
+      watch_starts_at: watchStartsAt.toISOString().split('T')[0],
+      days_until_watch: diffDays(today, watchStartsAt),
+      days_until_due: daysUntilDue,
+      status: daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'due_today' : daysUntilDue <= windowDays ? 'watching' : 'upcoming',
+      merchants: pref.merchant ? [pref.merchant] : [],
+      normalized_total_size_value: null,
+      normalized_total_size_unit: null,
+      source: 'manual',
+      notes: pref.notes || null,
+      manual_preference_id: pref.id,
+    });
+  }
+
+  return [...automaticByKey.values()]
     .filter((item) => item.days_until_due <= windowDays && item.days_until_due >= -maxOverdueDays)
     .sort((a, b) => a.days_until_due - b.days_until_due || b.occurrence_count - a.occurrence_count);
 }
