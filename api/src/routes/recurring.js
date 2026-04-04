@@ -3,7 +3,12 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const RecurringExpense = require('../models/recurringExpense');
-const { detectRecurring, detectRecurringItems, detectRecurringItemSignals } = require('../services/recurringDetector');
+const {
+  detectRecurring,
+  detectRecurringItems,
+  detectRecurringItemSignals,
+  getRecurringItemHistory,
+} = require('../services/recurringDetector');
 
 router.use(authenticate);
 
@@ -42,6 +47,18 @@ router.post('/detect-item-signals', async (req, res, next) => {
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
     const signals = await detectRecurringItemSignals(user.household_id);
     res.json(signals);
+  } catch (err) { next(err); }
+});
+
+router.get('/item-history', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const groupKey = `${req.query.group_key || ''}`.trim();
+    if (!groupKey) return res.status(400).json({ error: 'group_key is required' });
+    const history = await getRecurringItemHistory(user.household_id, groupKey);
+    if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
+    res.json(history);
   } catch (err) { next(err); }
 });
 

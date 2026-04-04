@@ -1,5 +1,10 @@
 const db = require('../../src/db');
-const { detectRecurring, detectRecurringItems, detectRecurringItemSignals } = require('../../src/services/recurringDetector');
+const {
+  detectRecurring,
+  detectRecurringItems,
+  detectRecurringItemSignals,
+  getRecurringItemHistory,
+} = require('../../src/services/recurringDetector');
 const ExpenseItem = require('../../src/models/expenseItem');
 
 let testHouseholdId;
@@ -204,5 +209,42 @@ describe('detectRecurringItemSignals', () => {
     const cheaperElsewhere = signals.find(s => s.signal === 'cheaper_elsewhere' && s.item_name === 'Greek Yogurt');
     expect(cheaperElsewhere).toBeTruthy();
     expect(cheaperElsewhere.cheaper_merchant).toBe('Trader Joes');
+  });
+});
+
+describe('getRecurringItemHistory', () => {
+  it('returns purchase timeline and merchant pricing context for a recurring item', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Trader Joes', 6.79, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 7.19, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 6.79, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 7.19, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const candidates = await detectRecurringItems(testHouseholdId);
+    const history = await getRecurringItemHistory(testHouseholdId, candidates[0].group_key);
+
+    expect(history).toMatchObject({
+      kind: 'item_history',
+      item_name: 'Greek Yogurt',
+      brand: 'Fage',
+      occurrence_count: 3,
+      average_gap_days: 14,
+      normalized_total_size_value: 32,
+      normalized_total_size_unit: 'oz',
+    });
+    expect(history.purchases).toHaveLength(3);
+    expect(history.merchant_price_history).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ merchant: 'Trader Joes', occurrence_count: 1 }),
+        expect.objectContaining({ merchant: 'Whole Foods', occurrence_count: 2 }),
+      ])
+    );
   });
 });

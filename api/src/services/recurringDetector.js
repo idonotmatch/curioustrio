@@ -167,6 +167,68 @@ async function detectRecurringItems(householdId) {
   return candidates.sort((a, b) => b.occurrence_count - a.occurrence_count || a.item_name.localeCompare(b.item_name));
 }
 
+async function getRecurringItemHistory(householdId, groupKey) {
+  const groups = await loadRecurringItemOccurrences(householdId);
+  const history = groups.get(groupKey);
+  if (!history || !history.length) return null;
+
+  const sorted = [...history].sort((a, b) => a.date - b.date);
+  const dates = sorted.map(o => o.date);
+  const gaps = [];
+  for (let i = 1; i < dates.length; i++) {
+    gaps.push(Math.round((dates[i] - dates[i - 1]) / (1000 * 60 * 60 * 24)));
+  }
+
+  const averageGapDays = gaps.length ? median(gaps) : null;
+  const amounts = sorted.map(o => o.item_amount).filter(v => v != null);
+  const unitPrices = sorted.map(o => o.estimated_unit_price).filter(v => v != null);
+  const merchants = [...new Set(sorted.map(o => o.merchant).filter(Boolean))];
+  const merchantPriceHistory = merchants.map((merchant) => {
+    const merchantEntries = sorted.filter((entry) => entry.merchant === merchant);
+    const merchantAmounts = merchantEntries.map((entry) => entry.item_amount).filter(v => v != null);
+    const merchantUnitPrices = merchantEntries.map((entry) => entry.estimated_unit_price).filter(v => v != null);
+    return {
+      merchant,
+      occurrence_count: merchantEntries.length,
+      median_amount: merchantAmounts.length ? median(merchantAmounts) : null,
+      median_unit_price: merchantUnitPrices.length ? median(merchantUnitPrices) : null,
+    };
+  }).sort((a, b) => a.merchant.localeCompare(b.merchant));
+
+  const latest = sorted[sorted.length - 1];
+  const nextExpected = averageGapDays != null ? new Date(latest.date) : null;
+  if (nextExpected) nextExpected.setDate(nextExpected.getDate() + averageGapDays);
+
+  return {
+    kind: 'item_history',
+    group_key: groupKey,
+    product_id: latest.product_id,
+    comparable_key: latest.comparable_key,
+    item_name: latest.item_name,
+    brand: latest.brand,
+    frequency: averageGapDays != null ? classifyFrequency(averageGapDays) : null,
+    average_gap_days: averageGapDays,
+    occurrence_count: sorted.length,
+    median_amount: amounts.length ? median(amounts) : null,
+    median_unit_price: unitPrices.length ? median(unitPrices) : null,
+    first_purchased_at: sorted[0].date.toISOString().split('T')[0],
+    last_purchased_at: latest.date.toISOString().split('T')[0],
+    next_expected_date: nextExpected ? nextExpected.toISOString().split('T')[0] : null,
+    merchants,
+    merchant_price_history: merchantPriceHistory,
+    normalized_total_size_value: latest.normalized_total_size_value,
+    normalized_total_size_unit: latest.normalized_total_size_unit,
+    purchases: sorted.map((entry) => ({
+      date: entry.date.toISOString().split('T')[0],
+      merchant: entry.merchant,
+      item_amount: entry.item_amount,
+      estimated_unit_price: entry.estimated_unit_price,
+      normalized_total_size_value: entry.normalized_total_size_value,
+      normalized_total_size_unit: entry.normalized_total_size_unit,
+    })),
+  };
+}
+
 async function detectRecurringItemSignals(householdId) {
   const groups = await loadRecurringItemOccurrences(householdId);
   const signals = [];
@@ -271,4 +333,4 @@ async function detectRecurringItemSignals(householdId) {
   return signals.sort((a, b) => Math.abs(b.delta_percent) - Math.abs(a.delta_percent));
 }
 
-module.exports = { detectRecurring, detectRecurringItems, detectRecurringItemSignals };
+module.exports = { detectRecurring, detectRecurringItems, detectRecurringItemSignals, getRecurringItemHistory };

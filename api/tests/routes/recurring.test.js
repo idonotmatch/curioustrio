@@ -137,6 +137,60 @@ describe('POST /recurring/detect-item-signals', () => {
   });
 });
 
+describe('GET /recurring/item-history', () => {
+  it('returns a recurring item purchase history by group key', async () => {
+    const dates = [42, 28, 14].map((daysAgo) => {
+      const date = new Date();
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    });
+
+    const expenseIds = [];
+    for (const [index, date] of dates.entries()) {
+      const result = await db.query(
+        `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+         VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed')
+         RETURNING id`,
+        [userId, householdId, index === 1 ? 'Trader Joes' : 'Whole Foods', 6.99 + (index * 0.1), date]
+      );
+      expenseIds.push(result.rows[0].id);
+    }
+
+    for (const [index, expenseId] of expenseIds.entries()) {
+      await db.query(
+        `INSERT INTO expense_items (
+          expense_id, description, amount, brand, product_size, unit,
+          normalized_name, normalized_brand, normalized_size_value, normalized_size_unit,
+          normalized_total_size_value, normalized_total_size_unit, comparable_key
+        ) VALUES ($1, 'Greek Yogurt', $2, 'Fage', '32', 'oz', 'greek yogurt', 'fage', 32, 'oz', 32, 'oz', 'fage|greek yogurt|32|oz|1')`,
+        [expenseId, 6.99 + (index * 0.1)]
+      );
+    }
+
+    const detectRes = await request(app).post('/recurring/detect-items');
+    expect(detectRes.status).toBe(200);
+    expect(detectRes.body).toHaveLength(1);
+
+    const historyRes = await request(app)
+      .get('/recurring/item-history')
+      .query({ group_key: detectRes.body[0].group_key });
+
+    expect(historyRes.status).toBe(200);
+    expect(historyRes.body).toMatchObject({
+      kind: 'item_history',
+      item_name: 'Greek Yogurt',
+      occurrence_count: 3,
+    });
+    expect(historyRes.body.purchases).toHaveLength(3);
+  });
+
+  it('returns 400 when group_key is missing', async () => {
+    const res = await request(app).get('/recurring/item-history');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/group_key/i);
+  });
+});
+
 describe('GET /recurring (no household)', () => {
   it('returns 403 when user has no household_id', async () => {
     await db.query(
