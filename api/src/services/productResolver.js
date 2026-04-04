@@ -11,6 +11,11 @@ const { normalizeItemMetadata } = require('./itemNormalizer');
  *   3. No match → create if we have at least UPC or SKU
  */
 async function resolveProduct(item, merchant) {
+  const resolution = await resolveProductMatch(item, merchant);
+  return resolution?.confidence === 'high' ? resolution.product_id : null;
+}
+
+async function resolveProductMatch(item, merchant) {
   const { description, upc, sku, brand, product_size, pack_size, unit } = item;
   const normalized = normalizeItemMetadata(item);
 
@@ -32,7 +37,7 @@ async function resolveProduct(item, merchant) {
         if (!existing.unit && unit) updates.unit = unit;
         if (!existing.merchant && merchant) updates.merchant = merchant;
         if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
-        return existing.id;
+        return { product_id: existing.id, confidence: 'high', reason: 'upc' };
       }
     }
 
@@ -47,12 +52,13 @@ async function resolveProduct(item, merchant) {
         if (!existing.pack_size && pack_size) updates.pack_size = pack_size;
         if (!existing.unit && unit) updates.unit = unit;
         if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
-        return existing.id;
+        return { product_id: existing.id, confidence: 'high', reason: 'sku_merchant' };
       }
     }
 
-    // 3. Try higher-confidence description matching when we have brand/size hints.
-    if (canMatchByNormalizedDetails({ merchant, normalized, brand, product_size, pack_size, unit })) {
+    // 3. Try normalized description matching with explicit confidence thresholds.
+    const matchConfidence = getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit });
+    if (matchConfidence) {
       const existing = await Product.findByNormalizedDetails({
         name: description,
         merchant,
@@ -71,12 +77,12 @@ async function resolveProduct(item, merchant) {
         if (!existing.unit && unit) updates.unit = unit;
         if (!existing.merchant && merchant) updates.merchant = merchant;
         if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
-        return existing.id;
+        return { product_id: existing.id, confidence: matchConfidence, reason: 'normalized_match' };
       }
     }
 
     // 4. Create new when we have a stable identifier or enough descriptive structure.
-    const hasStructuredIdentity = !!(upc || sku || canMatchByNormalizedDetails({ merchant, normalized, brand, product_size, pack_size, unit }));
+    const hasStructuredIdentity = !!(upc || sku || canCreateCanonicalProduct({ merchant, normalized, brand, product_size, pack_size, unit }));
     if (!hasStructuredIdentity) return null;
 
     const product = await Product.create({
@@ -89,7 +95,7 @@ async function resolveProduct(item, merchant) {
       packSize: pack_size || null,
       unit: unit || null,
     });
-    return product.id;
+    return { product_id: product.id, confidence: 'high', reason: 'created' };
   } catch (err) {
     // Product resolution is non-fatal
     console.error('productResolver error (non-fatal):', err.message);
@@ -97,12 +103,24 @@ async function resolveProduct(item, merchant) {
   }
 }
 
-function canMatchByNormalizedDetails({ merchant, normalized, brand, product_size, pack_size, unit }) {
+function getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit }) {
   if (!normalized.comparable_key || !normalized.normalized_name) return false;
-  if (brand || product_size || pack_size || unit) return true;
+  if (brand || product_size || pack_size || unit) return 'high';
 
   const tokenCount = normalized.normalized_name.split(' ').filter(Boolean).length;
-  return !!merchant && tokenCount >= 2 && normalized.normalized_name.length >= 8;
+  if (!!merchant && tokenCount >= 2 && normalized.normalized_name.length >= 12) {
+    return 'medium';
+  }
+
+  return null;
+}
+
+function canCreateCanonicalProduct({ merchant, normalized, brand, product_size, pack_size, unit }) {
+  const matchConfidence = getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit });
+  if (matchConfidence === 'high') return true;
+
+  const tokenCount = normalized.normalized_name?.split(' ').filter(Boolean).length || 0;
+  return !!merchant && tokenCount >= 2 && normalized.normalized_name?.length >= 8;
 }
 
 const NON_PRODUCT_PATTERNS = /^(tax|hst|gst|pst|vat|tip|gratuity|service charge|service fee|delivery fee|shipping|handling|bag fee|surcharge|discount|coupon|savings|subtotal|total)/i;
@@ -111,4 +129,4 @@ function isNonProduct(description) {
   return NON_PRODUCT_PATTERNS.test(description.trim());
 }
 
-module.exports = { resolveProduct };
+module.exports = { resolveProduct, resolveProductMatch };

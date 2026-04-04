@@ -7,7 +7,7 @@ jest.mock('../../src/models/product', () => ({
 }));
 
 const Product = require('../../src/models/product');
-const { resolveProduct } = require('../../src/services/productResolver');
+const { resolveProduct, resolveProductMatch } = require('../../src/services/productResolver');
 
 describe('productResolver', () => {
   beforeEach(() => {
@@ -48,7 +48,7 @@ describe('productResolver', () => {
     expect(productId).toBe('product-123');
   });
 
-  it('matches a product by normalized description when merchant context is strong', async () => {
+  it('finds a medium-confidence product candidate by normalized description when merchant context is strong', async () => {
     Product.findByUpc.mockResolvedValue(null);
     Product.findBySkuAndMerchant.mockResolvedValue(null);
     Product.findByNormalizedDetails.mockResolvedValue({
@@ -58,6 +58,10 @@ describe('productResolver', () => {
     });
     Product.update.mockResolvedValue({});
 
+    const resolution = await resolveProductMatch({
+      description: 'Organic Bananas',
+      amount: 2.99,
+    }, 'Whole Foods');
     const productId = await resolveProduct({
       description: 'Organic Bananas',
       amount: 2.99,
@@ -71,6 +75,38 @@ describe('productResolver', () => {
       packSize: undefined,
       unit: undefined,
     });
-    expect(productId).toBe('product-456');
+    expect(resolution).toEqual({
+      product_id: 'product-456',
+      confidence: 'medium',
+      reason: 'normalized_match',
+    });
+    expect(productId).toBeNull();
+  });
+
+  it('returns medium confidence for merchant-backed name-only matches without auto-linking', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue({
+      id: 'product-789',
+      name: 'Organic Extra Large Brown Eggs',
+      merchant: 'Whole Foods',
+    });
+    Product.update.mockResolvedValue({});
+
+    const resolution = await resolveProductMatch({
+      description: 'Organic Extra Large Brown Eggs',
+      amount: 6.49,
+    }, 'Whole Foods');
+    const productId = await resolveProduct({
+      description: 'Organic Extra Large Brown Eggs',
+      amount: 6.49,
+    }, 'Whole Foods');
+
+    expect(resolution).toEqual({
+      product_id: 'product-789',
+      confidence: 'medium',
+      reason: 'normalized_match',
+    });
+    expect(productId).toBeNull();
   });
 });
