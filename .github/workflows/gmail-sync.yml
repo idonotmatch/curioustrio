@@ -11,6 +11,12 @@ jobs:
     steps:
       - name: Trigger Gmail sync
         run: |
-          curl -sf -X POST https://adlo-1j98.onrender.com/cron/gmail-sync \
+          status=$(curl -sS -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/gmail-sync \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json")
+          cat response.json
+          if [ "$status" -ge 400 ]; then
+            echo ""
+            echo "Gmail sync failed with HTTP $status"
+            exit 1
+          fi

@@ -55,7 +55,10 @@ app.use(cors({
     callback(new Error(`Origin ${origin} not allowed by CORS policy`));
   },
 }));
-app.use(standard);
+app.use((req, res, next) => {
+  if (req.path.startsWith('/cron/')) return next();
+  return standard(req, res, next);
+});
 app.use(express.json({ limit: '5mb' }));
 
 app.use('/expenses', expensesRouter);
