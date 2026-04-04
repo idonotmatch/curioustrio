@@ -5,10 +5,18 @@ const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const PushToken = require('../models/pushToken');
 const { listRecentMessages, getMessage } = require('./gmailClient');
-const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals, clampExpenseDate } = require('./emailParser');
+const {
+  classifyEmailExpense,
+  parseEmailExpense,
+  analyzeEmailSignals,
+  classifyEmailModality,
+  extractEmailLocationCandidate,
+  clampExpenseDate,
+} = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
 const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
+const { searchPlace } = require('./mapkitService');
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -52,6 +60,32 @@ function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'nee
   return context
     ? `${context} (${reason})`
     : `Imported from Gmail (${reason})`;
+}
+
+async function resolveEmailLocation({ merchant = '', subject = '', from = '', body = '' }) {
+  const modality = classifyEmailModality(subject, from, body);
+  if (!['in_person', 'pickup'].includes(modality)) {
+    return { modality, location: null };
+  }
+
+  const candidate = extractEmailLocationCandidate(subject, from, body);
+  const queryParts = [
+    merchant && merchant.trim(),
+    candidate?.store_number ? `Store ${candidate.store_number}` : null,
+    candidate?.address,
+    candidate?.city_state && !candidate?.address?.includes(candidate.city_state) ? candidate.city_state : null,
+  ].filter(Boolean);
+
+  if (!queryParts.length) {
+    return { modality, location: null };
+  }
+
+  try {
+    const location = await searchPlace(queryParts.join(' '));
+    return { modality, location };
+  } catch {
+    return { modality, location: null };
+  }
 }
 
 /**
@@ -175,6 +209,12 @@ async function importForUser(user) {
         householdId: user.household_id,
         categories,
       });
+      const { location } = await resolveEmailLocation({
+        merchant: parsed.merchant,
+        subject,
+        from,
+        body,
+      });
 
       const expense = await Expense.create({
         userId: user.id,
@@ -186,6 +226,9 @@ async function importForUser(user) {
         source: 'email',
         status: 'pending',
         notes: parsed.notes,
+        placeName: location?.place_name || null,
+        address: location?.address || null,
+        mapkitStableId: location?.mapkit_stable_id || null,
       });
 
       if (Array.isArray(parsed.items) && parsed.items.length > 0) {

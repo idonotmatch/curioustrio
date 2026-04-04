@@ -58,6 +58,40 @@ function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   };
 }
 
+function classifyEmailModality(subject = '', fromAddress = '', emailBody = '') {
+  const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
+  const hasShippingSignals = /(tracking|shipped|out for delivery|delivered|estimated delivery|ship to|shipment|package)/i.test(text);
+  const hasDigitalSignals = /(subscription|renewal|streaming|digital receipt|ebook|download|membership)/i.test(text);
+  const hasPickupSignals = /(pickup|pick up|curbside|ready for pickup|ready for pick up|in store pickup|store pickup)/i.test(text);
+  const hasInStoreSignals = /(in-store|instore|store #|register|terminal|lane \d+|thanks for shopping with us today|receipt|visited|cashier)/i.test(text);
+  const hasAddressLikeSignal = /\b\d{2,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\s(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place)\b/i.test(text);
+
+  if (hasShippingSignals) return 'delivery';
+  if (hasDigitalSignals && !hasInStoreSignals && !hasPickupSignals) return 'digital';
+  if (hasPickupSignals) return 'pickup';
+  if (hasInStoreSignals || hasAddressLikeSignal) return 'in_person';
+  if (/(order confirmation|order total|your order|placed your order|delivery order)/i.test(text)) return 'online';
+  return 'unknown';
+}
+
+function extractEmailLocationCandidate(subject = '', fromAddress = '', emailBody = '') {
+  const text = `${subject}\n${emailBody}`;
+  const storeNumberMatch = text.match(/\bstore\s*#?\s*([a-z0-9-]{1,12})\b/i);
+  const addressMatch = text.match(/\b\d{2,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\s(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place)\b(?:,?\s+[a-z .'-]+,\s*[A-Z]{2}(?:\s+\d{5})?)?/i);
+  const cityStateZipMatch = text.match(/\b([A-Z][a-zA-Z .'-]+,\s*[A-Z]{2}(?:\s+\d{5})?)\b/);
+
+  const address = addressMatch?.[0]?.replace(/\s+/g, ' ').trim() || null;
+  const cityState = cityStateZipMatch?.[1]?.replace(/\s+/g, ' ').trim() || null;
+  const storeNumber = storeNumberMatch?.[1] || null;
+
+  if (!address && !cityState && !storeNumber) return null;
+  return {
+    address,
+    city_state: cityState,
+    store_number: storeNumber,
+  };
+}
+
 function selectRelevantEmailText(emailBody, snippet = '') {
   const cleaned = cleanText(emailBody);
   const normalizedSnippet = cleanText(snippet);
@@ -170,5 +204,7 @@ module.exports = {
   selectRelevantEmailText,
   heuristicDisposition,
   analyzeEmailSignals,
+  classifyEmailModality,
+  extractEmailLocationCandidate,
   clampExpenseDate,
 };

@@ -12,10 +12,15 @@ jest.mock('../../src/services/gmailClient', () => ({
   listRecentMessages: jest.fn(),
   getMessage: jest.fn(),
 }));
+jest.mock('../../src/services/mapkitService', () => ({
+  searchPlace: jest.fn(),
+}));
 jest.mock('../../src/services/emailParser', () => ({
   classifyEmailExpense: jest.fn(),
   parseEmailExpense: jest.fn(),
   analyzeEmailSignals: jest.fn(),
+  classifyEmailModality: jest.fn(),
+  extractEmailLocationCandidate: jest.fn(),
   clampExpenseDate: jest.fn((candidateDate, maxDate) => {
     if (!candidateDate) return maxDate;
     return candidateDate > maxDate ? maxDate : candidateDate;
@@ -27,8 +32,9 @@ jest.mock('../../src/services/categoryAssigner', () => ({
 
 const app = require('../../src/index');
 const { exchangeCode, listRecentMessages, getMessage } = require('../../src/services/gmailClient');
-const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals } = require('../../src/services/emailParser');
+const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals, classifyEmailModality, extractEmailLocationCandidate } = require('../../src/services/emailParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
+const { searchPlace } = require('../../src/services/mapkitService');
 
 let householdId;
 let userId;
@@ -64,6 +70,12 @@ beforeEach(async () => {
   classifyEmailExpense.mockReset();
   analyzeEmailSignals.mockReset();
   analyzeEmailSignals.mockReturnValue({ shouldSurfaceToReview: false });
+  classifyEmailModality.mockReset();
+  classifyEmailModality.mockReturnValue('online');
+  extractEmailLocationCandidate.mockReset();
+  extractEmailLocationCandidate.mockReturnValue(null);
+  searchPlace.mockReset();
+  searchPlace.mockResolvedValue(null);
   assignCategory.mockReset();
   // Clean state between tests
   await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
@@ -327,6 +339,52 @@ describe('POST /gmail/import', () => {
 
     const expense = await db.query(`SELECT date FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
     expect(expense.rows[0].date.toISOString().split('T')[0]).toBe('2026-04-03');
+  });
+
+  it('enriches location for in-person-like Gmail receipts', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'store-receipt-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your receipt from Trader Joe\'s',
+      from: 'receipts@traderjoes.com',
+      body: 'Thanks for shopping with us today. Store #104. 123 Main St, Brooklyn, NY 11201. Total: $29.99',
+      snippet: '123 Main St, Brooklyn, NY 11201',
+      receivedAt: '2026-04-04',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Trader Joe\'s', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({ merchant: 'Trader Joe\'s', amount: 29.99, date: '2026-04-04', notes: null });
+    classifyEmailModality.mockReturnValue('in_person');
+    extractEmailLocationCandidate.mockReturnValue({
+      address: '123 Main St, Brooklyn, NY 11201',
+      city_state: 'Brooklyn, NY 11201',
+      store_number: '104',
+    });
+    searchPlace.mockResolvedValue({
+      place_name: 'Trader Joe\'s',
+      address: '123 Main St, Brooklyn, NY 11201',
+      mapkit_stable_id: '40.0000,-73.0000',
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+
+    const expense = await db.query(
+      `SELECT place_name, address, mapkit_stable_id
+       FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    expect(expense.rows[0]).toMatchObject({
+      place_name: 'Trader Joe\'s',
+      address: '123 Main St, Brooklyn, NY 11201',
+      mapkit_stable_id: '40.0000,-73.0000',
+    });
   });
 });
 

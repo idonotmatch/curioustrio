@@ -4,7 +4,16 @@ jest.mock('../../src/services/ai', () => ({
 }));
 
 const { complete } = require('../../src/services/ai');
-const { parseEmailExpense, classifyEmailExpense, heuristicDisposition, selectRelevantEmailText, analyzeEmailSignals, clampExpenseDate } = require('../../src/services/emailParser');
+const {
+  parseEmailExpense,
+  classifyEmailExpense,
+  heuristicDisposition,
+  selectRelevantEmailText,
+  analyzeEmailSignals,
+  classifyEmailModality,
+  extractEmailLocationCandidate,
+  clampExpenseDate,
+} = require('../../src/services/emailParser');
 
 describe('emailParser', () => {
   beforeEach(() => complete.mockReset());
@@ -103,5 +112,31 @@ describe('emailParser', () => {
     expect(clampExpenseDate('2026-04-07', '2026-04-03')).toBe('2026-04-03');
     expect(clampExpenseDate('2026-04-01', '2026-04-03')).toBe('2026-04-01');
     expect(clampExpenseDate(null, '2026-04-03')).toBe('2026-04-03');
+  });
+
+  it('classifies in-person receipt emails separately from online orders', () => {
+    expect(classifyEmailModality(
+      'Your receipt from Trader Joe\'s',
+      'receipts@traderjoes.com',
+      'Thanks for shopping with us today. Store #104. 123 Main St, Brooklyn, NY 11201.'
+    )).toBe('in_person');
+
+    expect(classifyEmailModality(
+      'Order confirmation',
+      'orders@amazon.com',
+      'Your order has been placed. Estimated delivery April 7. Track your package.'
+    )).toBe('delivery');
+  });
+
+  it('extracts a candidate location from in-person receipt text', () => {
+    expect(extractEmailLocationCandidate(
+      'Your receipt from Trader Joe\'s',
+      'receipts@traderjoes.com',
+      'Store #104. 123 Main St, Brooklyn, NY 11201.'
+    )).toEqual({
+      address: '123 Main St, Brooklyn, NY 11201',
+      city_state: 'Brooklyn, NY 11201',
+      store_number: '104',
+    });
   });
 });
