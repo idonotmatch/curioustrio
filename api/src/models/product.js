@@ -50,14 +50,16 @@ async function create({ name, brand, upc, sku, merchant, productSize, packSize, 
   const result = await db.query(
     `INSERT INTO products (
        name, brand, upc, sku, merchant, product_size, pack_size, unit,
-       normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size, comparable_key
+       normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size,
+       normalized_quantity, normalized_total_size_value, normalized_total_size_unit, comparable_key
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [name, brand || null, upc || null, sku || null, merchant || null,
      productSize || null, packSize || null, unit || null,
      normalized.normalized_name, normalized.normalized_brand, normalized.normalized_size_value,
-     normalized.normalized_size_unit, normalized.normalized_pack_size, normalized.comparable_key]
+     normalized.normalized_size_unit, normalized.normalized_pack_size, normalized.normalized_quantity,
+     normalized.normalized_total_size_value, normalized.normalized_total_size_unit, normalized.comparable_key]
   );
   return result.rows[0];
 }
@@ -85,14 +87,18 @@ async function update(id, { name, brand, upc, sku, merchant, productSize, packSi
          normalized_size_value = COALESCE($12, normalized_size_value),
          normalized_size_unit = COALESCE($13, normalized_size_unit),
          normalized_pack_size = COALESCE($14, normalized_pack_size),
-         comparable_key = COALESCE($15, comparable_key),
+         normalized_quantity = COALESCE($15, normalized_quantity),
+         normalized_total_size_value = COALESCE($16, normalized_total_size_value),
+         normalized_total_size_unit = COALESCE($17, normalized_total_size_unit),
+         comparable_key = COALESCE($18, comparable_key),
          updated_at = NOW()
      WHERE id = $1
      RETURNING *`,
     [id, name || null, brand || null, upc || null, sku || null, merchant || null,
      productSize || null, packSize || null, unit || null,
      normalized.normalized_name, normalized.normalized_brand, normalized.normalized_size_value,
-     normalized.normalized_size_unit, normalized.normalized_pack_size, normalized.comparable_key]
+     normalized.normalized_size_unit, normalized.normalized_pack_size, normalized.normalized_quantity,
+     normalized.normalized_total_size_value, normalized.normalized_total_size_unit, normalized.comparable_key]
   );
   return result.rows[0] || null;
 }

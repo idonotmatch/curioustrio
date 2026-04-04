@@ -78,6 +78,10 @@ describe('ExpenseItem.createBulk', () => {
     expect(Number(rows[0].normalized_size_value)).toBe(12);
     expect(rows[0].normalized_size_unit).toBe('oz');
     expect(Number(rows[0].normalized_pack_size)).toBe(8);
+    expect(Number(rows[0].normalized_quantity)).toBe(8);
+    expect(Number(rows[0].normalized_total_size_value)).toBe(96);
+    expect(rows[0].normalized_total_size_unit).toBe('oz');
+    expect(Number(rows[0].estimated_unit_price)).toBeCloseTo(0.0624, 4);
     expect(rows[0].comparable_key).toBe('sparkling water|brand:water co|size:12oz|pack:8');
   });
 });

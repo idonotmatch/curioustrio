@@ -13,8 +13,8 @@ async function createBulk(expenseId, items) {
   if (!items || items.length === 0) return [];
   const preparedItems = items.map((item, i) => hydrateItem(item, i));
   const values = preparedItems.map((_, i) => {
-    const offset = i * 16;
-    return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17})`;
+    const offset = i * 20;
+    return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21})`;
   });
   const params = [expenseId];
   preparedItems.forEach((item) => {
@@ -34,13 +34,18 @@ async function createBulk(expenseId, items) {
       item.normalized_size_value ?? null,
       item.normalized_size_unit ?? null,
       item.normalized_pack_size ?? null,
+      item.normalized_quantity ?? null,
+      item.normalized_total_size_value ?? null,
+      item.normalized_total_size_unit ?? null,
+      item.estimated_unit_price ?? null,
       item.comparable_key ?? null,
     );
   });
   const result = await db.query(
     `INSERT INTO expense_items (
        expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit,
-       normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size, comparable_key
+       normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size,
+       normalized_quantity, normalized_total_size_value, normalized_total_size_unit, estimated_unit_price, comparable_key
      )
      VALUES ${values.join(', ')}
      RETURNING *`,
@@ -66,8 +71,8 @@ async function replaceItems(expenseId, items) {
     if (items && items.length > 0) {
       const preparedItems = items.map((item, i) => hydrateItem(item, i));
       const values = preparedItems.map((_, i) => {
-        const offset = i * 16;
-        return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17})`;
+        const offset = i * 20;
+        return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21})`;
       });
       const params = [expenseId];
       preparedItems.forEach((item) => {
@@ -87,13 +92,18 @@ async function replaceItems(expenseId, items) {
           item.normalized_size_value ?? null,
           item.normalized_size_unit ?? null,
           item.normalized_pack_size ?? null,
+          item.normalized_quantity ?? null,
+          item.normalized_total_size_value ?? null,
+          item.normalized_total_size_unit ?? null,
+          item.estimated_unit_price ?? null,
           item.comparable_key ?? null,
         );
       });
       const result = await client.query(
         `INSERT INTO expense_items (
            expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit,
-           normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size, comparable_key
+           normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size,
+           normalized_quantity, normalized_total_size_value, normalized_total_size_unit, estimated_unit_price, comparable_key
          )
          VALUES ${values.join(', ')}
          RETURNING *`,

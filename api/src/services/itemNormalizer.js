@@ -9,6 +9,7 @@ function normalizeText(value) {
 function normalizeUnit(unit = '') {
   const value = normalizeText(unit);
   if (!value) return null;
+  if (['fl oz', 'fluid ounce', 'fluid ounces'].includes(value)) return 'oz';
   if (['oz', 'ounce', 'ounces'].includes(value)) return 'oz';
   if (['lb', 'lbs', 'pound', 'pounds'].includes(value)) return 'lb';
   if (['g', 'gram', 'grams'].includes(value)) return 'g';
@@ -34,8 +35,35 @@ function normalizeSizeValue(rawValue, rawUnit) {
 }
 
 function parsePackSize(packSize) {
-  const numeric = parseNumeric(packSize);
+  if (packSize == null || packSize === '') return null;
+  const text = String(packSize).toLowerCase().trim();
+  const multiplierMatch = text.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i);
+  if (multiplierMatch) {
+    return Number(multiplierMatch[1]) * Number(multiplierMatch[2]);
+  }
+  const numeric = parseNumeric(text);
   return numeric == null ? null : numeric;
+}
+
+function deriveNormalizedQuantity({ normalizedSizeValue, normalizedSizeUnit, normalizedPackSize }) {
+  if (normalizedPackSize != null) return normalizedPackSize;
+  if (normalizedSizeUnit === 'ct' || normalizedSizeUnit === 'ea') return normalizedSizeValue;
+  return 1;
+}
+
+function deriveNormalizedTotalSize({ normalizedSizeValue, normalizedSizeUnit, normalizedQuantity }) {
+  if (normalizedSizeValue == null || !normalizedSizeUnit || normalizedQuantity == null) {
+    return { normalizedTotalSizeValue: null, normalizedTotalSizeUnit: null };
+  }
+  return {
+    normalizedTotalSizeValue: Number((normalizedSizeValue * normalizedQuantity).toFixed(3)),
+    normalizedTotalSizeUnit: normalizedSizeUnit,
+  };
+}
+
+function deriveEstimatedUnitPrice(amount, normalizedTotalSizeValue) {
+  if (amount == null || normalizedTotalSizeValue == null || normalizedTotalSizeValue <= 0) return null;
+  return Number((Number(amount) / normalizedTotalSizeValue).toFixed(4));
 }
 
 function buildComparableKey({ description, brand, normalizedSizeValue, normalizedSizeUnit, normalizedPackSize }) {
@@ -54,6 +82,17 @@ function normalizeItemMetadata(item = {}) {
   const normalizedBrand = normalizeText(item.brand);
   const { normalizedSizeValue, normalizedSizeUnit } = normalizeSizeValue(item.product_size, item.unit);
   const normalizedPackSize = parsePackSize(item.pack_size);
+  const normalizedQuantity = deriveNormalizedQuantity({
+    normalizedSizeValue,
+    normalizedSizeUnit,
+    normalizedPackSize,
+  });
+  const { normalizedTotalSizeValue, normalizedTotalSizeUnit } = deriveNormalizedTotalSize({
+    normalizedSizeValue,
+    normalizedSizeUnit,
+    normalizedQuantity,
+  });
+  const estimatedUnitPrice = deriveEstimatedUnitPrice(item.amount, normalizedTotalSizeValue);
   const comparableKey = buildComparableKey({
     description: item.description,
     brand: item.brand,
@@ -68,6 +107,10 @@ function normalizeItemMetadata(item = {}) {
     normalized_size_value: normalizedSizeValue,
     normalized_size_unit: normalizedSizeUnit,
     normalized_pack_size: normalizedPackSize,
+    normalized_quantity: normalizedQuantity,
+    normalized_total_size_value: normalizedTotalSizeValue,
+    normalized_total_size_unit: normalizedTotalSizeUnit,
+    estimated_unit_price: estimatedUnitPrice,
     comparable_key: comparableKey,
   };
 }
@@ -76,4 +119,5 @@ module.exports = {
   normalizeText,
   normalizeUnit,
   normalizeItemMetadata,
+  parsePackSize,
 };
