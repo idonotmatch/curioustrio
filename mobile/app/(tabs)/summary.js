@@ -10,6 +10,7 @@ import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { useHousehold } from '../../hooks/useHousehold';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { useInsights } from '../../hooks/useInsights';
 import { api } from '../../services/api';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -66,6 +67,7 @@ export default function SummaryScreen() {
   const isMultiMember = memberCount > 1;
   const householdStartDay = household?.budget_start_day || 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
+  const { insights, refresh: refreshInsights } = useInsights(3);
   const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -86,7 +88,8 @@ export default function SummaryScreen() {
     refreshHouseholdBudget();
     refreshPending();
     loadGmailImportSummary();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending, loadGmailImportSummary]));
+    refreshInsights();
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending, loadGmailImportSummary, refreshInsights]));
 
   useEffect(() => {
     if (recentTab === 'queue') loadGmailImportSummary();
@@ -254,6 +257,27 @@ export default function SummaryScreen() {
             </View>
           )}
           {hOver && <Text style={styles.hOverLabel}>${(hSpent - hLimit).toFixed(0)} over</Text>}
+        </View>
+      )}
+
+      {insights.length > 0 && (
+        <View style={styles.insightsSection}>
+          <Text style={styles.sectionLabel}>Insights</Text>
+          {insights.map((insight) => (
+            <View key={insight.id} style={styles.insightCard}>
+              <View style={styles.insightHeader}>
+                <Text style={styles.insightTitle}>{insight.title}</Text>
+                <Text style={[
+                  styles.insightSeverity,
+                  insight.severity === 'high' && styles.insightSeverityHigh,
+                  insight.severity === 'medium' && styles.insightSeverityMedium,
+                ]}>
+                  {insight.severity}
+                </Text>
+              </View>
+              <Text style={styles.insightBody}>{insight.body}</Text>
+            </View>
+          ))}
         </View>
       )}
 
@@ -431,6 +455,23 @@ const styles = StyleSheet.create({
   hBarTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1 },
   hBarFill: { height: 2, borderRadius: 1 },
   hOverLabel: { fontSize: 12, color: '#ef4444', marginTop: 4 },
+
+  insightsSection: { marginBottom: 32 },
+  insightCard: {
+    backgroundColor: '#111',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    marginBottom: 10,
+  },
+  insightHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 12 },
+  insightTitle: { flex: 1, fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
+  insightSeverity: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1 },
+  insightSeverityHigh: { color: '#ef4444' },
+  insightSeverityMedium: { color: '#f59e0b' },
+  insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
 
   quickAdd: { marginBottom: 32 },
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
