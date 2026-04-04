@@ -132,15 +132,21 @@ export default function SummaryScreen() {
   const removePending = (id) => setDisplayPending(prev => prev.filter(e => e.id !== id));
 
   async function dismissPending(id) {
-    try { await api.post(`/expenses/${id}/dismiss`); removePending(id); } catch { /* ignore */ }
+    try {
+      await api.post(`/expenses/${id}/dismiss`);
+      const { invalidateCache } = await import('../../services/cache');
+      await invalidateCache('cache:expenses:pending');
+      removePending(id);
+    } catch { /* ignore */ }
   }
 
   async function approvePending(id) {
     try {
       await api.post(`/expenses/${id}/approve`);
       removePending(id);
-      const { invalidateCacheByPrefix } = await import('../../services/cache');
+      const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
       await Promise.all([
+        invalidateCache('cache:expenses:pending'),
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
       ]);

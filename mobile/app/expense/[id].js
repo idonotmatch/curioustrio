@@ -479,7 +479,16 @@ export default function ExpenseDetailScreen() {
             disabled={actioning}
             onPress={async () => {
               setActioning(true);
-              try { await api.post(`/expenses/${id}/approve`); router.back(); }
+              try {
+                await api.post(`/expenses/${id}/approve`);
+                const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
+                await Promise.all([
+                  invalidateCache('cache:expenses:pending'),
+                  invalidateCacheByPrefix('cache:expenses:'),
+                  invalidateCacheByPrefix('cache:budget:'),
+                ]);
+                router.back();
+              }
               catch (e) { Alert.alert('Error', e.message); setActioning(false); }
             }}
           >
@@ -490,7 +499,12 @@ export default function ExpenseDetailScreen() {
             disabled={actioning}
             onPress={async () => {
               setActioning(true);
-              try { await api.post(`/expenses/${id}/dismiss`); router.back(); }
+              try {
+                await api.post(`/expenses/${id}/dismiss`);
+                const { invalidateCache } = await import('../../services/cache');
+                await invalidateCache('cache:expenses:pending');
+                router.back();
+              }
               catch (e) { Alert.alert('Error', e.message); setActioning(false); }
             }}
           >

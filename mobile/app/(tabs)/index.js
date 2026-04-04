@@ -158,15 +158,21 @@ export default function FeedScreen() {
   }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending]));
 
   async function dismissPending(id) {
-    try { await api.post(`/expenses/${id}/dismiss`); refreshPending(); } catch { /* ignore */ }
+    try {
+      await api.post(`/expenses/${id}/dismiss`);
+      const { invalidateCache } = await import('../../services/cache');
+      await invalidateCache('cache:expenses:pending');
+      refreshPending();
+    } catch { /* ignore */ }
   }
 
   async function approvePending(id) {
     try {
       await api.post(`/expenses/${id}/approve`);
       refreshPending();
-      const { invalidateCacheByPrefix } = await import('../../services/cache');
+      const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
       await Promise.all([
+        invalidateCache('cache:expenses:pending'),
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
       ]);
