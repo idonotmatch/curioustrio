@@ -13,10 +13,14 @@ jest.mock('../../src/services/categoryAssigner');
 jest.mock('../../src/services/receiptParser', () => ({
   parseReceipt: jest.fn(),
 }));
+jest.mock('../../src/services/mapkitService', () => ({
+  searchPlace: jest.fn(),
+}));
 
 const { parseExpense } = require('../../src/services/nlParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { parseReceipt } = require('../../src/services/receiptParser');
+const { searchPlace } = require('../../src/services/mapkitService');
 
 let householdId;
 let userId;
@@ -25,6 +29,8 @@ beforeEach(() => {
   parseReceipt.mockReset();
   parseExpense.mockReset();
   assignCategory.mockReset();
+  searchPlace.mockReset();
+  searchPlace.mockResolvedValue(null);
 });
 
 beforeAll(async () => {
@@ -247,6 +253,39 @@ describe('POST /expenses/confirm', () => {
     expect(res.status).toBe(201);
     expect(res.body.duplicate_flags.length).toBeGreaterThan(0);
     expect(res.body.duplicate_flags[0].confidence).toBe('exact');
+  });
+});
+
+describe('POST /expenses/scan', () => {
+  it('returns receipt-derived location fields when a store address is available', async () => {
+    parseReceipt.mockResolvedValueOnce({
+      merchant: 'Trader Joe\'s',
+      amount: 28.5,
+      date: '2026-03-21',
+      notes: null,
+      store_address: '123 Main St, Brooklyn, NY 11201',
+      store_number: '104',
+      parse_status: 'partial',
+      review_fields: ['items'],
+      field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
+    });
+    assignCategory.mockResolvedValueOnce({
+      category_id: null, source: 'claude', confidence: 0,
+    });
+    searchPlace.mockResolvedValueOnce({
+      place_name: 'Trader Joe\'s',
+      address: '123 Main St, Brooklyn, NY 11201',
+      mapkit_stable_id: '40.0000,-73.0000',
+    });
+
+    const res = await request(app)
+      .post('/expenses/scan')
+      .send({ image_base64: 'fakebase64data', today: '2026-03-21' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.place_name).toBe('Trader Joe\'s');
+    expect(res.body.address).toBe('123 Main St, Brooklyn, NY 11201');
+    expect(res.body.mapkit_stable_id).toBe('40.0000,-73.0000');
   });
 });
 

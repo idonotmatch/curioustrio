@@ -71,7 +71,18 @@ export default function ConfirmScreen() {
   }, []);
 
   useEffect(() => {
+    if (parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id) {
+      setLocationData({
+        place_name: parsed.place_name || merchant || '',
+        address: parsed.address || null,
+        mapkit_stable_id: parsed.mapkit_stable_id || null,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
     if (!merchant?.trim()) return; // only auto-populate when merchant is known
+    if (parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id) return;
 
     async function autoPopulateLocation() {
       try {

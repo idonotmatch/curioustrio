@@ -35,6 +35,21 @@ describe('parseReceipt', () => {
     expect(result.review_fields).toContain('items');
   });
 
+  it('preserves parsed store address and store number when present', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Trader Joe\'s',
+      amount: 28.5,
+      date: '2026-03-21',
+      notes: null,
+      store_address: '123 Main St, Brooklyn, NY 11201',
+      store_number: '104',
+      items: null,
+    }, '2026-03-21');
+
+    expect(result.store_address).toBe('123 Main St, Brooklyn, NY 11201');
+    expect(result.store_number).toBe('104');
+  });
+
   it('returns null when Claude returns "null"', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();

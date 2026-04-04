@@ -13,6 +13,7 @@ const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
 const detectDuplicates = require('../services/duplicateDetector');
 const { resolveProduct } = require('../services/productResolver');
+const { searchPlace } = require('../services/mapkitService');
 const db = require('../db');
 
 router.use(authenticate);
@@ -76,6 +77,20 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       categories,
     });
     const matchedCat = categories.find(c => c.id === category_id);
+    let matchedLocation = null;
+    const locationQuery = [
+      parsed.merchant,
+      parsed.store_number ? `Store ${parsed.store_number}` : null,
+      parsed.store_address,
+    ].filter(Boolean).join(' ');
+
+    if (locationQuery) {
+      try {
+        matchedLocation = await searchPlace(locationQuery);
+      } catch {
+        matchedLocation = null;
+      }
+    }
 
     res.json({
       ...parsed,
@@ -84,6 +99,9 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       category_name: matchedCat?.name || null,
       category_source: source,
       category_confidence: confidence,
+      place_name: matchedLocation?.place_name || parsed.merchant || null,
+      address: matchedLocation?.address || parsed.store_address || null,
+      mapkit_stable_id: matchedLocation?.mapkit_stable_id || null,
     });
   } catch (err) { next(err); }
 });
