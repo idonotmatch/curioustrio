@@ -2,14 +2,16 @@ import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Platform } from 'react-native';
-import { useEffect } from 'react';
+import { ActivityIndicator, Platform, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
 
 function AppNavigator() {
   const router = useRouter();
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const resolvingSessionRef = useRef(false);
 
   // Push notification + location permission registration (independent of auth)
   useEffect(() => {
@@ -43,7 +45,9 @@ function AppNavigator() {
 
   // Auth state listener
   useEffect(() => {
-    async function checkHousehold(session) {
+    async function routeAuthenticatedSession(session) {
+      if (resolvingSessionRef.current) return;
+      resolvingSessionRef.current = true;
       try {
         // Pass the token directly from the session object already in memory.
         // Do NOT rely on supabase.auth.getSession() here: immediately after
@@ -51,21 +55,31 @@ function AppNavigator() {
         // getSession() to return null, the request to go out unauthenticated,
         // the server to respond 401, and navigation to silently never fire.
         const isAnon = session.user.is_anonymous === true;
-        const me = await api.post('/users/sync', {
+        const payload = {
           name: isAnon ? 'Anonymous' : (session.user.user_metadata?.full_name || session.user.email || 'User'),
           email: isAnon ? null : (session.user.email || null),
-        }, { token: session.access_token });
-        if (!me?.household_id) {
+        };
+
+        let me = null;
+        try {
+          me = await api.post('/users/sync', payload, { token: session.access_token });
+        } catch (syncErr) {
+          console.error('[routeAuthenticatedSession] sync failed, falling back to /users/me:', syncErr?.message ?? syncErr);
+          try {
+            me = await api.get('/users/me', { token: session.access_token });
+          } catch (meErr) {
+            console.error('[routeAuthenticatedSession] /users/me fallback failed:', meErr?.message ?? meErr);
+          }
+        }
+
+        if (!isAnon && me && !me.household_id) {
           router.replace('/onboarding');
         } else {
           router.replace('/(tabs)/summary');
         }
-      } catch (err) {
-        console.error('[checkHousehold] sync failed:', err?.message ?? err);
-        // Don't leave the user on a blank screen — send to onboarding as safe fallback.
-        // They can retry from there; if the server is misconfigured, this is better
-        // than silently blocking navigation after a successful sign-in.
-        router.replace('/onboarding');
+      } finally {
+        resolvingSessionRef.current = false;
+        setBootstrapped(true);
       }
     }
 
@@ -74,14 +88,23 @@ function AppNavigator() {
     // SIGNED_IN fires after a fresh login. Both need the same handling.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
-        checkHousehold(session);
+        routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         router.replace('/login');
+        setBootstrapped(true);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  if (!bootstrapped) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#888" />
+      </View>
+    );
+  }
 
   return (
     <Stack screenOptions={{
