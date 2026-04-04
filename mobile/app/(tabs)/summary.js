@@ -82,14 +82,23 @@ export default function SummaryScreen() {
     }
   }, []);
 
-  // Only household data and pending need focus-refresh — personal expenses are cache-authoritative.
   useFocusEffect(useCallback(() => {
+    refreshExpenses();
+    refreshPersonalBudget();
     refreshHouseholdExpenses();
     refreshHouseholdBudget();
     refreshPending();
     loadGmailImportSummary();
     refreshInsights();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPending, loadGmailImportSummary, refreshInsights]));
+  }, [
+    refreshExpenses,
+    refreshPersonalBudget,
+    refreshHouseholdExpenses,
+    refreshHouseholdBudget,
+    refreshPending,
+    loadGmailImportSummary,
+    refreshInsights,
+  ]));
 
   useEffect(() => {
     if (recentTab === 'queue') loadGmailImportSummary();

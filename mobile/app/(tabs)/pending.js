@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { DuplicateAlert } from '../../components/DuplicateAlert';
 import { api } from '../../services/api';
-import { invalidateCache } from '../../services/cache';
+import { invalidateCache, invalidateCacheByPrefix } from '../../services/cache';
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -43,7 +43,11 @@ export default function PendingScreen() {
   async function approve(id) {
     try {
       await api.post(`/expenses/${id}/approve`);
-      await invalidateCache('cache:expenses:pending');
+      await Promise.all([
+        invalidateCache('cache:expenses:pending'),
+        invalidateCacheByPrefix('cache:expenses:'),
+        invalidateCacheByPrefix('cache:budget:'),
+      ]);
       remove(id);
     } catch { /* ignore */ }
   }
