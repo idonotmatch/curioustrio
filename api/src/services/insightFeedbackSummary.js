@@ -94,8 +94,59 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
   return score;
 }
 
+function toSerializableSummary(feedbackSummary) {
+  return [...feedbackSummary.entries()]
+    .map(([insightType, stats]) => ({
+      insight_type: insightType,
+      helpful: stats.helpful || 0,
+      not_helpful: stats.not_helpful || 0,
+      tapped: stats.tapped || 0,
+      dismissed: stats.dismissed || 0,
+      shown: stats.shown || 0,
+      reasons: stats.reasons || {},
+      last_negative_at: stats.last_negative_at || null,
+      last_helpful_at: stats.last_helpful_at || null,
+    }))
+    .sort((a, b) => {
+      const aSignal = (a.helpful + a.tapped) - (a.not_helpful + a.dismissed);
+      const bSignal = (b.helpful + b.tapped) - (b.not_helpful + b.dismissed);
+      if (bSignal !== aSignal) return bSignal - aSignal;
+      return (b.shown + b.tapped + b.helpful + b.not_helpful + b.dismissed) - (a.shown + a.tapped + a.helpful + a.not_helpful + a.dismissed);
+    });
+}
+
+function extractRecentNotes(events = [], limit = 20) {
+  return events
+    .filter((event) => `${event?.metadata?.note || ''}`.trim())
+    .slice(0, limit)
+    .map((event) => ({
+      insight_id: event.insight_id,
+      insight_type: normalizeInsightType(event),
+      event_type: event.event_type,
+      reason: event?.metadata?.reason || null,
+      note: `${event?.metadata?.note || ''}`.trim(),
+      surface: event?.metadata?.surface || null,
+      created_at: event.created_at,
+    }));
+}
+
+function buildFeedbackDebugSummary(events = []) {
+  const summary = summarizeFeedbackEvents(events);
+  return {
+    insight_types: toSerializableSummary(summary),
+    recent_notes: extractRecentNotes(events),
+    totals: events.reduce((acc, event) => {
+      acc[event.event_type] = (acc[event.event_type] || 0) + 1;
+      return acc;
+    }, {}),
+  };
+}
+
 module.exports = {
   normalizeInsightType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
+  toSerializableSummary,
+  extractRecentNotes,
+  buildFeedbackDebugSummary,
 };
