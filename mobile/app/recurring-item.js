@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '../services/api';
+
+const FEEDBACK_REASONS = [
+  { key: 'wrong_timing', label: 'Wrong timing' },
+  { key: 'not_relevant', label: 'Not relevant' },
+  { key: 'not_accurate', label: 'Not accurate' },
+  { key: 'already_knew', label: 'I already knew this' },
+];
 
 function formatCurrency(value) {
   if (value == null || Number.isNaN(Number(value))) return '—';
@@ -15,6 +22,9 @@ export default function RecurringItemScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedbackStatus, setFeedbackStatus] = useState('');
+  const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
+  const [feedbackReason, setFeedbackReason] = useState('');
+  const [feedbackNote, setFeedbackNote] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +65,30 @@ export default function RecurringItemScreen() {
         }],
       });
       setFeedbackStatus(eventType);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function submitNegativeFeedback() {
+    if (!insightId || !feedbackReason) return;
+    try {
+      await api.post('/insights/events', {
+        events: [{
+          insight_id: `${insightId}`,
+          event_type: 'not_helpful',
+          metadata: {
+            surface: 'recurring_item_detail',
+            group_key: `${groupKey || ''}`,
+            reason: feedbackReason,
+            note: feedbackNote.trim() || null,
+          },
+        }],
+      });
+      setFeedbackStatus('not_helpful');
+      setFeedbackReason('');
+      setFeedbackNote('');
+      setShowFeedbackSheet(false);
     } catch {
       // non-fatal
     }
@@ -126,7 +160,11 @@ export default function RecurringItemScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.feedbackButton, feedbackStatus === 'not_helpful' && styles.feedbackButtonActive]}
-                    onPress={() => submitFeedback('not_helpful')}
+                    onPress={() => {
+                      setFeedbackReason('');
+                      setFeedbackNote('');
+                      setShowFeedbackSheet(true);
+                    }}
                   >
                     <Text style={[styles.feedbackButtonText, feedbackStatus === 'not_helpful' && styles.feedbackButtonTextActive]}>Not helpful</Text>
                   </TouchableOpacity>
@@ -139,6 +177,62 @@ export default function RecurringItemScreen() {
           </>
         ) : null}
       </ScrollView>
+      <Modal
+        visible={showFeedbackSheet}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFeedbackSheet(false)}
+      >
+        <View style={styles.modalScrim}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>What was off?</Text>
+            <Text style={styles.modalCopy}>
+              This helps Adlo learn which recurring signals are mistimed, noisy, or inaccurate for you.
+            </Text>
+            <View style={styles.reasonList}>
+              {FEEDBACK_REASONS.map((reason) => (
+                <TouchableOpacity
+                  key={reason.key}
+                  style={[styles.reasonChip, feedbackReason === reason.key && styles.reasonChipActive]}
+                  onPress={() => setFeedbackReason(reason.key)}
+                >
+                  <Text style={[styles.reasonChipText, feedbackReason === reason.key && styles.reasonChipTextActive]}>
+                    {reason.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              value={feedbackNote}
+              onChangeText={setFeedbackNote}
+              placeholder="What should Adlo know instead?"
+              placeholderTextColor="#6f6f6f"
+              style={styles.noteInput}
+              multiline
+              textAlignVertical="top"
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalSecondaryButton}
+                onPress={() => {
+                  setFeedbackReason('');
+                  setFeedbackNote('');
+                  setShowFeedbackSheet(false);
+                }}
+              >
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalPrimaryButton, !feedbackReason && styles.modalPrimaryButtonDisabled]}
+                onPress={submitNegativeFeedback}
+                disabled={!feedbackReason}
+              >
+                <Text style={styles.modalPrimaryText}>Send feedback</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -202,5 +296,93 @@ const styles = StyleSheet.create({
   feedbackNote: {
     fontSize: 12,
     color: '#7fcf9f',
+  },
+  modalScrim: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#111',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#232323',
+    padding: 18,
+    gap: 14,
+  },
+  modalTitle: {
+    fontSize: 20,
+    color: '#f5f5f5',
+    fontWeight: '600',
+  },
+  modalCopy: {
+    fontSize: 14,
+    color: '#a1a1a1',
+    lineHeight: 20,
+  },
+  reasonList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  reasonChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    backgroundColor: '#181818',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reasonChipActive: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#f5f5f5',
+  },
+  reasonChipText: {
+    color: '#d7d7d7',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  reasonChipTextActive: {
+    color: '#000',
+  },
+  noteInput: {
+    minHeight: 88,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    backgroundColor: '#151515',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    color: '#f5f5f5',
+    fontSize: 14,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalSecondaryButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  modalSecondaryText: {
+    color: '#bcbcbc',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalPrimaryButton: {
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  modalPrimaryButtonDisabled: {
+    opacity: 0.4,
+  },
+  modalPrimaryText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
