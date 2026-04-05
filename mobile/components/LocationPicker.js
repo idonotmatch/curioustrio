@@ -8,13 +8,13 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   const [searchMode, setSearchMode] = useState(false);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
 
   useEffect(() => {
     if (!searchMode) return undefined;
     const trimmed = query.trim();
     if (!trimmed) {
-      setSearchResult(null);
+      setSearchResults([]);
       setSearching(false);
       return undefined;
     }
@@ -35,9 +35,9 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
           params.set('lng', String(coords.longitude));
         }
         const lookup = await api.get(`/places/search?${params.toString()}`);
-        if (!cancelled) setSearchResult(lookup?.result || null);
+        if (!cancelled) setSearchResults(Array.isArray(lookup?.results) ? lookup.results : (lookup?.result ? [lookup.result] : []));
       } catch {
-        if (!cancelled) setSearchResult(null);
+        if (!cancelled) setSearchResults([]);
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -105,6 +105,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
           onPress={() => {
             setSearchMode(v => !v);
             if (!searchMode) setQuery(merchant || '');
+            if (searchMode) setSearchResults([]);
           }}
         >
           <Text style={[styles.searchToggleText, searchMode && styles.searchToggleTextActive]}>Search place</Text>
@@ -124,11 +125,18 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
           {searching ? (
             <ActivityIndicator color="#888" size="small" style={{ marginTop: 10 }} />
           ) : query.trim() ? (
-            searchResult ? (
-              <TouchableOpacity style={styles.resultCard} onPress={() => onLocation(searchResult)}>
-                <Text style={styles.placeName}>{searchResult.place_name}</Text>
-                {searchResult.address ? <Text style={styles.address}>{searchResult.address}</Text> : null}
-              </TouchableOpacity>
+            searchResults.length ? (
+              <View style={styles.resultsList}>
+                {searchResults.map((result) => {
+                  const key = result.mapkit_stable_id || `${result.place_name}:${result.address}`;
+                  return (
+                    <TouchableOpacity key={key} style={styles.resultCard} onPress={() => onLocation(result)}>
+                      <Text style={styles.placeName}>{result.place_name}</Text>
+                      {result.address ? <Text style={styles.address}>{result.address}</Text> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             ) : (
               <Text style={styles.emptySearch}>No place match found yet.</Text>
             )
@@ -158,6 +166,7 @@ const styles = StyleSheet.create({
   searchPanel: { marginTop: 10 },
   searchInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
   resultCard: { marginTop: 10, backgroundColor: '#111', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#2a2a2a' },
+  resultsList: { marginTop: 10, gap: 8 },
   emptySearch: { marginTop: 10, color: '#666', fontSize: 12 },
   secondaryAction: { marginTop: 10 },
   secondaryActionText: { color: '#777', fontSize: 12 },

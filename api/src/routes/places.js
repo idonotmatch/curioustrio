@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
-const { searchPlace } = require('../services/mapkitService');
+const { searchPlaces } = require('../services/mapkitService');
 
 router.use(authenticate);
 
@@ -21,8 +21,8 @@ router.get('/search', async (req, res, next) => {
       }
     }
     const radiusMeters = radius ? Math.min(Math.max(parseInt(radius), 100), 5000) : 500;
-    const result = await searchPlace(q, parsedLat, parsedLng, radiusMeters);
-    res.json({ result });
+    const results = await searchPlaces(q, parsedLat, parsedLng, radiusMeters);
+    res.json({ result: results[0] || null, results });
   } catch (err) { next(err); }
 });
 

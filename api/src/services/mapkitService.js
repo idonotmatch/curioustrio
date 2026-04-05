@@ -35,7 +35,18 @@ function metersToDegrees(meters, lat) {
   return { latDeg, lngDeg };
 }
 
-async function searchPlace(query, lat = null, lng = null, radiusMeters = 500) {
+function mapResult(top, query) {
+  const place_name = top.displayLines?.[0] || query;
+  const address = top.displayLines?.slice(1).join(', ') || '';
+  const { latitude, longitude } = top.coordinate || {};
+  const mapkit_stable_id = latitude != null && longitude != null
+    ? `${latitude.toFixed(4)},${longitude.toFixed(4)}`
+    : null;
+
+  return { place_name, address, mapkit_stable_id };
+}
+
+async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5) {
   const token = getSignedJwt();
   async function searchOnce({ useLocationBias = false, includePoiFilter = false }) {
     const url = new URL(MAPKIT_SEARCH_URL);
@@ -57,32 +68,37 @@ async function searchPlace(query, lat = null, lng = null, radiusMeters = 500) {
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
 
     const data = await res.json();
-    const top = data.results?.[0];
-    if (!top) return null;
+    const results = Array.isArray(data.results) ? data.results : [];
+    if (!results.length) return [];
 
-    const place_name = top.displayLines?.[0] || query;
-    const address = top.displayLines?.slice(1).join(', ') || '';
-    const { latitude, longitude } = top.coordinate || {};
-    const mapkit_stable_id = latitude != null && longitude != null
-      ? `${latitude.toFixed(4)},${longitude.toFixed(4)}`
-      : null;
-
-    return { place_name, address, mapkit_stable_id };
+    return results.slice(0, limit).map((result) => mapResult(result, query));
   }
 
   // Try the tightest/highest-quality match first, but fall back progressively.
   // Manual search should not fail just because the user is not physically near
   // the searched location or because the query resolves better as an address
   // than a POI.
-  return (
-    await searchOnce({ useLocationBias: true, includePoiFilter: true }) ||
-    await searchOnce({ useLocationBias: true, includePoiFilter: false }) ||
-    await searchOnce({ useLocationBias: false, includePoiFilter: true }) ||
-    await searchOnce({ useLocationBias: false, includePoiFilter: false })
-  );
+  const strategies = [
+    { useLocationBias: true, includePoiFilter: true },
+    { useLocationBias: true, includePoiFilter: false },
+    { useLocationBias: false, includePoiFilter: true },
+    { useLocationBias: false, includePoiFilter: false },
+  ];
+
+  for (const strategy of strategies) {
+    const results = await searchOnce(strategy);
+    if (results.length) return results;
+  }
+
+  return [];
 }
 
-module.exports = { searchPlace };
+async function searchPlace(query, lat = null, lng = null, radiusMeters = 500) {
+  const results = await searchPlaces(query, lat, lng, radiusMeters, 1);
+  return results[0] || null;
+}
+
+module.exports = { searchPlace, searchPlaces };

@@ -3,7 +3,7 @@ jest.mock('jsonwebtoken', () => ({
 }));
 jest.mock('node-fetch');
 
-const { searchPlace } = require('../../src/services/mapkitService');
+const { searchPlace, searchPlaces } = require('../../src/services/mapkitService');
 const fetch = require('node-fetch');
 
 beforeEach(() => {
@@ -31,6 +31,29 @@ it('returns top place result from MapKit search', async () => {
   expect(result.place_name).toBe("Trader Joe's");
   expect(result.address).toContain('123 Main St');
   expect(result.mapkit_stable_id).toContain('37.');
+});
+
+it('returns multiple place results from MapKit search', async () => {
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [
+        {
+          displayLines: ["Trader Joe's", '123 Main St, San Francisco, CA'],
+          coordinate: { latitude: 37.7749, longitude: -122.4194 },
+        },
+        {
+          displayLines: ['Target', '789 Broadway, New York, NY'],
+          coordinate: { latitude: 40.7306, longitude: -73.9352 },
+        },
+      ],
+    }),
+  });
+
+  const results = await searchPlaces('store', 37.775, -122.419);
+  expect(results).toHaveLength(2);
+  expect(results[0].place_name).toBe("Trader Joe's");
+  expect(results[1].place_name).toBe('Target');
 });
 
 it('returns null when no results found', async () => {
