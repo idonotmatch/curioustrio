@@ -62,6 +62,52 @@ function daysSince(timestamp) {
   return diff / (24 * 60 * 60 * 1000);
 }
 
+function suppressionWindowDays(stats = {}) {
+  const wrongTimingCount = stats.reasons?.wrong_timing || 0;
+  const notRelevantCount = stats.reasons?.not_relevant || 0;
+  const notAccurateCount = stats.reasons?.not_accurate || 0;
+  const dismissedCount = stats.dismissed || 0;
+  const notHelpfulCount = stats.not_helpful || 0;
+
+  if (notAccurateCount >= 2 || notRelevantCount >= 2 || notHelpfulCount >= 3) return 21;
+  if (wrongTimingCount >= 1) return 7;
+  if (dismissedCount >= 2 || notHelpfulCount >= 2) return 14;
+  return 0;
+}
+
+function suppressionForInsightType(insightType, feedbackSummary = new Map()) {
+  const stats = feedbackSummary.get(insightType);
+  if (!stats) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
+
+  const cooldownDays = suppressionWindowDays(stats);
+  if (!cooldownDays) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
+
+  const recentNegativeDays = daysSince(stats.last_negative_at);
+  if (recentNegativeDays == null || recentNegativeDays > cooldownDays) {
+    return { suppressed: false, cooldown_days: cooldownDays, reason: null, until: null };
+  }
+
+  const lastNegativeAt = new Date(stats.last_negative_at);
+  const until = Number.isNaN(lastNegativeAt.getTime())
+    ? null
+    : new Date(lastNegativeAt.getTime() + cooldownDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const reasons = stats.reasons || {};
+  const topReason = Object.entries(reasons)
+    .sort((a, b) => b[1] - a[1])[0]?.[0] || (stats.dismissed >= 2 ? 'dismissed' : 'not_helpful');
+
+  return {
+    suppressed: true,
+    cooldown_days: cooldownDays,
+    reason: topReason,
+    until,
+  };
+}
+
+function shouldSuppressInsight(insight, feedbackSummary = new Map()) {
+  return suppressionForInsightType(insight?.type, feedbackSummary).suppressed;
+}
+
 function feedbackAdjustmentForInsight(insight, feedbackSummary) {
   const stats = feedbackSummary.get(insight.type);
   if (!stats) return 0;
@@ -106,6 +152,7 @@ function toSerializableSummary(feedbackSummary) {
       reasons: stats.reasons || {},
       last_negative_at: stats.last_negative_at || null,
       last_helpful_at: stats.last_helpful_at || null,
+      suppression: suppressionForInsightType(insightType, feedbackSummary),
     }))
     .sort((a, b) => {
       const aSignal = (a.helpful + a.tapped) - (a.not_helpful + a.dismissed);
@@ -146,6 +193,8 @@ module.exports = {
   normalizeInsightType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
+  suppressionForInsightType,
+  shouldSuppressInsight,
   toSerializableSummary,
   extractRecentNotes,
   buildFeedbackDebugSummary,

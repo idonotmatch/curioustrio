@@ -2,6 +2,8 @@ const {
   normalizeInsightType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
+  suppressionForInsightType,
+  shouldSuppressInsight,
 } = require('../../src/services/insightFeedbackSummary');
 const { insightRankScore } = require('../../src/services/insightBuilder');
 
@@ -94,6 +96,88 @@ describe('feedbackAdjustmentForInsight', () => {
     ]);
 
     expect(feedbackAdjustmentForInsight({ type: 'recurring_repurchase_due' }, summary)).toBeGreaterThan(0);
+  });
+});
+
+describe('suppressionForInsightType', () => {
+  it('suppresses repeatedly not-helpful insight types for a cooldown window', () => {
+    const now = new Date().toISOString();
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'spend_pace_ahead:personal:2026-04',
+        event_type: 'not_helpful',
+        metadata: { type: 'spend_pace_ahead', reason: 'not_relevant' },
+        created_at: now,
+      },
+      {
+        insight_id: 'spend_pace_ahead:personal:2026-04',
+        event_type: 'not_helpful',
+        metadata: { type: 'spend_pace_ahead', reason: 'not_relevant' },
+        created_at: now,
+      },
+    ]);
+
+    expect(suppressionForInsightType('spend_pace_ahead', summary)).toEqual(
+      expect.objectContaining({
+        suppressed: true,
+        cooldown_days: 21,
+        reason: 'not_relevant',
+      })
+    );
+  });
+
+  it('uses a shorter cooldown for wrong timing feedback', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_repurchase_due:product:abc:2026-04-08',
+        event_type: 'not_helpful',
+        metadata: { type: 'recurring_repurchase_due', reason: 'wrong_timing' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(suppressionForInsightType('recurring_repurchase_due', summary)).toEqual(
+      expect.objectContaining({
+        suppressed: true,
+        cooldown_days: 7,
+        reason: 'wrong_timing',
+      })
+    );
+  });
+
+  it('does not suppress after the cooldown has passed', () => {
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'buy_soon_better_price:product:abc:target:2026-04-04',
+        event_type: 'not_helpful',
+        metadata: { type: 'buy_soon_better_price', reason: 'wrong_timing' },
+        created_at: old,
+      },
+    ]);
+
+    expect(suppressionForInsightType('buy_soon_better_price', summary).suppressed).toBe(false);
+  });
+});
+
+describe('shouldSuppressInsight', () => {
+  it('filters insight objects by the current cooldown state', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'top_driver:personal:2026-04:groceries',
+        event_type: 'dismissed',
+        metadata: null,
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'top_driver:personal:2026-04:groceries',
+        event_type: 'dismissed',
+        metadata: null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(shouldSuppressInsight({ type: 'top_category_driver' }, summary)).toBe(true);
   });
 });
 

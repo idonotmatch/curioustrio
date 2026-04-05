@@ -4,7 +4,7 @@ const { findObservationOpportunities } = require('./priceObservationService');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
-const { summarizeFeedbackEvents, feedbackAdjustmentForInsight } = require('./insightFeedbackSummary');
+const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight } = require('./insightFeedbackSummary');
 
 function severityForSignal(signal, deltaPercent) {
   const pct = Math.abs(Number(deltaPercent || 0));
@@ -441,6 +441,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       } : insight;
     })
     .filter((insight) => insight.state?.status !== 'dismissed')
+    .filter((insight) => !shouldSuppressInsight(insight, feedbackSummary))
     .sort((a, b) => {
       const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
       if (scoreDiff !== 0) return scoreDiff;
