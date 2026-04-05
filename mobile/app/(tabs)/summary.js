@@ -378,7 +378,6 @@ export default function SummaryScreen() {
           <View style={styles.householdRow}>
             <View>
               <Text style={styles.householdLabel}>Household</Text>
-              <Text style={styles.householdPeriod}>{periodLabel(selectedMonth, householdStartDay)}</Text>
             </View>
             <View style={styles.householdNumbers}>
               <Text style={[styles.householdSpent, hOver && styles.householdOver]}>${hSpent.toFixed(0)}</Text>
@@ -393,6 +392,33 @@ export default function SummaryScreen() {
           {hOver && <Text style={styles.hOverLabel}>${(hSpent - hLimit).toFixed(0)} over</Text>}
         </View>
       )}
+
+      {/* Quick Add */}
+      <View style={styles.quickAdd}>
+        <Text style={styles.sectionLabel}>Quick add</Text>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder="84.50 trader joes · lunch 14 · gas 60 yesterday"
+            placeholderTextColor="#555"
+            onSubmitEditing={handleQuickAdd}
+            autoCorrect={false}
+            returnKeyType="done"
+            editable={!loading}
+          />
+          <TouchableOpacity style={styles.addBtn} onPress={handleQuickAdd} disabled={loading || !input.trim()}>
+            {loading
+              ? <ActivityIndicator color="#000" size="small" />
+              : <Ionicons name="arrow-forward" size={18} color="#000" />}
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={styles.scanLink} onPress={() => router.push('/(tabs)/add')}>
+          <Ionicons name="camera-outline" size={14} color="#888" />
+          <Text style={styles.scanLinkText}>scan a receipt</Text>
+        </TouchableOpacity>
+      </View>
 
       {displayInsights.length > 0 && (
         <View style={styles.insightsSection}>
@@ -443,33 +469,6 @@ export default function SummaryScreen() {
           </ScrollView>
         </View>
       )}
-
-      {/* Quick Add */}
-      <View style={styles.quickAdd}>
-        <Text style={styles.sectionLabel}>Quick add</Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="84.50 trader joes · lunch 14 · gas 60 yesterday"
-            placeholderTextColor="#555"
-            onSubmitEditing={handleQuickAdd}
-            autoCorrect={false}
-            returnKeyType="done"
-            editable={!loading}
-          />
-          <TouchableOpacity style={styles.addBtn} onPress={handleQuickAdd} disabled={loading || !input.trim()}>
-            {loading
-              ? <ActivityIndicator color="#000" size="small" />
-              : <Ionicons name="arrow-forward" size={18} color="#000" />}
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity style={styles.scanLink} onPress={() => router.push('/(tabs)/add')}>
-          <Ionicons name="camera-outline" size={14} color="#888" />
-          <Text style={styles.scanLinkText}>scan a receipt</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Recent / Queue tabs */}
       <View style={styles.recent}>
@@ -592,7 +591,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
-  spendCard: { marginBottom: 32 },
+  spendCard: { marginBottom: 18 },
   spendMonthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
   spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.5 },
   householdName: { fontSize: 13, color: '#555', letterSpacing: 0.3 },
@@ -607,10 +606,9 @@ const styles = StyleSheet.create({
   barLabel: { fontSize: 13, color: '#888' },
   setBudgetLink: { fontSize: 14, color: '#999', marginTop: 8 },
 
-  householdCard: { marginBottom: 32, backgroundColor: '#111', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#1a1a1a' },
+  householdCard: { marginBottom: 24 },
   householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   householdLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 0.5 },
-  householdPeriod: { fontSize: 12, color: '#777', marginTop: 2 },
   householdNumbers: { flexDirection: 'row', alignItems: 'baseline' },
   householdSpent: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
   householdOver: { color: '#ef4444' },
