@@ -200,6 +200,30 @@ export default function SummaryScreen() {
       return;
     }
 
+    const trendInsightTypes = new Set([
+      'spend_pace_ahead',
+      'spend_pace_behind',
+      'budget_too_low',
+      'budget_too_high',
+      'top_category_driver',
+      'one_offs_driving_variance',
+      'recurring_cost_pressure',
+    ]);
+
+    if (trendInsightTypes.has(insight?.type) && insight?.metadata?.month) {
+      router.push({
+        pathname: '/trend-detail',
+        params: {
+          scope: insight.metadata?.scope || 'personal',
+          month: insight.metadata?.month,
+          insight_type: insight.type,
+          category_key: insight.metadata?.category_key || '',
+          title: insight.title,
+        },
+      });
+      return;
+    }
+
     Alert.alert(insight.title, insight.body);
   }
 
