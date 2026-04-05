@@ -20,6 +20,7 @@ const insightsRouter = require('./routes/insights');
 const trendsRouter = require('./routes/trends');
 const pushRouter = require('./routes/push');
 const placesRouter = require('./routes/places');
+const priceObservationsRouter = require('./routes/priceObservations');
 const cronRouter = require('./routes/cron');
 
 const app = express();
@@ -74,6 +75,7 @@ app.use('/insights', insightsRouter);
 app.use('/trends', trendsRouter);
 app.use('/push', pushRouter);
 app.use('/places', placesRouter);
+app.use('/price-observations', priceObservationsRouter);
 app.use('/cron', cronRouter);
 app.use(errorHandler);
 

@@ -6,6 +6,7 @@ const { buildInsightsForUser } = require('./insightBuilder');
 const PUSHABLE_INSIGHT_TYPES = new Set([
   'recurring_repurchase_due',
   'recurring_price_spike',
+  'buy_soon_better_price',
 ]);
 
 function toPushMessage(token, insight) {

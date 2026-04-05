@@ -13,6 +13,7 @@ const {
   getRecurringItemHistory,
   detectRecurringWatchCandidates,
 } = require('../services/recurringDetector');
+const { findObservationOpportunities } = require('../services/priceObservationService');
 
 router.use(authenticate);
 
@@ -73,6 +74,20 @@ router.get('/watch-candidates', async (req, res, next) => {
     const windowDays = Math.max(1, Math.min(Number(req.query.window_days) || 5, 30));
     const candidates = await detectRecurringWatchCandidates(user.household_id, { windowDays });
     res.json(candidates);
+  } catch (err) { next(err); }
+});
+
+router.get('/watch-opportunities', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const windowDays = Math.max(1, Math.min(Number(req.query.window_days) || 5, 30));
+    const freshnessHours = Math.max(1, Math.min(Number(req.query.freshness_hours) || 72, 24 * 14));
+    const opportunities = await findObservationOpportunities(user.household_id, {
+      windowDays,
+      freshnessHours,
+    });
+    res.json(opportunities);
   } catch (err) { next(err); }
 });
 

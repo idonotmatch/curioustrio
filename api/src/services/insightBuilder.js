@@ -1,5 +1,6 @@
 const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('./recurringDetector');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
+const { findObservationOpportunities } = require('./priceObservationService');
 const InsightState = require('../models/insightState');
 const Household = require('../models/household');
 
@@ -83,6 +84,31 @@ function toRepurchaseDueInsight(candidate) {
     expires_at: expiresAt,
     metadata: {
       ...candidate,
+      scope: 'household',
+    },
+    actions: [],
+  };
+}
+
+function toBuySoonBetterPriceInsight(opportunity) {
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  const itemName = opportunity.item_name || 'A recurring item';
+  const title = `${itemName} is cheaper right now`;
+  const body = `${opportunity.merchant} is ${opportunity.discount_percent}% below your usual ${opportunity.comparison_type === 'unit_price' ? 'unit price' : 'price'}, and this item may be due in ${Math.max(opportunity.days_until_due, 0)} days.`;
+
+  return {
+    id: `buy_soon_better_price:${opportunity.group_key}:${opportunity.merchant}:${`${opportunity.observed_at}`.slice(0, 10)}`,
+    type: 'buy_soon_better_price',
+    title,
+    body,
+    severity: opportunity.discount_percent >= 12 || opportunity.savings_amount >= 4 ? 'high' : 'medium',
+    entity_type: 'item',
+    entity_id: opportunity.group_key,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    metadata: {
+      ...opportunity,
       scope: 'household',
     },
     actions: [],
@@ -320,6 +346,13 @@ async function buildInsights({ user, limit = 10 }) {
         .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
         .slice(0, 3)
         .map(toRepurchaseDueInsight)
+    );
+
+    const watchOpportunities = await findObservationOpportunities(user.household_id);
+    insightSets.push(
+      watchOpportunities
+        .slice(0, 3)
+        .map(toBuySoonBetterPriceInsight)
     );
 
     const spikeSignals = recurringSignals.filter((signal) => signal.signal === 'price_spike');
