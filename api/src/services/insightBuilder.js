@@ -2,7 +2,9 @@ const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
 const InsightState = require('../models/insightState');
+const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
+const { summarizeFeedbackEvents, feedbackAdjustmentForInsight } = require('./insightFeedbackSummary');
 
 function severityForSignal(signal, deltaPercent) {
   const pct = Math.abs(Number(deltaPercent || 0));
@@ -266,6 +268,10 @@ function severityRank(severity) {
   return 1;
 }
 
+function insightRankScore(insight, feedbackSummary = new Map()) {
+  return severityRank(insight.severity) * 100 + feedbackAdjustmentForInsight(insight, feedbackSummary);
+}
+
 function dedupeInsights(insights) {
   const picked = new Map();
   for (const insight of insights) {
@@ -417,7 +423,12 @@ async function buildInsightsForUser({ user, limit = 10 }) {
   const rawInsights = await buildInsights({ user, limit: Math.max(limit * 2, limit) });
   if (!user?.id || !rawInsights.length) return rawInsights.slice(0, limit);
 
-  const stateMap = await InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id));
+  const [stateMap, recentEvents] = await Promise.all([
+    InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id)),
+    InsightEvent.getRecentByUser(user.id, 500),
+  ]);
+  const feedbackSummary = summarizeFeedbackEvents(recentEvents);
+
   return rawInsights
     .map((insight) => {
       const state = stateMap.get(insight.id);
@@ -430,7 +441,12 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       } : insight;
     })
     .filter((insight) => insight.state?.status !== 'dismissed')
+    .sort((a, b) => {
+      const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.created_at) - new Date(a.created_at);
+    })
     .slice(0, limit);
 }
 
-module.exports = { buildInsights, buildInsightsForUser };
+module.exports = { buildInsights, buildInsightsForUser, insightRankScore };

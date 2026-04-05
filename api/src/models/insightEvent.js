@@ -7,6 +7,19 @@ class InsightEvent {
     return [...ALLOWED_EVENT_TYPES];
   }
 
+  static async getRecentByUser(userId, limit = 500) {
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 500, 1000));
+    const result = await db.query(
+      `SELECT insight_id, event_type, metadata, created_at
+       FROM insight_events
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [userId, safeLimit]
+    );
+    return result.rows;
+  }
+
   static async createBatch(userId, events = []) {
     const clean = events
       .map((event) => ({
