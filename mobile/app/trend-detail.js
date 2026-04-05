@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '../services/api';
@@ -69,10 +69,12 @@ export default function TrendDetailScreen() {
     insight_type: insightType = '',
     category_key: categoryKey = '',
     title,
+    insight_id: insightId = '',
   } = useLocalSearchParams();
   const [trend, setTrend] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +111,28 @@ export default function TrendDetailScreen() {
     () => trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey) || null,
     [trend, categoryKey]
   );
+
+  async function submitFeedback(eventType) {
+    if (!insightId || !eventType || feedbackStatus === eventType) return;
+    try {
+      await api.post('/insights/events', {
+        events: [{
+          insight_id: `${insightId}`,
+          event_type: eventType,
+          metadata: {
+            surface: 'trend_detail',
+            scope: `${scope}`,
+            month: `${month}`,
+            insight_type: `${insightType}`,
+            category_key: `${categoryKey}`,
+          },
+        }],
+      });
+      setFeedbackStatus(eventType);
+    } catch {
+      // non-fatal
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -198,6 +222,32 @@ export default function TrendDetailScreen() {
                 </Text>
               </View>
             ) : null}
+
+            {insightId ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Was this helpful?</Text>
+                <Text style={styles.feedbackCopy}>
+                  Your feedback helps Adlo learn which kinds of insights are actually useful for you.
+                </Text>
+                <View style={styles.feedbackRow}>
+                  <TouchableOpacity
+                    style={[styles.feedbackButton, feedbackStatus === 'helpful' && styles.feedbackButtonActive]}
+                    onPress={() => submitFeedback('helpful')}
+                  >
+                    <Text style={[styles.feedbackButtonText, feedbackStatus === 'helpful' && styles.feedbackButtonTextActive]}>Helpful</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.feedbackButton, feedbackStatus === 'not_helpful' && styles.feedbackButtonActive]}
+                    onPress={() => submitFeedback('not_helpful')}
+                  >
+                    <Text style={[styles.feedbackButtonText, feedbackStatus === 'not_helpful' && styles.feedbackButtonTextActive]}>Not helpful</Text>
+                  </TouchableOpacity>
+                </View>
+                {feedbackStatus ? (
+                  <Text style={styles.feedbackNote}>Thanks. We&apos;ll use this to tune future insights.</Text>
+                ) : null}
+              </View>
+            ) : null}
           </>
         ) : null}
       </ScrollView>
@@ -256,4 +306,31 @@ const styles = StyleSheet.create({
   oneOffList: { gap: 6, marginTop: 4 },
   oneOffRow: { fontSize: 14, color: '#e5e5e5' },
   emptyText: { fontSize: 13, color: '#777' },
+  feedbackRow: { flexDirection: 'row', gap: 10 },
+  feedbackCopy: { fontSize: 13, color: '#9d9d9d', lineHeight: 18 },
+  feedbackButton: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#151515',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  feedbackButtonActive: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#f5f5f5',
+  },
+  feedbackButtonText: {
+    color: '#d4d4d4',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  feedbackButtonTextActive: {
+    color: '#000',
+  },
+  feedbackNote: {
+    fontSize: 12,
+    color: '#7fcf9f',
+  },
 });

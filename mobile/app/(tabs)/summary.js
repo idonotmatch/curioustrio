@@ -195,6 +195,7 @@ export default function SummaryScreen() {
         params: {
           group_key: insight.metadata.group_key,
           title: insight.metadata.item_name || insight.title,
+          insight_id: insight.id,
         },
       });
       return;
@@ -219,6 +220,7 @@ export default function SummaryScreen() {
           insight_type: insight.type,
           category_key: insight.metadata?.category_key || '',
           title: insight.title,
+          insight_id: insight.id,
         },
       });
       return;

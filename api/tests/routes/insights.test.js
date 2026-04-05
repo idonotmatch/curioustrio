@@ -24,7 +24,7 @@ beforeAll(async () => {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       insight_id TEXT NOT NULL,
-      event_type TEXT NOT NULL CHECK (event_type IN ('shown', 'tapped', 'dismissed', 'acted')),
+      event_type TEXT NOT NULL CHECK (event_type IN ('shown', 'tapped', 'dismissed', 'acted', 'helpful', 'not_helpful')),
       metadata JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`
@@ -459,6 +459,34 @@ describe('POST /insights/events', () => {
       expect.arrayContaining([
         expect.objectContaining({ insight_id: 'demo-insight-1', event_type: 'shown' }),
         expect.objectContaining({ insight_id: 'demo-insight-1', event_type: 'tapped' }),
+      ])
+    );
+  });
+
+  it('accepts structured feedback events for future ranking signals', async () => {
+    const res = await request(app)
+      .post('/insights/events')
+      .send({
+        events: [
+          { insight_id: 'demo-insight-1', event_type: 'helpful', metadata: { surface: 'trend_detail' } },
+          { insight_id: 'demo-insight-2', event_type: 'not_helpful', metadata: { surface: 'recurring_item_detail' } },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveLength(2);
+
+    const events = await db.query(
+      `SELECT insight_id, event_type
+       FROM insight_events
+       WHERE user_id = $1
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+    expect(events.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ insight_id: 'demo-insight-1', event_type: 'helpful' }),
+        expect.objectContaining({ insight_id: 'demo-insight-2', event_type: 'not_helpful' }),
       ])
     );
   });

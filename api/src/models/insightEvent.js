@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const ALLOWED_EVENT_TYPES = new Set(['shown', 'tapped', 'dismissed', 'acted']);
+const ALLOWED_EVENT_TYPES = new Set(['shown', 'tapped', 'dismissed', 'acted', 'helpful', 'not_helpful']);
 
 class InsightEvent {
   static allowedEventTypes() {
