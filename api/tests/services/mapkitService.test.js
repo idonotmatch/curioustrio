@@ -113,3 +113,11 @@ it('falls back to broader search when local POI search misses', async () => {
   expect(result.place_name).toBe('Target');
   expect(fetch).toHaveBeenCalledTimes(3);
 });
+
+it('throws an unavailable error when Apple Maps credentials are missing', async () => {
+  delete process.env.APPLE_MAPS_KEY_ID;
+  delete process.env.APPLE_MAPS_TEAM_ID;
+  delete process.env.APPLE_MAPS_PRIVATE_KEY;
+
+  await expect(searchPlace('Target', 37.775, -122.419)).rejects.toBeInstanceOf(MapkitSearchUnavailableError);
+});

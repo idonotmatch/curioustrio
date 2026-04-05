@@ -6,13 +6,20 @@ const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
 let cachedJwt = null;
 let jwtExpiry = 0;
 
+class MapkitSearchUnavailableError extends Error {
+  constructor(message = 'Place search unavailable') {
+    super(message);
+    this.name = 'MapkitSearchUnavailableError';
+  }
+}
+
 function getSignedJwt() {
   // Cache for up to 25 minutes (JWT signed for 30m)
   if (cachedJwt && Date.now() < jwtExpiry - 60_000) return cachedJwt;
 
   const { APPLE_MAPS_KEY_ID, APPLE_MAPS_TEAM_ID, APPLE_MAPS_PRIVATE_KEY } = process.env;
   if (!APPLE_MAPS_KEY_ID || !APPLE_MAPS_TEAM_ID || !APPLE_MAPS_PRIVATE_KEY) {
-    throw new Error('Apple Maps credentials not configured');
+    throw new MapkitSearchUnavailableError('Apple Maps credentials not configured');
   }
 
   // Render env vars store the .p8 key with literal \n strings instead of
@@ -44,13 +51,6 @@ function mapResult(top, query) {
     : null;
 
   return { place_name, address, mapkit_stable_id };
-}
-
-class MapkitSearchUnavailableError extends Error {
-  constructor(message = 'Place search unavailable') {
-    super(message);
-    this.name = 'MapkitSearchUnavailableError';
-  }
 }
 
 async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5) {
