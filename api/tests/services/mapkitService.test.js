@@ -3,7 +3,7 @@ jest.mock('jsonwebtoken', () => ({
 }));
 jest.mock('node-fetch');
 
-const { searchPlace, searchPlaces } = require('../../src/services/mapkitService');
+const { searchPlace, searchPlaces, MapkitSearchUnavailableError } = require('../../src/services/mapkitService');
 const fetch = require('node-fetch');
 
 beforeEach(() => {
@@ -85,8 +85,7 @@ it('returns null when fetch fails', async () => {
     .mockResolvedValueOnce({ ok: false })
     .mockResolvedValueOnce({ ok: false })
     .mockResolvedValueOnce({ ok: false });
-  const result = await searchPlace('Test', 37.775, -122.419);
-  expect(result).toBeNull();
+  await expect(searchPlace('Test', 37.775, -122.419)).rejects.toBeInstanceOf(MapkitSearchUnavailableError);
 });
 
 it('falls back to broader search when local POI search misses', async () => {

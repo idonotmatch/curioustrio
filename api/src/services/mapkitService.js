@@ -46,8 +46,16 @@ function mapResult(top, query) {
   return { place_name, address, mapkit_stable_id };
 }
 
+class MapkitSearchUnavailableError extends Error {
+  constructor(message = 'Place search unavailable') {
+    super(message);
+    this.name = 'MapkitSearchUnavailableError';
+  }
+}
+
 async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5) {
   const token = getSignedJwt();
+  let hadOperationalFailure = false;
   async function searchOnce({ useLocationBias = false, includePoiFilter = false }) {
     const url = new URL(MAPKIT_SEARCH_URL);
     url.searchParams.set('q', query);
@@ -68,9 +76,18 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      hadOperationalFailure = true;
+      return [];
+    }
 
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      hadOperationalFailure = true;
+      return [];
+    }
     const results = Array.isArray(data.results) ? data.results : [];
     if (!results.length) return [];
 
@@ -89,8 +106,18 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
   ];
 
   for (const strategy of strategies) {
-    const results = await searchOnce(strategy);
+    let results = [];
+    try {
+      results = await searchOnce(strategy);
+    } catch {
+      hadOperationalFailure = true;
+      continue;
+    }
     if (results.length) return results;
+  }
+
+  if (hadOperationalFailure) {
+    throw new MapkitSearchUnavailableError();
   }
 
   return [];
@@ -101,4 +128,4 @@ async function searchPlace(query, lat = null, lng = null, radiusMeters = 500) {
   return results[0] || null;
 }
 
-module.exports = { searchPlace, searchPlaces };
+module.exports = { searchPlace, searchPlaces, MapkitSearchUnavailableError };

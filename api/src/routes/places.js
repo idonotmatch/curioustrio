@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
-const { searchPlaces } = require('../services/mapkitService');
+const { searchPlaces, MapkitSearchUnavailableError } = require('../services/mapkitService');
 
 router.use(authenticate);
 
@@ -23,7 +23,12 @@ router.get('/search', async (req, res, next) => {
     const radiusMeters = radius ? Math.min(Math.max(parseInt(radius), 100), 5000) : 500;
     const results = await searchPlaces(q, parsedLat, parsedLng, radiusMeters);
     res.json({ result: results[0] || null, results });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err instanceof MapkitSearchUnavailableError || err?.name === 'MapkitSearchUnavailableError') {
+      return res.status(503).json({ error: 'Place search temporarily unavailable' });
+    }
+    next(err);
+  }
 });
 
 module.exports = router;

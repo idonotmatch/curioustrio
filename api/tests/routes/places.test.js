@@ -34,6 +34,17 @@ describe('GET /places/search', () => {
     expect(res.body.results).toEqual([]);
   });
 
+  it('returns 503 when place search is unavailable', async () => {
+    const err = new Error('Place search unavailable');
+    err.name = 'MapkitSearchUnavailableError';
+    searchPlaces.mockRejectedValueOnce(err);
+    const res = await request(app)
+      .get('/places/search')
+      .query({ q: 'Target', lat: '37.775', lng: '-122.419' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('Place search temporarily unavailable');
+  });
+
   it('supports search without coordinates', async () => {
     searchPlaces.mockResolvedValueOnce([{
       place_name: 'Target',

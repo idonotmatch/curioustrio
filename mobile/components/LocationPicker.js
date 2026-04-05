@@ -9,6 +9,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
+  const [searchError, setSearchError] = useState('');
 
   useEffect(() => {
     if (!searchMode) return undefined;
@@ -16,12 +17,14 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     if (!trimmed) {
       setSearchResults([]);
       setSearching(false);
+      setSearchError('');
       return undefined;
     }
 
     let cancelled = false;
     const timeout = setTimeout(async () => {
       setSearching(true);
+      setSearchError('');
       try {
         let coords = null;
         try {
@@ -35,9 +38,15 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
           params.set('lng', String(coords.longitude));
         }
         const lookup = await api.get(`/places/search?${params.toString()}`);
-        if (!cancelled) setSearchResults(Array.isArray(lookup?.results) ? lookup.results : (lookup?.result ? [lookup.result] : []));
-      } catch {
-        if (!cancelled) setSearchResults([]);
+        if (!cancelled) {
+          setSearchResults(Array.isArray(lookup?.results) ? lookup.results : (lookup?.result ? [lookup.result] : []));
+          setSearchError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSearchResults([]);
+          setSearchError(error?.message || 'Place search temporarily unavailable');
+        }
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -138,7 +147,9 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
                 })}
               </View>
             ) : (
-              <Text style={styles.emptySearch}>No place match found yet.</Text>
+              <Text style={styles.emptySearch}>
+                {searchError || 'No place match found yet.'}
+              </Text>
             )
           ) : (
             <Text style={styles.emptySearch}>Start typing to search for a place.</Text>
