@@ -13,6 +13,7 @@ import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { api } from '../../services/api';
+import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -99,12 +100,15 @@ function BudgetBar({ spent, budget, label, periodText }) {
   );
 }
 
-function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, transactionStartDay, onMonthPress }) {
+function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, transactionStartDay, onMonthPress, householdName }) {
   return (
     <View style={styles.spendHeader}>
-      <TouchableOpacity onPress={onMonthPress} style={styles.monthRow}>
-        <Text style={styles.spendMonth}>{periodLabel(selectedMonth, transactionStartDay)}</Text>
-      </TouchableOpacity>
+      <GlobalPeriodHeader
+        periodText={periodLabel(selectedMonth, transactionStartDay)}
+        householdName={householdName}
+        onPress={onMonthPress}
+        style={styles.globalHeader}
+      />
       <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
       {isMultiMember && householdBudget && (
         <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" />
@@ -248,6 +252,7 @@ export default function FeedScreen() {
         selectedMonth={selectedMonth}
         transactionStartDay={transactionStartDay}
         onMonthPress={() => setShowMonthPicker(true)}
+        householdName={household?.name || ''}
       />
 
       {/* Mine / Household toggle — filters the expense list only */}
@@ -324,8 +329,7 @@ const styles = StyleSheet.create({
   toggleTextActive: { color: '#000' },
 
   spendHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: '#111' },
-  monthRow: { marginBottom: 10 },
-  spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.3 },
+  globalHeader: { marginBottom: 10 },
   budgetSection: { marginBottom: 12 },
   budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
   budgetLabelRow: { flexDirection: 'row', alignItems: 'center' },

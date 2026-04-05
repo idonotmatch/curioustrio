@@ -12,6 +12,7 @@ import { useHousehold } from '../../hooks/useHousehold';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useInsights } from '../../hooks/useInsights';
 import { api } from '../../services/api';
+import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -293,15 +294,12 @@ export default function SummaryScreen() {
     >
       {/* Spend vs Budget */}
       <View style={styles.spendCard}>
-        <TouchableOpacity onPress={() => setShowMonthPicker(true)} style={styles.spendMonthRow}>
-          <Text style={styles.spendMonth}>
-            {periodLabel(selectedMonth, startDay)}
-            {selectedMonth !== currentMonthStr ? '  ·  tap to change' : ''}
-          </Text>
-          {household?.name ? (
-            <Text style={styles.householdName}>{household.name}</Text>
-          ) : null}
-        </TouchableOpacity>
+        <GlobalPeriodHeader
+          periodText={`${periodLabel(selectedMonth, startDay)}${selectedMonth !== currentMonthStr ? ' · tap to change' : ''}`}
+          householdName={household?.name || ''}
+          onPress={() => setShowMonthPicker(true)}
+          style={styles.globalHeader}
+        />
 
         <View style={styles.spendNumbers}>
           <View>
@@ -438,7 +436,7 @@ export default function SummaryScreen() {
       <View style={styles.recent}>
         <View style={styles.recentHeader}>
           <View style={styles.recentHeading}>
-            <Text style={[styles.tabLabel, styles.tabLabelActive]}>Recent</Text>
+            <Text style={styles.sectionLabelCompact}>Recent</Text>
             <Text style={styles.recentMeta}>
               {`${pendingExpenses.length} pending`}
               {gmailImportSummary?.last_synced_at ? ` · Gmail synced ${formatRelativeTime(gmailImportSummary.last_synced_at)}` : ''}
@@ -505,9 +503,7 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 18 },
-  spendMonthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
-  spendMonth: { fontSize: 13, color: '#888', letterSpacing: 0.5 },
-  householdName: { fontSize: 13, color: '#555', letterSpacing: 0.3 },
+  globalHeader: { marginBottom: 12 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
   spendLabel: { fontSize: 13, color: '#888', marginBottom: 2 },
   spendAmount: { fontSize: 48, color: '#f5f5f5', fontWeight: '600', letterSpacing: -2 },
@@ -561,6 +557,7 @@ const styles = StyleSheet.create({
 
   quickAdd: { marginBottom: 32 },
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  sectionLabelCompact: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 8 },
   input: {
     flex: 1, backgroundColor: '#111', borderRadius: 10,
@@ -578,8 +575,6 @@ const styles = StyleSheet.create({
   recent: {},
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   recentHeading: { flex: 1, gap: 4, paddingRight: 12 },
-  tabLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
-  tabLabelActive: { color: '#f5f5f5' },
   recentMeta: { fontSize: 12, color: '#666' },
   emptyText: { color: '#555', fontSize: 14, paddingVertical: 12 },
   seeAll: { fontSize: 14, color: '#999', minWidth: 72, textAlign: 'right', paddingRight: 12 },
