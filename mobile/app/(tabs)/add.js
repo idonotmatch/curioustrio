@@ -1,18 +1,20 @@
 import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 let ImageManipulator;
 try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not available in Expo Go */ }
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { auto_scan } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
+  const didAutoScan = useRef(false);
 
   async function handleSubmit(input) {
     try {
@@ -90,6 +92,12 @@ export default function AddScreen() {
       setScanLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (auto_scan !== '1' || didAutoScan.current || scanLoading) return;
+    didAutoScan.current = true;
+    handleScan(false);
+  }, [auto_scan, scanLoading]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 16 }]}>

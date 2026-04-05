@@ -47,6 +47,7 @@ export default function PendingScreen() {
         invalidateCache('cache:expenses:pending'),
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
+        invalidateCacheByPrefix('cache:household-expenses:'),
       ]);
       remove(id);
     } catch { /* ignore */ }

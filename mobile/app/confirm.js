@@ -239,6 +239,7 @@ export default function ConfirmScreen() {
         // budget reset day. Clearing by prefix guarantees "Mine" refetches.
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
+        invalidateCacheByPrefix('cache:household-expenses:'),
       ]);
       router.replace('/(tabs)');
     } catch (err) {

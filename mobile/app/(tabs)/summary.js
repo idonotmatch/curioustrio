@@ -376,7 +376,10 @@ export default function SummaryScreen() {
               : <Ionicons name="arrow-forward" size={18} color="#000" />}
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.scanLink} onPress={() => router.push('/(tabs)/add')}>
+        <TouchableOpacity
+          style={styles.scanLink}
+          onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
+        >
           <Ionicons name="camera-outline" size={14} color="#888" />
           <Text style={styles.scanLinkText}>scan a receipt</Text>
         </TouchableOpacity>

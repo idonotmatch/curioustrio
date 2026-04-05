@@ -179,8 +179,10 @@ export default function FeedScreen() {
         invalidateCache('cache:expenses:pending'),
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
+        invalidateCacheByPrefix('cache:household-expenses:'),
       ]);
       refreshMine();
+      refreshHouseholdExpenses();
       refreshPersonalBudget();
       refreshHouseholdBudget();
     } catch { /* ignore */ }

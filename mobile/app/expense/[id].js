@@ -565,6 +565,7 @@ export default function ExpenseDetailScreen() {
                   invalidateCache('cache:expenses:pending'),
                   invalidateCacheByPrefix('cache:expenses:'),
                   invalidateCacheByPrefix('cache:budget:'),
+                  invalidateCacheByPrefix('cache:household-expenses:'),
                 ]);
                 router.back();
               }
