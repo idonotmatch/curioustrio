@@ -45,14 +45,14 @@ function formatRelativeTime(value) {
   if (Number.isNaN(diffMs)) return null;
   const minutes = Math.max(0, Math.floor(diffMs / 60000));
   if (minutes < 1) return 'just now';
-  if (minutes === 1) return '1 minute ago';
-  if (minutes < 60) return `${minutes} minutes ago`;
+  if (minutes === 1) return '1m ago';
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours === 1) return '1 hour ago';
-  if (hours < 24) return `${hours} hours ago`;
+  if (hours === 1) return '1h ago';
+  if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
-  if (days === 1) return '1 day ago';
-  return `${days} days ago`;
+  if (days === 1) return '1d ago';
+  return `${days}d ago`;
 }
 
 function insightScopeLabel(insight) {
@@ -98,11 +98,9 @@ export default function SummaryScreen() {
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { household, memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
-  const householdStartDay = household?.budget_start_day || 1;
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight, logEvents } = useInsights(3);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
-  const [recentTab, setRecentTab] = useState('recent');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
@@ -141,10 +139,6 @@ export default function SummaryScreen() {
     loadGmailImportSummary,
     refreshInsights,
   ]));
-
-  useEffect(() => {
-    if (recentTab === 'queue') loadGmailImportSummary();
-  }, [recentTab, loadGmailImportSummary]);
 
   useEffect(() => {
     if (__DEV__ && insights.length === 0) return;
@@ -231,7 +225,6 @@ export default function SummaryScreen() {
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
-  const selectedDate = new Date(selectedMonth + '-02');
   const currentMonthStr = currentPeriod(startDay);
 
   const limit = personalBudget?.total?.limit ?? 0;
@@ -262,35 +255,6 @@ export default function SummaryScreen() {
     } finally {
       setLoading(false);
     }
-  }
-
-  const [displayPending, setDisplayPending] = useState([]);
-  useEffect(() => { setDisplayPending(pendingExpenses); }, [pendingExpenses]);
-  const removePending = (id) => setDisplayPending(prev => prev.filter(e => e.id !== id));
-
-  async function dismissPending(id) {
-    try {
-      await api.post(`/expenses/${id}/dismiss`);
-      const { invalidateCache } = await import('../../services/cache');
-      await invalidateCache('cache:expenses:pending');
-      removePending(id);
-    } catch { /* ignore */ }
-  }
-
-  async function approvePending(id) {
-    try {
-      await api.post(`/expenses/${id}/approve`);
-      removePending(id);
-      const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
-      await Promise.all([
-        invalidateCache('cache:expenses:pending'),
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-      ]);
-      refreshExpenses();
-      refreshPersonalBudget();
-      refreshHouseholdBudget();
-    } catch { /* ignore */ }
   }
 
   async function deleteExpense(id) {
@@ -470,30 +434,22 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      {/* Recent / Queue tabs */}
+      {/* Recent activity */}
       <View style={styles.recent}>
         <View style={styles.recentHeader}>
-          <View style={styles.tabRow}>
-            <TouchableOpacity onPress={() => setRecentTab('recent')}>
-              <Text style={[styles.tabLabel, recentTab === 'recent' && styles.tabLabelActive]}>Recent</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setRecentTab('queue')}>
-              <View style={styles.tabWithBadge}>
-                <Text style={[styles.tabLabel, recentTab === 'queue' && styles.tabLabelActive]}>Queue</Text>
-                {pendingExpenses.length > 0 && (
-                  <View style={styles.queueBadge}><Text style={styles.queueBadgeText}>{pendingExpenses.length}</Text></View>
-                )}
-              </View>
-            </TouchableOpacity>
+          <View style={styles.recentHeading}>
+            <Text style={[styles.tabLabel, styles.tabLabelActive]}>Recent</Text>
+            <Text style={styles.recentMeta}>
+              {`${pendingExpenses.length} pending`}
+              {gmailImportSummary?.last_synced_at ? ` · Gmail synced ${formatRelativeTime(gmailImportSummary.last_synced_at)}` : ''}
+            </Text>
           </View>
-          {recentTab === 'recent' && (
-            <TouchableOpacity onPress={() => router.navigate('/')}>
-              <Text style={styles.seeAll}>See all</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={() => router.navigate('/')}>
+            <Text style={styles.seeAll}>See all</Text>
+          </TouchableOpacity>
         </View>
 
-        {recentTab === 'recent' && recent.map(e => (
+        {recent.map(e => (
           <Swipeable
             key={e.id}
             renderRightActions={() => renderDeleteAction(e.id)}
@@ -511,53 +467,10 @@ export default function SummaryScreen() {
             </TouchableOpacity>
           </Swipeable>
         ))}
-        {recentTab === 'recent' && recent.length === 0 && (
+        {recent.length === 0 && (
           <Text style={styles.emptyText}>No confirmed expenses yet.</Text>
         )}
 
-        {recentTab === 'queue' && displayPending.slice(0, 10).map(e => (
-          <Swipeable
-            key={e.id}
-            renderLeftActions={() => (
-              <TouchableOpacity style={styles.approveAction} onPress={() => approvePending(e.id)}>
-                <Ionicons name="checkmark" size={18} color="#fff" />
-                <Text style={styles.swipeLabel}>Approve</Text>
-              </TouchableOpacity>
-            )}
-            renderRightActions={() => (
-              <TouchableOpacity style={styles.dismissAction} onPress={() => dismissPending(e.id)}>
-                <Ionicons name="trash-outline" size={18} color="#fff" />
-                <Text style={styles.swipeLabel}>Dismiss</Text>
-              </TouchableOpacity>
-            )}
-            overshootLeft={false}
-            overshootRight={false}
-          >
-            <TouchableOpacity
-              style={[styles.recentRow, styles.queueRow]}
-              onPress={() => router.push(`/expense/${e.id}`)}
-            >
-              <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
-              <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
-              <Text style={styles.recentAmount}>${Math.abs(Number(e.amount)).toFixed(2)}</Text>
-            </TouchableOpacity>
-          </Swipeable>
-        ))}
-        {recentTab === 'queue' && (
-          <Text style={styles.queueStatus}>
-            {gmailImportSummary?.last_synced_at
-              ? `Last Gmail refresh ${formatRelativeTime(gmailImportSummary.last_synced_at)}`
-              : 'Gmail not refreshed yet'}
-          </Text>
-        )}
-        {recentTab === 'queue' && displayPending.length === 0 && (
-          <Text style={styles.emptyText}>Queue is empty.</Text>
-        )}
-        {recentTab === 'queue' && displayPending.length > 10 && (
-          <TouchableOpacity onPress={() => router.push('/(tabs)/pending')}>
-            <Text style={styles.seeAll}>+{displayPending.length - 10} more in queue</Text>
-          </TouchableOpacity>
-        )}
       </View>
     </ScrollView>
 
@@ -664,17 +577,10 @@ const styles = StyleSheet.create({
 
   recent: {},
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  tabRow: { flexDirection: 'row', gap: 16 },
+  recentHeading: { flex: 1, gap: 4, paddingRight: 12 },
   tabLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   tabLabelActive: { color: '#f5f5f5' },
-  tabWithBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  queueBadge: { backgroundColor: '#f59e0b', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
-  queueBadgeText: { fontSize: 10, color: '#000', fontWeight: '700' },
-  queueStatus: { fontSize: 12, color: '#666', marginBottom: 10 },
-  queueRow: { borderLeftWidth: 2, borderLeftColor: '#f59e0b', paddingLeft: 10 },
-  approveAction: { backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
-  dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
-  swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  recentMeta: { fontSize: 12, color: '#666' },
   emptyText: { color: '#555', fontSize: 14, paddingVertical: 12 },
   seeAll: { fontSize: 14, color: '#999', minWidth: 72, textAlign: 'right', paddingRight: 12 },
   recentRow: {
