@@ -25,6 +25,13 @@ router.get('/search', async (req, res, next) => {
     res.json({ result: results[0] || null, results });
   } catch (err) {
     if (err instanceof MapkitSearchUnavailableError || err?.name === 'MapkitSearchUnavailableError') {
+      console.error('[places/search] unavailable', {
+        query: req.query?.q || null,
+        lat: req.query?.lat || null,
+        lng: req.query?.lng || null,
+        reason: err.message,
+        details: err.details || null,
+      });
       return res.status(503).json({ error: 'Place search temporarily unavailable' });
     }
     next(err);

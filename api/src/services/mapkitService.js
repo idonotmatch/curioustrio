@@ -7,9 +7,10 @@ let cachedJwt = null;
 let jwtExpiry = 0;
 
 class MapkitSearchUnavailableError extends Error {
-  constructor(message = 'Place search unavailable') {
+  constructor(message = 'Place search unavailable', details = null) {
     super(message);
     this.name = 'MapkitSearchUnavailableError';
+    this.details = details;
   }
 }
 
@@ -19,7 +20,10 @@ function getSignedJwt() {
 
   const { APPLE_MAPS_KEY_ID, APPLE_MAPS_TEAM_ID, APPLE_MAPS_PRIVATE_KEY } = process.env;
   if (!APPLE_MAPS_KEY_ID || !APPLE_MAPS_TEAM_ID || !APPLE_MAPS_PRIVATE_KEY) {
-    throw new MapkitSearchUnavailableError('Apple Maps credentials not configured');
+    throw new MapkitSearchUnavailableError(
+      'Apple Maps credentials not configured',
+      'Missing APPLE_MAPS_KEY_ID, APPLE_MAPS_TEAM_ID, or APPLE_MAPS_PRIVATE_KEY'
+    );
   }
 
   // Render env vars store the .p8 key with literal \n strings instead of
@@ -27,11 +31,15 @@ function getSignedJwt() {
   const privateKey = APPLE_MAPS_PRIVATE_KEY.replace(/\\n/g, '\n');
 
   const now = Math.floor(Date.now() / 1000);
-  cachedJwt = jwt.sign(
-    { iss: APPLE_MAPS_TEAM_ID, iat: now, exp: now + 1800 },
-    privateKey,
-    { algorithm: 'ES256', keyid: APPLE_MAPS_KEY_ID }
-  );
+  try {
+    cachedJwt = jwt.sign(
+      { iss: APPLE_MAPS_TEAM_ID, iat: now, exp: now + 1800 },
+      privateKey,
+      { algorithm: 'ES256', keyid: APPLE_MAPS_KEY_ID }
+    );
+  } catch (error) {
+    throw new MapkitSearchUnavailableError('Apple Maps token signing failed', error?.message || null);
+  }
   jwtExpiry = Date.now() + 1800 * 1000;
   return cachedJwt;
 }
@@ -78,6 +86,20 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     });
     if (!res.ok) {
       hadOperationalFailure = true;
+      let responseText = '';
+      try {
+        responseText = await res.text();
+      } catch {
+        responseText = '';
+      }
+      console.error('[places/search] Apple Maps HTTP error', {
+        status: res.status,
+        statusText: res.statusText,
+        query,
+        useLocationBias,
+        includePoiFilter,
+        body: responseText?.slice(0, 300) || null,
+      });
       return [];
     }
 
@@ -117,7 +139,7 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
   }
 
   if (hadOperationalFailure) {
-    throw new MapkitSearchUnavailableError();
+    throw new MapkitSearchUnavailableError('Place search unavailable', `MapKit search failed for query "${query}"`);
   }
 
   return [];
