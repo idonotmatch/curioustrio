@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
 import { useCurrentUser } from '../hooks/useCurrentUser';
@@ -33,6 +34,21 @@ function formatDate(dateStr) {
   });
 }
 
+async function loadCachedExpenseItems(expenseId) {
+  const keysToTry = [`cache:expense-detail:${expenseId}`];
+  for (const key of keysToTry) {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+      const { data } = JSON.parse(raw);
+      if (data?.id === expenseId && Array.isArray(data.items)) return data.items;
+    } catch {
+      // non-fatal
+    }
+  }
+  return null;
+}
+
 export function ExpenseItem({ expense, categories = [], showUser = false, onDelete, pending = false }) {
   const router = useRouter();
   const { userId: currentUserId } = useCurrentUser();
@@ -62,12 +78,26 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
     }
     setItemsExpanded(true);
     if (items !== null) return;
+    if (Array.isArray(localExpense.items)) {
+      setItems(localExpense.items);
+      return;
+    }
     setItemsLoading(true);
     try {
+      const cachedItems = await loadCachedExpenseItems(localExpense.id);
+      if (cachedItems) {
+        setItems(cachedItems);
+        setItemsLoading(false);
+      }
       const detail = await api.get(`/expenses/${localExpense.id}`);
-      setItems(Array.isArray(detail.items) ? detail.items : []);
+      const nextItems = Array.isArray(detail.items) ? detail.items : [];
+      setItems(nextItems);
+      AsyncStorage.setItem(
+        `cache:expense-detail:${localExpense.id}`,
+        JSON.stringify({ data: detail, ts: Date.now() })
+      ).catch(() => {});
     } catch {
-      setItems([]);
+      setItems(prev => prev ?? []);
     } finally {
       setItemsLoading(false);
     }
