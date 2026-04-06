@@ -1,3 +1,10 @@
+const POSITIVE_OPPORTUNITY_TYPES = new Set([
+  'buy_soon_better_price',
+  'projected_month_end_under_budget',
+  'projected_category_under_baseline',
+  'recurring_restock_window',
+]);
+
 function normalizeInsightType(event = {}) {
   const metadataType = `${event?.metadata?.insight_type || event?.metadata?.type || ''}`.trim();
   if (metadataType) return metadataType;
@@ -11,6 +18,10 @@ function normalizeInsightType(event = {}) {
   if (prefix === 'too_low') return 'budget_too_low';
   if (prefix === 'too_high') return 'budget_too_high';
   return prefix;
+}
+
+function isPositiveOpportunityType(insightType) {
+  return POSITIVE_OPPORTUNITY_TYPES.has(insightType);
 }
 
 function summarizeFeedbackEvents(events = []) {
@@ -62,13 +73,16 @@ function daysSince(timestamp) {
   return diff / (24 * 60 * 60 * 1000);
 }
 
-function suppressionWindowDays(stats = {}) {
+function suppressionWindowDays(insightType, stats = {}) {
   const wrongTimingCount = stats.reasons?.wrong_timing || 0;
   const notRelevantCount = stats.reasons?.not_relevant || 0;
   const notAccurateCount = stats.reasons?.not_accurate || 0;
+  const alreadyKnewCount = stats.reasons?.already_knew || 0;
   const dismissedCount = stats.dismissed || 0;
   const notHelpfulCount = stats.not_helpful || 0;
+  const positiveOpportunity = isPositiveOpportunityType(insightType);
 
+  if (positiveOpportunity && (alreadyKnewCount >= 1 || notRelevantCount >= 1) && (dismissedCount >= 1 || notHelpfulCount >= 1)) return 30;
   if (notAccurateCount >= 2 || notRelevantCount >= 2 || notHelpfulCount >= 3) return 21;
   if (wrongTimingCount >= 1) return 7;
   if (dismissedCount >= 2 || notHelpfulCount >= 2) return 14;
@@ -79,7 +93,7 @@ function suppressionForInsightType(insightType, feedbackSummary = new Map()) {
   const stats = feedbackSummary.get(insightType);
   if (!stats) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
 
-  const cooldownDays = suppressionWindowDays(stats);
+  const cooldownDays = suppressionWindowDays(insightType, stats);
   if (!cooldownDays) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
 
   const recentNegativeDays = daysSince(stats.last_negative_at);
@@ -117,6 +131,12 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
   score += stats.tapped * 0.75;
   score -= stats.not_helpful * 3;
   score -= stats.dismissed * 2;
+
+  if (isPositiveOpportunityType(insight.type)) {
+    score += stats.helpful * 1;
+    score -= (stats.reasons.already_knew || 0) * 2.5;
+    score -= (stats.reasons.not_relevant || 0) * 1.5;
+  }
 
   if (stats.shown >= 3 && stats.tapped === 0 && stats.helpful === 0) {
     score -= 1.5;
@@ -190,6 +210,7 @@ function buildFeedbackDebugSummary(events = []) {
 }
 
 module.exports = {
+  isPositiveOpportunityType,
   normalizeInsightType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,

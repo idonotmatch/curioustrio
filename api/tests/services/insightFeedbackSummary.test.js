@@ -1,4 +1,5 @@
 const {
+  isPositiveOpportunityType,
   normalizeInsightType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
@@ -24,6 +25,15 @@ describe('normalizeInsightType', () => {
     expect(normalizeInsightType({ insight_id: 'top_driver:personal:2026-04:groceries' })).toBe('top_category_driver');
     expect(normalizeInsightType({ insight_id: 'one_offs:personal:2026-04' })).toBe('one_offs_driving_variance');
     expect(normalizeInsightType({ insight_id: 'too_low:personal:2026-04' })).toBe('budget_too_low');
+  });
+});
+
+describe('isPositiveOpportunityType', () => {
+  it('recognizes newer positive opportunity insights', () => {
+    expect(isPositiveOpportunityType('projected_month_end_under_budget')).toBe(true);
+    expect(isPositiveOpportunityType('projected_category_under_baseline')).toBe(true);
+    expect(isPositiveOpportunityType('recurring_restock_window')).toBe(true);
+    expect(isPositiveOpportunityType('spend_pace_ahead')).toBe(false);
   });
 });
 
@@ -97,6 +107,19 @@ describe('feedbackAdjustmentForInsight', () => {
 
     expect(feedbackAdjustmentForInsight({ type: 'recurring_repurchase_due' }, summary)).toBeGreaterThan(0);
   });
+
+  it('demotes positive opportunity insights more when users already knew about them', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_restock_window:product:abc:2026-04',
+        event_type: 'not_helpful',
+        metadata: { type: 'recurring_restock_window', reason: 'already_knew' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'recurring_restock_window' }, summary)).toBeLessThan(-4);
+  });
 });
 
 describe('suppressionForInsightType', () => {
@@ -141,6 +164,30 @@ describe('suppressionForInsightType', () => {
         suppressed: true,
         cooldown_days: 7,
         reason: 'wrong_timing',
+      })
+    );
+  });
+
+  it('suppresses positive opportunity insights longer after irrelevant/already knew feedback', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'projected_month_end_under_budget:personal:2026-04',
+        event_type: 'not_helpful',
+        metadata: { type: 'projected_month_end_under_budget', reason: 'already_knew' },
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'projected_month_end_under_budget:personal:2026-04',
+        event_type: 'dismissed',
+        metadata: { type: 'projected_month_end_under_budget' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(suppressionForInsightType('projected_month_end_under_budget', summary)).toEqual(
+      expect.objectContaining({
+        suppressed: true,
+        cooldown_days: 30,
       })
     );
   });
