@@ -100,6 +100,52 @@ function buildSenderSummary(rows, limit = 5) {
     .slice(0, Math.max(1, Math.min(Number(limit) || 5, 20)));
 }
 
+function classifySenderMetrics(metrics) {
+  if (metrics.imported < 3) return 'unknown';
+  if (metrics.clean_approval_rate >= 0.6 && metrics.dismissal_rate <= 0.15 && metrics.edit_rate <= 0.35) return 'trusted';
+  if (metrics.dismissal_rate >= 0.4 || metrics.edit_rate >= 0.6) return 'noisy';
+  return 'mixed';
+}
+
+function buildQualityDebug(rows, senderLimit = 5) {
+  const senderQuality = buildSenderSummary(rows, Math.max(senderLimit, 10));
+  const sender_level_counts = senderQuality.reduce((acc, sender) => {
+    const level = classifySenderMetrics(sender);
+    acc[level] = (acc[level] || 0) + 1;
+    return acc;
+  }, { trusted: 0, mixed: 0, noisy: 0, unknown: 0 });
+
+  const top_corrected_senders = senderQuality
+    .filter((sender) => sender.edited > 0 || sender.dismissed > 0)
+    .map((sender) => ({
+      sender_domain: sender.sender_domain,
+      level: classifySenderMetrics(sender),
+      edited: sender.edited,
+      dismissed: sender.dismissed,
+      top_changed_fields: sender.top_changed_fields,
+    }))
+    .slice(0, Math.max(1, Math.min(Number(senderLimit) || 5, 20)));
+
+  const fieldCounts = new Map();
+  for (const row of rows) {
+    const changedFields = Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [];
+    for (const field of changedFields) {
+      fieldCounts.set(field, (fieldCounts.get(field) || 0) + 1);
+    }
+  }
+
+  const top_corrected_fields = [...fieldCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10)
+    .map(([field, count]) => ({ field, count }));
+
+  return {
+    sender_level_counts,
+    top_corrected_senders,
+    top_corrected_fields,
+  };
+}
+
 async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) {
   const [summary, rows] = await Promise.all([
     EmailImportLog.summarizeByUser(userId, days),
@@ -127,6 +173,7 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
       edit_rate: toRate(edited, imported),
       sender_quality: buildSenderSummary(rows, senderLimit),
     },
+    debug: buildQualityDebug(rows, senderLimit),
   };
 }
 
@@ -135,17 +182,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const rows = await EmailImportLog.listQualitySignalsByUser(userId, days);
   const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
   const metrics = summarizeSenderRows(senderRows);
-
-  let level = 'unknown';
-  if (metrics.imported >= 3) {
-    if (metrics.clean_approval_rate >= 0.6 && metrics.dismissal_rate <= 0.15 && metrics.edit_rate <= 0.35) {
-      level = 'trusted';
-    } else if (metrics.dismissal_rate >= 0.4 || metrics.edit_rate >= 0.6) {
-      level = 'noisy';
-    } else {
-      level = 'mixed';
-    }
-  }
+  const level = classifySenderMetrics(metrics);
 
   return {
     sender_domain: senderDomain,
@@ -158,4 +195,5 @@ module.exports = {
   getGmailImportQualitySummary,
   extractSenderDomain,
   getSenderImportQuality,
+  classifySenderMetrics,
 };

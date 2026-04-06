@@ -591,5 +591,15 @@ describe('GET /gmail/import-summary', () => {
     ]));
     expect(res.body.changed_fields).toEqual([]);
     expect(Array.isArray(res.body.quality.sender_quality)).toBe(true);
+    expect(res.body.debug).toMatchObject({
+      sender_level_counts: {
+        trusted: expect.any(Number),
+        mixed: expect.any(Number),
+        noisy: expect.any(Number),
+        unknown: expect.any(Number),
+      },
+    });
+    expect(Array.isArray(res.body.debug.top_corrected_senders)).toBe(true);
+    expect(Array.isArray(res.body.debug.top_corrected_fields)).toBe(true);
   });
 });

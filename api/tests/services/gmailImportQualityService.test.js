@@ -77,6 +77,19 @@ describe('gmailImportQualityService', () => {
       dismissal_rate: 0.25,
       edit_rate: 0.5,
     });
+    expect(summary.debug).toMatchObject({
+      sender_level_counts: {
+        trusted: expect.any(Number),
+        mixed: expect.any(Number),
+        noisy: expect.any(Number),
+        unknown: expect.any(Number),
+      },
+    });
+    expect(summary.debug.top_corrected_fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'amount', count: 1 }),
+      expect.objectContaining({ field: 'date', count: 1 }),
+      expect.objectContaining({ field: 'merchant', count: 1 }),
+    ]));
     expect(summary.quality.sender_quality).toEqual(expect.arrayContaining([
       expect.objectContaining({
         sender_domain: 'amazon.com',
@@ -89,6 +102,14 @@ describe('gmailImportQualityService', () => {
         imported: 2,
         dismissed: 1,
         edited: 1,
+      }),
+    ]));
+    expect(summary.debug.top_corrected_senders).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sender_domain: 'target.com',
+        top_changed_fields: expect.arrayContaining([
+          expect.objectContaining({ field: 'amount', count: 1 }),
+        ]),
       }),
     ]));
   });
