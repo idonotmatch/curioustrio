@@ -17,6 +17,7 @@ jest.mock('../../src/middleware/auth', () => ({
 
 let householdId;
 let userId;
+let householdUserId;
 
 beforeAll(async () => {
   await db.query(
@@ -95,14 +96,28 @@ beforeAll(async () => {
     [householdId]
   );
   userId = userResult.rows[0].id;
+
+  const secondUserResult = await db.query(
+    `INSERT INTO users (provider_uid, name, email, household_id, budget_start_day)
+     VALUES ('auth0|test-insights-housemate', 'Insights Housemate', 'housemate@test.com', $1, 1)
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1, budget_start_day = 1
+     RETURNING id`,
+    [householdId]
+  );
+  householdUserId = secondUserResult.rows[0].id;
 });
 
 afterEach(async () => {
   await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM insight_state WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_state WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [householdUserId]);
   await db.query(
     `DELETE FROM expense_items
      WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
@@ -114,11 +129,17 @@ afterEach(async () => {
 
 afterAll(async () => {
   await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [householdUserId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-user'`);
+  await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-housemate'`);
   await db.query(`DELETE FROM users WHERE id = $1`, [userId]);
+  await db.query(`DELETE FROM users WHERE id = $1`, [householdUserId]);
   await db.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
@@ -175,6 +196,55 @@ describe('GET /insights', () => {
     const res = await request(app).get('/insights?limit=10');
     expect(res.status).toBe(200);
     expect(res.body.map((insight) => insight.type)).toContain('recurring_repurchase_due');
+  });
+
+  it('returns a recurring restock window insight when headroom can absorb a due-soon item', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 52);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 34);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 16);
+
+    const e1 = await insertExpense('Target', 38.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Target', 39.49, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Target', 39.29, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Pampers Pure Size 6', amount: 38.99, brand: 'Pampers', pack_size: '82', unit: 'count' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Pampers Pure Size 6', amount: 39.49, brand: 'Pampers', pack_size: '82', unit: 'count' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Pampers Pure Size 6', amount: 39.29, brand: 'Pampers', pack_size: '82', unit: 'count' }]);
+
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Grocer', 40, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 20, ($3 || '-02')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Grocer', 60, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 40, ($4 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Gas', 30, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Grocer', 55, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 35, ($5 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Gas', 25, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Grocer', 50, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 30, ($6 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Gas', 20, ($6 || '-05')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month, prior1, prior2, prior3]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    const restock = res.body.find((insight) => insight.type === 'recurring_restock_window');
+    expect(restock).toBeTruthy();
+    expect(restock.metadata.projected_headroom_amount).toBeGreaterThan(0);
+    expect(restock.metadata.group_key).toBeTruthy();
   });
 
   it('hides dismissed insights for the user', async () => {

@@ -118,6 +118,50 @@ function toBuySoonBetterPriceInsight(opportunity) {
   };
 }
 
+function buildRestockWindowInsights({ projection, watchCandidates = [] }) {
+  const insights = [];
+  const overall = projection?.overall;
+  const projectedBudgetDelta = Number(overall?.projected_budget_delta || 0);
+  const projectedHeadroomAmount = projectedBudgetDelta < 0 ? Math.abs(projectedBudgetDelta) : 0;
+  const eligibleCandidates = (watchCandidates || [])
+    .filter((candidate) => ['watching', 'due_today', 'overdue'].includes(candidate.status))
+    .filter((candidate) => Number(candidate.median_amount || 0) > 0)
+    .filter((candidate) => projectedHeadroomAmount >= Number(candidate.median_amount || 0) * 1.25)
+    .sort((a, b) => a.days_until_due - b.days_until_due || Number(b.median_amount || 0) - Number(a.median_amount || 0));
+
+  if (!overall || Number(overall.historical_period_count || 0) < 3 || projectedHeadroomAmount < 40 || !eligibleCandidates.length) {
+    return insights;
+  }
+
+  const candidate = eligibleCandidates[0];
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  const itemName = candidate.item_name || 'A recurring item';
+
+  insights.push({
+    id: `recurring_restock_window:${candidate.group_key}:${projection.month}`,
+    type: 'recurring_restock_window',
+    title: `${itemName} could fit this month`,
+    body: `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`,
+    severity: projectedHeadroomAmount >= Number(candidate.median_amount || 0) * 2 ? 'medium' : 'low',
+    entity_type: 'item',
+    entity_id: candidate.group_key,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    metadata: {
+      ...candidate,
+      scope: 'household',
+      month: projection.month,
+      projected_headroom_amount: projectedHeadroomAmount,
+      projected_budget_delta: projectedBudgetDelta,
+      projection_confidence: overall.confidence,
+    },
+    actions: [],
+  });
+
+  return insights;
+}
+
 function paceInsightType(deltaPercent) {
   return Number(deltaPercent || 0) >= 0 ? 'spend_pace_ahead' : 'spend_pace_behind';
 }
@@ -548,6 +592,7 @@ function dedupeInsights(insights) {
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
+  let householdWatchCandidates = [];
   const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
   const hasMultipleHouseholdMembers = householdMembers.length > 1;
 
@@ -555,6 +600,7 @@ async function buildInsights({ user, limit = 10 }) {
     recurringSignals = await detectRecurringItemSignals(user.household_id);
     insightSets.push(recurringSignals.map(toInsight));
     const watchCandidates = await detectRecurringWatchCandidates(user.household_id);
+    householdWatchCandidates = watchCandidates;
     insightSets.push(
       watchCandidates
         .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
@@ -616,6 +662,7 @@ async function buildInsights({ user, limit = 10 }) {
     insightSets.push(buildTrendInsights(householdTrend, 'household'));
     const householdProjection = await analyzeSpendProjection({ user, scope: 'household' });
     insightSets.push(buildProjectionInsights(householdProjection, 'household'));
+    insightSets.push(buildRestockWindowInsights({ projection: householdProjection, watchCandidates: householdWatchCandidates }));
   }
 
   const deduped = dedupeInsights(
