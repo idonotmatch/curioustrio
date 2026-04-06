@@ -144,6 +144,7 @@ function shouldSuppressInsight(insight, feedbackSummary = new Map()) {
 function feedbackAdjustmentForInsight(insight, feedbackSummary) {
   const stats = feedbackSummary.get(insight.type);
   if (!stats) return 0;
+  const actionRate = stats.shown > 0 ? stats.acted / stats.shown : 0;
 
   let score = 0;
   score += stats.helpful * 2.5;
@@ -157,6 +158,12 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
     score += stats.acted * 2;
     score -= (stats.reasons.already_knew || 0) * 2.5;
     score -= (stats.reasons.not_relevant || 0) * 1.5;
+    if (stats.acted >= 2 && actionRate >= 0.25) {
+      score += 3;
+    }
+    if (stats.shown >= 4 && stats.acted === 0 && stats.helpful === 0) {
+      score -= 2;
+    }
   }
 
   if (stats.shown >= 3 && stats.tapped === 0 && stats.helpful === 0) {
@@ -228,8 +235,19 @@ function extractRecentNotes(events = [], limit = 20) {
 
 function buildFeedbackDebugSummary(events = []) {
   const summary = summarizeFeedbackEvents(events);
+  const topOutcomeTypes = [...summary.entries()]
+    .map(([insightType, stats]) => ({
+      insight_type: insightType,
+      acted: stats.acted || 0,
+      outcomes: stats.outcomes || {},
+    }))
+    .filter((row) => row.acted > 0)
+    .sort((a, b) => b.acted - a.acted)
+    .slice(0, 10);
+
   return {
     insight_types: toSerializableSummary(summary),
+    top_outcome_types: topOutcomeTypes,
     recent_notes: extractRecentNotes(events),
     totals: events.reduce((acc, event) => {
       acc[event.event_type] = (acc[event.event_type] || 0) + 1;

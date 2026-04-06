@@ -163,6 +163,37 @@ describe('feedbackAdjustmentForInsight', () => {
 
     expect(feedbackAdjustmentForInsight({ type: 'recurring_restock_window' }, summary)).toBeGreaterThan(5);
   });
+
+  it('demotes opportunity insights that are shown repeatedly but never acted on', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'projected_month_end_under_budget:personal:2026-04',
+        event_type: 'shown',
+        metadata: { type: 'projected_month_end_under_budget' },
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'projected_month_end_under_budget:personal:2026-04',
+        event_type: 'shown',
+        metadata: { type: 'projected_month_end_under_budget' },
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'projected_month_end_under_budget:personal:2026-04',
+        event_type: 'shown',
+        metadata: { type: 'projected_month_end_under_budget' },
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'projected_month_end_under_budget:personal:2026-04',
+        event_type: 'shown',
+        metadata: { type: 'projected_month_end_under_budget' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'projected_month_end_under_budget' }, summary)).toBeLessThan(0);
+  });
 });
 
 describe('suppressionForInsightType', () => {

@@ -74,16 +74,35 @@ describe('buildFeedbackDebugSummary', () => {
         metadata: { type: 'recurring_repurchase_due' },
         created_at: '2026-04-04T11:00:00Z',
       },
+      {
+        insight_id: 'recurring_restock_window:product:xyz:2026-04',
+        event_type: 'acted',
+        metadata: { type: 'recurring_restock_window', outcome_type: 'restocked_item' },
+        created_at: '2026-04-04T12:00:00Z',
+      },
     ]);
 
     expect(result.totals).toEqual(expect.objectContaining({
       shown: 1,
       not_helpful: 1,
       helpful: 1,
+      acted: 1,
     }));
     expect(result.insight_types).toEqual(expect.arrayContaining([
       expect.objectContaining({ insight_type: 'spend_pace_ahead' }),
       expect.objectContaining({ insight_type: 'recurring_repurchase_due' }),
+      expect.objectContaining({
+        insight_type: 'recurring_restock_window',
+        acted: 1,
+        outcomes: expect.objectContaining({ restocked_item: 1 }),
+      }),
+    ]));
+    expect(result.top_outcome_types).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        insight_type: 'recurring_restock_window',
+        acted: 1,
+        outcomes: expect.objectContaining({ restocked_item: 1 }),
+      }),
     ]));
     expect(result.recent_notes).toEqual(expect.arrayContaining([
       expect.objectContaining({ note: 'This was travel-related.' }),
