@@ -1,6 +1,7 @@
 const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
+const { detectRecurringWatchCandidates } = require('./recurringDetector');
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -368,6 +369,100 @@ function projectionConfidence({ historicalPeriodCount, unusualSpendShare, expect
   return 'low';
 }
 
+function estimateRemainingRecurringPressure({ candidates = [], periodEnd }) {
+  const periodEndDate = parseDateOnly(periodEnd);
+  const dueCandidates = (candidates || [])
+    .filter((candidate) => {
+      if (!candidate?.next_expected_date || candidate.median_amount == null) return false;
+      const nextExpectedDate = parseDateOnly(candidate.next_expected_date);
+      return nextExpectedDate < periodEndDate;
+    })
+    .map((candidate) => ({
+      group_key: candidate.group_key,
+      item_name: candidate.item_name || 'Recurring purchase',
+      next_expected_date: candidate.next_expected_date,
+      median_amount: Number(candidate.median_amount || 0),
+      status: candidate.status,
+      days_until_due: Number(candidate.days_until_due || 0),
+    }))
+    .filter((candidate) => candidate.median_amount > 0)
+    .sort((a, b) => a.days_until_due - b.days_until_due || b.median_amount - a.median_amount);
+
+  return {
+    count: dueCandidates.length,
+    total_expected_amount: dueCandidates.reduce((sum, candidate) => sum + candidate.median_amount, 0),
+    candidates: dueCandidates.slice(0, 5),
+  };
+}
+
+function evaluateScenarioAgainstProjection({
+  projection,
+  proposedAmount,
+  label = 'purchase',
+  recurringPressure = { count: 0, total_expected_amount: 0, candidates: [] },
+}) {
+  const amount = Number(proposedAmount || 0);
+  if (!projection?.overall || !(amount > 0)) {
+    return {
+      label,
+      proposed_amount: amount > 0 ? amount : null,
+      status: 'unknown',
+      can_absorb: null,
+      reason: 'missing_projection_or_amount',
+    };
+  }
+
+  const overall = projection.overall;
+  const projectedBudgetDelta = Number(overall.projected_budget_delta || 0);
+  const projectedHeadroomAmount = projectedBudgetDelta < 0 ? Math.abs(projectedBudgetDelta) : 0;
+  const postPurchaseProjectedDelta = projectedBudgetDelta + amount;
+  const postPurchaseHeadroomAmount = postPurchaseProjectedDelta < 0 ? Math.abs(postPurchaseProjectedDelta) : 0;
+  const recurringPressureAmount = Number(recurringPressure?.total_expected_amount || 0);
+  const riskAdjustedHeadroomAmount = Math.max(0, postPurchaseHeadroomAmount - recurringPressureAmount);
+
+  let status = 'tight';
+  let canAbsorb = false;
+  let reason = 'projected_over_budget_after_purchase';
+
+  if (overall.confidence == null || Number(overall.historical_period_count || 0) < 3) {
+    status = 'unknown';
+    canAbsorb = null;
+    reason = 'insufficient_history';
+  } else if (postPurchaseProjectedDelta > 75) {
+    status = 'not_absorbable';
+    canAbsorb = false;
+    reason = 'projected_over_budget_after_purchase';
+  } else if (postPurchaseProjectedDelta > 0) {
+    status = 'risky';
+    canAbsorb = false;
+    reason = 'headroom_consumed';
+  } else if (riskAdjustedHeadroomAmount >= Math.max(75, amount * 0.5)) {
+    status = 'comfortable';
+    canAbsorb = true;
+    reason = 'projected_headroom_remains';
+  } else if (postPurchaseHeadroomAmount > 0) {
+    status = recurringPressureAmount > 0 ? 'tight' : 'absorbable';
+    canAbsorb = true;
+    reason = recurringPressureAmount > 0 ? 'limited_headroom_after_recurring_pressure' : 'limited_but_positive_headroom';
+  }
+
+  return {
+    label,
+    proposed_amount: amount,
+    status,
+    can_absorb: canAbsorb,
+    reason,
+    projection_confidence: overall.confidence,
+    projected_headroom_amount: projectedHeadroomAmount,
+    post_purchase_projected_delta: postPurchaseProjectedDelta,
+    post_purchase_headroom_amount: postPurchaseHeadroomAmount,
+    risk_adjusted_headroom_amount: riskAdjustedHeadroomAmount,
+    recurring_pressure_count: Number(recurringPressure?.count || 0),
+    recurring_pressure_amount: recurringPressureAmount,
+    recurring_candidates: recurringPressure?.candidates || [],
+  };
+}
+
 function projectOverallSpend({
   currentExpenses = [],
   historicalPeriods = [],
@@ -644,6 +739,41 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
   };
 }
 
+async function evaluateScenarioAffordability({
+  user,
+  scope = 'personal',
+  month = null,
+  proposedAmount,
+  label = 'purchase',
+}) {
+  const projection = await analyzeSpendProjection({ user, scope, month });
+  let recurringPressure = { count: 0, total_expected_amount: 0, candidates: [] };
+
+  if (projection.scope === 'household' && user?.household_id) {
+    const watchCandidates = await detectRecurringWatchCandidates(user.household_id, {
+      windowDays: Math.max(5, Number(projection?.period?.days_in_period || 0)),
+      maxOverdueDays: 14,
+    });
+    recurringPressure = estimateRemainingRecurringPressure({
+      candidates: watchCandidates,
+      periodEnd: projection.period.to,
+    });
+  }
+
+  return {
+    scope: projection.scope,
+    month: projection.month,
+    period: projection.period,
+    projection,
+    scenario: evaluateScenarioAgainstProjection({
+      projection,
+      proposedAmount,
+      label,
+      recurringPressure,
+    }),
+  };
+}
+
 module.exports = {
   analyzeSpendProjection,
   buildHistoricalCumulativeCurve,
@@ -653,6 +783,9 @@ module.exports = {
   getCurrentPeriodDayIndex,
   getExpectedCumulativeShareByDay,
   getTopProjectedCategoryPressures,
+  estimateRemainingRecurringPressure,
+  evaluateScenarioAgainstProjection,
+  evaluateScenarioAffordability,
   projectOverallSpend,
   projectCategorySpend,
   splitNormalVsUnusualSpend,

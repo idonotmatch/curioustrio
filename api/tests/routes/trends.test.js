@@ -219,3 +219,55 @@ describe('GET /trends/summary', () => {
     expect(res.body.projection.categories[0].adjusted_projected_total).toBeGreaterThan(0);
   });
 });
+
+describe('POST /trends/scenario-check', () => {
+  it('evaluates whether a one-off purchase can be absorbed', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 40, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 20, '2026-04-02', 'manual', 'confirmed'),
+       ($1, 60, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 40, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 30, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-02-05', 'manual', 'confirmed'),
+       ($1, 50, '2026-01-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-01-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-01-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 75,
+        label: 'Standing desk',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario).toBeTruthy();
+    expect(res.body.scenario.label).toBe('Standing desk');
+    expect(res.body.scenario.proposed_amount).toBe(75);
+    expect(typeof res.body.scenario.can_absorb).toBe('boolean');
+  });
+
+  it('returns 400 for invalid proposed amounts', async () => {
+    const res = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        proposed_amount: 0,
+      });
+
+    expect(res.status).toBe(400);
+  });
+});

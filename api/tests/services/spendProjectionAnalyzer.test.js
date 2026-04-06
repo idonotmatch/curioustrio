@@ -2,6 +2,8 @@ const {
   buildHistoricalCumulativeCurve,
   buildHistoricalCategoryCurves,
   classifyExpenseNormStatus,
+  estimateRemainingRecurringPressure,
+  evaluateScenarioAgainstProjection,
   getCompletedHistoricalPeriods,
   getCurrentPeriodDayIndex,
   getExpectedCumulativeShareByDay,
@@ -289,6 +291,65 @@ describe('spendProjectionAnalyzer', () => {
     expect(categories).toHaveLength(2);
     expect(categories[0].category_key).toBe('groceries');
     expect(categories[1].category_key).toBe('dining');
+  });
+
+  it('estimates remaining recurring pressure before period end', () => {
+    const pressure = estimateRemainingRecurringPressure({
+      candidates: [
+        { group_key: 'a', item_name: 'Diapers', next_expected_date: '2026-04-12', median_amount: 42, status: 'watching', days_until_due: 3 },
+        { group_key: 'b', item_name: 'Detergent', next_expected_date: '2026-05-03', median_amount: 18, status: 'upcoming', days_until_due: 24 },
+        { group_key: 'c', item_name: 'Wipes', next_expected_date: '2026-04-20', median_amount: 12, status: 'upcoming', days_until_due: 11 },
+      ],
+      periodEnd: '2026-05-01',
+    });
+
+    expect(pressure.count).toBe(2);
+    expect(pressure.total_expected_amount).toBe(54);
+    expect(pressure.candidates[0].item_name).toBe('Diapers');
+  });
+
+  it('evaluates a purchase scenario against projected headroom', () => {
+    const result = evaluateScenarioAgainstProjection({
+      projection: {
+        overall: {
+          projected_budget_delta: -120,
+          confidence: 'medium',
+          historical_period_count: 5,
+        },
+      },
+      proposedAmount: 50,
+      label: 'Standing desk',
+      recurringPressure: {
+        count: 1,
+        total_expected_amount: 20,
+        candidates: [{ item_name: 'Diapers', median_amount: 20, next_expected_date: '2026-04-12' }],
+      },
+    });
+
+    expect(result.status).toBe('tight');
+    expect(result.can_absorb).toBe(true);
+    expect(result.projected_headroom_amount).toBe(120);
+    expect(result.post_purchase_projected_delta).toBe(-70);
+    expect(result.risk_adjusted_headroom_amount).toBe(50);
+  });
+
+  it('flags a scenario as risky when it pushes the period over budget', () => {
+    const result = evaluateScenarioAgainstProjection({
+      projection: {
+        overall: {
+          projected_budget_delta: -30,
+          confidence: 'high',
+          historical_period_count: 5,
+        },
+      },
+      proposedAmount: 80,
+      label: 'Concert tickets',
+      recurringPressure: { count: 0, total_expected_amount: 0, candidates: [] },
+    });
+
+    expect(result.status).toBe('risky');
+    expect(result.can_absorb).toBe(false);
+    expect(result.post_purchase_projected_delta).toBe(50);
   });
 
   it('filters completed historical periods based on first expense date and activity', () => {
