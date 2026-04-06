@@ -1,6 +1,7 @@
 const {
   isPositiveOpportunityType,
   normalizeInsightType,
+  normalizeOutcomeType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
   suppressionForInsightType,
@@ -37,6 +38,18 @@ describe('isPositiveOpportunityType', () => {
   });
 });
 
+describe('normalizeOutcomeType', () => {
+  it('prefers explicit outcome metadata fields when present', () => {
+    expect(normalizeOutcomeType({
+      metadata: { outcome_type: 'restocked_item' },
+    })).toBe('restocked_item');
+
+    expect(normalizeOutcomeType({
+      metadata: { action_type: 'used_headroom' },
+    })).toBe('used_headroom');
+  });
+});
+
 describe('summarizeFeedbackEvents', () => {
   it('aggregates feedback counts and reasons by insight type', () => {
     const summary = summarizeFeedbackEvents([
@@ -65,6 +78,23 @@ describe('summarizeFeedbackEvents', () => {
       not_helpful: 1,
       helpful: 1,
       reasons: expect.objectContaining({ wrong_timing: 1 }),
+    }));
+  });
+
+  it('captures acted outcomes separately from taps and feedback', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_restock_window:abc:2026-04',
+        event_type: 'acted',
+        metadata: { type: 'recurring_restock_window', outcome_type: 'restocked_item' },
+        created_at: '2026-04-04T12:00:00Z',
+      },
+    ]);
+
+    expect(summary.get('recurring_restock_window')).toEqual(expect.objectContaining({
+      acted: 1,
+      outcomes: expect.objectContaining({ restocked_item: 1 }),
+      last_acted_at: '2026-04-04T12:00:00Z',
     }));
   });
 });
@@ -119,6 +149,19 @@ describe('feedbackAdjustmentForInsight', () => {
     ]);
 
     expect(feedbackAdjustmentForInsight({ type: 'recurring_restock_window' }, summary)).toBeLessThan(-4);
+  });
+
+  it('boosts outcome-producing insights more strongly when users act on them', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_restock_window:product:abc:2026-04',
+        event_type: 'acted',
+        metadata: { type: 'recurring_restock_window', outcome_type: 'restocked_item' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'recurring_restock_window' }, summary)).toBeGreaterThan(5);
   });
 });
 

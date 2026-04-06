@@ -724,6 +724,47 @@ describe('POST /insights/events', () => {
     );
   });
 
+  it('accepts acted outcome events for future outcome-aware ranking', async () => {
+    const res = await request(app)
+      .post('/insights/events')
+      .send({
+        events: [
+          {
+            insight_id: 'recurring_restock_window:demo-item:2026-04',
+            event_type: 'acted',
+            metadata: {
+              surface: 'summary',
+              insight_type: 'recurring_restock_window',
+              outcome_type: 'restocked_item',
+            },
+          },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveLength(1);
+
+    const events = await db.query(
+      `SELECT insight_id, event_type, metadata
+       FROM insight_events
+       WHERE user_id = $1
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+    expect(events.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          insight_id: 'recurring_restock_window:demo-item:2026-04',
+          event_type: 'acted',
+          metadata: expect.objectContaining({
+            insight_type: 'recurring_restock_window',
+            outcome_type: 'restocked_item',
+          }),
+        }),
+      ])
+    );
+  });
+
   it('returns 400 when events are missing', async () => {
     const res = await request(app).post('/insights/events').send({});
     expect(res.status).toBe(400);

@@ -24,6 +24,14 @@ function isPositiveOpportunityType(insightType) {
   return POSITIVE_OPPORTUNITY_TYPES.has(insightType);
 }
 
+function normalizeOutcomeType(event = {}) {
+  const raw = event?.metadata?.outcome_type
+    || event?.metadata?.action_type
+    || event?.metadata?.outcome
+    || event?.metadata?.action;
+  return `${raw || ''}`.trim();
+}
+
 function summarizeFeedbackEvents(events = []) {
   const summary = new Map();
 
@@ -36,10 +44,13 @@ function summarizeFeedbackEvents(events = []) {
       not_helpful: 0,
       tapped: 0,
       dismissed: 0,
+      acted: 0,
       shown: 0,
       reasons: {},
+      outcomes: {},
       last_negative_at: null,
       last_helpful_at: null,
+      last_acted_at: null,
     };
 
     current[event.event_type] = (current[event.event_type] || 0) + 1;
@@ -58,6 +69,14 @@ function summarizeFeedbackEvents(events = []) {
 
     if (event.event_type === 'helpful') {
       current.last_helpful_at = event.created_at || current.last_helpful_at;
+    }
+
+    if (event.event_type === 'acted') {
+      const outcomeType = normalizeOutcomeType(event);
+      if (outcomeType) {
+        current.outcomes[outcomeType] = (current.outcomes[outcomeType] || 0) + 1;
+      }
+      current.last_acted_at = event.created_at || current.last_acted_at;
     }
 
     summary.set(insightType, current);
@@ -129,11 +148,13 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
   let score = 0;
   score += stats.helpful * 2.5;
   score += stats.tapped * 0.75;
+  score += stats.acted * 4;
   score -= stats.not_helpful * 3;
   score -= stats.dismissed * 2;
 
   if (isPositiveOpportunityType(insight.type)) {
     score += stats.helpful * 1;
+    score += stats.acted * 2;
     score -= (stats.reasons.already_knew || 0) * 2.5;
     score -= (stats.reasons.not_relevant || 0) * 1.5;
   }
@@ -157,6 +178,11 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
     score += 1.5;
   }
 
+  const recentActedDays = daysSince(stats.last_acted_at);
+  if (recentActedDays != null && recentActedDays <= 21) {
+    score += 2;
+  }
+
   return score;
 }
 
@@ -168,17 +194,20 @@ function toSerializableSummary(feedbackSummary) {
       not_helpful: stats.not_helpful || 0,
       tapped: stats.tapped || 0,
       dismissed: stats.dismissed || 0,
+      acted: stats.acted || 0,
       shown: stats.shown || 0,
       reasons: stats.reasons || {},
+      outcomes: stats.outcomes || {},
       last_negative_at: stats.last_negative_at || null,
       last_helpful_at: stats.last_helpful_at || null,
+      last_acted_at: stats.last_acted_at || null,
       suppression: suppressionForInsightType(insightType, feedbackSummary),
     }))
     .sort((a, b) => {
-      const aSignal = (a.helpful + a.tapped) - (a.not_helpful + a.dismissed);
-      const bSignal = (b.helpful + b.tapped) - (b.not_helpful + b.dismissed);
+      const aSignal = (a.helpful + a.tapped + a.acted) - (a.not_helpful + a.dismissed);
+      const bSignal = (b.helpful + b.tapped + b.acted) - (b.not_helpful + b.dismissed);
       if (bSignal !== aSignal) return bSignal - aSignal;
-      return (b.shown + b.tapped + b.helpful + b.not_helpful + b.dismissed) - (a.shown + a.tapped + a.helpful + a.not_helpful + a.dismissed);
+      return (b.shown + b.tapped + b.helpful + b.acted + b.not_helpful + b.dismissed) - (a.shown + a.tapped + a.helpful + a.acted + a.not_helpful + a.dismissed);
     });
 }
 
@@ -212,6 +241,7 @@ function buildFeedbackDebugSummary(events = []) {
 module.exports = {
   isPositiveOpportunityType,
   normalizeInsightType,
+  normalizeOutcomeType,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
   suppressionForInsightType,
