@@ -168,4 +168,35 @@ async function summarizeByUser(userId, days = 30) {
   };
 }
 
-module.exports = { create, findByExpenseId, recordReviewFeedback, findByMessageId, listByUser, summarizeByUser };
+async function listQualitySignalsByUser(userId, days = 30) {
+  const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
+  const result = await db.query(
+    `SELECT l.message_id,
+            l.subject,
+            l.from_address,
+            l.imported_at,
+            l.status,
+            f.review_action,
+            f.review_changed_fields,
+            f.review_edit_count,
+            f.reviewed_at
+     FROM email_import_log l
+     LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
+     WHERE l.user_id = $1
+       AND l.imported_at >= NOW() - ($2::text || ' days')::interval
+       AND l.status = 'imported'
+     ORDER BY l.imported_at DESC`,
+    [userId, safeDays]
+  );
+  return result.rows;
+}
+
+module.exports = {
+  create,
+  findByExpenseId,
+  recordReviewFeedback,
+  findByMessageId,
+  listByUser,
+  summarizeByUser,
+  listQualitySignalsByUser,
+};

@@ -438,6 +438,17 @@ describe('GET /gmail/import-summary', () => {
       reviewed_approved: 0,
       reviewed_dismissed: 0,
       reviewed_edited: 0,
+      quality: {
+        total_reviewed: 0,
+        clean_approved: 0,
+        approved_after_changes: 0,
+        dismissed: 0,
+        edited: 0,
+        clean_import_rate: 0,
+        review_rate: 0,
+        dismissal_rate: 0,
+        edit_rate: 0,
+      },
     });
     expect(res.body.last_imported_at).toBeTruthy();
     expect(res.body.last_synced_at).toBeNull();
@@ -446,5 +457,6 @@ describe('GET /gmail/import-summary', () => {
       { reason: 'classifier_uncertain', count: 1 },
     ]));
     expect(res.body.changed_fields).toEqual([]);
+    expect(Array.isArray(res.body.quality.sender_quality)).toBe(true);
   });
 });

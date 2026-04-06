@@ -7,6 +7,7 @@ const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
 const { importForUser } = require('../services/gmailImporter');
+const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
@@ -71,7 +72,8 @@ router.get('/import-summary', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const days = Math.min(parseInt(req.query.days, 10) || 30, 365);
-    const summary = await EmailImportLog.summarizeByUser(user.id, days);
+    const senderLimit = Math.min(parseInt(req.query.sender_limit, 10) || 5, 20);
+    const summary = await getGmailImportQualitySummary(user.id, days, senderLimit);
     const token = await OAuthToken.findByUserId(user.id);
     res.json({ ...summary, last_synced_at: token?.last_synced_at || null });
   } catch (err) { next(err); }
