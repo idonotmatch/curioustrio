@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
-import { loadExpenseItemsSnapshot, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
+import { loadExpenseItemsSnapshot, loadExpenseSnapshot, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
 
 const CATEGORY_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316'];
 
@@ -48,6 +48,37 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
     setLocalExpense(expense);
   }, [expense]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateLocalItemAvailability() {
+      const snapshot = await loadExpenseSnapshot(expense?.id);
+      if (cancelled || !snapshot?.id) return;
+
+      if (Array.isArray(snapshot.items)) {
+        setLocalExpense((prev) => ({
+          ...prev,
+          items: snapshot.items,
+          item_count: snapshot.items.length,
+        }));
+        return;
+      }
+
+      if (Number(snapshot.item_count) === 0) {
+        setLocalExpense((prev) => ({
+          ...prev,
+          item_count: 0,
+          items: [],
+        }));
+      }
+    }
+
+    hydrateLocalItemAvailability();
+    return () => {
+      cancelled = true;
+    };
+  }, [expense?.id]);
+
   const isOwn = !currentUserId || String(localExpense.user_id) === String(currentUserId);
   const color = categoryColor(localExpense.category_name);
   const isRefund = Number(localExpense.amount) < 0;
@@ -87,6 +118,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           items: [],
         };
         setLocalExpense(nextExpense);
+        setItemsExpanded(false);
         saveExpenseSnapshot(nextExpense);
       } else {
         const nextExpense = {
