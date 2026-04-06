@@ -119,6 +119,26 @@ function recentPlanStatusCopy(plan) {
   return statusConfig(plan.last_affordability_status).label;
 }
 
+function recentPlanWhyChangedCopy(plan) {
+  if (plan?.memory_state !== 'considering') return '';
+  const previous = Number(plan?.previous_risk_adjusted_headroom_amount);
+  const current = Number(plan?.last_risk_adjusted_headroom_amount);
+  const hasBoth = Number.isFinite(previous) && Number.isFinite(current);
+  const delta = hasBoth ? current - previous : 0;
+
+  if (plan?.last_material_change === 'improved') {
+    if (hasBoth && delta >= 25) return `${formatCurrency(delta)} more room opened up.`;
+    return 'Your projected room improved since the last check.';
+  }
+
+  if (plan?.last_material_change === 'worsened') {
+    if (hasBoth && delta <= -25) return `${formatCurrency(Math.abs(delta))} less room is left now.`;
+    return 'Your projected room tightened since the last check.';
+  }
+
+  return '';
+}
+
 export default function ScenarioCheckScreen() {
   const params = useLocalSearchParams();
   const { selectedMonth, startDay } = useMonth();
@@ -433,6 +453,7 @@ export default function ScenarioCheckScreen() {
             {recentPlans.map((plan) => {
               const isCurrent = scenarioMemory?.id && scenarioMemory.id === plan.id;
               const changeCopy = recentPlanChangeCopy(plan);
+              const whyChangedCopy = recentPlanWhyChangedCopy(plan);
               const statusCopy = recentPlanStatusCopy(plan);
               return (
                 <TouchableOpacity
@@ -446,6 +467,9 @@ export default function ScenarioCheckScreen() {
                     <Text style={styles.recentPlanMeta}>{recentPlanMetaCopy(plan)}</Text>
                     {changeCopy ? (
                       <Text style={styles.recentPlanChange}>{changeCopy}</Text>
+                    ) : null}
+                    {whyChangedCopy ? (
+                      <Text style={styles.recentPlanWhy}>{whyChangedCopy}</Text>
                     ) : null}
                   </View>
                   <View style={styles.recentPlanRight}>
@@ -637,6 +661,7 @@ const styles = StyleSheet.create({
   recentPlanLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   recentPlanMeta: { fontSize: 12, color: '#888', marginTop: 2 },
   recentPlanChange: { fontSize: 12, color: '#b8c8ff', marginTop: 4, fontWeight: '500' },
+  recentPlanWhy: { fontSize: 12, color: '#8f99ac', marginTop: 2, lineHeight: 16 },
   recentPlanStatus: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 },
   recentPlanAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
   candidateRow: {
