@@ -48,6 +48,32 @@ function whyChangedCopy(plan) {
   return '';
 }
 
+function sortPlans(items) {
+  const priority = {
+    worsened: 0,
+    improved: 1,
+    unchanged: 2,
+  };
+  return [...items].sort((a, b) => {
+    const aPriority = priority[a?.last_material_change] ?? 3;
+    const bPriority = priority[b?.last_material_change] ?? 3;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    const aTime = new Date(a?.last_evaluated_at || a?.created_at || 0).getTime();
+    const bTime = new Date(b?.last_evaluated_at || b?.created_at || 0).getTime();
+    return bTime - aTime;
+  });
+}
+
+function buildSections(items) {
+  const sorted = sortPlans(items);
+  const groups = [
+    { key: 'worsened', title: 'Got tighter', items: sorted.filter((plan) => plan.last_material_change === 'worsened') },
+    { key: 'improved', title: 'Got easier', items: sorted.filter((plan) => plan.last_material_change === 'improved') },
+    { key: 'stable', title: 'Stable', items: sorted.filter((plan) => !['worsened', 'improved'].includes(plan.last_material_change)) },
+  ];
+  return groups.filter((group) => group.items.length > 0);
+}
+
 export default function WatchingPlansScreen() {
   const router = useRouter();
   const [items, setItems] = useState([]);
@@ -68,6 +94,8 @@ export default function WatchingPlansScreen() {
   useFocusEffect(useCallback(() => {
     load();
   }, [load]));
+
+  const sections = buildSections(items);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -91,53 +119,58 @@ export default function WatchingPlansScreen() {
             </Text>
           </View>
         ) : (
-          items.map((plan) => {
-            const change = changeCopy(plan);
-            const why = whyChangedCopy(plan);
-            return (
-              <View key={plan.id} style={styles.card}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => router.push({
-                    pathname: '/scenario-check',
-                    params: {
-                      month: plan.month,
-                      scope: plan.scope,
-                      amount: `${plan.amount}`,
-                      label: plan.label,
-                      auto_run: '1',
-                    },
-                  })}
-                >
-                  <View style={styles.rowTop}>
-                    <View style={styles.textCol}>
-                      <Text style={styles.label}>{plan.label}</Text>
-                      <Text style={styles.meta}>{scopeLabel(plan.scope)} · Watching</Text>
-                      {change ? <Text style={styles.change}>{change}</Text> : null}
-                      {why ? <Text style={styles.why}>{why}</Text> : null}
-                    </View>
-                    <View style={styles.rightCol}>
-                      <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
-                      <Text style={styles.amount}>{formatCurrency(plan.amount)}</Text>
-                    </View>
+          sections.map((section) => (
+            <View key={section.key} style={styles.section}>
+              <Text style={styles.sectionLabel}>{section.title}</Text>
+              {section.items.map((plan) => {
+                const change = changeCopy(plan);
+                const why = whyChangedCopy(plan);
+                return (
+                  <View key={plan.id} style={styles.card}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => router.push({
+                        pathname: '/scenario-check',
+                        params: {
+                          month: plan.month,
+                          scope: plan.scope,
+                          amount: `${plan.amount}`,
+                          label: plan.label,
+                          auto_run: '1',
+                        },
+                      })}
+                    >
+                      <View style={styles.rowTop}>
+                        <View style={styles.textCol}>
+                          <Text style={styles.label}>{plan.label}</Text>
+                          <Text style={styles.meta}>{scopeLabel(plan.scope)} · Watching</Text>
+                          {change ? <Text style={styles.change}>{change}</Text> : null}
+                          {why ? <Text style={styles.why}>{why}</Text> : null}
+                        </View>
+                        <View style={styles.rightCol}>
+                          <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
+                          <Text style={styles.amount}>{formatCurrency(plan.amount)}</Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.stopButton}
+                      onPress={async () => {
+                        try {
+                          await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
+                          load();
+                        } catch {
+                          // non-fatal
+                        }
+                      }}
+                    >
+                      <Text style={styles.stopButtonText}>Stop watching</Text>
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.stopButton}
-                  onPress={async () => {
-                    try {
-                      await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
-                      load();
-                    } catch {
-                      // non-fatal
-                    }
-                  }}
-                >
-                  <Text style={styles.stopButtonText}>Stop watching</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })
+                );
+              })}
+            </View>
+          ))
         )}
       </ScrollView>
     </SafeAreaView>
@@ -162,6 +195,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#e3ebf3', fontSize: 17, fontWeight: '600' },
   emptyBody: { color: '#8fa0b2', fontSize: 14, lineHeight: 20 },
+  section: { gap: 10 },
+  sectionLabel: {
+    color: '#8e8e8e',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
   card: {
     backgroundColor: '#121212',
     borderWidth: 1,
