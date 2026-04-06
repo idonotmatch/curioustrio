@@ -215,6 +215,7 @@ export default function SummaryScreen() {
       'one_offs_driving_variance',
       'recurring_cost_pressure',
       'projected_month_end_over_budget',
+      'projected_month_end_under_budget',
       'one_off_expense_skewing_projection',
     ]);
 

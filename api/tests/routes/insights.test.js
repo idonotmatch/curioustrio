@@ -297,7 +297,7 @@ describe('GET /insights', () => {
     await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, category_id)
        VALUES
-       ($1, $2, 'Grocer', 50, ($3 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Grocer', 90, ($3 || '-01')::date, 'manual', 'confirmed', $4),
        ($1, $2, 'Airline', 300, ($3 || '-02')::date, 'manual', 'confirmed', $5),
        ($1, $2, 'Grocer', 30, ($6 || '-01')::date, 'manual', 'confirmed', $4),
        ($1, $2, 'Grocer', 35, ($6 || '-04')::date, 'manual', 'confirmed', $4),
@@ -328,6 +328,41 @@ describe('GET /insights', () => {
     expect(res.body.map((insight) => insight.type)).toEqual(
       expect.arrayContaining(['projected_month_end_over_budget', 'one_off_expense_skewing_projection', 'projected_category_surge'])
     );
+  });
+
+  it('returns an under-budget projection insight with projected headroom', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Grocer', 40, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 20, ($3 || '-02')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Grocer', 60, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 40, ($4 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Gas', 30, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Grocer', 55, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 35, ($5 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Gas', 25, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Grocer', 50, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Cafe', 30, ($6 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Gas', 20, ($6 || '-05')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month, prior1, prior2, prior3]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    const underBudget = res.body.find((insight) => insight.type === 'projected_month_end_under_budget');
+    expect(underBudget).toBeTruthy();
+    expect(underBudget.metadata.projected_headroom_amount).toBeGreaterThan(0);
   });
 
   it('deduplicates repeated trend cards across personal and household scopes', async () => {

@@ -38,8 +38,11 @@ function titleForInsightType(type, fallbackTitle) {
     case 'recurring_cost_pressure':
       return 'Recurring cost pressure';
     case 'projected_month_end_over_budget':
+    case 'projected_month_end_under_budget':
     case 'one_off_expense_skewing_projection':
       return 'Month-end projection';
+    case 'projected_category_surge':
+      return 'Category projection';
     default:
       return 'Trend detail';
   }
@@ -123,6 +126,44 @@ function buildMockTrend(scope, month) {
           },
         ],
       },
+      categories: [
+        {
+          category_key: 'groceries',
+          category_name: 'Groceries',
+          current_spend_to_date: household ? 402.88 : 214.56,
+          normal_spend_to_date: household ? 306.36 : 161.18,
+          unusual_spend_to_date: household ? 96.52 : 53.38,
+          historical_expected_share_by_day: 0.54,
+          baseline_projected_total: household ? 567.33 : 298.48,
+          adjusted_projected_total: household ? 663.85 : 351.86,
+          projection_excluding_unusuals: household ? 567.33 : 298.48,
+          confidence: 'medium',
+          historical_period_count: 5,
+          top_unusual_expenses: [
+            {
+              id: 'mock-costco',
+              merchant: 'Costco',
+              amount: 96.52,
+              category_name: 'Groceries',
+              norm_reason: 'large_amount_outlier',
+            },
+          ],
+        },
+        {
+          category_key: 'dining',
+          category_name: 'Dining',
+          current_spend_to_date: household ? 156.1 : 92.14,
+          normal_spend_to_date: household ? 156.1 : 92.14,
+          unusual_spend_to_date: 0,
+          historical_expected_share_by_day: 0.61,
+          baseline_projected_total: household ? 255.9 : 151.05,
+          adjusted_projected_total: household ? 255.9 : 151.05,
+          projection_excluding_unusuals: household ? 255.9 : 151.05,
+          confidence: 'medium',
+          historical_period_count: 5,
+          top_unusual_expenses: [],
+        },
+      ],
     },
   };
 }
@@ -152,8 +193,17 @@ function summaryCopy({ insightType, trend, categoryKey }) {
       return 'Recurring purchases are contributing more extra spend than usual this period.';
     case 'projected_month_end_over_budget':
       return `You are projected to finish about ${formatCurrency(projection?.projected_budget_delta)} above budget by month end based on your historical spending shape.`;
+    case 'projected_month_end_under_budget':
+      return `You are projected to finish about ${formatCurrency(Math.abs(Number(projection?.projected_budget_delta || 0)))} under budget by month end based on your historical spending shape.`;
     case 'one_off_expense_skewing_projection':
       return 'An unusual purchase is materially lifting the all-in month-end projection above your baseline spend pattern.';
+    case 'projected_category_surge': {
+      const projectedCategory = (trend?.projection?.categories || []).find((category) => category.category_key === categoryKey)
+        || trend?.projection?.categories?.[0];
+      return projectedCategory
+        ? `${projectedCategory.category_name} is tracking above its usual finish for this point in the period, even after accounting for your normal daily spend shape.`
+        : 'This category is projected to finish above its usual baseline this period.';
+    }
     default:
       return 'This view breaks down the trend data behind the insight.';
   }
@@ -216,6 +266,12 @@ export default function TrendDetailScreen() {
 
   const highlightedDriver = useMemo(
     () => trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey) || null,
+    [trend, categoryKey]
+  );
+  const highlightedCategoryProjection = useMemo(
+    () => (trend?.projection?.categories || []).find((category) => category.category_key === categoryKey)
+      || trend?.projection?.categories?.[0]
+      || null,
     [trend, categoryKey]
   );
 
@@ -319,6 +375,31 @@ export default function TrendDetailScreen() {
               </View>
             ) : null}
 
+            {(trend.projection?.categories || []).length ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Projected category finish</Text>
+                {trend.projection.categories.map((category) => (
+                  <View
+                    key={category.category_key}
+                    style={[
+                      styles.driverRow,
+                      `${categoryKey}` && category.category_key === `${categoryKey}` && styles.driverRowHighlight,
+                    ]}
+                  >
+                    <View style={styles.driverText}>
+                      <Text style={styles.driverName}>{category.category_name}</Text>
+                      <Text style={styles.driverMeta}>
+                        Baseline {formatCurrency(category.baseline_projected_total)} · Adjusted {formatCurrency(category.adjusted_projected_total)}
+                      </Text>
+                    </View>
+                    <Text style={styles.driverDelta}>
+                      {formatCurrency(Number(category.adjusted_projected_total || 0) - Number(category.baseline_projected_total || 0))}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Top drivers</Text>
               {(trend.pace?.top_drivers || []).length ? (
@@ -387,6 +468,18 @@ export default function TrendDetailScreen() {
                   {highlightedDriver.category_name} is contributing {formatCurrency(Math.abs(highlightedDriver.delta_amount))}{' '}
                   {Number(highlightedDriver.delta_amount) >= 0 ? 'above' : 'below'} your usual pace.
                 </Text>
+              </View>
+            ) : null}
+
+            {highlightedCategoryProjection ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Category projection detail</Text>
+                <Text style={styles.metricRow}>Category: {highlightedCategoryProjection.category_name}</Text>
+                <Text style={styles.metricRow}>Current spend to date: {formatCurrency(highlightedCategoryProjection.current_spend_to_date)}</Text>
+                <Text style={styles.metricRow}>Baseline finish: {formatCurrency(highlightedCategoryProjection.baseline_projected_total)}</Text>
+                <Text style={styles.metricRow}>Adjusted finish: {formatCurrency(highlightedCategoryProjection.adjusted_projected_total)}</Text>
+                <Text style={styles.metricRow}>Unusual spend to date: {formatCurrency(highlightedCategoryProjection.unusual_spend_to_date)}</Text>
+                <Text style={styles.metricRow}>Confidence: {highlightedCategoryProjection.confidence || '—'}</Text>
               </View>
             ) : null}
 

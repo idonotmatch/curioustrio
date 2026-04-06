@@ -246,6 +246,7 @@ describe('spendProjectionAnalyzer', () => {
     expect(projection.unusual_spend_to_date).toBe(0);
     expect(projection.baseline_projected_total).toBeCloseTo(121.03, 2);
     expect(projection.adjusted_projected_total).toBeCloseTo(121.03, 2);
+    expect(projection.historical_average_total).toBeCloseTo(46.67, 2);
   });
 
   it('returns the top projected category pressures', () => {

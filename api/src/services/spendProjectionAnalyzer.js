@@ -291,6 +291,12 @@ function projectCategorySpend({
   const curve = buildHistoricalCumulativeCurve(filteredHistoricalPeriods, totalDays);
   const expectedShare = getExpectedCumulativeShareByDay(curve, dayIndex);
   const historicalExpenses = filteredHistoricalPeriods.flatMap((period) => period.expenses || []);
+  const historicalAverageTotal = filteredHistoricalPeriods.length
+    ? filteredHistoricalPeriods.reduce(
+      (sum, period) => sum + (period.expenses || []).reduce((periodSum, expense) => periodSum + Number(expense.amount || 0), 0),
+      0
+    ) / filteredHistoricalPeriods.length
+    : null;
   const split = splitNormalVsUnusualSpend(filteredCurrentExpenses, { historicalExpenses });
 
   if (!expectedShare || expectedShare < 0.05) {
@@ -320,6 +326,7 @@ function projectCategorySpend({
     projection_excluding_unusuals: baseline,
     confidence,
     historical_period_count: filteredHistoricalPeriods.length,
+    historical_average_total: historicalAverageTotal,
     top_unusual_expenses: split.top_unusual_expenses,
   };
 }

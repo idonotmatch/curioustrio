@@ -308,6 +308,35 @@ function buildProjectionInsights(projection, scope) {
 
   if (
     historicalPeriodCount >= 3 &&
+    adjustedProjectedTotal > 0 &&
+    projectedBudgetDelta <= -40
+  ) {
+    insights.push({
+      id: `projected_under_budget:${scopeLabel}:${projection.month}`,
+      type: 'projected_month_end_under_budget',
+      title: `Your ${scopeLabel} spending has room this period`,
+      body: `Based on your historical spend shape so far this period, you are on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} under budget by month end.`,
+      severity: Math.abs(projectedBudgetDelta) >= 100 ? 'medium' : 'low',
+      entity_type: 'budget',
+      entity_id: `${scopeLabel}:total`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection.month,
+        adjusted_projected_total: adjustedProjectedTotal,
+        baseline_projected_total: Number(overall.baseline_projected_total || 0),
+        projected_budget_delta: projectedBudgetDelta,
+        projected_headroom_amount: Math.abs(projectedBudgetDelta),
+        confidence: overall.confidence,
+        historical_period_count: historicalPeriodCount,
+      },
+      actions: [],
+    });
+  }
+
+  if (
+    historicalPeriodCount >= 3 &&
     unusualSpendToDate >= 75 &&
     unusualSpendShare >= 0.35 &&
     overall.top_unusual_expenses?.length
@@ -340,14 +369,15 @@ function buildProjectionInsights(projection, scope) {
   const topCategoryProjection = (projection?.categories || [])
     .filter((category) => Number(category.historical_period_count || 0) >= 3)
     .map((category) => {
-      const baseline = Number(category.baseline_projected_total || 0);
       const adjusted = Number(category.adjusted_projected_total || 0);
-      const deltaAmount = adjusted - baseline;
-      const deltaPercent = baseline > 0 ? (deltaAmount / baseline) * 100 : 0;
+      const historicalAverage = Number(category.historical_average_total || 0);
+      const deltaAmount = adjusted - historicalAverage;
+      const deltaPercent = historicalAverage > 0 ? (deltaAmount / historicalAverage) * 100 : 0;
       return {
         ...category,
         delta_amount: deltaAmount,
         delta_percent: deltaPercent,
+        historical_average_total: historicalAverage,
       };
     })
     .filter((category) => Number(category.adjusted_projected_total || 0) > 0)
@@ -355,8 +385,8 @@ function buildProjectionInsights(projection, scope) {
 
   if (
     topCategoryProjection &&
-    Number(topCategoryProjection.delta_amount || 0) >= 25 &&
-    Number(topCategoryProjection.delta_percent || 0) >= 15
+    Number(topCategoryProjection.delta_amount || 0) >= 15 &&
+    Number(topCategoryProjection.delta_percent || 0) >= 10
   ) {
     insights.push({
       id: `projected_category_surge:${scopeLabel}:${projection.month}:${topCategoryProjection.category_key}`,
@@ -375,6 +405,7 @@ function buildProjectionInsights(projection, scope) {
         category_name: topCategoryProjection.category_name,
         adjusted_projected_total: Number(topCategoryProjection.adjusted_projected_total || 0),
         baseline_projected_total: Number(topCategoryProjection.baseline_projected_total || 0),
+        historical_average_total: Number(topCategoryProjection.historical_average_total || 0),
         unusual_spend_to_date: Number(topCategoryProjection.unusual_spend_to_date || 0),
         delta_amount: Number(topCategoryProjection.delta_amount || 0),
         delta_percent: Number(topCategoryProjection.delta_percent || 0),
