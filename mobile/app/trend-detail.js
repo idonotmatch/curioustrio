@@ -42,6 +42,7 @@ function titleForInsightType(type, fallbackTitle) {
     case 'one_off_expense_skewing_projection':
       return 'Month-end projection';
     case 'projected_category_surge':
+    case 'projected_category_under_baseline':
       return 'Category projection';
     default:
       return 'Trend detail';
@@ -203,6 +204,13 @@ function summaryCopy({ insightType, trend, categoryKey }) {
       return projectedCategory
         ? `${projectedCategory.category_name} is tracking above its usual finish for this point in the period, even after accounting for your normal daily spend shape.`
         : 'This category is projected to finish above its usual baseline this period.';
+    }
+    case 'projected_category_under_baseline': {
+      const projectedCategory = (trend?.projection?.categories || []).find((category) => category.category_key === categoryKey)
+        || trend?.projection?.categories?.[0];
+      return projectedCategory
+        ? `${projectedCategory.category_name} is tracking below its usual finish for this point in the period, which leaves more room than usual in that category.`
+        : 'This category is projected to finish below its usual baseline this period.';
     }
     default:
       return 'This view breaks down the trend data behind the insight.';

@@ -365,6 +365,43 @@ describe('GET /insights', () => {
     expect(underBudget.metadata.projected_headroom_amount).toBeGreaterThan(0);
   });
 
+  it('returns a category-under-baseline projection insight when a category has room', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+
+    const diningCategory = await db.query(
+      `INSERT INTO categories (household_id, name, icon, color)
+       VALUES ($1, 'Dining', 'restaurant', '#f59e0b')
+       RETURNING id`,
+      [householdId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, category_id)
+       VALUES
+       ($1, $2, 'Cafe', 10, ($3 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 8, ($3 || '-03')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 40, ($5 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 35, ($5 || '-03')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 30, ($5 || '-05')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 42, ($6 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 36, ($6 || '-03')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 28, ($6 || '-05')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 38, ($7 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 32, ($7 || '-03')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 30, ($7 || '-05')::date, 'manual', 'confirmed', $4)`,
+      [userId, householdId, month, diningCategory.rows[0].id, prior1, prior2, prior3]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    const categoryUnder = res.body.find((insight) => insight.type === 'projected_category_under_baseline');
+    expect(categoryUnder).toBeTruthy();
+    expect(categoryUnder.metadata.projected_headroom_amount).toBeGreaterThan(0);
+  });
+
   it('deduplicates repeated trend cards across personal and household scopes', async () => {
     const month = currentPeriod(1);
     const prior1 = shiftPeriod(month, -1);

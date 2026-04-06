@@ -216,7 +216,9 @@ export default function SummaryScreen() {
       'recurring_cost_pressure',
       'projected_month_end_over_budget',
       'projected_month_end_under_budget',
+      'projected_category_under_baseline',
       'one_off_expense_skewing_projection',
+      'projected_category_surge',
     ]);
 
     if (trendInsightTypes.has(insight?.type) && insight?.metadata?.month) {

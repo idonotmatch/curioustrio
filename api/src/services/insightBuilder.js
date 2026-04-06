@@ -416,6 +416,57 @@ function buildProjectionInsights(projection, scope) {
     });
   }
 
+  const lowestCategoryProjection = (projection?.categories || [])
+    .filter((category) => Number(category.historical_period_count || 0) >= 3)
+    .map((category) => {
+      const adjusted = Number(category.adjusted_projected_total || 0);
+      const historicalAverage = Number(category.historical_average_total || 0);
+      const deltaAmount = adjusted - historicalAverage;
+      const deltaPercent = historicalAverage > 0 ? (deltaAmount / historicalAverage) * 100 : 0;
+      return {
+        ...category,
+        delta_amount: deltaAmount,
+        delta_percent: deltaPercent,
+        historical_average_total: historicalAverage,
+      };
+    })
+    .filter((category) => Number(category.adjusted_projected_total || 0) > 0)
+    .sort((a, b) => Number(a.delta_amount || 0) - Number(b.delta_amount || 0))[0];
+
+  if (
+    lowestCategoryProjection &&
+    Number(lowestCategoryProjection.delta_amount || 0) <= -15 &&
+    Number(lowestCategoryProjection.delta_percent || 0) <= -10 &&
+    Number(lowestCategoryProjection.unusual_spend_to_date || 0) <= 0
+  ) {
+    insights.push({
+      id: `projected_category_under:${scopeLabel}:${projection.month}:${lowestCategoryProjection.category_key}`,
+      type: 'projected_category_under_baseline',
+      title: `${lowestCategoryProjection.category_name} has room this period`,
+      body: `${lowestCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(lowestCategoryProjection.delta_amount || 0)).toFixed(0)} below its usual finish this period.`,
+      severity: Math.abs(Number(lowestCategoryProjection.delta_amount || 0)) >= 40 ? 'medium' : 'low',
+      entity_type: 'category',
+      entity_id: lowestCategoryProjection.category_key,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection.month,
+        category_key: lowestCategoryProjection.category_key,
+        category_name: lowestCategoryProjection.category_name,
+        adjusted_projected_total: Number(lowestCategoryProjection.adjusted_projected_total || 0),
+        baseline_projected_total: Number(lowestCategoryProjection.baseline_projected_total || 0),
+        historical_average_total: Number(lowestCategoryProjection.historical_average_total || 0),
+        projected_headroom_amount: Math.abs(Number(lowestCategoryProjection.delta_amount || 0)),
+        delta_amount: Number(lowestCategoryProjection.delta_amount || 0),
+        delta_percent: Number(lowestCategoryProjection.delta_percent || 0),
+        confidence: lowestCategoryProjection.confidence,
+        historical_period_count: Number(lowestCategoryProjection.historical_period_count || 0),
+      },
+      actions: [],
+    });
+  }
+
   return insights;
 }
 
