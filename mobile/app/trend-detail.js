@@ -37,14 +37,100 @@ function titleForInsightType(type, fallbackTitle) {
       return 'One-off variance';
     case 'recurring_cost_pressure':
       return 'Recurring cost pressure';
+    case 'projected_month_end_over_budget':
+    case 'one_off_expense_skewing_projection':
+      return 'Month-end projection';
     default:
       return 'Trend detail';
   }
 }
 
+function buildMockTrend(scope, month) {
+  const household = `${scope}` === 'household';
+  const periodLabel = month || '2026-04';
+
+  return {
+    period: {
+      month: periodLabel,
+      data_start_date: '2025-11-01',
+    },
+    pace: {
+      current_spend_to_date: household ? 912.48 : 438.17,
+      historical_spend_to_date_avg: household ? 736.22 : 364.91,
+      delta_amount: household ? 176.26 : 73.26,
+      delta_percent: household ? 23.9 : 20.1,
+      projected_period_total: household ? 1528.9 : 742.15,
+      historical_period_count: 5,
+      top_drivers: [
+        {
+          category_key: 'groceries',
+          category_name: 'Groceries',
+          current_spend_to_date: household ? 402.88 : 214.56,
+          historical_spend_to_date_avg: household ? 316.24 : 161.18,
+          delta_amount: household ? 86.64 : 53.38,
+          delta_percent: household ? 27.4 : 33.1,
+        },
+        {
+          category_key: 'dining',
+          category_name: 'Dining',
+          current_spend_to_date: household ? 156.1 : 92.14,
+          historical_spend_to_date_avg: household ? 181.74 : 106.42,
+          delta_amount: household ? -25.64 : -14.28,
+          delta_percent: household ? -14.1 : -13.4,
+        },
+      ],
+      variance_breakdown: {
+        one_off_delta_amount: 118.43,
+        recurring_delta_amount: 41.27,
+        top_one_off_merchants: [
+          { merchant_key: 'costco', merchant_name: 'Costco', delta_amount: 96.52 },
+          { merchant_key: 'mozelles', merchant_name: "Mozelle's", delta_amount: 21.91 },
+        ],
+      },
+    },
+    budget_adherence: {
+      budget_limit: household ? 1350 : 620,
+      projected_over_under: household ? 178.9 : 122.15,
+      budget_fit: 'too_low',
+      historical_period_count: 5,
+    },
+    projection: {
+      overall: {
+        current_spend_to_date: household ? 912.48 : 438.17,
+        normal_spend_to_date: household ? 794.05 : 319.74,
+        unusual_spend_to_date: 118.43,
+        historical_expected_share_by_day: 0.57,
+        baseline_projected_total: household ? 1392.18 : 560.95,
+        adjusted_projected_total: household ? 1510.61 : 679.38,
+        projection_excluding_unusuals: household ? 1392.18 : 560.95,
+        projected_budget_delta: household ? 160.61 : 59.38,
+        confidence: 'medium',
+        historical_period_count: 5,
+        top_unusual_expenses: [
+          {
+            id: 'mock-costco',
+            merchant: 'Costco',
+            amount: 96.52,
+            category_name: 'Groceries',
+            norm_reason: 'large_amount_outlier',
+          },
+          {
+            id: 'mock-flowers',
+            merchant: 'City Blossoms',
+            amount: 21.91,
+            category_name: 'Gifts',
+            norm_reason: 'rare_merchant',
+          },
+        ],
+      },
+    },
+  };
+}
+
 function summaryCopy({ insightType, trend, categoryKey }) {
   const pace = trend?.pace;
   const budget = trend?.budget_adherence;
+  const projection = trend?.projection?.overall;
   const highlightedDriver = trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey);
 
   switch (insightType) {
@@ -64,6 +150,10 @@ function summaryCopy({ insightType, trend, categoryKey }) {
       return 'A few unusual merchants are contributing more to this period than your recurring baseline normally would.';
     case 'recurring_cost_pressure':
       return 'Recurring purchases are contributing more extra spend than usual this period.';
+    case 'projected_month_end_over_budget':
+      return `You are projected to finish about ${formatCurrency(projection?.projected_budget_delta)} above budget by month end based on your historical spending shape.`;
+    case 'one_off_expense_skewing_projection':
+      return 'An unusual purchase is materially lifting the all-in month-end projection above your baseline spend pattern.';
     default:
       return 'This view breaks down the trend data behind the insight.';
   }
@@ -77,6 +167,7 @@ export default function TrendDetailScreen() {
     category_key: categoryKey = '',
     title,
     insight_id: insightId = '',
+    mock = '',
   } = useLocalSearchParams();
   const [trend, setTrend] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -92,6 +183,12 @@ export default function TrendDetailScreen() {
     async function load() {
       if (!month) {
         setError('Missing trend period');
+        setLoading(false);
+        return;
+      }
+      if (`${mock}` === '1') {
+        setTrend(buildMockTrend(scope, month));
+        setError('');
         setLoading(false);
         return;
       }
@@ -115,7 +212,7 @@ export default function TrendDetailScreen() {
 
     load();
     return () => { cancelled = true; };
-  }, [scope, month]);
+  }, [scope, month, mock]);
 
   const highlightedDriver = useMemo(
     () => trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey) || null,
@@ -209,6 +306,19 @@ export default function TrendDetailScreen() {
               <Text style={styles.metricRow}>Historical periods used: {trend.budget_adherence?.historical_period_count ?? 0}</Text>
             </View>
 
+            {trend.projection?.overall ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Month-end projection</Text>
+                <Text style={styles.metricRow}>Adjusted projection: {formatCurrency(trend.projection.overall.adjusted_projected_total)}</Text>
+                <Text style={styles.metricRow}>Baseline projection: {formatCurrency(trend.projection.overall.baseline_projected_total)}</Text>
+                <Text style={styles.metricRow}>Unusual spend to date: {formatCurrency(trend.projection.overall.unusual_spend_to_date)}</Text>
+                <Text style={styles.metricRow}>Normal spend to date: {formatCurrency(trend.projection.overall.normal_spend_to_date)}</Text>
+                <Text style={styles.metricRow}>Projected budget delta: {formatCurrency(trend.projection.overall.projected_budget_delta)}</Text>
+                <Text style={styles.metricRow}>Historical spend share by today: {formatPercent((Number(trend.projection.overall.historical_expected_share_by_day || 0) * 100) - 0)}</Text>
+                <Text style={styles.metricRow}>Projection confidence: {trend.projection.overall.confidence || '—'}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Top drivers</Text>
               {(trend.pace?.top_drivers || []).length ? (
@@ -249,6 +359,26 @@ export default function TrendDetailScreen() {
                 <Text style={styles.emptyText}>No notable one-off merchants in this period.</Text>
               )}
             </View>
+
+            {trend.projection?.overall?.top_unusual_expenses?.length ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Top unusual expenses</Text>
+                {trend.projection.overall.top_unusual_expenses.map((expense) => (
+                  <View key={expense.id || `${expense.merchant}:${expense.date}`} style={styles.driverRow}>
+                    <View style={styles.driverText}>
+                      <Text style={styles.driverName}>{expense.merchant}</Text>
+                      <Text style={styles.driverMeta}>
+                        {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+                      </Text>
+                    </View>
+                    <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+                  </View>
+                ))}
+                <Text style={styles.emptyText}>
+                  Baseline projection excludes these from the forward run-rate, while adjusted projection counts what has already happened this month.
+                </Text>
+              </View>
+            ) : null}
 
             {highlightedDriver ? (
               <View style={styles.card}>

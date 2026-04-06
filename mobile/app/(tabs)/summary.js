@@ -62,28 +62,39 @@ function insightScopeLabel(insight) {
   return insight?.entity_type === 'item' ? 'Household' : 'You';
 }
 
-function buildMockInsights() {
+function buildMockInsights(month) {
   return [
     {
       id: 'mock:household-price-spike',
-      title: 'Organic bananas cost more than usual',
-      body: 'This trip came in 20% above your usual price, mostly from higher produce costs this week.',
-      entity_type: 'item',
-      metadata: { scope: 'household' },
+      type: 'one_off_expense_skewing_projection',
+      title: 'A one-off household stock-up is lifting the projection',
+      body: 'Household spending still looks manageable, but one larger-than-usual pantry trip is pushing the all-in projection higher.',
+      entity_type: 'budget',
+      metadata: { scope: 'household', month },
     },
     {
       id: 'mock:personal-budget-fit',
+      type: 'projected_month_end_over_budget',
       title: 'Your personal budget may be too low',
-      body: 'You have been outpacing this budget in most recent periods, and this month is trending above your normal pace again.',
+      body: 'You are projected to finish this month above budget, even after adjusting for your usual daily spending shape.',
       entity_type: 'budget',
-      metadata: { scope: 'personal' },
+      metadata: { scope: 'personal', month },
     },
     {
       id: 'mock:household-driver',
+      type: 'top_category_driver',
       title: 'Groceries are driving the difference',
       body: 'Groceries are running about $86 higher than your usual household pace so far this period.',
       entity_type: 'category',
-      metadata: { scope: 'household' },
+      metadata: { scope: 'household', month, category_key: 'groceries' },
+    },
+    {
+      id: 'mock:projection-one-off',
+      type: 'one_off_expense_skewing_projection',
+      title: 'One unusual purchase is lifting the month-end projection',
+      body: 'A larger-than-usual Costco stock-up is skewing the all-in projection above your baseline month.',
+      entity_type: 'budget',
+      metadata: { scope: 'personal', month },
     },
   ];
 }
@@ -105,8 +116,9 @@ export default function SummaryScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
+  const currentMonthStr = selectedMonth || currentPeriod(startDay);
   const displayInsights = __DEV__ && insights.length === 0
-    ? buildMockInsights().filter((insight) => !dismissedMockInsightIds.includes(insight.id))
+    ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
   const hasMultipleInsights = displayInsights.length > 1;
   const insightCardWidth = displayInsights.length <= 1
@@ -173,16 +185,14 @@ export default function SummaryScreen() {
 
   async function handlePressInsight(insight) {
     if (!insight?.id) return;
-    if (__DEV__ && insights.length === 0) {
-      Alert.alert(insight.title, insight.body);
-      return;
+    const isMockInsight = __DEV__ && insights.length === 0;
+    if (!isMockInsight) {
+      await logEvents([{
+        insight_id: insight.id,
+        event_type: 'tapped',
+        metadata: { surface: 'summary', type: insight.type },
+      }]);
     }
-
-    await logEvents([{
-      insight_id: insight.id,
-      event_type: 'tapped',
-      metadata: { surface: 'summary', type: insight.type },
-    }]);
 
     if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
       router.push({
@@ -204,6 +214,8 @@ export default function SummaryScreen() {
       'top_category_driver',
       'one_offs_driving_variance',
       'recurring_cost_pressure',
+      'projected_month_end_over_budget',
+      'one_off_expense_skewing_projection',
     ]);
 
     if (trendInsightTypes.has(insight?.type) && insight?.metadata?.month) {
@@ -216,6 +228,7 @@ export default function SummaryScreen() {
           category_key: insight.metadata?.category_key || '',
           title: insight.title,
           insight_id: insight.id,
+          mock: isMockInsight ? '1' : '',
         },
       });
       return;
@@ -226,8 +239,6 @@ export default function SummaryScreen() {
 
   const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
-  const currentMonthStr = currentPeriod(startDay);
-
   const limit = personalBudget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
   const over = limit && spent > limit;
