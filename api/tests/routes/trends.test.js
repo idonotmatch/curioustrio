@@ -480,4 +480,36 @@ describe('POST /trends/scenario-check', () => {
     expect(refreshed.last_evaluated_at).toBeTruthy();
     expect(['improved', 'worsened', 'unchanged']).toContain(refreshed.last_material_change);
   });
+
+  it('lists watched scenario memories for the user', async () => {
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         household_id,
+         scope,
+         label,
+         amount,
+         month,
+         memory_state,
+         intent_signal,
+         watch_enabled,
+         watch_started_at,
+         last_affordability_status,
+         last_can_absorb,
+         last_evaluated_at,
+         expires_at
+       )
+       VALUES
+       ($1, NULL, 'personal', 'Running shoes', 180, '2026-04', 'considering', 'considering', TRUE, NOW(), 'absorbable', true, NOW(), NOW() + INTERVAL '14 days'),
+       ($1, NULL, 'household', 'Air fryer', 240, '2026-04', 'considering', 'considering', TRUE, NOW(), 'tight', false, NOW() - INTERVAL '1 day', NOW() + INTERVAL '14 days')`,
+      [userId]
+    );
+
+    const res = await request(app).get('/trends/scenario-memory/watching?limit=10');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.items.every((item) => item.watch_enabled)).toBe(true);
+  });
 });

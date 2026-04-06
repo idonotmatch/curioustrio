@@ -148,6 +148,7 @@ export default function SummaryScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
+  const [watchedPlans, setWatchedPlans] = useState([]);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
   const displayInsights = __DEV__ && insights.length === 0
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
@@ -167,6 +168,15 @@ export default function SummaryScreen() {
     }
   }, []);
 
+  const loadWatchedPlans = useCallback(async () => {
+    try {
+      const data = await api.get('/trends/scenario-memory/watching?limit=5');
+      setWatchedPlans(Array.isArray(data?.items) ? data.items : []);
+    } catch {
+      setWatchedPlans([]);
+    }
+  }, []);
+
   useFocusEffect(useCallback(() => {
     refreshExpenses();
     refreshPersonalBudget();
@@ -174,6 +184,7 @@ export default function SummaryScreen() {
     refreshHouseholdBudget();
     refreshPending();
     loadGmailImportSummary();
+    loadWatchedPlans();
     refreshInsights();
   }, [
     refreshExpenses,
@@ -182,6 +193,7 @@ export default function SummaryScreen() {
     refreshHouseholdBudget,
     refreshPending,
     loadGmailImportSummary,
+    loadWatchedPlans,
     refreshInsights,
   ]));
 
@@ -283,6 +295,8 @@ export default function SummaryScreen() {
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit && hSpent > hLimit;
   const recent = (expenses || []).slice(0, 5);
+  const watchedImprovedCount = watchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
+  const watchedWorsenedCount = watchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
 
   async function handleQuickAdd() {
     if (!input.trim()) return;
@@ -502,6 +516,29 @@ export default function SummaryScreen() {
         )}
       </View>
 
+      {watchedPlans.length > 0 ? (
+        <TouchableOpacity
+          style={styles.watchingCard}
+          activeOpacity={0.88}
+          onPress={() => router.push('/watching-plans')}
+        >
+          <View style={styles.watchingText}>
+            <Text style={styles.watchingTitle}>Watching</Text>
+            <Text style={styles.watchingMeta}>
+              {watchedPlans.length} active {watchedPlans.length === 1 ? 'plan' : 'plans'}
+            </Text>
+            <Text style={styles.watchingBody}>
+              {watchedImprovedCount > 0 || watchedWorsenedCount > 0
+                ? `${watchedImprovedCount > 0 ? `${watchedImprovedCount} got easier` : ''}${watchedImprovedCount > 0 && watchedWorsenedCount > 0 ? ' · ' : ''}${watchedWorsenedCount > 0 ? `${watchedWorsenedCount} got tighter` : ''}`
+                : 'Plans you asked Adlo to keep an eye on.'}
+            </Text>
+          </View>
+          <View style={styles.watchingCTA}>
+            <Text style={styles.watchingCTAText}>See plans</Text>
+          </View>
+        </TouchableOpacity>
+      ) : null}
+
       {displayInsights.length > 0 && (
         <View style={styles.insightsSection}>
           <View style={styles.insightsHeading}>
@@ -676,6 +713,30 @@ const styles = StyleSheet.create({
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
 
   quickAdd: { marginTop: 18, marginBottom: 32 },
+  watchingCard: {
+    marginTop: -6,
+    marginBottom: 28,
+    backgroundColor: '#101216',
+    borderWidth: 1,
+    borderColor: '#1d2730',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 14,
+  },
+  watchingText: { flex: 1, gap: 4 },
+  watchingTitle: { color: '#dde8f2', fontSize: 16, fontWeight: '700' },
+  watchingMeta: { color: '#8fa0b2', fontSize: 13 },
+  watchingBody: { color: '#afc0d5', fontSize: 14, lineHeight: 19, marginTop: 4 },
+  watchingCTA: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  watchingCTAText: { color: '#000', fontSize: 13, fontWeight: '700' },
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   sectionLabelCompact: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 8 },
