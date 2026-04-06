@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { saveExpenseSnapshots } from '../services/expenseLocalStore';
 
 // Personal expenses can be mutated from multiple devices for the same account.
 // Serve cache immediately, but always revalidate so "Mine" stays in sync across
@@ -20,7 +21,11 @@ export function useExpenses(month, startDayOverride) {
     await loadWithCache(
       `cache:expenses:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
-      (data) => { setExpenses(data); setLoading(false); },
+      (data) => {
+        setExpenses(data);
+        setLoading(false);
+        saveExpenseSnapshots(data);
+      },
       (err) => { setError(err.message); setLoading(false); },
     );
   }, [month, startDayOverride]);

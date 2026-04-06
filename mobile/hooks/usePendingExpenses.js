@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { saveExpenseSnapshots } from '../services/expenseLocalStore';
 
 export function usePendingExpenses() {
   const [expenses, setExpenses] = useState([]);
@@ -12,7 +13,11 @@ export function usePendingExpenses() {
     await loadWithCache(
       'cache:expenses:pending',
       () => api.get('/expenses/pending'),
-      (data) => { setExpenses(data); setLoading(false); },
+      (data) => {
+        setExpenses(data);
+        setLoading(false);
+        saveExpenseSnapshots(data);
+      },
       (err) => { setError(err.message); setLoading(false); },
     );
   }, []);

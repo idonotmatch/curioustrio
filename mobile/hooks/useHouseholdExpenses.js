@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { saveExpenseSnapshots } from '../services/expenseLocalStore';
 
 export function useHouseholdExpenses(month, startDayOverride) {
   const [expenses, setExpenses] = useState([]);
@@ -17,7 +18,11 @@ export function useHouseholdExpenses(month, startDayOverride) {
     await loadWithCache(
       `cache:household-expenses:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
-      (data) => { setExpenses(data); setLoading(false); },
+      (data) => {
+        setExpenses(data);
+        setLoading(false);
+        saveExpenseSnapshots(data);
+      },
       (err) => { setError(err.message); setLoading(false); },
     );
   }, [month, startDayOverride]);

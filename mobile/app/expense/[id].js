@@ -6,12 +6,12 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
 import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { LocationPicker } from '../../components/LocationPicker';
+import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 
 function formatLikelyFields(fields = []) {
   if (!Array.isArray(fields) || !fields.length) return '';
@@ -71,45 +71,6 @@ function applyExpenseToState(record, setters) {
   })));
 }
 
-async function loadCachedExpenseSnapshot(id) {
-  const directKeys = [`cache:expense-detail:${id}`, 'cache:expenses:pending'];
-  for (const key of directKeys) {
-    try {
-      const raw = await AsyncStorage.getItem(key);
-      if (!raw) continue;
-      const { data } = JSON.parse(raw);
-      if (key === `cache:expense-detail:${id}` && data?.id === id) return data;
-      if (Array.isArray(data)) {
-        const found = data.find((item) => item?.id === id);
-        if (found) return found;
-      }
-    } catch {
-      // non-fatal
-    }
-  }
-
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const listKeys = keys.filter((key) => key.startsWith('cache:expenses:') || key.startsWith('cache:household-expenses:'));
-    for (const key of listKeys) {
-      try {
-        const raw = await AsyncStorage.getItem(key);
-        if (!raw) continue;
-        const { data } = JSON.parse(raw);
-        if (!Array.isArray(data)) continue;
-        const found = data.find((item) => item?.id === id);
-        if (found) return found;
-      } catch {
-        // keep searching
-      }
-    }
-  } catch {
-    // non-fatal
-  }
-
-  return null;
-}
-
 export default function ExpenseDetailScreen() {
   const { id, expense: expenseParam } = useLocalSearchParams();
   const router = useRouter();
@@ -161,7 +122,7 @@ export default function ExpenseDetailScreen() {
         setLocationData,
         setItemsEdits,
       };
-      const bootstrapped = routeExpense || await loadCachedExpenseSnapshot(id);
+      const bootstrapped = routeExpense || await findExpenseSnapshotInCaches(id);
       if (active && bootstrapped) {
         applyExpenseToState(bootstrapped, setters);
         setLoading(false);
@@ -172,7 +133,7 @@ export default function ExpenseDetailScreen() {
         if (!active) return;
         applyExpenseToState(fresh, setters);
         setLoading(false);
-        AsyncStorage.setItem(`cache:expense-detail:${id}`, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+        saveExpenseSnapshot(fresh);
       } catch {
         if (active && !bootstrapped) setLoading(false);
       }
@@ -233,6 +194,7 @@ export default function ExpenseDetailScreen() {
       });
       const refreshed = await api.get(`/expenses/${id}`);
       setExpense(refreshed);
+      saveExpenseSnapshot(refreshed);
       setEditing(false);
       setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({
         ...it,
@@ -268,6 +230,7 @@ export default function ExpenseDetailScreen() {
           setDeleting(true);
           try {
             await api.delete(`/expenses/${id}`);
+            await removeExpenseSnapshot(id);
             await Promise.all([
               invalidateCacheByPrefix('cache:expenses:'),
               invalidateCacheByPrefix('cache:budget:'),

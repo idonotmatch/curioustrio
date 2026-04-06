@@ -2,11 +2,11 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
+import { loadExpenseItemsSnapshot, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
 
 const CATEGORY_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316'];
 
@@ -32,21 +32,6 @@ function formatDate(dateStr) {
     day: 'numeric',
     year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
   });
-}
-
-async function loadCachedExpenseItems(expenseId) {
-  const keysToTry = [`cache:expense-detail:${expenseId}`];
-  for (const key of keysToTry) {
-    try {
-      const raw = await AsyncStorage.getItem(key);
-      if (!raw) continue;
-      const { data } = JSON.parse(raw);
-      if (data?.id === expenseId && Array.isArray(data.items)) return data.items;
-    } catch {
-      // non-fatal
-    }
-  }
-  return null;
 }
 
 export function ExpenseItem({ expense, categories = [], showUser = false, onDelete, pending = false }) {
@@ -84,7 +69,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
     }
     setItemsLoading(true);
     try {
-      const cachedItems = await loadCachedExpenseItems(localExpense.id);
+      const cachedItems = await loadExpenseItemsSnapshot(localExpense.id);
       if (cachedItems) {
         setItems(cachedItems);
         setItemsLoading(false);
@@ -92,10 +77,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       const detail = await api.get(`/expenses/${localExpense.id}`);
       const nextItems = Array.isArray(detail.items) ? detail.items : [];
       setItems(nextItems);
-      AsyncStorage.setItem(
-        `cache:expense-detail:${localExpense.id}`,
-        JSON.stringify({ data: detail, ts: Date.now() })
-      ).catch(() => {});
+      saveExpenseSnapshot(detail);
     } catch {
       setItems(prev => prev ?? []);
     } finally {
@@ -133,6 +115,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       onPress={async () => {
         try {
           await api.delete(`/expenses/${localExpense.id}`);
+          await removeExpenseSnapshot(localExpense.id);
           await Promise.all([
             invalidateCacheByPrefix('cache:expenses:'),
             invalidateCacheByPrefix('cache:budget:'),
