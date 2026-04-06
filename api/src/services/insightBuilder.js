@@ -631,6 +631,52 @@ function dedupeInsights(insights) {
   return [...picked.values()];
 }
 
+function resolveOpportunityCompetition(insights) {
+  const byType = new Map(insights.map((insight) => [insight.id, insight]));
+  const removals = new Set();
+
+  const restockWindows = insights.filter((insight) => insight.type === 'recurring_restock_window');
+  for (const restock of restockWindows) {
+    const scope = restock.metadata?.scope;
+    const month = restock.metadata?.month;
+    if (!scope || !month) continue;
+
+    for (const insight of insights) {
+      if (insight.id === restock.id) continue;
+      if (insight.metadata?.scope !== scope || insight.metadata?.month !== month) continue;
+
+      if (insight.type === 'projected_month_end_under_budget') {
+        removals.add(insight.id);
+      }
+
+      if (
+        insight.type === 'projected_category_under_baseline' &&
+        insight.metadata?.category_key === restock.metadata?.category_key
+      ) {
+        removals.add(insight.id);
+      }
+    }
+  }
+
+  const categoryHeadroom = insights.filter((insight) => insight.type === 'projected_category_under_baseline');
+  for (const categoryInsight of categoryHeadroom) {
+    const scope = categoryInsight.metadata?.scope;
+    const month = categoryInsight.metadata?.month;
+    if (!scope || !month) continue;
+
+    const generic = insights.find((insight) =>
+      insight.type === 'projected_month_end_under_budget'
+      && insight.metadata?.scope === scope
+      && insight.metadata?.month === month
+    );
+    if (generic) {
+      removals.add(generic.id);
+    }
+  }
+
+  return insights.filter((insight) => !removals.has(insight.id) && byType.has(insight.id));
+}
+
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
@@ -715,7 +761,7 @@ async function buildInsights({ user, limit = 10 }) {
       .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
   );
 
-  return deduped
+  return resolveOpportunityCompetition(deduped)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }
