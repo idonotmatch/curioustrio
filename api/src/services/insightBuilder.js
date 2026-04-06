@@ -604,10 +604,54 @@ function portfolioFamily(insight) {
   return 'other';
 }
 
+function narrativeClusterKey(insight) {
+  const scope = insight?.metadata?.scope || 'global';
+  const month = insight?.metadata?.month || 'na';
+  const type = `${insight?.type || ''}`.trim();
+
+  if (
+    type === 'spend_pace_ahead'
+    || type === 'spend_pace_behind'
+    || type === 'top_category_driver'
+    || type === 'one_offs_driving_variance'
+  ) {
+    return `trend:${scope}:${month}`;
+  }
+
+  if (
+    type === 'projected_month_end_over_budget'
+    || type === 'projected_month_end_under_budget'
+    || type === 'one_off_expense_skewing_projection'
+    || type === 'projected_category_surge'
+    || type === 'projected_category_under_baseline'
+  ) {
+    return `projection:${scope}:${month}`;
+  }
+
+  if (
+    type === 'recurring_repurchase_due'
+    || type === 'recurring_restock_window'
+    || type === 'buy_soon_better_price'
+    || type === 'recurring_cost_pressure'
+  ) {
+    return `recurring:${scope}:${month}`;
+  }
+
+  if (
+    type === 'budget_too_low'
+    || type === 'budget_too_high'
+  ) {
+    return `budget:${scope}:${month}`;
+  }
+
+  return `${type}:${scope}:${month}`;
+}
+
 function orchestrationPenalty(insight, selected = []) {
   const family = portfolioFamily(insight);
   const sameFamilyCount = selected.filter((picked) => portfolioFamily(picked) === family).length;
   const selectedFamilies = new Set(selected.map((picked) => portfolioFamily(picked)));
+  const clusterKey = narrativeClusterKey(insight);
   const sameEntityCount = selected.filter((picked) =>
     picked.entity_type === insight.entity_type
     && picked.entity_id
@@ -618,11 +662,13 @@ function orchestrationPenalty(insight, selected = []) {
     && picked.metadata?.scope === insight.metadata?.scope
     && portfolioFamily(picked) === family
   ).length;
+  const sameClusterCount = selected.filter((picked) => narrativeClusterKey(picked) === clusterKey).length;
 
   let penalty = 0;
   penalty += sameFamilyCount * 55;
   penalty += sameEntityCount * 35;
   penalty += sameScopeCount * 10;
+  penalty += sameClusterCount * 70;
 
   if (sameFamilyCount > 0 && selectedFamilies.size < 3) {
     penalty += 90;
@@ -895,5 +941,6 @@ module.exports = {
   buildInsightsForUser,
   insightRankScore,
   portfolioFamily,
+  narrativeClusterKey,
   orchestrateInsightPortfolio,
 };

@@ -1,6 +1,7 @@
 const {
   portfolioFamily,
   orchestrateInsightPortfolio,
+  narrativeClusterKey,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -24,6 +25,21 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioFamily(buildInsight({ type: 'recurring_repurchase_due' }))).toBe('reminder');
   });
 
+  it('groups related insights into narrative clusters', () => {
+    expect(narrativeClusterKey(buildInsight({
+      type: 'spend_pace_ahead',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('trend:personal:2026-04');
+    expect(narrativeClusterKey(buildInsight({
+      type: 'projected_category_surge',
+      metadata: { scope: 'household', month: '2026-04' },
+    }))).toBe('projection:household:2026-04');
+    expect(narrativeClusterKey(buildInsight({
+      type: 'recurring_restock_window',
+      metadata: { scope: 'household', month: '2026-04' },
+    }))).toBe('recurring:household:2026-04');
+  });
+
   it('prefers a more diverse final portfolio over multiple similar cards', () => {
     const insights = [
       buildInsight({ id: 'warn-1', type: 'projected_month_end_over_budget', severity: 'high', entity_id: 'budget:1' }),
@@ -40,5 +56,20 @@ describe('insightBuilder orchestration', () => {
     expect(selected.map((insight) => insight.id)).not.toEqual(
       expect.arrayContaining(['warn-1', 'warn-2', 'explain-1', 'opp-1'])
     );
+  });
+
+  it('avoids stacking multiple cards from the same narrative cluster too early', () => {
+    const insights = [
+      buildInsight({ id: 'trend-1', type: 'spend_pace_ahead', severity: 'high', metadata: { scope: 'personal', month: '2026-04' } }),
+      buildInsight({ id: 'trend-2', type: 'top_category_driver', severity: 'medium', metadata: { scope: 'personal', month: '2026-04' } }),
+      buildInsight({ id: 'projection-1', type: 'projected_month_end_over_budget', severity: 'high', metadata: { scope: 'personal', month: '2026-04' } }),
+      buildInsight({ id: 'recurring-1', type: 'recurring_repurchase_due', severity: 'medium', metadata: { scope: 'household', month: '2026-04' } }),
+    ];
+
+    const selected = orchestrateInsightPortfolio(insights, new Map(), 3);
+    expect(selected.map((insight) => insight.id)).toContain('trend-1');
+    expect(selected.map((insight) => insight.id)).toContain('projection-1');
+    expect(selected.map((insight) => insight.id)).toContain('recurring-1');
+    expect(selected.map((insight) => insight.id)).not.toContain('trend-2');
   });
 });
