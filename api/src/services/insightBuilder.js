@@ -569,6 +569,94 @@ function insightRankScore(insight, feedbackSummary = new Map()) {
   return severityRank(insight.severity) * 100 + feedbackAdjustmentForInsight(insight, feedbackSummary);
 }
 
+function portfolioFamily(insight) {
+  const type = `${insight?.type || ''}`.trim();
+  if (!type) return 'other';
+
+  if (
+    type === 'spend_pace_ahead'
+    || type === 'budget_too_low'
+    || type === 'projected_month_end_over_budget'
+    || type === 'projected_category_surge'
+    || type === 'recurring_price_spike'
+    || type === 'recurring_cost_pressure'
+  ) return 'warning';
+
+  if (
+    type === 'top_category_driver'
+    || type === 'one_offs_driving_variance'
+    || type === 'one_off_expense_skewing_projection'
+  ) return 'explanation';
+
+  if (
+    type === 'projected_month_end_under_budget'
+    || type === 'projected_category_under_baseline'
+    || type === 'recurring_restock_window'
+    || type === 'buy_soon_better_price'
+  ) return 'opportunity';
+
+  if (
+    type === 'recurring_repurchase_due'
+    || type === 'spend_pace_behind'
+    || type === 'budget_too_high'
+  ) return 'reminder';
+
+  return 'other';
+}
+
+function orchestrationPenalty(insight, selected = []) {
+  const family = portfolioFamily(insight);
+  const sameFamilyCount = selected.filter((picked) => portfolioFamily(picked) === family).length;
+  const selectedFamilies = new Set(selected.map((picked) => portfolioFamily(picked)));
+  const sameEntityCount = selected.filter((picked) =>
+    picked.entity_type === insight.entity_type
+    && picked.entity_id
+    && picked.entity_id === insight.entity_id
+  ).length;
+  const sameScopeCount = selected.filter((picked) =>
+    picked.metadata?.scope
+    && picked.metadata?.scope === insight.metadata?.scope
+    && portfolioFamily(picked) === family
+  ).length;
+
+  let penalty = 0;
+  penalty += sameFamilyCount * 55;
+  penalty += sameEntityCount * 35;
+  penalty += sameScopeCount * 10;
+
+  if (sameFamilyCount > 0 && selectedFamilies.size < 3) {
+    penalty += 90;
+  }
+
+  if (family === 'opportunity') penalty += sameFamilyCount * 20;
+  if (family === 'explanation') penalty += sameFamilyCount * 15;
+
+  return penalty;
+}
+
+function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limit = 10) {
+  const remaining = [...insights];
+  const selected = [];
+
+  while (remaining.length && selected.length < limit) {
+    let bestIndex = 0;
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < remaining.length; i += 1) {
+      const insight = remaining[i];
+      const score = insightRankScore(insight, feedbackSummary) - orchestrationPenalty(insight, selected);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    selected.push(remaining.splice(bestIndex, 1)[0]);
+  }
+
+  return selected;
+}
+
 function dedupeInsights(insights) {
   const picked = new Map();
   for (const insight of insights) {
@@ -780,7 +868,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
   const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
   const feedbackSummary = summarizeFeedbackEvents([...recentEvents, ...inferredEvents]);
 
-  return rawInsights
+  const ranked = rawInsights
     .map((insight) => {
       const state = stateMap.get(insight.id);
       return state ? {
@@ -797,8 +885,15 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
       if (scoreDiff !== 0) return scoreDiff;
       return new Date(b.created_at) - new Date(a.created_at);
-    })
-    .slice(0, limit);
+    });
+
+  return orchestrateInsightPortfolio(ranked, feedbackSummary, limit);
 }
 
-module.exports = { buildInsights, buildInsightsForUser, insightRankScore };
+module.exports = {
+  buildInsights,
+  buildInsightsForUser,
+  insightRankScore,
+  portfolioFamily,
+  orchestrateInsightPortfolio,
+};
