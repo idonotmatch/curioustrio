@@ -203,6 +203,7 @@ function AppNavigator() {
       <Stack.Screen name="categories" options={{ title: 'Category Details', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="accounts" options={{ title: 'Accounts', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Feed' }} />
+      <Stack.Screen name="scenario-check" options={{ title: 'Scenario Check', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="trend-detail" options={{ title: 'Trend detail', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="join" options={{ title: 'Join Household', headerBackTitle: 'Back' }} />
     </Stack>

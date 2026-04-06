@@ -62,6 +62,37 @@ function insightScopeLabel(insight) {
   return insight?.entity_type === 'item' ? 'Household' : 'You';
 }
 
+function parseScenarioInput(raw, { allowHousehold = false } = {}) {
+  const trimmed = `${raw || ''}`.trim();
+  if (!trimmed) return null;
+
+  let normalized = trimmed.toLowerCase();
+  normalized = normalized.replace(/^(can i afford|could i afford|check|scenario)\s+/i, '');
+
+  let scope = 'personal';
+  if (allowHousehold && normalized.startsWith('household ')) {
+    scope = 'household';
+    normalized = normalized.slice('household '.length);
+  } else if (normalized.startsWith('mine ')) {
+    scope = 'personal';
+    normalized = normalized.slice('mine '.length);
+  }
+
+  const amountMatch = normalized.match(/(\d+(?:\.\d{1,2})?)/);
+  if (!amountMatch) return null;
+  const amount = amountMatch[1];
+  const amountIndex = amountMatch.index || 0;
+  const before = normalized.slice(0, amountIndex).trim();
+  const after = normalized.slice(amountIndex + amount.length).trim();
+  const label = `${before} ${after}`.replace(/\s+/g, ' ').trim();
+
+  return {
+    amount,
+    label,
+    scope,
+  };
+}
+
 function buildMockInsights(month) {
   return [
     {
@@ -113,6 +144,7 @@ export default function SummaryScreen() {
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight, logEvents } = useInsights(3);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
+  const [entryMode, setEntryMode] = useState('add');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
@@ -272,6 +304,33 @@ export default function SummaryScreen() {
     }
   }
 
+  function handleQuickCheck() {
+    const parsed = parseScenarioInput(input, { allowHousehold: isMultiMember });
+    if (!parsed?.amount) {
+      Alert.alert("Couldn't parse that", "Try: '180 running shoes' or 'household 240 costco run'");
+      return;
+    }
+    setInput('');
+    router.push({
+      pathname: '/scenario-check',
+      params: {
+        month: currentMonthStr,
+        scope: parsed.scope,
+        amount: parsed.amount,
+        label: parsed.label,
+        auto_run: '1',
+      },
+    });
+  }
+
+  function handlePrimaryEntry() {
+    if (entryMode === 'check') {
+      handleQuickCheck();
+      return;
+    }
+    handleQuickAdd();
+  }
+
   async function deleteExpense(id) {
     try {
       await api.delete(`/expenses/${id}`);
@@ -371,32 +430,55 @@ export default function SummaryScreen() {
 
       {/* Quick Add */}
       <View style={styles.quickAdd}>
-        <Text style={styles.sectionLabel}>Quick add</Text>
+        <Text style={styles.sectionLabel}>Quick entry</Text>
+        <View style={styles.entryModeToggle}>
+          <TouchableOpacity
+            style={[styles.entryModeChip, entryMode === 'add' && styles.entryModeChipActive]}
+            onPress={() => setEntryMode('add')}
+          >
+            <Text style={[styles.entryModeChipText, entryMode === 'add' && styles.entryModeChipTextActive]}>Add</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.entryModeChip, entryMode === 'check' && styles.entryModeChipActive]}
+            onPress={() => setEntryMode('check')}
+          >
+            <Text style={[styles.entryModeChipText, entryMode === 'check' && styles.entryModeChipTextActive]}>Plan</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.entryModeMeta}>
+          {entryMode === 'check'
+            ? 'Pressure-test a purchase against your current spending outlook.'
+            : 'Tell me what you bought.'}
+        </Text>
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="84.50 trader joes · lunch 14 · gas 60 yesterday"
+            placeholder={entryMode === 'check'
+              ? '180 running shoes · can i afford 240 air fryer?'
+              : '84.50 trader joes · lunch 14 · gas 60 yesterday'}
             placeholderTextColor="#555"
-            onSubmitEditing={handleQuickAdd}
+            onSubmitEditing={handlePrimaryEntry}
             autoCorrect={false}
-            returnKeyType="done"
+            returnKeyType={entryMode === 'check' ? 'go' : 'done'}
             editable={!loading}
           />
-          <TouchableOpacity style={styles.addBtn} onPress={handleQuickAdd} disabled={loading || !input.trim()}>
+          <TouchableOpacity style={styles.addBtn} onPress={handlePrimaryEntry} disabled={loading || !input.trim()}>
             {loading
               ? <ActivityIndicator color="#000" size="small" />
               : <Ionicons name="arrow-forward" size={18} color="#000" />}
           </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={styles.scanLink}
-          onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
-        >
-          <Ionicons name="camera-outline" size={14} color="#888" />
-          <Text style={styles.scanLinkText}>scan a receipt</Text>
-        </TouchableOpacity>
+        {entryMode === 'add' ? (
+          <TouchableOpacity
+            style={styles.scanLink}
+            onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
+          >
+            <Ionicons name="camera-outline" size={14} color="#888" />
+            <Text style={styles.scanLinkText}>scan a receipt</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {displayInsights.length > 0 && (
@@ -572,10 +654,37 @@ const styles = StyleSheet.create({
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
 
-  quickAdd: { marginBottom: 32 },
+  quickAdd: { marginTop: 18, marginBottom: 32 },
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   sectionLabelCompact: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 8 },
+  entryModeToggle: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    backgroundColor: '#111',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    padding: 2,
+    marginBottom: 10,
+  },
+  entryModeChip: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  entryModeChipActive: {
+    backgroundColor: '#f5f5f5',
+  },
+  entryModeChipText: {
+    fontSize: 13,
+    color: '#9b9b9b',
+    fontWeight: '700',
+  },
+  entryModeChipTextActive: {
+    color: '#000',
+  },
+  entryModeMeta: { fontSize: 13, color: '#718295', marginBottom: 12, lineHeight: 18 },
   input: {
     flex: 1, backgroundColor: '#111', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 13,
