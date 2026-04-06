@@ -118,18 +118,58 @@ function toBuySoonBetterPriceInsight(opportunity) {
   };
 }
 
+function remainingDaysInPeriod(projection) {
+  const daysInPeriod = Number(projection?.period?.days_in_period || 0);
+  const dayIndex = Number(projection?.period?.day_index || 0);
+  if (!daysInPeriod || !dayIndex) return null;
+  return Math.max(daysInPeriod - dayIndex, 0);
+}
+
+function periodProgress(projection) {
+  const daysInPeriod = Number(projection?.period?.days_in_period || 0);
+  const dayIndex = Number(projection?.period?.day_index || 0);
+  if (!daysInPeriod || !dayIndex) return null;
+  return dayIndex / daysInPeriod;
+}
+
+function shouldSurfacePositiveOpportunity(projection, {
+  minRemainingDays = 4,
+  minProgress = 0.15,
+  maxProgress = 0.9,
+} = {}) {
+  const overall = projection?.overall;
+  const historicalPeriodCount = Number(overall?.historical_period_count || 0);
+  const confidence = `${overall?.confidence || ''}`.trim();
+  const remainingDays = remainingDaysInPeriod(projection);
+  const progress = periodProgress(projection);
+
+  if (historicalPeriodCount < 3) return false;
+  if (confidence === 'low') return false;
+  if (remainingDays == null || remainingDays < minRemainingDays) return false;
+  if (progress == null || progress < minProgress || progress > maxProgress) return false;
+  return true;
+}
+
 function buildRestockWindowInsights({ projection, watchCandidates = [] }) {
   const insights = [];
   const overall = projection?.overall;
   const projectedBudgetDelta = Number(overall?.projected_budget_delta || 0);
   const projectedHeadroomAmount = projectedBudgetDelta < 0 ? Math.abs(projectedBudgetDelta) : 0;
+  const remainingDays = remainingDaysInPeriod(projection);
   const eligibleCandidates = (watchCandidates || [])
     .filter((candidate) => ['watching', 'due_today', 'overdue'].includes(candidate.status))
     .filter((candidate) => Number(candidate.median_amount || 0) > 0)
     .filter((candidate) => projectedHeadroomAmount >= Number(candidate.median_amount || 0) * 1.25)
+    .filter((candidate) => remainingDays == null || Number(candidate.days_until_due || 0) <= remainingDays)
+    .filter((candidate) => Number(candidate.days_until_due || 0) >= -3)
     .sort((a, b) => a.days_until_due - b.days_until_due || Number(b.median_amount || 0) - Number(a.median_amount || 0));
 
-  if (!overall || Number(overall.historical_period_count || 0) < 3 || projectedHeadroomAmount < 40 || !eligibleCandidates.length) {
+  if (
+    !overall ||
+    !shouldSurfacePositiveOpportunity(projection, { minRemainingDays: 3, minProgress: 0.15, maxProgress: 0.92 }) ||
+    projectedHeadroomAmount < 40 ||
+    !eligibleCandidates.length
+  ) {
     return insights;
   }
 
@@ -353,7 +393,8 @@ function buildProjectionInsights(projection, scope) {
   if (
     historicalPeriodCount >= 3 &&
     adjustedProjectedTotal > 0 &&
-    projectedBudgetDelta <= -40
+    projectedBudgetDelta <= -40 &&
+    shouldSurfacePositiveOpportunity(projection)
   ) {
     insights.push({
       id: `projected_under_budget:${scopeLabel}:${projection.month}`,
@@ -481,7 +522,8 @@ function buildProjectionInsights(projection, scope) {
     lowestCategoryProjection &&
     Number(lowestCategoryProjection.delta_amount || 0) <= -15 &&
     Number(lowestCategoryProjection.delta_percent || 0) <= -10 &&
-    Number(lowestCategoryProjection.unusual_spend_to_date || 0) <= 0
+    Number(lowestCategoryProjection.unusual_spend_to_date || 0) <= 0 &&
+    shouldSurfacePositiveOpportunity(projection, { minRemainingDays: 4, minProgress: 0.15, maxProgress: 0.88 })
   ) {
     insights.push({
       id: `projected_category_under:${scopeLabel}:${projection.month}:${lowestCategoryProjection.category_key}`,
