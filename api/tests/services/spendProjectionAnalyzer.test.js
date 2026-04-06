@@ -1,10 +1,13 @@
 const {
   buildHistoricalCumulativeCurve,
+  buildHistoricalCategoryCurves,
   classifyExpenseNormStatus,
   getCompletedHistoricalPeriods,
   getCurrentPeriodDayIndex,
   getExpectedCumulativeShareByDay,
+  getTopProjectedCategoryPressures,
   periodBounds,
+  projectCategorySpend,
   projectOverallSpend,
   splitNormalVsUnusualSpend,
 } = require('../../src/services/spendProjectionAnalyzer');
@@ -47,6 +50,45 @@ describe('spendProjectionAnalyzer', () => {
     expect(Number(getExpectedCumulativeShareByDay(curve, 1).toFixed(2))).toBe(0.2);
     expect(Number(getExpectedCumulativeShareByDay(curve, 2).toFixed(2))).toBe(0.5);
     expect(Number(getExpectedCumulativeShareByDay(curve, 3).toFixed(2))).toBe(1);
+  });
+
+  it('builds category-level historical curves', () => {
+    const bounds = periodBounds('2026-04', 1);
+    const historicalPeriods = [
+      {
+        ...periodBounds('2026-03', 1),
+        expenses: [
+          { merchant: 'Grocer', amount: 30, date: '2026-03-01', category_key: 'groceries', category_name: 'Groceries' },
+          { merchant: 'Cafe', amount: 30, date: '2026-03-02', category_key: 'dining', category_name: 'Dining' },
+          { merchant: 'Grocer', amount: 40, date: '2026-03-03', category_key: 'groceries', category_name: 'Groceries' },
+        ],
+      },
+      {
+        ...periodBounds('2026-02', 1),
+        expenses: [
+          { merchant: 'Grocer', amount: 20, date: '2026-02-01', category_key: 'groceries', category_name: 'Groceries' },
+          { merchant: 'Cafe', amount: 10, date: '2026-02-02', category_key: 'dining', category_name: 'Dining' },
+          { merchant: 'Grocer', amount: 30, date: '2026-02-03', category_key: 'groceries', category_name: 'Groceries' },
+        ],
+      },
+      {
+        ...periodBounds('2026-01', 1),
+        expenses: [
+          { merchant: 'Grocer', amount: 15, date: '2026-01-01', category_key: 'groceries', category_name: 'Groceries' },
+          { merchant: 'Cafe', amount: 15, date: '2026-01-02', category_key: 'dining', category_name: 'Dining' },
+          { merchant: 'Grocer', amount: 20, date: '2026-01-03', category_key: 'groceries', category_name: 'Groceries' },
+        ],
+      },
+    ];
+
+    const curves = buildHistoricalCategoryCurves(
+      historicalPeriods,
+      Math.round((bounds.toDate - bounds.fromDate) / (1000 * 60 * 60 * 24))
+    );
+
+    expect(curves.groceries.period_count).toBe(3);
+    expect(Number(getExpectedCumulativeShareByDay(curves.groceries, 1).toFixed(2))).toBe(0.42);
+    expect(Number(getExpectedCumulativeShareByDay(curves.groceries, 3).toFixed(2))).toBe(1);
   });
 
   it('classifies a large novel expense as unusual', () => {
@@ -158,6 +200,94 @@ describe('spendProjectionAnalyzer', () => {
     expect(projection.baseline_projected_total).toBeNull();
     expect(projection.adjusted_projected_total).toBeNull();
     expect(projection.confidence).toBeNull();
+  });
+
+  it('projects a category separately from overall spend', () => {
+    const bounds = periodBounds('2026-04', 1);
+    const projection = projectCategorySpend({
+      categoryKey: 'groceries',
+      categoryName: 'Groceries',
+      currentExpenses: [
+        { merchant: 'Grocer', amount: 50, date: '2026-04-01', category_key: 'groceries', category_name: 'Groceries' },
+        { merchant: 'Airline', amount: 300, date: '2026-04-02', category_key: 'travel', category_name: 'Travel' },
+      ],
+      historicalPeriods: [
+        {
+          ...periodBounds('2026-03', 1),
+          expenses: [
+            { merchant: 'Grocer', amount: 30, date: '2026-03-01', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Grocer', amount: 35, date: '2026-03-04', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Cafe', amount: 30, date: '2026-03-02', category_key: 'dining', category_name: 'Dining' },
+          ],
+        },
+        {
+          ...periodBounds('2026-02', 1),
+          expenses: [
+            { merchant: 'Grocer', amount: 20, date: '2026-02-01', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Grocer', amount: 25, date: '2026-02-04', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Cafe', amount: 30, date: '2026-02-02', category_key: 'dining', category_name: 'Dining' },
+          ],
+        },
+        {
+          ...periodBounds('2026-01', 1),
+          expenses: [
+            { merchant: 'Grocer', amount: 10, date: '2026-01-01', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Grocer', amount: 20, date: '2026-01-04', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Cafe', amount: 30, date: '2026-01-02', category_key: 'dining', category_name: 'Dining' },
+          ],
+        },
+      ],
+      bounds,
+      dayIndex: 2,
+    });
+
+    expect(projection.category_key).toBe('groceries');
+    expect(projection.current_spend_to_date).toBe(50);
+    expect(projection.unusual_spend_to_date).toBe(0);
+    expect(projection.baseline_projected_total).toBeCloseTo(121.03, 2);
+    expect(projection.adjusted_projected_total).toBeCloseTo(121.03, 2);
+  });
+
+  it('returns the top projected category pressures', () => {
+    const bounds = periodBounds('2026-04', 1);
+    const categories = getTopProjectedCategoryPressures({
+      currentExpenses: [
+        { merchant: 'Grocer', amount: 50, date: '2026-04-01', category_key: 'groceries', category_name: 'Groceries' },
+        { merchant: 'Cafe', amount: 18, date: '2026-04-02', category_key: 'dining', category_name: 'Dining' },
+      ],
+      historicalPeriods: [
+        {
+          ...periodBounds('2026-03', 1),
+          expenses: [
+            { merchant: 'Grocer', amount: 30, date: '2026-03-01', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Grocer', amount: 35, date: '2026-03-04', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Cafe', amount: 10, date: '2026-03-02', category_key: 'dining', category_name: 'Dining' },
+          ],
+        },
+        {
+          ...periodBounds('2026-02', 1),
+          expenses: [
+            { merchant: 'Grocer', amount: 20, date: '2026-02-01', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Grocer', amount: 25, date: '2026-02-04', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Cafe', amount: 12, date: '2026-02-02', category_key: 'dining', category_name: 'Dining' },
+          ],
+        },
+        {
+          ...periodBounds('2026-01', 1),
+          expenses: [
+            { merchant: 'Grocer', amount: 10, date: '2026-01-01', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Grocer', amount: 20, date: '2026-01-04', category_key: 'groceries', category_name: 'Groceries' },
+            { merchant: 'Cafe', amount: 14, date: '2026-01-02', category_key: 'dining', category_name: 'Dining' },
+          ],
+        },
+      ],
+      bounds,
+      dayIndex: 2,
+    });
+
+    expect(categories).toHaveLength(2);
+    expect(categories[0].category_key).toBe('groceries');
+    expect(categories[1].category_key).toBe('dining');
   });
 
   it('filters completed historical periods based on first expense date and activity', () => {

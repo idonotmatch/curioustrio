@@ -144,6 +144,33 @@ function buildHistoricalCumulativeCurve(periods, targetTotalDays) {
   return { shares, period_count: periods.length };
 }
 
+function filterExpensesByCategory(expenses, categoryKey) {
+  return (expenses || []).filter((expense) => {
+    const normalized = normalizeExpenseRow(expense);
+    return normalized.category_key === categoryKey;
+  });
+}
+
+function buildHistoricalCategoryCurves(periods, targetTotalDays) {
+  const categoryKeys = Array.from(new Set(
+    periods.flatMap((period) => (period.expenses || []).map((expense) => normalizeExpenseRow(expense).category_key))
+  ));
+
+  return categoryKeys.reduce((acc, categoryKey) => {
+    const categoryPeriods = periods
+      .map((period) => ({
+        ...period,
+        expenses: filterExpensesByCategory(period.expenses, categoryKey),
+      }))
+      .filter((period) => (period.expenses || []).length > 0);
+
+    if (!categoryPeriods.length) return acc;
+
+    acc[categoryKey] = buildHistoricalCumulativeCurve(categoryPeriods, targetTotalDays);
+    return acc;
+  }, {});
+}
+
 function getExpectedCumulativeShareByDay(curve, dayIndex) {
   if (!curve?.shares?.length) return null;
   const index = Math.max(1, Math.min(dayIndex, curve.shares.length));
@@ -238,6 +265,92 @@ function splitNormalVsUnusualSpend(currentExpenses, context = {}) {
     unusual_expenses: unusualExpenses,
     top_unusual_expenses: getTopUnusualExpenses(unusualExpenses),
   };
+}
+
+function projectCategorySpend({
+  categoryKey,
+  categoryName,
+  currentExpenses = [],
+  historicalPeriods = [],
+  bounds,
+  dayIndex,
+}) {
+  const totalDays = diffDays(bounds.fromDate, bounds.toDate);
+  const filteredCurrentExpenses = filterExpensesByCategory(currentExpenses, categoryKey);
+  const filteredHistoricalPeriods = historicalPeriods
+    .map((period) => ({
+      ...period,
+      expenses: filterExpensesByCategory(period.expenses, categoryKey),
+    }))
+    .filter((period) => (period.expenses || []).length > 0);
+
+  if (filteredHistoricalPeriods.length < 3) {
+    return null;
+  }
+
+  const curve = buildHistoricalCumulativeCurve(filteredHistoricalPeriods, totalDays);
+  const expectedShare = getExpectedCumulativeShareByDay(curve, dayIndex);
+  const historicalExpenses = filteredHistoricalPeriods.flatMap((period) => period.expenses || []);
+  const split = splitNormalVsUnusualSpend(filteredCurrentExpenses, { historicalExpenses });
+
+  if (!expectedShare || expectedShare < 0.05) {
+    return null;
+  }
+
+  const baseline = split.normal_spend_to_date / expectedShare;
+  const adjusted = baseline + split.unusual_spend_to_date;
+  const confidence = projectionConfidence({
+    historicalPeriodCount: filteredHistoricalPeriods.length,
+    unusualSpendShare: split.unusual_spend_share,
+    expectedShare,
+    dayIndex,
+    totalDays,
+  });
+
+  return {
+    category_key: categoryKey,
+    category_name: categoryName || historicalExpenses[0]?.category_name || 'Uncategorized',
+    current_spend_to_date: filteredCurrentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+    normal_spend_to_date: split.normal_spend_to_date,
+    unusual_spend_to_date: split.unusual_spend_to_date,
+    unusual_spend_share: split.unusual_spend_share,
+    historical_expected_share_by_day: expectedShare,
+    baseline_projected_total: baseline,
+    adjusted_projected_total: adjusted,
+    projection_excluding_unusuals: baseline,
+    confidence,
+    historical_period_count: filteredHistoricalPeriods.length,
+    top_unusual_expenses: split.top_unusual_expenses,
+  };
+}
+
+function getTopProjectedCategoryPressures({
+  currentExpenses = [],
+  historicalPeriods = [],
+  bounds,
+  dayIndex,
+  limit = 3,
+}) {
+  const categoryMap = new Map();
+  currentExpenses.forEach((expense) => {
+    const normalized = normalizeExpenseRow(expense);
+    if (!categoryMap.has(normalized.category_key)) {
+      categoryMap.set(normalized.category_key, normalized.category_name);
+    }
+  });
+
+  return Array.from(categoryMap.entries())
+    .map(([categoryKey, categoryName]) => projectCategorySpend({
+      categoryKey,
+      categoryName,
+      currentExpenses,
+      historicalPeriods,
+      bounds,
+      dayIndex,
+    }))
+    .filter(Boolean)
+    .sort((a, b) => Number(b.adjusted_projected_total || 0) - Number(a.adjusted_projected_total || 0))
+    .slice(0, limit);
 }
 
 function projectionConfidence({ historicalPeriodCount, unusualSpendShare, expectedShare, dayIndex, totalDays }) {
@@ -514,17 +627,27 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
       dayIndex,
       budgetLimit,
     }),
+    categories: getTopProjectedCategoryPressures({
+      currentExpenses,
+      historicalPeriods: hydratedHistoricalPeriods,
+      bounds,
+      dayIndex,
+      limit: 3,
+    }),
   };
 }
 
 module.exports = {
   analyzeSpendProjection,
   buildHistoricalCumulativeCurve,
+  buildHistoricalCategoryCurves,
   classifyExpenseNormStatus,
   getCompletedHistoricalPeriods,
   getCurrentPeriodDayIndex,
   getExpectedCumulativeShareByDay,
+  getTopProjectedCategoryPressures,
   projectOverallSpend,
+  projectCategorySpend,
   splitNormalVsUnusualSpend,
   periodBounds,
 };
