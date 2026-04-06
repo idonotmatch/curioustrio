@@ -136,6 +136,33 @@ router.post('/scenario-memory/:id/watch', async (req, res, next) => {
   }
 });
 
+router.post('/scenario-memory/:id/resolve', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+
+    const action = `${req.body.action || ''}`.trim();
+    if (!['bought', 'not_buying'].includes(action)) {
+      return res.status(400).json({ error: 'action must be bought or not_buying' });
+    }
+
+    let memory = null;
+    try {
+      memory = await ScenarioMemory.resolve(req.params.id, user.id, action, {
+        expenseId: req.body.expense_id || null,
+      });
+    } catch (memoryErr) {
+      console.error('[scenario memory] resolve failed (non-fatal):', memoryErr.message);
+      return res.status(503).json({ error: 'Scenario memory not available yet' });
+    }
+    if (!memory) return res.status(404).json({ error: 'Scenario memory not found' });
+
+    res.json({ scenario_memory: memory });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/scenario-memory/recent', async (req, res, next) => {
   try {
     const user = await getUser(req);

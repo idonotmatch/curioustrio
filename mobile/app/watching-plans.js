@@ -97,6 +97,15 @@ export default function WatchingPlansScreen() {
 
   const sections = buildSections(items);
 
+  async function handleResolve(plan, action) {
+    try {
+      await api.post(`/trends/scenario-memory/${plan.id}/resolve`, { action });
+      load();
+    } catch {
+      // non-fatal
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -153,19 +162,45 @@ export default function WatchingPlansScreen() {
                         </View>
                       </View>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.stopButton}
-                      onPress={async () => {
-                        try {
-                          await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
-                          load();
-                        } catch {
-                          // non-fatal
-                        }
-                      }}
-                    >
-                      <Text style={styles.stopButtonText}>Stop watching</Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionsRow}>
+                      <TouchableOpacity
+                        style={styles.primaryAction}
+                        onPress={() => router.push({
+                          pathname: '/confirm',
+                          params: {
+                            data: JSON.stringify({
+                              merchant: plan.label,
+                              description: plan.label,
+                              amount: Number(plan.amount),
+                              date: new Date().toISOString().slice(0, 10),
+                              source: 'manual',
+                              scenario_memory_id: plan.id,
+                            }),
+                          },
+                        })}
+                      >
+                        <Text style={styles.primaryActionText}>Bought it</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.secondaryAction}
+                        onPress={() => handleResolve(plan, 'not_buying')}
+                      >
+                        <Text style={styles.secondaryActionText}>Not buying it</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.tertiaryAction}
+                        onPress={async () => {
+                          try {
+                            await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
+                            load();
+                          } catch {
+                            // non-fatal
+                          }
+                        }}
+                      >
+                        <Text style={styles.tertiaryActionText}>Stop watching</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })}
@@ -219,8 +254,24 @@ const styles = StyleSheet.create({
   why: { color: '#8f99ac', fontSize: 13, lineHeight: 18, marginTop: 3 },
   status: { color: '#9ca3af', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
   amount: { color: '#f5f5f5', fontSize: 22, fontWeight: '600', letterSpacing: -0.4 },
-  stopButton: {
-    alignSelf: 'flex-start',
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  primaryAction: {
+    borderRadius: 999,
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  primaryActionText: { color: '#000', fontSize: 13, fontWeight: '700' },
+  secondaryAction: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#39424c',
+    backgroundColor: '#1a1f24',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  secondaryActionText: { color: '#e6edf5', fontSize: 13, fontWeight: '600' },
+  tertiaryAction: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#2d3b4a',
@@ -228,5 +279,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  stopButtonText: { color: '#dce8f5', fontSize: 13, fontWeight: '600' },
+  tertiaryActionText: { color: '#dce8f5', fontSize: 13, fontWeight: '600' },
 });

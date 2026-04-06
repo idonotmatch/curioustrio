@@ -127,6 +127,29 @@ async function updateWatch(id, userId, enabled) {
   return normalize(result.rows[0] || null);
 }
 
+async function resolve(id, userId, action, { expenseId = null } = {}) {
+  const result = await db.query(
+    `UPDATE scenario_memory
+     SET resolution_action = $3,
+         resolved_at = NOW(),
+         resolved_expense_id = $4,
+         watch_enabled = FALSE,
+         watch_started_at = NULL,
+         memory_state = 'suppressed',
+         intent_signal = CASE
+           WHEN $3 = 'not_buying' THEN 'not_right_now'
+           ELSE intent_signal
+         END,
+         expires_at = NOW() + INTERVAL '2 days',
+         updated_at = NOW()
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [id, userId, action, expenseId]
+  );
+  return normalize(result.rows[0] || null);
+}
+
 async function listRecentActiveByUser(userId, { limit = 3 } = {}) {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 3, 10));
   const result = await db.query(
@@ -207,6 +230,7 @@ module.exports = {
   findByIdForUser,
   recordIntent,
   updateWatch,
+  resolve,
   listRecentActiveByUser,
   listActiveConsideringByUser,
   listWatchedByUser,

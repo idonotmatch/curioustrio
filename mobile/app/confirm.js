@@ -235,6 +235,16 @@ export default function ConfirmScreen() {
       if (result?.expense?.id) {
         await saveExpenseSnapshot(result.expense);
       }
+      if (parsed?.scenario_memory_id) {
+        try {
+          await api.post(`/trends/scenario-memory/${parsed.scenario_memory_id}/resolve`, {
+            action: 'bought',
+            expense_id: result?.expense?.id || null,
+          });
+        } catch {
+          // non-fatal
+        }
+      }
       await Promise.all([
         invalidateCache(`cache:expenses:${expenseMonth}`),
         invalidateCache(`cache:budget:${expenseMonth}:personal`),
