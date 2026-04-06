@@ -104,7 +104,12 @@ function projectionDeltaCopy(value) {
 }
 
 function recentPlanMetaCopy(plan) {
-  return `${scopeLabel(plan.scope)} · ${plan.memory_state === 'considering' ? 'Still considering' : 'Recent check'}`;
+  const stateLabel = plan?.watch_enabled
+    ? 'Watching'
+    : plan?.memory_state === 'considering'
+      ? 'Still considering'
+      : 'Recent check';
+  return `${scopeLabel(plan.scope)} · ${stateLabel}`;
 }
 
 function recentPlanChangeCopy(plan) {
@@ -156,6 +161,7 @@ export default function ScenarioCheckScreen() {
   const [scenarioMemory, setScenarioMemory] = useState(null);
   const [recentPlans, setRecentPlans] = useState([]);
   const [intentLoading, setIntentLoading] = useState('');
+  const [watchLoading, setWatchLoading] = useState(false);
   const autoRanRef = useRef(false);
   const bootstrappedInitialResultRef = useRef(false);
   const isAutoRunning = `${params.auto_run}` === '1' && !scenario && loading;
@@ -244,6 +250,23 @@ export default function ScenarioCheckScreen() {
       // non-fatal
     } finally {
       setIntentLoading('');
+    }
+  }
+
+  async function handleWatchToggle(enabled) {
+    if (!scenarioMemory?.id || watchLoading) return;
+    try {
+      setWatchLoading(true);
+      setError('');
+      const data = await api.post(`/trends/scenario-memory/${scenarioMemory.id}/watch`, {
+        enabled,
+      });
+      setScenarioMemory(data?.scenario_memory || scenarioMemory);
+      loadRecentPlans();
+    } catch (err) {
+      setError(err?.message || 'Could not update this watch right now.');
+    } finally {
+      setWatchLoading(false);
     }
   }
 
@@ -379,9 +402,28 @@ export default function ScenarioCheckScreen() {
               </View>
             ) : null}
 
-            <View style={styles.watchPlaceholder}>
-              <Text style={styles.watchPlaceholderText}>Watch this scenario</Text>
-              <Text style={styles.watchPlaceholderMeta}>Reserved for the next step: keep monitoring this purchase over time.</Text>
+            <View style={styles.watchCard}>
+              <Text style={styles.watchTitle}>
+                {scenarioMemory?.watch_enabled ? 'Keeping an eye on this' : 'Keep an eye on this'}
+              </Text>
+              <Text style={styles.watchMeta}>
+                {scenarioMemory?.watch_enabled
+                  ? 'Adlo will hold onto this plan longer and keep checking whether it gets easier or tighter.'
+                  : 'Only watched plans stick around longer for ongoing re-checks.'}
+              </Text>
+              <TouchableOpacity
+                style={[styles.watchButton, scenarioMemory?.watch_enabled && styles.watchButtonActive]}
+                onPress={() => handleWatchToggle(!scenarioMemory?.watch_enabled)}
+                disabled={watchLoading || !scenarioMemory?.id}
+              >
+                {watchLoading ? (
+                  <ActivityIndicator color={scenarioMemory?.watch_enabled ? '#f5f5f5' : '#000'} size="small" />
+                ) : (
+                  <Text style={[styles.watchButtonText, scenarioMemory?.watch_enabled && styles.watchButtonTextActive]}>
+                    {scenarioMemory?.watch_enabled ? 'Stop watching' : 'Watch this plan'}
+                  </Text>
+                )}
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -676,14 +718,31 @@ const styles = StyleSheet.create({
   candidateName: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   candidateMeta: { fontSize: 12, color: '#888', marginTop: 2 },
   candidateAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
-  watchPlaceholder: {
+  watchCard: {
     borderWidth: 1,
     borderColor: '#2a2a2a',
-    borderStyle: 'dashed',
     borderRadius: 14,
     padding: 14,
-    gap: 6,
+    gap: 10,
+    backgroundColor: '#0f1216',
   },
-  watchPlaceholderText: { color: '#d4d4d4', fontSize: 15, fontWeight: '600' },
-  watchPlaceholderMeta: { color: '#7b7b7b', fontSize: 13, lineHeight: 18 },
+  watchTitle: { color: '#dfe7ef', fontSize: 15, fontWeight: '600' },
+  watchMeta: { color: '#8fa0b2', fontSize: 13, lineHeight: 18 },
+  watchButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minWidth: 130,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  watchButtonActive: {
+    backgroundColor: '#1f2c39',
+    borderWidth: 1,
+    borderColor: '#31485d',
+  },
+  watchButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
+  watchButtonTextActive: { color: '#f5f5f5' },
 });

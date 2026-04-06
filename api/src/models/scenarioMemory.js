@@ -4,6 +4,7 @@ function normalize(row) {
   if (!row) return null;
   return {
     ...row,
+    watch_enabled: Boolean(row.watch_enabled),
     amount: row.amount != null ? Number(row.amount) : null,
     previous_risk_adjusted_headroom_amount: row.previous_risk_adjusted_headroom_amount != null ? Number(row.previous_risk_adjusted_headroom_amount) : null,
     last_projected_headroom_amount: row.last_projected_headroom_amount != null ? Number(row.last_projected_headroom_amount) : null,
@@ -77,16 +78,51 @@ async function findByIdForUser(id, userId) {
 async function recordIntent(id, userId, intentSignal) {
   const state = intentSignal === 'considering' ? 'considering' : 'suppressed';
   const expiresInterval = intentSignal === 'considering' ? `INTERVAL '21 days'` : `INTERVAL '2 days'`;
+  const watchDisableClause = intentSignal === 'considering'
+    ? ''
+    : `,
+         watch_enabled = FALSE,
+         watch_started_at = NULL`;
   const result = await db.query(
     `UPDATE scenario_memory
      SET intent_signal = $3,
          memory_state = $4,
          expires_at = NOW() + ${expiresInterval},
+         ${watchDisableClause}
          updated_at = NOW()
      WHERE id = $1
        AND user_id = $2
      RETURNING *`,
     [id, userId, intentSignal, state]
+  );
+  return normalize(result.rows[0] || null);
+}
+
+async function updateWatch(id, userId, enabled) {
+  const result = await db.query(
+    `UPDATE scenario_memory
+     SET watch_enabled = $3,
+         watch_started_at = CASE
+           WHEN $3 THEN COALESCE(watch_started_at, NOW())
+           ELSE NULL
+         END,
+         memory_state = CASE
+           WHEN $3 THEN 'considering'
+           ELSE memory_state
+         END,
+         intent_signal = CASE
+           WHEN $3 THEN COALESCE(intent_signal, 'considering')
+           ELSE intent_signal
+         END,
+         expires_at = CASE
+           WHEN $3 THEN GREATEST(expires_at, NOW() + INTERVAL '45 days')
+           ELSE expires_at
+         END,
+         updated_at = NOW()
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [id, userId, Boolean(enabled)]
   );
   return normalize(result.rows[0] || null);
 }
@@ -155,6 +191,7 @@ module.exports = {
   create,
   findByIdForUser,
   recordIntent,
+  updateWatch,
   listRecentActiveByUser,
   listActiveConsideringByUser,
   updateEvaluation,

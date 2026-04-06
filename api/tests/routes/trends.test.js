@@ -34,6 +34,8 @@ beforeAll(async () => {
        last_recurring_pressure_amount NUMERIC(12,2),
        last_material_change TEXT
          CHECK (last_material_change IN ('improved', 'worsened', 'unchanged')),
+       watch_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+       watch_started_at TIMESTAMPTZ,
        previous_affordability_status TEXT,
        previous_risk_adjusted_headroom_amount NUMERIC(12,2),
        last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -46,6 +48,8 @@ beforeAll(async () => {
   await db.query(
     `ALTER TABLE scenario_memory
        ADD COLUMN IF NOT EXISTS last_material_change TEXT,
+       ADD COLUMN IF NOT EXISTS watch_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+       ADD COLUMN IF NOT EXISTS watch_started_at TIMESTAMPTZ,
        ADD COLUMN IF NOT EXISTS previous_affordability_status TEXT,
        ADD COLUMN IF NOT EXISTS previous_risk_adjusted_headroom_amount NUMERIC(12,2)`
   );
@@ -357,6 +361,39 @@ describe('POST /trends/scenario-check', () => {
     expect(intentRes.status).toBe(200);
     expect(intentRes.body.scenario_memory.intent_signal).toBe('considering');
     expect(intentRes.body.scenario_memory.memory_state).toBe('considering');
+  });
+
+  it('enables watching for a scenario memory', async () => {
+    const inserted = await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         memory_state,
+         intent_signal,
+         last_affordability_status,
+         last_can_absorb,
+         last_evaluated_at,
+         expires_at
+       )
+       VALUES (
+         $1, 'personal', 'Desk lamp', 80, '2026-04',
+         'considering', 'considering', 'absorbable', TRUE, NOW(), NOW() + INTERVAL '7 days'
+       )
+       RETURNING id`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post(`/trends/scenario-memory/${inserted.rows[0].id}/watch`)
+      .send({ enabled: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario_memory.watch_enabled).toBe(true);
+    expect(res.body.scenario_memory.memory_state).toBe('considering');
+    expect(res.body.scenario_memory.watch_started_at).toBeTruthy();
   });
 
   it('lists recent active scenario memories for the user', async () => {
