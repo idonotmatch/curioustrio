@@ -101,6 +101,10 @@ describe('GET /trends/summary', () => {
     expect(res.body.pace.historical_spend_to_date_avg).toBeGreaterThan(0);
     expect(res.body.budget_adherence.budget_limit).toBe(500);
     expect(res.body.budget_adherence.budget_fit).toBe('too_low');
+    expect(res.body.projection).toBeTruthy();
+    expect(res.body.projection.scope).toBe('personal');
+    expect(res.body.projection.overall.historical_period_count).toBeGreaterThanOrEqual(3);
+    expect(res.body.projection.overall.adjusted_projected_total).toBeGreaterThan(0);
   });
 
   it('returns household trend summary when user is in a household', async () => {
@@ -134,6 +138,8 @@ describe('GET /trends/summary', () => {
     expect(res.body.pace.current_spend_to_date).toBeGreaterThan(0);
     expect(res.body.pace.historical_period_count).toBe(3);
     expect(res.body.budget_adherence.budget_limit).toBe(700);
+    expect(res.body.projection.scope).toBe('household');
+    expect(res.body.projection.overall.adjusted_projected_total).toBeGreaterThan(0);
   });
 
   it('ignores sparse prior months when deciding whether trend history exists', async () => {
@@ -150,6 +156,8 @@ describe('GET /trends/summary', () => {
     expect(res.body.pace.historical_period_count).toBe(0);
     expect(res.body.pace.historical_spend_to_date_avg).toBeNull();
     expect(res.body.budget_adherence.historical_period_count).toBe(0);
+    expect(res.body.projection.overall.historical_period_count).toBe(0);
+    expect(res.body.projection.overall.adjusted_projected_total).toBeNull();
   });
 
   it('does not fabricate historical trend windows before the user started logging data', async () => {
@@ -159,5 +167,51 @@ describe('GET /trends/summary', () => {
     expect(res.body.pace.historical_spend_to_date_avg).toBeNull();
     expect(res.body.budget_adherence.historical_period_count).toBe(0);
     expect(res.body.budget_adherence.budget_fit).toBeNull();
+    expect(res.body.projection.overall.historical_period_count).toBe(0);
+    expect(res.body.projection.overall.adjusted_projected_total).toBeNull();
+  });
+
+  it('splits unusual spend out of the baseline projection', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 600)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO categories (id, household_id, name)
+       VALUES
+       ('11111111-1111-1111-1111-111111111111', NULL, 'Groceries'),
+       ('22222222-2222-2222-2222-222222222222', NULL, 'Travel')
+       ON CONFLICT (id) DO NOTHING`
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, merchant, amount, date, source, status, category_id)
+       VALUES
+       ($1, 'Grocer', 50, '2026-04-01', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Airline', 300, '2026-04-02', 'manual', 'confirmed', '22222222-2222-2222-2222-222222222222'),
+       ($1, 'Grocer', 30, '2026-03-01', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Grocer', 35, '2026-03-04', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Cafe', 30, '2026-03-02', 'manual', 'confirmed', NULL),
+       ($1, 'Gas', 40, '2026-03-03', 'manual', 'confirmed', NULL),
+       ($1, 'Grocer', 20, '2026-02-01', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Grocer', 25, '2026-02-04', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Cafe', 30, '2026-02-02', 'manual', 'confirmed', NULL),
+       ($1, 'Gas', 50, '2026-02-03', 'manual', 'confirmed', NULL),
+       ($1, 'Grocer', 10, '2026-01-01', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Grocer', 20, '2026-01-04', 'manual', 'confirmed', '11111111-1111-1111-1111-111111111111'),
+       ($1, 'Cafe', 30, '2026-01-02', 'manual', 'confirmed', NULL),
+       ($1, 'Gas', 60, '2026-01-03', 'manual', 'confirmed', NULL)`,
+      [userId]
+    );
+
+    const res = await request(app).get('/trends/summary?scope=personal&month=2026-04');
+    expect(res.status).toBe(200);
+    expect(res.body.projection.overall.normal_spend_to_date).toBe(50);
+    expect(res.body.projection.overall.unusual_spend_to_date).toBe(300);
+    expect(res.body.projection.overall.adjusted_projected_total).toBeGreaterThan(
+      res.body.projection.overall.baseline_projected_total
+    );
+    expect(res.body.projection.overall.top_unusual_expenses[0].merchant).toBe('Airline');
   });
 });

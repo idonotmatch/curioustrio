@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const { analyzeSpendingTrend } = require('../services/spendingTrendAnalyzer');
+const { analyzeSpendProjection } = require('../services/spendProjectionAnalyzer');
 
 router.use(authenticate);
 
@@ -25,7 +26,15 @@ router.get('/summary', async (req, res, next) => {
       scope: requestedScope,
       month: req.query.month || null,
     });
-    res.json(summary);
+    const projection = await analyzeSpendProjection({
+      user,
+      scope: requestedScope,
+      month: req.query.month || null,
+    });
+    res.json({
+      ...summary,
+      projection,
+    });
   } catch (err) {
     next(err);
   }

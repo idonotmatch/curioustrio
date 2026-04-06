@@ -1,5 +1,6 @@
 const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('./recurringDetector');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
+const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
@@ -262,6 +263,83 @@ function buildTrendInsights(trend, scope) {
   return insights;
 }
 
+function buildProjectionInsights(projection, scope) {
+  const insights = [];
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+  const scopeLabel = scope === 'household' ? 'household' : 'personal';
+  const overall = projection?.overall;
+
+  if (!overall) return insights;
+
+  const projectedBudgetDelta = Number(overall.projected_budget_delta || 0);
+  const adjustedProjectedTotal = Number(overall.adjusted_projected_total || 0);
+  const unusualSpendShare = Number(overall.unusual_spend_share || 0);
+  const unusualSpendToDate = Number(overall.unusual_spend_to_date || 0);
+  const historicalPeriodCount = Number(overall.historical_period_count || 0);
+
+  if (
+    historicalPeriodCount >= 3 &&
+    adjustedProjectedTotal > 0 &&
+    projectedBudgetDelta >= 50
+  ) {
+    insights.push({
+      id: `projected_over_budget:${scopeLabel}:${projection.month}`,
+      type: 'projected_month_end_over_budget',
+      title: `Your ${scopeLabel} spending is projected to finish high`,
+      body: `Based on your historical spend shape so far this period, you are on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} above budget by month end.`,
+      severity: projectedBudgetDelta >= 125 ? 'high' : 'medium',
+      entity_type: 'budget',
+      entity_id: `${scopeLabel}:total`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection.month,
+        adjusted_projected_total: adjustedProjectedTotal,
+        baseline_projected_total: Number(overall.baseline_projected_total || 0),
+        projected_budget_delta: projectedBudgetDelta,
+        confidence: overall.confidence,
+        historical_period_count: historicalPeriodCount,
+      },
+      actions: [],
+    });
+  }
+
+  if (
+    historicalPeriodCount >= 3 &&
+    unusualSpendToDate >= 75 &&
+    unusualSpendShare >= 0.35 &&
+    overall.top_unusual_expenses?.length
+  ) {
+    const topExpense = overall.top_unusual_expenses[0];
+    insights.push({
+      id: `projection_one_off:${scopeLabel}:${projection.month}:${topExpense.id || topExpense.merchant}`,
+      type: 'one_off_expense_skewing_projection',
+      title: 'One unusual purchase is skewing the projection',
+      body: `${topExpense.merchant} is contributing a meaningful share of this month’s projected overage, so your baseline spend is more normal than the all-in projection suggests.`,
+      severity: unusualSpendShare >= 0.55 ? 'high' : 'medium',
+      entity_type: 'expense',
+      entity_id: topExpense.id || `${scopeLabel}:${projection.month}:${topExpense.merchant}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection.month,
+        unusual_spend_to_date: unusualSpendToDate,
+        unusual_spend_share: unusualSpendShare,
+        top_unusual_expense: topExpense,
+        adjusted_projected_total: adjustedProjectedTotal,
+        baseline_projected_total: Number(overall.baseline_projected_total || 0),
+        confidence: overall.confidence,
+      },
+      actions: [],
+    });
+  }
+
+  return insights;
+}
+
 function severityRank(severity) {
   if (severity === 'high') return 3;
   if (severity === 'medium') return 2;
@@ -399,11 +477,15 @@ async function buildInsights({ user, limit = 10 }) {
   if (user?.id) {
     const personalTrend = await analyzeSpendingTrend({ user, scope: 'personal' });
     insightSets.push(buildTrendInsights(personalTrend, 'personal'));
+    const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
+    insightSets.push(buildProjectionInsights(personalProjection, 'personal'));
   }
 
   if (user?.household_id && hasMultipleHouseholdMembers) {
     const householdTrend = await analyzeSpendingTrend({ user, scope: 'household' });
     insightSets.push(buildTrendInsights(householdTrend, 'household'));
+    const householdProjection = await analyzeSpendProjection({ user, scope: 'household' });
+    insightSets.push(buildProjectionInsights(householdProjection, 'household'));
   }
 
   const deduped = dedupeInsights(

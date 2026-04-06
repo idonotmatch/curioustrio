@@ -31,6 +31,17 @@ beforeAll(async () => {
   );
 
   await db.query(
+    `ALTER TABLE insight_events
+     DROP CONSTRAINT IF EXISTS insight_events_event_type_check`
+  );
+
+  await db.query(
+    `ALTER TABLE insight_events
+     ADD CONSTRAINT insight_events_event_type_check
+     CHECK (event_type IN ('shown', 'tapped', 'dismissed', 'acted', 'helpful', 'not_helpful'))`
+  );
+
+  await db.query(
     `CREATE TABLE IF NOT EXISTS insight_notifications (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -48,6 +59,26 @@ beforeAll(async () => {
       status TEXT NOT NULL CHECK (status IN ('seen', 'dismissed')),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (user_id, insight_id)
+    )`
+  );
+
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS product_price_observations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+      comparable_key TEXT,
+      merchant TEXT NOT NULL,
+      observed_price NUMERIC(10,2) NOT NULL CHECK (observed_price > 0),
+      observed_unit_price NUMERIC(10,4),
+      normalized_total_size_value NUMERIC(10,3),
+      normalized_total_size_unit TEXT,
+      url TEXT,
+      source_type TEXT NOT NULL,
+      source_key TEXT,
+      metadata JSONB,
+      observed_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (product_id IS NOT NULL OR comparable_key IS NOT NULL)
     )`
   );
 
@@ -235,7 +266,67 @@ describe('GET /insights', () => {
     const res = await request(app).get('/insights?limit=10');
     expect(res.status).toBe(200);
     expect(res.body.map((insight) => insight.type)).toEqual(
-      expect.arrayContaining(['spend_pace_ahead', 'budget_too_low'])
+      expect.arrayContaining(['spend_pace_behind', 'budget_too_low'])
+    );
+  });
+
+  it('returns projection insights for projected over-budget and one-off skew', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+
+    const groceriesCategory = await db.query(
+      `INSERT INTO categories (household_id, name, icon, color)
+       VALUES ($1, 'Groceries', 'cart', '#4ade80')
+       RETURNING id`,
+      [householdId]
+    );
+    const travelCategory = await db.query(
+      `INSERT INTO categories (household_id, name, icon, color)
+       VALUES ($1, 'Travel', 'plane', '#60a5fa')
+       RETURNING id`,
+      [householdId]
+    );
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 250)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, category_id)
+       VALUES
+       ($1, $2, 'Grocer', 50, ($3 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Airline', 300, ($3 || '-02')::date, 'manual', 'confirmed', $5),
+       ($1, $2, 'Grocer', 30, ($6 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Grocer', 35, ($6 || '-04')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 30, ($6 || '-02')::date, 'manual', 'confirmed', NULL),
+       ($1, $2, 'Gas', 40, ($6 || '-03')::date, 'manual', 'confirmed', NULL),
+       ($1, $2, 'Grocer', 20, ($7 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Grocer', 25, ($7 || '-04')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 30, ($7 || '-02')::date, 'manual', 'confirmed', NULL),
+       ($1, $2, 'Gas', 50, ($7 || '-03')::date, 'manual', 'confirmed', NULL),
+       ($1, $2, 'Grocer', 10, ($8 || '-01')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Grocer', 20, ($8 || '-04')::date, 'manual', 'confirmed', $4),
+       ($1, $2, 'Cafe', 30, ($8 || '-02')::date, 'manual', 'confirmed', NULL),
+       ($1, $2, 'Gas', 60, ($8 || '-03')::date, 'manual', 'confirmed', NULL)`,
+      [
+        userId,
+        householdId,
+        month,
+        groceriesCategory.rows[0].id,
+        travelCategory.rows[0].id,
+        prior1,
+        prior2,
+        prior3,
+      ]
+    );
+
+    const res = await request(app).get('/insights?limit=10');
+    expect(res.status).toBe(200);
+    expect(res.body.map((insight) => insight.type)).toEqual(
+      expect.arrayContaining(['projected_month_end_over_budget', 'one_off_expense_skewing_projection'])
     );
   });
 
