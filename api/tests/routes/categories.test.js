@@ -107,6 +107,7 @@ describe('PATCH /categories/:id', () => {
 
 describe('quick category creation', () => {
   it('suggests a likely parent from merchant memory', async () => {
+    await ensureHouseholdUser();
     const parent = await request(app).post('/categories').send({ name: 'Food' });
     const child = await request(app).post('/categories').send({ name: 'Groceries', parent_id: parent.body.id });
 
@@ -147,6 +148,7 @@ describe('quick category creation', () => {
   });
 
   it('falls back to Uncategorized when no strong parent match exists', async () => {
+    await ensureHouseholdUser();
     const created = await request(app)
       .post('/categories/quick')
       .send({ name: 'Random New Bucket' });
@@ -161,6 +163,7 @@ describe('quick category creation', () => {
 
 describe('POST /categories/:id/merge', () => {
   it('merges a leaf category into another category and reassigns expenses', async () => {
+    await ensureHouseholdUser();
     const target = await request(app).post('/categories').send({ name: 'MergeTarget' });
     const source = await request(app).post('/categories').send({ name: 'MergeSource' });
 
@@ -194,6 +197,7 @@ describe('POST /categories/:id/merge', () => {
   });
 
   it('rejects merging a category that still has children', async () => {
+    await ensureHouseholdUser();
     const source = await request(app).post('/categories').send({ name: 'MergeParent' });
     const child = await request(app).post('/categories').send({ name: 'MergeChild', parent_id: source.body.id });
     const target = await request(app).post('/categories').send({ name: 'MergeOther' });

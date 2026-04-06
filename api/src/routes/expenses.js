@@ -8,6 +8,7 @@ const Category = require('../models/category');
 const MerchantMapping = require('../models/merchantMapping');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
+const EmailImportLog = require('../models/emailImportLog');
 const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
@@ -20,6 +21,35 @@ router.use(authenticate);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);
+}
+
+function collectChangedFields(originalExpense, patch = {}) {
+  const changedFields = [];
+  const fieldPairs = [
+    ['merchant', patch.merchant],
+    ['amount', patch.amount],
+    ['date', patch.date],
+    ['category_id', patch.category_id],
+    ['notes', patch.notes],
+    ['payment_method', patch.payment_method],
+    ['card_last4', patch.card_last4],
+    ['card_label', patch.card_label],
+    ['is_private', patch.is_private],
+    ['place_name', patch.place_name],
+    ['address', patch.address],
+    ['mapkit_stable_id', patch.mapkit_stable_id],
+  ];
+
+  for (const [field, nextValue] of fieldPairs) {
+    if (nextValue === undefined) continue;
+    const currentValue = originalExpense?.[field];
+    if (`${currentValue ?? ''}` !== `${nextValue ?? ''}`) {
+      changedFields.push(field);
+    }
+  }
+
+  if (patch.items !== undefined) changedFields.push('items');
+  return [...new Set(changedFields)];
 }
 
 function parseStartDay(value, fallback) {
@@ -268,6 +298,9 @@ router.post('/:id/dismiss', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    if (expense.source === 'email') {
+      await EmailImportLog.recordReviewFeedback(expense.id, { action: 'dismissed' });
+    }
     res.json(expense);
   } catch (err) { next(err); }
 });
@@ -278,6 +311,9 @@ router.post('/:id/approve', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const expense = await Expense.updateStatus(req.params.id, user.id, 'confirmed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    if (expense.source === 'email') {
+      await EmailImportLog.recordReviewFeedback(expense.id, { action: 'approved' });
+    }
     res.json(expense);
   } catch (err) { next(err); }
 });
@@ -333,6 +369,13 @@ router.patch('/:id', async (req, res, next) => {
     }
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const originalExpense = await Expense.findById(req.params.id);
+    if (!originalExpense || originalExpense.user_id !== user.id) {
+      return res.status(404).json({ error: 'Expense not found' });
+    }
+    const changedFields = originalExpense.source === 'email'
+      ? collectChangedFields(originalExpense, req.body)
+      : [];
     const expense = await Expense.update(req.params.id, user.id, {
       merchant,
       amount,
@@ -350,6 +393,13 @@ router.patch('/:id', async (req, res, next) => {
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (items !== undefined) {
       await ExpenseItem.replaceItems(req.params.id, Array.isArray(items) ? items : []);
+    }
+    if (expense.source === 'email' && changedFields.length) {
+      await EmailImportLog.recordReviewFeedback(expense.id, {
+        action: 'edited',
+        changedFields,
+        incrementEditCount: true,
+      });
     }
     res.json(expense);
   } catch (err) { next(err); }

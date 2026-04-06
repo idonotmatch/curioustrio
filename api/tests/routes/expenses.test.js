@@ -34,6 +34,17 @@ beforeEach(() => {
 });
 
 beforeAll(async () => {
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS email_import_feedback (
+       expense_id UUID PRIMARY KEY REFERENCES expenses(id) ON DELETE CASCADE,
+       review_action TEXT CHECK (review_action IN ('approved', 'dismissed', 'edited')),
+       review_changed_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+       review_edit_count INT NOT NULL DEFAULT 0,
+       reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`
+  );
+
   // Create a household and associate the test user with it
   const hhResult = await db.query(
     `INSERT INTO households (name) VALUES ('Test Household') RETURNING id`
@@ -55,6 +66,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Clean up test data (do NOT call db.pool.end())
+  await db.query(
+    `DELETE FROM email_import_feedback
+     WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
+    [householdId]
+  );
+  await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM duplicate_flags WHERE expense_id_a IN (
     SELECT id FROM expenses WHERE household_id = $1
   )`, [householdId]);
@@ -350,6 +367,32 @@ describe('POST /expenses/:id/dismiss', () => {
     expect(res.body.id).toBe(expenseId);
   });
 
+  it('records Gmail import dismissal feedback for email-sourced pending expenses', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'EmailDismiss', 7.00, '2026-03-17', 'email', 'pending') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'dismiss-feedback-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+
+    const res = await request(app).post(`/expenses/${expenseId}/dismiss`);
+    expect(res.status).toBe(200);
+
+    const log = await db.query(
+      `SELECT review_action, reviewed_at
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('dismissed');
+    expect(log.rows[0].reviewed_at).toBeTruthy();
+  });
+
   it('returns 404 for non-owned expense', async () => {
     // Insert expense owned by a different user
     const otherUserResult = await db.query(
@@ -447,6 +490,39 @@ describe('PATCH /expenses/:id', () => {
     expect(res.body.notes).toBe('updated note');
   });
 
+  it('records Gmail import edit feedback and changed fields for email-sourced expenses', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes)
+       VALUES ($1, $2, 'OriginalEmailMerchant', 20.00, '2026-03-15', 'email', 'pending', 'Imported from Gmail')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'edit-feedback-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({ merchant: 'UpdatedEmailMerchant', amount: 25.00, notes: 'updated note' });
+
+    expect(res.status).toBe(200);
+
+    const log = await db.query(
+      `SELECT review_action, review_edit_count, review_changed_fields
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('edited');
+    expect(Number(log.rows[0].review_edit_count)).toBe(1);
+    expect(log.rows[0].review_changed_fields).toEqual(
+      expect.arrayContaining(['merchant', 'amount', 'notes'])
+    );
+  });
+
   it('replaces items when items payload is provided', async () => {
     const userResult = await db.query(
       `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
@@ -532,6 +608,35 @@ describe('PATCH /expenses/:id', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/uuid/i);
+  });
+});
+
+describe('POST /expenses/:id/approve', () => {
+  it('records Gmail import approval feedback for email-sourced pending expenses', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'EmailApprove', 9.00, '2026-03-17', 'email', 'pending') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'approve-feedback-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+
+    const res = await request(app).post(`/expenses/${expenseId}/approve`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('confirmed');
+
+    const log = await db.query(
+      `SELECT review_action, reviewed_at
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('approved');
+    expect(log.rows[0].reviewed_at).toBeTruthy();
   });
 });
 
@@ -655,8 +760,8 @@ describe('POST /expenses/scan', () => {
   });
 });
 
-describe('POST /expenses/confirm — no location fields stored', () => {
-  it('does not store or return place_name or address', async () => {
+describe('POST /expenses/confirm — location fields stored when provided', () => {
+  it('stores and returns place_name and address', async () => {
     const res = await request(app)
       .post('/expenses/confirm')
       .send({
@@ -664,8 +769,8 @@ describe('POST /expenses/confirm — no location fields stored', () => {
         place_name: 'Test Cafe Downtown', address: '123 Main St',
       });
     expect(res.status).toBe(201);
-    expect(res.body.expense).not.toHaveProperty('place_name');
-    expect(res.body.expense).not.toHaveProperty('address');
+    expect(res.body.expense.place_name).toBe('Test Cafe Downtown');
+    expect(res.body.expense.address).toBe('123 Main St');
   });
 });
 
@@ -680,10 +785,10 @@ describe('POST /expenses/parse — input length limit', () => {
 });
 
 describe('POST /expenses/scan — image size limit', () => {
-  it('returns 400 when image_base64 exceeds 1.4MB', async () => {
+  it('returns 400 when image_base64 exceeds the route limit', async () => {
     const res = await request(app)
       .post('/expenses/scan')
-      .send({ image_base64: 'a'.repeat(1_400_001), today: '2026-03-29' });
+      .send({ image_base64: 'a'.repeat(3_000_001), today: '2026-03-29' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/too large/i);
   });

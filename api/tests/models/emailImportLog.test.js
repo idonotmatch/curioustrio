@@ -4,6 +4,17 @@ const EmailImportLog = require('../../src/models/emailImportLog');
 let testUserId;
 
 beforeAll(async () => {
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS email_import_feedback (
+       expense_id UUID PRIMARY KEY REFERENCES expenses(id) ON DELETE CASCADE,
+       review_action TEXT CHECK (review_action IN ('approved', 'dismissed', 'edited')),
+       review_changed_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+       review_edit_count INT NOT NULL DEFAULT 0,
+       reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`
+  );
+
   const result = await db.query(
     `INSERT INTO users (provider_uid, name, email)
      VALUES ('test-auth0-email-log', 'Email Log Test User', 'emaillog@test.com')
@@ -14,6 +25,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.query(
+    `DELETE FROM email_import_feedback
+     WHERE expense_id IN (SELECT id FROM expenses WHERE user_id = $1)`,
+    [testUserId]
+  );
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [testUserId]);
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [testUserId]);
   await db.query(`DELETE FROM users WHERE provider_uid = 'test-auth0-email-log'`);
@@ -75,6 +91,35 @@ describe('EmailImportLog.findByMessageId', () => {
     const found = await EmailImportLog.findByMessageId(testUserId, 'nonexistent-msg-id');
 
     expect(found).toBeNull();
+  });
+});
+
+describe('EmailImportLog.recordReviewFeedback', () => {
+  it('records review actions and changed fields for imported expenses', async () => {
+    const expenseResult = await db.query(
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes)
+       VALUES ($1, 'Review Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review')
+       RETURNING id`,
+      [testUserId]
+    );
+
+    await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-review-feedback',
+      expenseId: expenseResult.rows[0].id,
+      status: 'imported',
+    });
+
+    const updated = await EmailImportLog.recordReviewFeedback(expenseResult.rows[0].id, {
+      action: 'edited',
+      changedFields: ['merchant', 'amount'],
+      incrementEditCount: true,
+    });
+
+    expect(updated.review_action).toBe('edited');
+    expect(updated.review_edit_count).toBe(1);
+    expect(updated.review_changed_fields).toEqual(expect.arrayContaining(['merchant', 'amount']));
+    expect(updated.reviewed_at).toBeDefined();
   });
 });
 
@@ -142,6 +187,9 @@ describe('EmailImportLog.summarizeByUser', () => {
     expect(summary.imported_pending_review).toBeGreaterThanOrEqual(1);
     expect(summary.skipped).toBeGreaterThanOrEqual(1);
     expect(summary.failed).toBeGreaterThanOrEqual(1);
+    expect(summary.reviewed_approved).toBeGreaterThanOrEqual(0);
+    expect(summary.reviewed_dismissed).toBeGreaterThanOrEqual(0);
+    expect(summary.reviewed_edited).toBeGreaterThanOrEqual(0);
     expect(summary.reasons).toEqual(expect.arrayContaining([
       { reason: 'Network error', count: expect.any(Number) },
       { reason: 'classifier_uncertain', count: expect.any(Number) },

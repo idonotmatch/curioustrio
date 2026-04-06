@@ -40,6 +40,17 @@ let householdId;
 let userId;
 
 beforeAll(async () => {
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS email_import_feedback (
+       expense_id UUID PRIMARY KEY REFERENCES expenses(id) ON DELETE CASCADE,
+       review_action TEXT CHECK (review_action IN ('approved', 'dismissed', 'edited')),
+       review_changed_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+       review_edit_count INT NOT NULL DEFAULT 0,
+       reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`
+  );
+
   const hhResult = await db.query(
     `INSERT INTO households (name) VALUES ('Gmail Test Household') RETURNING id`
   );
@@ -55,6 +66,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.query(
+    `DELETE FROM email_import_feedback
+     WHERE expense_id IN (SELECT id FROM expenses WHERE user_id = $1)`,
+    [userId]
+  );
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [userId]);
@@ -79,6 +95,11 @@ beforeEach(async () => {
   assignCategory.mockReset();
   // Clean state between tests
   await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
+  await db.query(
+    `DELETE FROM email_import_feedback
+     WHERE expense_id IN (SELECT id FROM expenses WHERE user_id = $1)`,
+    [userId]
+  );
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [userId]);
@@ -414,6 +435,9 @@ describe('GET /gmail/import-summary', () => {
       imported_pending_review: 1,
       skipped: 1,
       failed: 1,
+      reviewed_approved: 0,
+      reviewed_dismissed: 0,
+      reviewed_edited: 0,
     });
     expect(res.body.last_imported_at).toBeTruthy();
     expect(res.body.last_synced_at).toBeNull();
@@ -421,5 +445,6 @@ describe('GET /gmail/import-summary', () => {
       { reason: 'Network error', count: 1 },
       { reason: 'classifier_uncertain', count: 1 },
     ]));
+    expect(res.body.changed_fields).toEqual([]);
   });
 });
