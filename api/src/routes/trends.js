@@ -226,16 +226,21 @@ router.get('/scenario-memory/watching', async (req, res, next) => {
     }
 
     let items = [];
+    let deferredItems = [];
     try {
       items = await ScenarioMemory.listWatchedByUser(user.id, {
+        limit: req.query.limit || 10,
+      });
+      deferredItems = await ScenarioMemory.listDeferredByUser(user.id, {
         limit: req.query.limit || 10,
       });
     } catch (listErr) {
       console.error('[scenario memory] watched list failed (non-fatal):', listErr.message);
       items = [];
+      deferredItems = [];
     }
 
-    res.json({ items });
+    res.json({ items, deferred_items: deferredItems });
   } catch (err) {
     next(err);
   }

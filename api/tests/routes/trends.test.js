@@ -591,11 +591,13 @@ describe('POST /trends/scenario-check', () => {
          last_affordability_status,
          last_can_absorb,
          last_evaluated_at,
-         expires_at
+         expires_at,
+         deferred_until_month
        )
        VALUES
-       ($1, NULL, 'personal', 'Running shoes', 180, '2026-04', 'considering', 'considering', TRUE, NOW(), 'absorbable', true, NOW(), NOW() + INTERVAL '14 days'),
-       ($1, NULL, 'household', 'Air fryer', 240, '2026-04', 'considering', 'considering', TRUE, NOW(), 'tight', false, NOW() - INTERVAL '1 day', NOW() + INTERVAL '14 days')`,
+       ($1, NULL, 'personal', 'Running shoes', 180, '2026-04', 'considering', 'considering', TRUE, NOW(), 'absorbable', true, NOW(), NOW() + INTERVAL '14 days', NULL),
+       ($1, NULL, 'household', 'Air fryer', 240, '2026-04', 'considering', 'considering', TRUE, NOW(), 'tight', false, NOW() - INTERVAL '1 day', NOW() + INTERVAL '14 days', NULL),
+       ($1, NULL, 'personal', 'Patio chairs', 260, '2026-04', 'deferred', 'not_right_now', FALSE, NULL, 'tight', false, NOW() - INTERVAL '2 days', NOW() + INTERVAL '30 days', '2026-05')`,
       [userId]
     );
 
@@ -605,5 +607,9 @@ describe('POST /trends/scenario-check', () => {
     expect(Array.isArray(res.body.items)).toBe(true);
     expect(res.body.items).toHaveLength(2);
     expect(res.body.items.every((item) => item.watch_enabled)).toBe(true);
+    expect(Array.isArray(res.body.deferred_items)).toBe(true);
+    expect(res.body.deferred_items).toHaveLength(1);
+    expect(res.body.deferred_items[0].label).toBe('Patio chairs');
+    expect(res.body.deferred_items[0].deferred_until_month).toBe('2026-05');
   });
 });

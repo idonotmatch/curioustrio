@@ -25,6 +25,19 @@ function statusLabel(status) {
   }
 }
 
+function monthLabel(month) {
+  const [yearRaw, monthRaw] = `${month || ''}`.split('-');
+  const year = Number(yearRaw);
+  const monthNumber = Number(monthRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+    return 'next month';
+  }
+  return new Date(year, monthNumber - 1, 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 function changeCopy(plan) {
   if (plan?.last_material_change === 'improved') return 'Looks easier now';
   if (plan?.last_material_change === 'worsened') return 'Tighter than before';
@@ -78,6 +91,7 @@ export default function WatchingPlansScreen() {
   const router = useRouter();
   const { resolved, label } = useLocalSearchParams();
   const [items, setItems] = useState([]);
+  const [deferredItems, setDeferredItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -85,8 +99,10 @@ export default function WatchingPlansScreen() {
       setLoading(true);
       const data = await api.get('/trends/scenario-memory/watching?limit=20');
       setItems(Array.isArray(data?.items) ? data.items : []);
+      setDeferredItems(Array.isArray(data?.deferred_items) ? data.deferred_items : []);
     } catch {
       setItems([]);
+      setDeferredItems([]);
     } finally {
       setLoading(false);
     }
@@ -140,21 +156,139 @@ export default function WatchingPlansScreen() {
             <ActivityIndicator color="#f5f5f5" />
           </View>
         ) : items.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No watched plans yet</Text>
-            <Text style={styles.emptyBody}>
-              Watch a plan from a scenario result to keep an eye on it here.
-            </Text>
-          </View>
+          <>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No watched plans yet</Text>
+              <Text style={styles.emptyBody}>
+                Watch a plan from a scenario result to keep an eye on it here.
+              </Text>
+            </View>
+            {deferredItems.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Coming back next month</Text>
+                {deferredItems.map((plan) => (
+                  <View key={plan.id} style={styles.deferredCard}>
+                    <View style={styles.rowTop}>
+                      <View style={styles.textCol}>
+                        <Text style={styles.label}>{plan.label}</Text>
+                        <Text style={styles.meta}>{scopeLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
+                      </View>
+                      <View style={styles.rightCol}>
+                        <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
+                        <Text style={styles.amount}>{formatCurrency(plan.amount)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.actionsRow}>
+                      <TouchableOpacity
+                        style={styles.secondaryAction}
+                        onPress={async () => {
+                          try {
+                            await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: true });
+                            load();
+                          } catch {
+                            // non-fatal
+                          }
+                        }}
+                      >
+                        <Text style={styles.secondaryActionText}>Watch again now</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </>
         ) : (
-          sections.map((section) => (
-            <View key={section.key} style={styles.section}>
-              <Text style={styles.sectionLabel}>{section.title}</Text>
-              {section.items.map((plan) => {
-                const change = changeCopy(plan);
-                const why = whyChangedCopy(plan);
-                return (
-                  <View key={plan.id} style={styles.card}>
+          <>
+            {sections.map((section) => (
+              <View key={section.key} style={styles.section}>
+                <Text style={styles.sectionLabel}>{section.title}</Text>
+                {section.items.map((plan) => {
+                  const change = changeCopy(plan);
+                  const why = whyChangedCopy(plan);
+                  return (
+                    <View key={plan.id} style={styles.card}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => router.push({
+                          pathname: '/scenario-check',
+                          params: {
+                            month: plan.month,
+                            scope: plan.scope,
+                            amount: `${plan.amount}`,
+                            label: plan.label,
+                            auto_run: '1',
+                          },
+                        })}
+                      >
+                        <View style={styles.rowTop}>
+                          <View style={styles.textCol}>
+                            <Text style={styles.label}>{plan.label}</Text>
+                            <Text style={styles.meta}>{scopeLabel(plan.scope)} · Watching</Text>
+                            {change ? <Text style={styles.change}>{change}</Text> : null}
+                            {why ? <Text style={styles.why}>{why}</Text> : null}
+                          </View>
+                          <View style={styles.rightCol}>
+                            <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
+                            <Text style={styles.amount}>{formatCurrency(plan.amount)}</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                      <View style={styles.actionsRow}>
+                        <TouchableOpacity
+                          style={styles.primaryAction}
+                          onPress={() => router.push({
+                            pathname: '/confirm',
+                            params: {
+                              data: JSON.stringify({
+                                merchant: plan.label,
+                                description: plan.label,
+                                amount: Number(plan.amount),
+                                date: new Date().toISOString().slice(0, 10),
+                                source: 'manual',
+                                scenario_memory_id: plan.id,
+                              }),
+                            },
+                          })}
+                        >
+                          <Text style={styles.primaryActionText}>Bought it</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.secondaryAction}
+                          onPress={() => handleDefer(plan)}
+                        >
+                          <Text style={styles.secondaryActionText}>Revisit next month</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.tertiaryAction}
+                          onPress={() => handleResolve(plan, 'not_buying')}
+                        >
+                          <Text style={styles.tertiaryActionText}>Not buying it</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.quaternaryAction}
+                          onPress={async () => {
+                            try {
+                              await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
+                              load();
+                            } catch {
+                              // non-fatal
+                            }
+                          }}
+                        >
+                          <Text style={styles.quaternaryActionText}>Stop watching</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
+            {deferredItems.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Coming back next month</Text>
+                {deferredItems.map((plan) => (
+                  <View key={plan.id} style={styles.deferredCard}>
                     <TouchableOpacity
                       activeOpacity={0.85}
                       onPress={() => router.push({
@@ -164,16 +298,13 @@ export default function WatchingPlansScreen() {
                           scope: plan.scope,
                           amount: `${plan.amount}`,
                           label: plan.label,
-                          auto_run: '1',
                         },
                       })}
                     >
                       <View style={styles.rowTop}>
                         <View style={styles.textCol}>
                           <Text style={styles.label}>{plan.label}</Text>
-                          <Text style={styles.meta}>{scopeLabel(plan.scope)} · Watching</Text>
-                          {change ? <Text style={styles.change}>{change}</Text> : null}
-                          {why ? <Text style={styles.why}>{why}</Text> : null}
+                          <Text style={styles.meta}>{scopeLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
                         </View>
                         <View style={styles.rightCol}>
                           <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
@@ -183,54 +314,24 @@ export default function WatchingPlansScreen() {
                     </TouchableOpacity>
                     <View style={styles.actionsRow}>
                       <TouchableOpacity
-                        style={styles.primaryAction}
-                        onPress={() => router.push({
-                          pathname: '/confirm',
-                          params: {
-                            data: JSON.stringify({
-                              merchant: plan.label,
-                              description: plan.label,
-                              amount: Number(plan.amount),
-                              date: new Date().toISOString().slice(0, 10),
-                              source: 'manual',
-                              scenario_memory_id: plan.id,
-                            }),
-                          },
-                        })}
-                      >
-                        <Text style={styles.primaryActionText}>Bought it</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
                         style={styles.secondaryAction}
-                        onPress={() => handleDefer(plan)}
-                      >
-                        <Text style={styles.secondaryActionText}>Revisit next month</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.tertiaryAction}
-                        onPress={() => handleResolve(plan, 'not_buying')}
-                      >
-                        <Text style={styles.tertiaryActionText}>Not buying it</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.quaternaryAction}
                         onPress={async () => {
                           try {
-                            await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
+                            await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: true });
                             load();
                           } catch {
                             // non-fatal
                           }
                         }}
                       >
-                        <Text style={styles.quaternaryActionText}>Stop watching</Text>
+                        <Text style={styles.secondaryActionText}>Watch again now</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
-                );
-              })}
-            </View>
-          ))
+                ))}
+              </View>
+            ) : null}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -276,6 +377,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
     borderWidth: 1,
     borderColor: '#212121',
+    borderRadius: 16,
+    padding: 16,
+    gap: 14,
+  },
+  deferredCard: {
+    backgroundColor: '#101113',
+    borderWidth: 1,
+    borderColor: '#1f2328',
     borderRadius: 16,
     padding: 16,
     gap: 14,

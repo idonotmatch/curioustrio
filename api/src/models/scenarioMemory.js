@@ -233,6 +233,21 @@ async function listWatchedByUser(userId, { limit = 10 } = {}) {
   return result.rows.map(normalize);
 }
 
+async function listDeferredByUser(userId, { limit = 10 } = {}) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 10, 50));
+  const result = await db.query(
+    `SELECT *
+     FROM scenario_memory
+     WHERE user_id = $1
+       AND expires_at > NOW()
+       AND memory_state = 'deferred'
+     ORDER BY deferred_until_month ASC NULLS LAST, updated_at DESC, created_at DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+  return result.rows.map(normalize);
+}
+
 async function updateEvaluation(id, userId, scenario, materialChange = 'unchanged') {
   const result = await db.query(
     `UPDATE scenario_memory
@@ -273,5 +288,6 @@ module.exports = {
   listRecentActiveByUser,
   listActiveConsideringByUser,
   listWatchedByUser,
+  listDeferredByUser,
   updateEvaluation,
 };
