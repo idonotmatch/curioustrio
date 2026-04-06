@@ -32,12 +32,22 @@ beforeAll(async () => {
        last_projected_headroom_amount NUMERIC(12,2),
        last_risk_adjusted_headroom_amount NUMERIC(12,2),
        last_recurring_pressure_amount NUMERIC(12,2),
+       last_material_change TEXT
+         CHECK (last_material_change IN ('improved', 'worsened', 'unchanged')),
+       previous_affordability_status TEXT,
+       previous_risk_adjusted_headroom_amount NUMERIC(12,2),
        last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
        last_resurfaced_at TIMESTAMPTZ,
        expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
      )`
+  );
+  await db.query(
+    `ALTER TABLE scenario_memory
+       ADD COLUMN IF NOT EXISTS last_material_change TEXT,
+       ADD COLUMN IF NOT EXISTS previous_affordability_status TEXT,
+       ADD COLUMN IF NOT EXISTS previous_risk_adjusted_headroom_amount NUMERIC(12,2)`
   );
 
   const userResult = await db.query(
@@ -379,5 +389,58 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.items).toHaveLength(2);
     expect(res.body.items.map((item) => item.label)).toEqual(expect.arrayContaining(['Running shoes', 'Air fryer']));
     expect(res.body.items.find((item) => item.label === 'Patio set')).toBeUndefined();
+  });
+
+  it('passively refreshes considering plans when loading recent memories', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 40, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 20, '2026-04-02', 'manual', 'confirmed'),
+       ($1, 60, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 40, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 30, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-02-05', 'manual', 'confirmed'),
+       ($1, 50, '2026-01-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-01-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-01-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         household_id,
+         scope,
+         label,
+         amount,
+         month,
+         memory_state,
+         intent_signal,
+         last_affordability_status,
+         last_can_absorb,
+         last_risk_adjusted_headroom_amount,
+         last_evaluated_at,
+         expires_at
+       )
+       VALUES
+       ($1, NULL, 'personal', 'Standing desk', 75, '2026-04', 'considering', 'considering', 'tight', true, 10, NOW() - INTERVAL '2 days', NOW() + INTERVAL '10 days')`,
+      [userId]
+    );
+
+    const res = await request(app).get('/trends/scenario-memory/recent?limit=5');
+
+    expect(res.status).toBe(200);
+    const refreshed = res.body.items.find((item) => item.label === 'Standing desk');
+    expect(refreshed).toBeTruthy();
+    expect(refreshed.last_evaluated_at).toBeTruthy();
+    expect(['improved', 'worsened', 'unchanged']).toContain(refreshed.last_material_change);
   });
 });

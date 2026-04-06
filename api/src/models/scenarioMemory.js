@@ -5,6 +5,7 @@ function normalize(row) {
   return {
     ...row,
     amount: row.amount != null ? Number(row.amount) : null,
+    previous_risk_adjusted_headroom_amount: row.previous_risk_adjusted_headroom_amount != null ? Number(row.previous_risk_adjusted_headroom_amount) : null,
     last_projected_headroom_amount: row.last_projected_headroom_amount != null ? Number(row.last_projected_headroom_amount) : null,
     last_risk_adjusted_headroom_amount: row.last_risk_adjusted_headroom_amount != null ? Number(row.last_risk_adjusted_headroom_amount) : null,
     last_recurring_pressure_amount: row.last_recurring_pressure_amount != null ? Number(row.last_recurring_pressure_amount) : null,
@@ -105,9 +106,56 @@ async function listRecentActiveByUser(userId, { limit = 3 } = {}) {
   return result.rows.map(normalize);
 }
 
+async function listActiveConsideringByUser(userId, { limit = 10 } = {}) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 10, 25));
+  const result = await db.query(
+    `SELECT *
+     FROM scenario_memory
+     WHERE user_id = $1
+       AND expires_at > NOW()
+       AND memory_state = 'considering'
+     ORDER BY last_evaluated_at DESC, created_at DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+  return result.rows.map(normalize);
+}
+
+async function updateEvaluation(id, userId, scenario, materialChange = 'unchanged') {
+  const result = await db.query(
+    `UPDATE scenario_memory
+     SET previous_affordability_status = last_affordability_status,
+         previous_risk_adjusted_headroom_amount = last_risk_adjusted_headroom_amount,
+         last_affordability_status = $3,
+         last_can_absorb = $4,
+         last_projected_headroom_amount = $5,
+         last_risk_adjusted_headroom_amount = $6,
+         last_recurring_pressure_amount = $7,
+         last_material_change = $8,
+         last_evaluated_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [
+      id,
+      userId,
+      scenario?.status || null,
+      scenario?.can_absorb ?? null,
+      scenario?.projected_headroom_amount ?? null,
+      scenario?.risk_adjusted_headroom_amount ?? null,
+      scenario?.recurring_pressure_amount ?? null,
+      materialChange,
+    ]
+  );
+  return normalize(result.rows[0] || null);
+}
+
 module.exports = {
   create,
   findByIdForUser,
   recordIntent,
   listRecentActiveByUser,
+  listActiveConsideringByUser,
+  updateEvaluation,
 };

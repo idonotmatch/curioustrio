@@ -5,6 +5,7 @@ const User = require('../models/user');
 const ScenarioMemory = require('../models/scenarioMemory');
 const { analyzeSpendingTrend } = require('../services/spendingTrendAnalyzer');
 const { analyzeSpendProjection, evaluateScenarioAffordability } = require('../services/spendProjectionAnalyzer');
+const { refreshConsideringScenarios } = require('../services/scenarioMemoryService');
 
 router.use(authenticate);
 
@@ -106,6 +107,10 @@ router.get('/scenario-memory/recent', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced' });
+
+    await refreshConsideringScenarios(user, {
+      limit: Math.max(1, Math.min(Number(req.query.limit) || 3, 5)),
+    });
 
     const items = await ScenarioMemory.listRecentActiveByUser(user.id, {
       limit: req.query.limit || 3,
