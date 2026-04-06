@@ -272,6 +272,139 @@ describe('POST /gmail/import', () => {
     expect(expense.rows[0].notes).toMatch(/needs review/i);
   });
 
+  it('skips fallback imports from noisy senders with poor review history', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    const dismissedOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Messy Shop', 12.34, '2026-03-01', 'dismissed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const editedOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Messy Shop', 18.99, '2026-03-02', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const editedTwo = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Messy Shop', 21.50, '2026-03-03', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address)
+       VALUES
+         ($1, 'messy-1', $2, 'imported', 'alerts@messy.com'),
+         ($1, 'messy-2', $3, 'imported', 'alerts@messy.com'),
+         ($1, 'messy-3', $4, 'imported', 'alerts@messy.com')`,
+      [userId, dismissedOne.rows[0].id, editedOne.rows[0].id, editedTwo.rows[0].id]
+    );
+    await db.query(
+      `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+       VALUES
+         ($1, 'dismissed', '[]'::jsonb, 0),
+         ($2, 'approved', '["merchant"]'::jsonb, 1),
+         ($3, 'approved', '["amount"]'::jsonb, 1)`,
+      [dismissedOne.rows[0].id, editedOne.rows[0].id, editedTwo.rows[0].id]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'uncertain-noisy-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your order details',
+      from: 'alerts@messy.com',
+      body: 'Thanks for your purchase. Grand total: $41.22.',
+      snippet: 'Grand total: $41.22',
+      receivedAt: '2026-03-21',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'uncertain', merchant: 'Messy Shop', reason: 'missing structured receipt' });
+    parseEmailExpense.mockResolvedValue(null);
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(0);
+    expect(res.body.skipped).toBe(1);
+    expect(res.body.outcomes.skipped_reasons.low_sender_quality).toBe(1);
+  });
+
+  it('reduces unnecessary review notes for trusted senders', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    const cleanOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Amazon', 12.34, '2026-03-01', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const cleanTwo = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Amazon', 18.99, '2026-03-02', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const cleanThree = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Amazon', 21.50, '2026-03-03', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address)
+       VALUES
+         ($1, 'trusted-1', $2, 'imported', 'orders@amazon.com'),
+         ($1, 'trusted-2', $3, 'imported', 'orders@amazon.com'),
+         ($1, 'trusted-3', $4, 'imported', 'orders@amazon.com')`,
+      [userId, cleanOne.rows[0].id, cleanTwo.rows[0].id, cleanThree.rows[0].id]
+    );
+    await db.query(
+      `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+       VALUES
+         ($1, 'approved', '[]'::jsonb, 0),
+         ($2, 'approved', '[]'::jsonb, 0),
+         ($3, 'approved', '["merchant"]'::jsonb, 1)`,
+      [cleanOne.rows[0].id, cleanTwo.rows[0].id, cleanThree.rows[0].id]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'trusted-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Order Confirmation',
+      from: 'orders@amazon.com',
+      body: 'Total: $29.99',
+      snippet: 'Total: $29.99',
+      receivedAt: '2026-03-21',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Amazon', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Amazon',
+      amount: 29.99,
+      date: '2026-03-21',
+      notes: 'Imported from Gmail (needs review)',
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.outcomes.imported_parsed).toBe(1);
+    expect(res.body.outcomes.imported_pending_review).toBe(0);
+
+    const expense = await db.query(
+      `SELECT notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
+    expect(expense.rows[0].notes).not.toMatch(/needs review/i);
+  });
+
   it('surfaces classifier false negatives when the email still has strong transaction signals', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)

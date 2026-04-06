@@ -4,7 +4,11 @@ jest.mock('../../src/models/emailImportLog', () => ({
 }));
 
 const EmailImportLog = require('../../src/models/emailImportLog');
-const { getGmailImportQualitySummary, extractSenderDomain } = require('../../src/services/gmailImportQualityService');
+const {
+  getGmailImportQualitySummary,
+  extractSenderDomain,
+  getSenderImportQuality,
+} = require('../../src/services/gmailImportQualityService');
 
 describe('gmailImportQualityService', () => {
   beforeEach(() => {
@@ -87,5 +91,28 @@ describe('gmailImportQualityService', () => {
         edited: 1,
       }),
     ]));
+  });
+
+  it('classifies sender domains as trusted or noisy based on review history', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0 },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0 },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 1 },
+      { from_address: 'alerts@messy.com', review_action: 'dismissed', review_edit_count: 0 },
+      { from_address: 'alerts@messy.com', review_action: null, review_edit_count: 1 },
+      { from_address: 'alerts@messy.com', review_action: null, review_edit_count: 1 },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'orders@amazon.com')).resolves.toMatchObject({
+      sender_domain: 'amazon.com',
+      level: 'trusted',
+      metrics: expect.objectContaining({ imported: 3 }),
+    });
+
+    await expect(getSenderImportQuality('user-1', 'alerts@messy.com')).resolves.toMatchObject({
+      sender_domain: 'messy.com',
+      level: 'noisy',
+      metrics: expect.objectContaining({ imported: 3 }),
+    });
   });
 });

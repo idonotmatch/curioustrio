@@ -17,6 +17,7 @@ const { assignCategory } = require('./categoryAssigner');
 const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
+const { getSenderImportQuality } = require('./gmailImportQualityService');
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -124,6 +125,7 @@ async function importForUser(user) {
       const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msg.id);
       msgSubject = subject;
       msgFrom = from;
+      const senderQuality = await getSenderImportQuality(user.id, from);
       const classification = await classifyEmailExpense(body, subject, from, todayDate, snippet);
       const signals = analyzeEmailSignals(subject, from, body);
 
@@ -158,6 +160,16 @@ async function importForUser(user) {
           increment(outcomes.skipped_reasons, skipReason);
           continue;
         }
+        if (senderQuality.level === 'noisy') {
+          const skipReason = 'low_sender_quality';
+          await EmailImportLog.create({
+            userId: user.id, messageId: msg.id, status: 'skipped',
+            subject, fromAddress: from, skipReason,
+          });
+          skipped++;
+          increment(outcomes.skipped_reasons, skipReason);
+          continue;
+        }
         const fallbackExpense = {
           merchant: classification.merchant || guessMerchant(subject, from),
           amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
@@ -182,6 +194,23 @@ async function importForUser(user) {
           body,
           reason: importedAsPendingReview ? 'needs review' : 'imported from gmail',
         });
+      }
+      if (senderQuality.level === 'trusted' && !importedAsPendingReview && /needs review/i.test(parsed.notes || '')) {
+        parsed.notes = buildReviewNotes({
+          subject,
+          snippet,
+          body,
+          reason: 'imported from gmail',
+        });
+      }
+      if (senderQuality.level === 'noisy' && !/needs review/i.test(parsed.notes || '')) {
+        parsed.notes = buildReviewNotes({
+          subject,
+          snippet,
+          body,
+          reason: 'needs review',
+        });
+        importedAsPendingReview = true;
       }
 
       const duplicateCandidates = await Expense.findPotentialDuplicates({

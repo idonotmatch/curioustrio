@@ -10,6 +10,38 @@ function toRate(numerator, denominator) {
   return Number((numerator / denominator).toFixed(4));
 }
 
+function summarizeSenderRows(rows = []) {
+  const imported = rows.length;
+  let reviewed = 0;
+  let cleanApproved = 0;
+  let approvedAfterChanges = 0;
+  let dismissed = 0;
+  let edited = 0;
+
+  for (const row of rows) {
+    const editCount = Number(row.review_edit_count || 0);
+    const hasReview = !!row.review_action || editCount > 0;
+    if (hasReview) reviewed += 1;
+    if (row.review_action === 'dismissed') dismissed += 1;
+    if (row.review_action === 'approved' && editCount === 0) cleanApproved += 1;
+    if (row.review_action === 'approved' && editCount > 0) approvedAfterChanges += 1;
+    if (editCount > 0) edited += 1;
+  }
+
+  return {
+    imported,
+    reviewed,
+    clean_approved: cleanApproved,
+    approved_after_changes: approvedAfterChanges,
+    dismissed,
+    edited,
+    clean_approval_rate: toRate(cleanApproved, imported),
+    dismissal_rate: toRate(dismissed, imported),
+    edit_rate: toRate(edited, imported),
+    review_rate: toRate(reviewed, imported),
+  };
+}
+
 function buildSenderSummary(rows, limit = 5) {
   const grouped = new Map();
 
@@ -98,4 +130,32 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
   };
 }
 
-module.exports = { getGmailImportQualitySummary, extractSenderDomain };
+async function getSenderImportQuality(userId, fromAddress, days = 90) {
+  const senderDomain = extractSenderDomain(fromAddress);
+  const rows = await EmailImportLog.listQualitySignalsByUser(userId, days);
+  const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
+  const metrics = summarizeSenderRows(senderRows);
+
+  let level = 'unknown';
+  if (metrics.imported >= 3) {
+    if (metrics.clean_approval_rate >= 0.6 && metrics.dismissal_rate <= 0.15 && metrics.edit_rate <= 0.35) {
+      level = 'trusted';
+    } else if (metrics.dismissal_rate >= 0.4 || metrics.edit_rate >= 0.6) {
+      level = 'noisy';
+    } else {
+      level = 'mixed';
+    }
+  }
+
+  return {
+    sender_domain: senderDomain,
+    level,
+    metrics,
+  };
+}
+
+module.exports = {
+  getGmailImportQualitySummary,
+  extractSenderDomain,
+  getSenderImportQuality,
+};
