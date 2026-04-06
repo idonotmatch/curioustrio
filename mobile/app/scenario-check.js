@@ -114,6 +114,11 @@ function recentPlanChangeCopy(plan) {
   return '';
 }
 
+function recentPlanStatusCopy(plan) {
+  if (!plan?.last_affordability_status) return '';
+  return statusConfig(plan.last_affordability_status).label;
+}
+
 export default function ScenarioCheckScreen() {
   const params = useLocalSearchParams();
   const { selectedMonth, startDay } = useMonth();
@@ -162,6 +167,36 @@ export default function ScenarioCheckScreen() {
       setScenarioMemory(data?.scenario_memory || null);
     } catch (err) {
       setError(err?.message || 'Could not run this scenario right now.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rerunPlan(nextPlan) {
+    if (!nextPlan?.amount || loading) return;
+    const nextScope = nextPlan.scope === 'household' && isMultiMember ? 'household' : 'personal';
+    const nextLabel = nextPlan.label || 'purchase';
+    const nextAmount = Number(nextPlan.amount);
+    const nextMonth = nextPlan.month || targetMonth;
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) return;
+
+    try {
+      setLoading(true);
+      setError('');
+      setAmount(`${nextAmount}`);
+      setLabel(nextLabel);
+      setScope(nextScope);
+      const data = await api.post('/trends/scenario-check', {
+        scope: nextScope,
+        month: nextMonth,
+        proposed_amount: nextAmount,
+        label: nextLabel,
+      });
+      setResult(data);
+      setScenarioMemory(data?.scenario_memory || null);
+      loadRecentPlans();
+    } catch (err) {
+      setError(err?.message || 'Could not re-check this plan right now.');
     } finally {
       setLoading(false);
     }
@@ -397,25 +432,28 @@ export default function ScenarioCheckScreen() {
             <Text style={styles.cardTitle}>Recent plans</Text>
             {recentPlans.map((plan) => {
               const isCurrent = scenarioMemory?.id && scenarioMemory.id === plan.id;
+              const changeCopy = recentPlanChangeCopy(plan);
+              const statusCopy = recentPlanStatusCopy(plan);
               return (
                 <TouchableOpacity
                   key={plan.id}
                   style={[styles.recentPlanRow, isCurrent && styles.recentPlanRowActive]}
                   activeOpacity={0.85}
-                  onPress={() => {
-                    setAmount(`${plan.amount}`);
-                    setLabel(plan.label || '');
-                    setScope(plan.scope === 'household' && isMultiMember ? 'household' : 'personal');
-                  }}
+                  onPress={() => rerunPlan(plan)}
                 >
                   <View style={styles.recentPlanText}>
                     <Text style={styles.recentPlanLabel}>{plan.label}</Text>
                     <Text style={styles.recentPlanMeta}>{recentPlanMetaCopy(plan)}</Text>
-                    {recentPlanChangeCopy(plan) ? (
-                      <Text style={styles.recentPlanChange}>{recentPlanChangeCopy(plan)}</Text>
+                    {changeCopy ? (
+                      <Text style={styles.recentPlanChange}>{changeCopy}</Text>
                     ) : null}
                   </View>
-                  <Text style={styles.recentPlanAmount}>{formatCurrency(plan.amount)}</Text>
+                  <View style={styles.recentPlanRight}>
+                    {statusCopy ? (
+                      <Text style={styles.recentPlanStatus}>{statusCopy}</Text>
+                    ) : null}
+                    <Text style={styles.recentPlanAmount}>{formatCurrency(plan.amount)}</Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -595,9 +633,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   recentPlanText: { flex: 1 },
+  recentPlanRight: { alignItems: 'flex-end', gap: 5 },
   recentPlanLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   recentPlanMeta: { fontSize: 12, color: '#888', marginTop: 2 },
   recentPlanChange: { fontSize: 12, color: '#b8c8ff', marginTop: 4, fontWeight: '500' },
+  recentPlanStatus: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 },
   recentPlanAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
   candidateRow: {
     flexDirection: 'row',
