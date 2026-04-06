@@ -123,7 +123,13 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       <View style={[styles.container, pending && styles.containerPending]}>
         <TouchableOpacity
           style={styles.rowPress}
-          onPress={() => router.push(`/expense/${localExpense.id}`)}
+          onPress={() => router.push({
+            pathname: '/expense/[id]',
+            params: {
+              id: localExpense.id,
+              expense: JSON.stringify(localExpense),
+            },
+          })}
           activeOpacity={0.7}
         >
           <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : color }]} />

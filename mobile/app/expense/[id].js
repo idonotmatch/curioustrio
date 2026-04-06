@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
 import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
@@ -17,8 +18,100 @@ function formatLikelyFields(fields = []) {
   return fields.slice(0, 3).map((field) => `${field}`.replace(/_/g, ' ')).join(', ');
 }
 
+function parseExpenseParam(value) {
+  if (!value || typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function applyExpenseToState(record, setters) {
+  if (!record) return;
+  const {
+    setExpense,
+    setMerchant,
+    setAmount,
+    setDate,
+    setNotes,
+    setCategoryId,
+    setPaymentMethod,
+    setCardLast4,
+    setCardLabel,
+    setIsPrivate,
+    setItems,
+    setLocationData,
+    setItemsEdits,
+  } = setters;
+  setExpense(record);
+  setMerchant(record.merchant || '');
+  setAmount(String(Math.abs(Number(record.amount))));
+  setDate(record.date ? record.date.slice(0, 10) : '');
+  setNotes(record.notes || '');
+  setCategoryId(record.category_id || null);
+  setPaymentMethod(record.payment_method || 'unknown');
+  setCardLast4(record.card_last4 || '');
+  setCardLabel(record.card_label || '');
+  setIsPrivate(record.is_private || false);
+  setItems(record.items || []);
+  setLocationData(
+    record.place_name || record.address || record.mapkit_stable_id
+      ? {
+          place_name: record.place_name || '',
+          address: record.address || null,
+          mapkit_stable_id: record.mapkit_stable_id || null,
+        }
+      : null
+  );
+  setItemsEdits((record.items || []).map((it) => ({
+    ...it,
+    description: it.description,
+    amount: it.amount != null ? String(it.amount) : '',
+  })));
+}
+
+async function loadCachedExpenseSnapshot(id) {
+  const directKeys = [`cache:expense-detail:${id}`, 'cache:expenses:pending'];
+  for (const key of directKeys) {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+      const { data } = JSON.parse(raw);
+      if (key === `cache:expense-detail:${id}` && data?.id === id) return data;
+      if (Array.isArray(data)) {
+        const found = data.find((item) => item?.id === id);
+        if (found) return found;
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const listKeys = keys.filter((key) => key.startsWith('cache:expenses:') || key.startsWith('cache:household-expenses:'));
+    for (const key of listKeys) {
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) continue;
+        const { data } = JSON.parse(raw);
+        if (!Array.isArray(data)) continue;
+        const found = data.find((item) => item?.id === id);
+        if (found) return found;
+      } catch {
+        // keep searching
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  return null;
+}
+
 export default function ExpenseDetailScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, expense: expenseParam } = useLocalSearchParams();
   const router = useRouter();
   const { categories } = useCategories();
   const { userId: currentUserId } = useCurrentUser();
@@ -49,37 +142,45 @@ export default function ExpenseDetailScreen() {
   const [recurringNotes, setRecurringNotes] = useState('');
 
   useEffect(() => {
-    api.get(`/expenses/${id}`)
-      .then(e => {
-        setExpense(e);
-        setMerchant(e.merchant || '');
-        setAmount(String(Math.abs(Number(e.amount))));
-        setDate(e.date ? e.date.slice(0, 10) : '');
-        setNotes(e.notes || '');
-        setCategoryId(e.category_id || null);
-        setPaymentMethod(e.payment_method || 'unknown');
-        setCardLast4(e.card_last4 || '');
-        setCardLabel(e.card_label || '');
-        setIsPrivate(e.is_private || false);
-        setItems(e.items || []);
-        setLocationData(
-          e.place_name || e.address || e.mapkit_stable_id
-            ? {
-                place_name: e.place_name || '',
-                address: e.address || null,
-                mapkit_stable_id: e.mapkit_stable_id || null,
-              }
-            : null
-        );
-        setItemsEdits((e.items || []).map(it => ({
-          ...it,
-          description: it.description,
-          amount: it.amount != null ? String(it.amount) : '',
-        })));
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+    let active = true;
+    const routeExpense = parseExpenseParam(typeof expenseParam === 'string' ? expenseParam : null);
+
+    async function load() {
+      const setters = {
+        setExpense,
+        setMerchant,
+        setAmount,
+        setDate,
+        setNotes,
+        setCategoryId,
+        setPaymentMethod,
+        setCardLast4,
+        setCardLabel,
+        setIsPrivate,
+        setItems,
+        setLocationData,
+        setItemsEdits,
+      };
+      const bootstrapped = routeExpense || await loadCachedExpenseSnapshot(id);
+      if (active && bootstrapped) {
+        applyExpenseToState(bootstrapped, setters);
+        setLoading(false);
+      }
+
+      try {
+        const fresh = await api.get(`/expenses/${id}`);
+        if (!active) return;
+        applyExpenseToState(fresh, setters);
+        setLoading(false);
+        AsyncStorage.setItem(`cache:expense-detail:${id}`, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+      } catch {
+        if (active && !bootstrapped) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { active = false; };
+  }, [id, expenseParam]);
 
   useEffect(() => {
     api.get(`/recurring/preferences?expense_id=${encodeURIComponent(id)}`)

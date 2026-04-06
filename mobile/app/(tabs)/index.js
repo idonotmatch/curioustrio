@@ -224,7 +224,13 @@ export default function FeedScreen() {
             >
               <TouchableOpacity
                 style={styles.pendingRow}
-                onPress={() => router.push(`/expense/${e.id}`)}
+                onPress={() => router.push({
+                  pathname: '/expense/[id]',
+                  params: {
+                    id: e.id,
+                    expense: JSON.stringify(e),
+                  },
+                })}
                 activeOpacity={0.85}
               >
                 <View style={styles.pendingRowMain}>

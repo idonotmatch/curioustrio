@@ -103,6 +103,17 @@ function projectionDeltaCopy(value) {
   return 'Right on budget';
 }
 
+function recentPlanMetaCopy(plan) {
+  return `${scopeLabel(plan.scope)} · ${plan.memory_state === 'considering' ? 'Still considering' : 'Recent check'}`;
+}
+
+function recentPlanChangeCopy(plan) {
+  if (plan?.memory_state !== 'considering') return '';
+  if (plan?.last_material_change === 'improved') return 'Looks easier now';
+  if (plan?.last_material_change === 'worsened') return 'Tighter than before';
+  return '';
+}
+
 export default function ScenarioCheckScreen() {
   const params = useLocalSearchParams();
   const { selectedMonth, startDay } = useMonth();
@@ -399,9 +410,10 @@ export default function ScenarioCheckScreen() {
                 >
                   <View style={styles.recentPlanText}>
                     <Text style={styles.recentPlanLabel}>{plan.label}</Text>
-                    <Text style={styles.recentPlanMeta}>
-                      {scopeLabel(plan.scope)} · {plan.memory_state === 'considering' ? 'Still considering' : 'Recent check'}
-                    </Text>
+                    <Text style={styles.recentPlanMeta}>{recentPlanMetaCopy(plan)}</Text>
+                    {recentPlanChangeCopy(plan) ? (
+                      <Text style={styles.recentPlanChange}>{recentPlanChangeCopy(plan)}</Text>
+                    ) : null}
                   </View>
                   <Text style={styles.recentPlanAmount}>{formatCurrency(plan.amount)}</Text>
                 </TouchableOpacity>
@@ -585,6 +597,7 @@ const styles = StyleSheet.create({
   recentPlanText: { flex: 1 },
   recentPlanLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   recentPlanMeta: { fontSize: 12, color: '#888', marginTop: 2 },
+  recentPlanChange: { fontSize: 12, color: '#b8c8ff', marginTop: 4, fontWeight: '500' },
   recentPlanAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
   candidateRow: {
     flexDirection: 'row',
