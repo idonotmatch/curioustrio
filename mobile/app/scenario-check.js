@@ -429,29 +429,36 @@ export default function ScenarioCheckScreen() {
         )}
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>{scenario ? 'Try another amount' : 'Scenario'}</Text>
-          <Text style={styles.fieldLabel}>Amount</Text>
-          <TextInput
-            value={amount}
-            onChangeText={(value) => setAmount(formatAmountInput(value))}
-            placeholder="180"
-            placeholderTextColor="#6f6f6f"
-            keyboardType="decimal-pad"
-            style={styles.amountInput}
-          />
+          <View style={styles.composerHeader}>
+            <Text style={styles.cardTitle}>{scenario ? 'Try another plan' : 'Scenario'}</Text>
+            <Text style={styles.composerMeta}>Pressure-test it against {periodLabel(targetMonth, startDay)}.</Text>
+          </View>
 
-          <Text style={styles.fieldLabel}>Label</Text>
-          <TextInput
-            value={label}
-            onChangeText={setLabel}
-            placeholder="running shoes"
-            placeholderTextColor="#6f6f6f"
-            style={styles.input}
-          />
+          <View style={styles.composerRow}>
+            <View style={styles.amountPill}>
+              <Text style={styles.amountPillDollar}>$</Text>
+              <TextInput
+                value={amount}
+                onChangeText={(value) => setAmount(formatAmountInput(value))}
+                placeholder="180"
+                placeholderTextColor="#6f6f6f"
+                keyboardType="decimal-pad"
+                style={styles.amountPillInput}
+              />
+            </View>
+            <View style={styles.inlineInputWrap}>
+              <TextInput
+                value={label}
+                onChangeText={setLabel}
+                placeholder="running shoes"
+                placeholderTextColor="#6f6f6f"
+                style={styles.inlineInput}
+              />
+            </View>
+          </View>
 
-          {isMultiMember ? (
-            <>
-              <Text style={styles.fieldLabel}>Scope</Text>
+          <View style={styles.composerFooter}>
+            {isMultiMember ? (
               <View style={styles.toggleRow}>
                 <TouchableOpacity
                   style={[styles.toggleChip, scope === 'personal' && styles.toggleChipActive]}
@@ -466,25 +473,31 @@ export default function ScenarioCheckScreen() {
                   <Text style={[styles.toggleChipText, scope === 'household' && styles.toggleChipTextActive]}>Household</Text>
                 </TouchableOpacity>
               </View>
-            </>
-          ) : null}
+            ) : (
+              <View style={styles.periodMiniBadge}>
+                <Text style={styles.periodMiniBadgeText}>{periodLabel(targetMonth, startDay)}</Text>
+              </View>
+            )}
 
-          <View style={styles.periodBadge}>
-            <Text style={styles.periodBadgeTitle}>{periodLabel(targetMonth, startDay)}</Text>
-            <Text style={styles.periodBadgeCopy}>Uses your active budget period and current spend projection.</Text>
+            <TouchableOpacity
+              style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={!canSubmit}
+            >
+              {loading ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Run it</Text>
+              )}
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-          >
-            {loading ? (
-              <ActivityIndicator color="#000" size="small" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Check this purchase</Text>
-            )}
-          </TouchableOpacity>
+          {isMultiMember ? (
+            <View style={styles.periodBadge}>
+              <Text style={styles.periodBadgeTitle}>{periodLabel(targetMonth, startDay)}</Text>
+              <Text style={styles.periodBadgeCopy}>Uses your active budget period and current spend projection.</Text>
+            </View>
+          ) : null}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
@@ -576,37 +589,56 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
-  fieldLabel: { fontSize: 12, color: '#a3a3a3', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 2 },
-  amountInput: {
+  composerHeader: { gap: 4 },
+  composerMeta: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
+  composerRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  amountPill: {
+    minWidth: 108,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#151515',
     borderColor: '#262626',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    color: '#f5f5f5',
-    fontSize: 30,
-    fontWeight: '600',
-    letterSpacing: -0.8,
   },
-  input: {
-    backgroundColor: '#151515',
-    borderColor: '#262626',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    color: '#f5f5f5',
-    fontSize: 16,
-  },
-  toggleRow: { flexDirection: 'row', gap: 10 },
-  toggleChip: {
+  amountPillDollar: { color: '#8f8f8f', fontSize: 22, fontWeight: '600' },
+  amountPillInput: {
     flex: 1,
+    color: '#f5f5f5',
+    fontSize: 24,
+    fontWeight: '600',
+    letterSpacing: -0.6,
+    padding: 0,
+  },
+  inlineInputWrap: {
+    flex: 1,
+    backgroundColor: '#151515',
+    borderColor: '#262626',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  inlineInput: { color: '#f5f5f5', fontSize: 16, padding: 0 },
+  composerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  toggleRow: { flexDirection: 'row', gap: 10, flex: 1 },
+  toggleChip: {
     backgroundColor: '#171717',
     borderColor: '#2a2a2a',
     borderWidth: 1,
     borderRadius: 999,
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 92,
+    paddingHorizontal: 14,
     paddingVertical: 12,
   },
   toggleChipActive: {
@@ -625,12 +657,23 @@ const styles = StyleSheet.create({
   },
   periodBadgeTitle: { color: '#dfefff', fontSize: 16, fontWeight: '600' },
   periodBadgeCopy: { color: '#8ca7bf', fontSize: 13, lineHeight: 18 },
+  periodMiniBadge: {
+    backgroundColor: '#101b24',
+    borderWidth: 1,
+    borderColor: '#1a2f40',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  periodMiniBadgeText: { color: '#dfefff', fontSize: 13, fontWeight: '600' },
   primaryButton: {
     backgroundColor: '#f5f5f5',
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
+    minWidth: 104,
+    paddingHorizontal: 18,
   },
   primaryButtonDisabled: { opacity: 0.45 },
   primaryButtonText: { color: '#000', fontSize: 15, fontWeight: '700' },
