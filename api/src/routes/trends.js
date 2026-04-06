@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
+const ScenarioMemory = require('../models/scenarioMemory');
 const { analyzeSpendingTrend } = require('../services/spendingTrendAnalyzer');
 const { analyzeSpendProjection, evaluateScenarioAffordability } = require('../services/spendProjectionAnalyzer');
 
@@ -63,7 +64,54 @@ router.post('/scenario-check', async (req, res, next) => {
       label: req.body.label || 'purchase',
     });
 
-    res.json(result);
+    const memory = await ScenarioMemory.create({
+      userId: user.id,
+      householdId: requestedScope === 'household' ? user.household_id : null,
+      scope: result.scope,
+      label: result.scenario?.label || req.body.label || 'purchase',
+      amount: proposedAmount,
+      month: result.month,
+      scenario: result.scenario,
+    });
+
+    res.json({
+      ...result,
+      scenario_memory: memory,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/scenario-memory/:id/intent', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+
+    const intentSignal = `${req.body.intent_signal || ''}`.trim();
+    if (!['considering', 'not_right_now', 'just_exploring'].includes(intentSignal)) {
+      return res.status(400).json({ error: 'intent_signal must be considering, not_right_now, or just_exploring' });
+    }
+
+    const memory = await ScenarioMemory.recordIntent(req.params.id, user.id, intentSignal);
+    if (!memory) return res.status(404).json({ error: 'Scenario memory not found' });
+
+    res.json({ scenario_memory: memory });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/scenario-memory/recent', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+
+    const items = await ScenarioMemory.listRecentActiveByUser(user.id, {
+      limit: req.query.limit || 3,
+    });
+
+    res.json({ items });
   } catch (err) {
     next(err);
   }

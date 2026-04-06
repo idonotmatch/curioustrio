@@ -117,6 +117,9 @@ export default function ScenarioCheckScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [scenarioMemory, setScenarioMemory] = useState(null);
+  const [recentPlans, setRecentPlans] = useState([]);
+  const [intentLoading, setIntentLoading] = useState('');
   const autoRanRef = useRef(false);
 
   const parsedAmount = Number(amount);
@@ -128,7 +131,8 @@ export default function ScenarioCheckScreen() {
   const recurringPressure = Number(scenario?.recurring_pressure_amount || 0);
   const riskAdjustedHeadroom = Number(scenario?.risk_adjusted_headroom_amount || 0);
   const status = useMemo(() => statusConfig(scenario?.status), [scenario?.status]);
-  const displayLabel = label.trim() || scenario?.label || 'purchase';
+  const displayLabel = scenario?.label || label.trim() || 'purchase';
+  const displayAmount = scenario?.proposed_amount != null ? Number(scenario.proposed_amount) : parsedAmount;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -142,12 +146,42 @@ export default function ScenarioCheckScreen() {
         label: label.trim() || 'purchase',
       });
       setResult(data);
+      setScenarioMemory(data?.scenario_memory || null);
     } catch (err) {
       setError(err?.message || 'Could not run this scenario right now.');
     } finally {
       setLoading(false);
     }
   }
+
+  async function loadRecentPlans() {
+    try {
+      const data = await api.get('/trends/scenario-memory/recent?limit=3');
+      setRecentPlans(Array.isArray(data?.items) ? data.items : []);
+    } catch {
+      setRecentPlans([]);
+    }
+  }
+
+  async function handleIntent(intentSignal) {
+    if (!scenarioMemory?.id || intentLoading) return;
+    try {
+      setIntentLoading(intentSignal);
+      const data = await api.post(`/trends/scenario-memory/${scenarioMemory.id}/intent`, {
+        intent_signal: intentSignal,
+      });
+      setScenarioMemory(data?.scenario_memory || scenarioMemory);
+      loadRecentPlans();
+    } catch {
+      // non-fatal
+    } finally {
+      setIntentLoading('');
+    }
+  }
+
+  useEffect(() => {
+    loadRecentPlans();
+  }, []);
 
   useEffect(() => {
     if (`${params.auto_run}` !== '1') return;
@@ -186,7 +220,7 @@ export default function ScenarioCheckScreen() {
                   {scopeLabel(scope)} · {periodLabel(targetMonth, startDay)}
                 </Text>
               </View>
-              <Text style={styles.planSummaryAmount}>{formatCurrency(parsedAmount)}</Text>
+              <Text style={styles.planSummaryAmount}>{formatCurrency(displayAmount)}</Text>
             </View>
 
             <View style={styles.metricGrid}>
@@ -209,6 +243,35 @@ export default function ScenarioCheckScreen() {
               <Text style={styles.bodyRow}>Current month outlook: {projectionDeltaCopy(projection?.projected_budget_delta)}</Text>
               <Text style={styles.bodyRow}>After this purchase, risk-adjusted room: {formatCurrency(riskAdjustedHeadroom)}</Text>
               <Text style={styles.bodyRow}>{confidenceCopy(scenario.projection_confidence)}</Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>How should Adlo treat this?</Text>
+              <Text style={styles.bodyRow}>
+                This helps Adlo decide whether to keep this plan lightly in mind or let it fade out.
+              </Text>
+              <View style={styles.intentRow}>
+                {[
+                  { key: 'considering', label: 'Still considering it' },
+                  { key: 'not_right_now', label: 'Not right now' },
+                  { key: 'just_exploring', label: 'Just exploring' },
+                ].map((option) => {
+                  const isActive = scenarioMemory?.intent_signal === option.key;
+                  const isBusy = intentLoading === option.key;
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.intentChip, isActive && styles.intentChipActive]}
+                      onPress={() => handleIntent(option.key)}
+                      disabled={Boolean(intentLoading)}
+                    >
+                      <Text style={[styles.intentChipText, isActive && styles.intentChipTextActive]}>
+                        {isBusy ? 'Saving...' : option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
 
             {Array.isArray(scenario.recurring_candidates) && scenario.recurring_candidates.length > 0 ? (
@@ -295,6 +358,35 @@ export default function ScenarioCheckScreen() {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
+
+        {recentPlans.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Recent plans</Text>
+            {recentPlans.map((plan) => {
+              const isCurrent = scenarioMemory?.id && scenarioMemory.id === plan.id;
+              return (
+                <TouchableOpacity
+                  key={plan.id}
+                  style={[styles.recentPlanRow, isCurrent && styles.recentPlanRowActive]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setAmount(`${plan.amount}`);
+                    setLabel(plan.label || '');
+                    setScope(plan.scope === 'household' && isMultiMember ? 'household' : 'personal');
+                  }}
+                >
+                  <View style={styles.recentPlanText}>
+                    <Text style={styles.recentPlanLabel}>{plan.label}</Text>
+                    <Text style={styles.recentPlanMeta}>
+                      {scopeLabel(plan.scope)} · {plan.memory_state === 'considering' ? 'Still considering' : 'Recent check'}
+                    </Text>
+                  </View>
+                  <Text style={styles.recentPlanAmount}>{formatCurrency(plan.amount)}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -428,6 +520,48 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
   metricValue: { fontSize: 28, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   bodyRow: { fontSize: 14, color: '#d4d4d4', lineHeight: 21 },
+  intentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  intentChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    backgroundColor: '#181818',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  intentChipActive: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#f5f5f5',
+  },
+  intentChipText: {
+    color: '#d7d7d7',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  intentChipTextActive: {
+    color: '#000',
+  },
+  recentPlanRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+  },
+  recentPlanRowActive: {
+    backgroundColor: '#151515',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+  },
+  recentPlanText: { flex: 1 },
+  recentPlanLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
+  recentPlanMeta: { fontSize: 12, color: '#888', marginTop: 2 },
+  recentPlanAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
   candidateRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -14,6 +14,32 @@ let householdId;
 let householdUserId;
 
 beforeAll(async () => {
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS scenario_memory (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       household_id UUID REFERENCES households(id) ON DELETE SET NULL,
+       scope TEXT NOT NULL CHECK (scope IN ('personal', 'household')),
+       label TEXT NOT NULL,
+       amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+       month TEXT NOT NULL,
+       memory_state TEXT NOT NULL DEFAULT 'ephemeral'
+         CHECK (memory_state IN ('ephemeral', 'considering', 'suppressed')),
+       intent_signal TEXT
+         CHECK (intent_signal IN ('considering', 'not_right_now', 'just_exploring')),
+       last_affordability_status TEXT,
+       last_can_absorb BOOLEAN,
+       last_projected_headroom_amount NUMERIC(12,2),
+       last_risk_adjusted_headroom_amount NUMERIC(12,2),
+       last_recurring_pressure_amount NUMERIC(12,2),
+       last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       last_resurfaced_at TIMESTAMPTZ,
+       expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`
+  );
+
   const userResult = await db.query(
     `INSERT INTO users (provider_uid, name, budget_start_day)
      VALUES ('test|trends-user', 'Trend User', 1)
@@ -30,6 +56,10 @@ beforeAll(async () => {
   const householdUser = await db.query(
     `INSERT INTO users (provider_uid, name, household_id, budget_start_day)
      VALUES ('test|trends-household-user', 'Trend HH User', $1, 1)
+     ON CONFLICT (provider_uid) DO UPDATE
+       SET name = EXCLUDED.name,
+           household_id = EXCLUDED.household_id,
+           budget_start_day = EXCLUDED.budget_start_day
      RETURNING id`,
     [householdId]
   );
@@ -37,12 +67,14 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  await db.query(`DELETE FROM scenario_memory WHERE user_id IN ($1, $2)`, [userId, householdUserId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id IN ($1, $2)`, [userId, householdUserId]);
   await db.query(`DELETE FROM expenses WHERE user_id IN ($1, $2) OR household_id = $3`, [userId, householdUserId, householdId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE id = $1`, [userId]);
 });
 
 afterAll(async () => {
+  await db.query(`DELETE FROM scenario_memory WHERE user_id IN ($1, $2)`, [userId, householdUserId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id IN ($1, $2)`, [userId, householdUserId]);
   await db.query(`DELETE FROM expenses WHERE user_id IN ($1, $2) OR household_id = $3`, [userId, householdUserId, householdId]);
   await db.query(`DELETE FROM users WHERE id IN ($1, $2)`, [userId, householdUserId]);
@@ -258,6 +290,9 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.scenario.label).toBe('Standing desk');
     expect(res.body.scenario.proposed_amount).toBe(75);
     expect(typeof res.body.scenario.can_absorb).toBe('boolean');
+    expect(res.body.scenario_memory).toBeTruthy();
+    expect(res.body.scenario_memory.memory_state).toBe('ephemeral');
+    expect(res.body.scenario_memory.intent_signal).toBeNull();
   });
 
   it('returns 400 for invalid proposed amounts', async () => {
@@ -269,5 +304,80 @@ describe('POST /trends/scenario-check', () => {
       });
 
     expect(res.status).toBe(400);
+  });
+
+  it('records user intent for a scenario memory', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 40, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 20, '2026-04-02', 'manual', 'confirmed'),
+       ($1, 60, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 40, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 30, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-02-05', 'manual', 'confirmed'),
+       ($1, 50, '2026-01-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-01-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-01-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const createRes = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 75,
+        label: 'Standing desk',
+      });
+
+    expect(createRes.status).toBe(200);
+
+    const intentRes = await request(app)
+      .post(`/trends/scenario-memory/${createRes.body.scenario_memory.id}/intent`)
+      .send({ intent_signal: 'considering' });
+
+    expect(intentRes.status).toBe(200);
+    expect(intentRes.body.scenario_memory.intent_signal).toBe('considering');
+    expect(intentRes.body.scenario_memory.memory_state).toBe('considering');
+  });
+
+  it('lists recent active scenario memories for the user', async () => {
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         household_id,
+         scope,
+         label,
+         amount,
+         month,
+         memory_state,
+         intent_signal,
+         last_affordability_status,
+         last_can_absorb,
+         last_evaluated_at,
+         expires_at
+       )
+       VALUES
+       ($1, NULL, 'personal', 'Running shoes', 180, '2026-04', 'ephemeral', NULL, 'tight', true, NOW() - INTERVAL '1 hour', NOW() + INTERVAL '5 days'),
+       ($1, NULL, 'personal', 'Air fryer', 240, '2026-04', 'considering', 'considering', 'risky', false, NOW() - INTERVAL '2 hours', NOW() + INTERVAL '10 days'),
+       ($1, NULL, 'personal', 'Patio set', 500, '2026-04', 'suppressed', 'not_right_now', 'not_absorbable', false, NOW() - INTERVAL '30 minutes', NOW() + INTERVAL '2 days')`,
+      [userId]
+    );
+
+    const res = await request(app).get('/trends/scenario-memory/recent?limit=5');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.items.map((item) => item.label)).toEqual(expect.arrayContaining(['Running shoes', 'Air fryer']));
+    expect(res.body.items.find((item) => item.label === 'Patio set')).toBeUndefined();
   });
 });
