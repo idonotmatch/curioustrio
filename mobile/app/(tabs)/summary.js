@@ -497,7 +497,9 @@ export default function SummaryScreen() {
             <Ionicons name="camera-outline" size={14} color="#888" />
             <Text style={styles.scanLinkText}>scan a receipt</Text>
           </TouchableOpacity>
-        ) : null}
+        ) : (
+          <View style={styles.entryModeSpacer} />
+        )}
       </View>
 
       {displayInsights.length > 0 && (
@@ -716,6 +718,7 @@ const styles = StyleSheet.create({
   },
   scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   scanLinkText: { fontSize: 14, color: '#888' },
+  entryModeSpacer: { height: 24, marginTop: 10 },
 
   recent: {},
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
