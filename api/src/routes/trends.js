@@ -65,15 +65,20 @@ router.post('/scenario-check', async (req, res, next) => {
       label: req.body.label || 'purchase',
     });
 
-    const memory = await ScenarioMemory.create({
-      userId: user.id,
-      householdId: requestedScope === 'household' ? user.household_id : null,
-      scope: result.scope,
-      label: result.scenario?.label || req.body.label || 'purchase',
-      amount: proposedAmount,
-      month: result.month,
-      scenario: result.scenario,
-    });
+    let memory = null;
+    try {
+      memory = await ScenarioMemory.create({
+        userId: user.id,
+        householdId: requestedScope === 'household' ? user.household_id : null,
+        scope: result.scope,
+        label: result.scenario?.label || req.body.label || 'purchase',
+        amount: proposedAmount,
+        month: result.month,
+        scenario: result.scenario,
+      });
+    } catch (memoryErr) {
+      console.error('[scenario memory] create failed (non-fatal):', memoryErr.message);
+    }
 
     res.json({
       ...result,
@@ -94,7 +99,13 @@ router.post('/scenario-memory/:id/intent', async (req, res, next) => {
       return res.status(400).json({ error: 'intent_signal must be considering, not_right_now, or just_exploring' });
     }
 
-    const memory = await ScenarioMemory.recordIntent(req.params.id, user.id, intentSignal);
+    let memory = null;
+    try {
+      memory = await ScenarioMemory.recordIntent(req.params.id, user.id, intentSignal);
+    } catch (memoryErr) {
+      console.error('[scenario memory] intent update failed (non-fatal):', memoryErr.message);
+      return res.status(503).json({ error: 'Scenario memory not available yet' });
+    }
     if (!memory) return res.status(404).json({ error: 'Scenario memory not found' });
 
     res.json({ scenario_memory: memory });
@@ -108,13 +119,23 @@ router.get('/scenario-memory/recent', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced' });
 
-    await refreshConsideringScenarios(user, {
-      limit: Math.max(1, Math.min(Number(req.query.limit) || 3, 5)),
-    });
+    try {
+      await refreshConsideringScenarios(user, {
+        limit: Math.max(1, Math.min(Number(req.query.limit) || 3, 5)),
+      });
+    } catch (refreshErr) {
+      console.error('[scenario memory] passive refresh failed (non-fatal):', refreshErr.message);
+    }
 
-    const items = await ScenarioMemory.listRecentActiveByUser(user.id, {
-      limit: req.query.limit || 3,
-    });
+    let items = [];
+    try {
+      items = await ScenarioMemory.listRecentActiveByUser(user.id, {
+        limit: req.query.limit || 3,
+      });
+    } catch (listErr) {
+      console.error('[scenario memory] recent list failed (non-fatal):', listErr.message);
+      items = [];
+    }
 
     res.json({ items });
   } catch (err) {

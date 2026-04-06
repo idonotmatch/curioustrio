@@ -121,6 +121,7 @@ export default function ScenarioCheckScreen() {
   const [recentPlans, setRecentPlans] = useState([]);
   const [intentLoading, setIntentLoading] = useState('');
   const autoRanRef = useRef(false);
+  const isAutoRunning = `${params.auto_run}` === '1' && !scenario && loading;
 
   const parsedAmount = Number(amount);
   const canSubmit = Number.isFinite(parsedAmount) && parsedAmount > 0 && !loading;
@@ -193,7 +194,13 @@ export default function ScenarioCheckScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {!scenario ? (
+        {isAutoRunning ? (
+          <View style={styles.loadingHero}>
+            <ActivityIndicator color="#f5f5f5" />
+            <Text style={styles.loadingTitle}>Checking your plan...</Text>
+            <Text style={styles.heroCopy}>Adlo is comparing it against your current spending outlook.</Text>
+          </View>
+        ) : !scenario ? (
           <View style={styles.hero}>
             <Text style={styles.heroTitle}>Pressure-test a purchase</Text>
             <Text style={styles.heroCopy}>
@@ -396,6 +403,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 48, gap: 18 },
+  loadingHero: { minHeight: 220, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingTitle: { fontSize: 20, color: '#f5f5f5', fontWeight: '600' },
   hero: { gap: 8 },
   heroRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   scopeChip: {
