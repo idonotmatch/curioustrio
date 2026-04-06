@@ -150,6 +150,44 @@ async function resolve(id, userId, action, { expenseId = null } = {}) {
   return normalize(result.rows[0] || null);
 }
 
+function nextMonth(month) {
+  const [yearRaw, monthRaw] = `${month || ''}`.split('-');
+  const year = Number(yearRaw);
+  const monthNumber = Number(monthRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const nextYear = monthNumber === 12 ? year + 1 : year;
+  const nextMonthNumber = monthNumber === 12 ? 1 : monthNumber + 1;
+  return `${nextYear}-${String(nextMonthNumber).padStart(2, '0')}`;
+}
+
+async function deferToNextMonth(id, userId) {
+  const current = await findByIdForUser(id, userId);
+  if (!current) return null;
+
+  const deferredUntilMonth = nextMonth(current.month);
+  const result = await db.query(
+    `UPDATE scenario_memory
+     SET memory_state = 'deferred',
+         intent_signal = 'not_right_now',
+         watch_enabled = FALSE,
+         watch_started_at = NULL,
+         resolution_action = 'revisit_next_month',
+         resolved_at = NOW(),
+         deferred_until_month = $3,
+         expires_at = NOW() + INTERVAL '45 days',
+         updated_at = NOW()
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [id, userId, deferredUntilMonth]
+  );
+  return normalize(result.rows[0] || null);
+}
+
 async function listRecentActiveByUser(userId, { limit = 3 } = {}) {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 3, 10));
   const result = await db.query(
@@ -231,6 +269,7 @@ module.exports = {
   recordIntent,
   updateWatch,
   resolve,
+  deferToNextMonth,
   listRecentActiveByUser,
   listActiveConsideringByUser,
   listWatchedByUser,

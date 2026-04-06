@@ -107,6 +107,15 @@ export default function WatchingPlansScreen() {
     }
   }
 
+  async function handleDefer(plan) {
+    try {
+      await api.post(`/trends/scenario-memory/${plan.id}/defer`, {});
+      load();
+    } catch {
+      // non-fatal
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -193,12 +202,18 @@ export default function WatchingPlansScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.secondaryAction}
-                        onPress={() => handleResolve(plan, 'not_buying')}
+                        onPress={() => handleDefer(plan)}
                       >
-                        <Text style={styles.secondaryActionText}>Not buying it</Text>
+                        <Text style={styles.secondaryActionText}>Revisit next month</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.tertiaryAction}
+                        onPress={() => handleResolve(plan, 'not_buying')}
+                      >
+                        <Text style={styles.tertiaryActionText}>Not buying it</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.quaternaryAction}
                         onPress={async () => {
                           try {
                             await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
@@ -208,7 +223,7 @@ export default function WatchingPlansScreen() {
                           }
                         }}
                       >
-                        <Text style={styles.tertiaryActionText}>Stop watching</Text>
+                        <Text style={styles.quaternaryActionText}>Stop watching</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -294,10 +309,19 @@ const styles = StyleSheet.create({
   tertiaryAction: {
     borderRadius: 999,
     borderWidth: 1,
+    borderColor: '#4a2f38',
+    backgroundColor: '#21161b',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  tertiaryActionText: { color: '#efdbe4', fontSize: 13, fontWeight: '600' },
+  quaternaryAction: {
+    borderRadius: 999,
+    borderWidth: 1,
     borderColor: '#2d3b4a',
     backgroundColor: '#17202a',
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  tertiaryActionText: { color: '#dce8f5', fontSize: 13, fontWeight: '600' },
+  quaternaryActionText: { color: '#dce8f5', fontSize: 13, fontWeight: '600' },
 });

@@ -24,7 +24,7 @@ beforeAll(async () => {
        amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
        month TEXT NOT NULL,
        memory_state TEXT NOT NULL DEFAULT 'ephemeral'
-         CHECK (memory_state IN ('ephemeral', 'considering', 'suppressed')),
+         CHECK (memory_state IN ('ephemeral', 'considering', 'suppressed', 'deferred')),
        intent_signal TEXT
          CHECK (intent_signal IN ('considering', 'not_right_now', 'just_exploring')),
        last_affordability_status TEXT,
@@ -37,9 +37,10 @@ beforeAll(async () => {
        watch_enabled BOOLEAN NOT NULL DEFAULT FALSE,
        watch_started_at TIMESTAMPTZ,
        resolution_action TEXT
-         CHECK (resolution_action IS NULL OR resolution_action IN ('bought', 'not_buying')),
+         CHECK (resolution_action IS NULL OR resolution_action IN ('bought', 'not_buying', 'revisit_next_month')),
        resolved_at TIMESTAMPTZ,
        resolved_expense_id UUID,
+       deferred_until_month TEXT,
        previous_affordability_status TEXT,
        previous_risk_adjusted_headroom_amount NUMERIC(12,2),
        last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -57,8 +58,21 @@ beforeAll(async () => {
        ADD COLUMN IF NOT EXISTS resolution_action TEXT,
        ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ,
        ADD COLUMN IF NOT EXISTS resolved_expense_id UUID,
+       ADD COLUMN IF NOT EXISTS deferred_until_month TEXT,
        ADD COLUMN IF NOT EXISTS previous_affordability_status TEXT,
        ADD COLUMN IF NOT EXISTS previous_risk_adjusted_headroom_amount NUMERIC(12,2)`
+  );
+  await db.query(`ALTER TABLE scenario_memory DROP CONSTRAINT IF EXISTS scenario_memory_memory_state_check`);
+  await db.query(
+    `ALTER TABLE scenario_memory
+       ADD CONSTRAINT scenario_memory_memory_state_check
+       CHECK (memory_state IN ('ephemeral', 'considering', 'suppressed', 'deferred'))`
+  );
+  await db.query(`ALTER TABLE scenario_memory DROP CONSTRAINT IF EXISTS scenario_memory_resolution_action_check`);
+  await db.query(
+    `ALTER TABLE scenario_memory
+       ADD CONSTRAINT scenario_memory_resolution_action_check
+       CHECK (resolution_action IS NULL OR resolution_action IN ('bought', 'not_buying', 'revisit_next_month'))`
   );
 
   const userResult = await db.query(
@@ -437,6 +451,43 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.scenario_memory.memory_state).toBe('suppressed');
     expect(res.body.scenario_memory.resolution_action).toBe('not_buying');
     expect(res.body.scenario_memory.resolved_at).toBeTruthy();
+  });
+
+  it('defers a watched plan to next month', async () => {
+    const inserted = await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         memory_state,
+         intent_signal,
+         watch_enabled,
+         watch_started_at,
+         last_affordability_status,
+         last_can_absorb,
+         last_evaluated_at,
+         expires_at
+       )
+       VALUES (
+         $1, 'personal', 'Patio chairs', 260, '2026-04',
+         'considering', 'considering', TRUE, NOW(), 'tight', FALSE, NOW(), NOW() + INTERVAL '7 days'
+       )
+       RETURNING id`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post(`/trends/scenario-memory/${inserted.rows[0].id}/defer`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario_memory.memory_state).toBe('deferred');
+    expect(res.body.scenario_memory.watch_enabled).toBe(false);
+    expect(res.body.scenario_memory.intent_signal).toBe('not_right_now');
+    expect(res.body.scenario_memory.resolution_action).toBe('revisit_next_month');
+    expect(res.body.scenario_memory.deferred_until_month).toBe('2026-05');
   });
 
   it('lists recent active scenario memories for the user', async () => {
