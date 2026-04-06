@@ -7,6 +7,7 @@ const InsightEvent = require('../models/insightEvent');
 const { buildInsightsForUser } = require('../services/insightBuilder');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 const { buildFeedbackDebugSummary } = require('../services/insightFeedbackSummary');
+const { inferOutcomeEventsForUser } = require('../services/insightOutcomeInference');
 
 router.use(authenticate);
 
@@ -32,10 +33,12 @@ router.get('/feedback-summary', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(25, Math.min(Number(req.query.limit) || 250, 1000));
     const events = await InsightEvent.getRecentByUser(user.id, limit);
+    const inferredEvents = await inferOutcomeEventsForUser({ user, events });
     res.json({
       user_id: user.id,
-      event_count: events.length,
-      ...buildFeedbackDebugSummary(events),
+      event_count: events.length + inferredEvents.length,
+      inferred_event_count: inferredEvents.length,
+      ...buildFeedbackDebugSummary([...events, ...inferredEvents]),
     });
   } catch (err) {
     next(err);

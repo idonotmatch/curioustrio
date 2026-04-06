@@ -2,6 +2,7 @@ const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
+const { inferOutcomeEventsForUser } = require('./insightOutcomeInference');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
@@ -159,6 +160,8 @@ function buildRestockWindowInsights({ projection, watchCandidates = [] }) {
   const eligibleCandidates = (watchCandidates || [])
     .filter((candidate) => ['watching', 'due_today', 'overdue'].includes(candidate.status))
     .filter((candidate) => Number(candidate.median_amount || 0) > 0)
+    .filter((candidate) => Number(candidate.occurrence_count || 0) >= 3)
+    .filter((candidate) => Number(candidate.median_amount || 0) >= 12)
     .filter((candidate) => projectedHeadroomAmount >= Number(candidate.median_amount || 0) * 1.25)
     .filter((candidate) => remainingDays == null || Number(candidate.days_until_due || 0) <= remainingDays)
     .filter((candidate) => Number(candidate.days_until_due || 0) >= -3)
@@ -774,7 +777,8 @@ async function buildInsightsForUser({ user, limit = 10 }) {
     InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id)),
     InsightEvent.getRecentByUser(user.id, 500),
   ]);
-  const feedbackSummary = summarizeFeedbackEvents(recentEvents);
+  const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
+  const feedbackSummary = summarizeFeedbackEvents([...recentEvents, ...inferredEvents]);
 
   return rawInsights
     .map((insight) => {
