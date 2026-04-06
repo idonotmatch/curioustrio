@@ -121,6 +121,7 @@ export default function ScenarioCheckScreen() {
   const [recentPlans, setRecentPlans] = useState([]);
   const [intentLoading, setIntentLoading] = useState('');
   const autoRanRef = useRef(false);
+  const bootstrappedInitialResultRef = useRef(false);
   const isAutoRunning = `${params.auto_run}` === '1' && !scenario && loading;
 
   const parsedAmount = Number(amount);
@@ -181,15 +182,29 @@ export default function ScenarioCheckScreen() {
   }
 
   useEffect(() => {
+    if (bootstrappedInitialResultRef.current) return;
+    if (!params.initial_result) return;
+    try {
+      const parsed = JSON.parse(`${params.initial_result}`);
+      setResult(parsed);
+      setScenarioMemory(parsed?.scenario_memory || null);
+      bootstrappedInitialResultRef.current = true;
+    } catch {
+      // ignore malformed navigation payloads
+    }
+  }, [params.initial_result]);
+
+  useEffect(() => {
     loadRecentPlans();
   }, []);
 
   useEffect(() => {
     if (`${params.auto_run}` !== '1') return;
+    if (params.initial_result) return;
     if (autoRanRef.current || !canSubmit) return;
     autoRanRef.current = true;
     handleSubmit();
-  }, [params.auto_run, canSubmit]);
+  }, [params.auto_run, canSubmit, params.initial_result]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>

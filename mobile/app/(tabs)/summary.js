@@ -305,30 +305,49 @@ export default function SummaryScreen() {
   }
 
   function handleQuickCheck() {
+    return runQuickCheck();
+  }
+
+  async function runQuickCheck() {
     const parsed = parseScenarioInput(input, { allowHousehold: isMultiMember });
     if (!parsed?.amount) {
       Alert.alert("Couldn't parse that", "Try: '180 running shoes' or 'household 240 costco run'");
-      return;
+      return false;
     }
-    setInput('');
-    router.push({
-      pathname: '/scenario-check',
-      params: {
-        month: currentMonthStr,
+    try {
+      setLoading(true);
+      const data = await api.post('/trends/scenario-check', {
         scope: parsed.scope,
-        amount: parsed.amount,
-        label: parsed.label,
-        auto_run: '1',
-      },
-    });
+        month: currentMonthStr,
+        proposed_amount: Number(parsed.amount),
+        label: parsed.label || 'purchase',
+      });
+      setInput('');
+      router.push({
+        pathname: '/scenario-check',
+        params: {
+          month: currentMonthStr,
+          scope: parsed.scope,
+          amount: parsed.amount,
+          label: parsed.label,
+          initial_result: JSON.stringify(data),
+        },
+      });
+      return true;
+    } catch (err) {
+      Alert.alert('Could not run plan', err?.message || 'Something went wrong. Check your connection.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function handlePrimaryEntry() {
+  async function handlePrimaryEntry() {
     if (entryMode === 'check') {
-      handleQuickCheck();
+      await handleQuickCheck();
       return;
     }
-    handleQuickAdd();
+    await handleQuickAdd();
   }
 
   async function deleteExpense(id) {
