@@ -6,6 +6,7 @@ const db = require('../../src/db');
 const {
   inferableOutcomeConfig,
   parseGroupKeyFromInsight,
+  parseProjectionContextFromInsight,
   inferOutcomeEventsForUser,
 } = require('../../src/services/insightOutcomeInference');
 
@@ -27,6 +28,26 @@ describe('parseGroupKeyFromInsight', () => {
     expect(parseGroupKeyFromInsight({
       insight_id: 'buy_soon_better_price:comparable:diapers:Target:2026-04-05',
     })).toBe('comparable:diapers');
+  });
+});
+
+describe('parseProjectionContextFromInsight', () => {
+  it('extracts scope, month, and category context from projection insight ids', () => {
+    expect(parseProjectionContextFromInsight({
+      insight_id: 'projected_category_under:household:2026-04:category-123',
+    })).toEqual({
+      scope: 'household',
+      month: '2026-04',
+      categoryKey: 'category-123',
+    });
+
+    expect(parseProjectionContextFromInsight({
+      insight_id: 'projected_under_budget:personal:2026-04',
+    })).toEqual({
+      scope: 'personal',
+      month: '2026-04',
+      categoryKey: null,
+    });
   });
 });
 
@@ -109,5 +130,75 @@ describe('inferOutcomeEventsForUser', () => {
 
     expect(inferred).toEqual([]);
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it('infers category headroom outcomes when spend lands in the suggested category', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        expense_id: 'expense-2',
+        date: '2026-04-08',
+        created_at: '2026-04-08T16:00:00Z',
+        merchant: 'Trader Joe\'s',
+        amount: 34,
+      }],
+    });
+
+    const inferred = await inferOutcomeEventsForUser({
+      user,
+      events: [{
+        insight_id: 'projected_category_under:household:2026-04:groceries-cat',
+        event_type: 'shown',
+        metadata: { type: 'projected_category_under_baseline' },
+        created_at: '2026-04-05T10:00:00Z',
+      }],
+    });
+
+    expect(inferred).toEqual([
+      expect.objectContaining({
+        insight_id: 'projected_category_under:household:2026-04:groceries-cat',
+        event_type: 'acted',
+        metadata: expect.objectContaining({
+          insight_type: 'projected_category_under_baseline',
+          outcome_type: 'used_category_headroom',
+          category_key: 'groceries-cat',
+          matched_expense_id: 'expense-2',
+        }),
+      }),
+    ]);
+  });
+
+  it('infers under-budget outcomes when meaningful spend happens after the nudge', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        expense_id: 'expense-3',
+        date: '2026-04-09',
+        created_at: '2026-04-09T18:00:00Z',
+        merchant: 'Target',
+        amount: 52,
+      }],
+    });
+
+    const inferred = await inferOutcomeEventsForUser({
+      user,
+      events: [{
+        insight_id: 'projected_under_budget:household:2026-04',
+        event_type: 'tapped',
+        metadata: { type: 'projected_month_end_under_budget' },
+        created_at: '2026-04-05T10:00:00Z',
+      }],
+    });
+
+    expect(inferred).toEqual([
+      expect.objectContaining({
+        insight_id: 'projected_under_budget:household:2026-04',
+        event_type: 'acted',
+        metadata: expect.objectContaining({
+          insight_type: 'projected_month_end_under_budget',
+          outcome_type: 'used_budget_headroom',
+          matched_expense_id: 'expense-3',
+          matched_amount: 52,
+        }),
+      }),
+    ]);
   });
 });
