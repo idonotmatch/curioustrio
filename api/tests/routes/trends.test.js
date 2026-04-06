@@ -105,6 +105,7 @@ describe('GET /trends/summary', () => {
     expect(res.body.projection.scope).toBe('personal');
     expect(res.body.projection.overall.historical_period_count).toBeGreaterThanOrEqual(3);
     expect(res.body.projection.overall.adjusted_projected_total).toBeGreaterThan(0);
+    expect(Array.isArray(res.body.projection.categories)).toBe(true);
   });
 
   it('returns household trend summary when user is in a household', async () => {
@@ -140,6 +141,7 @@ describe('GET /trends/summary', () => {
     expect(res.body.budget_adherence.budget_limit).toBe(700);
     expect(res.body.projection.scope).toBe('household');
     expect(res.body.projection.overall.adjusted_projected_total).toBeGreaterThan(0);
+    expect(Array.isArray(res.body.projection.categories)).toBe(true);
   });
 
   it('ignores sparse prior months when deciding whether trend history exists', async () => {
@@ -213,5 +215,7 @@ describe('GET /trends/summary', () => {
       res.body.projection.overall.baseline_projected_total
     );
     expect(res.body.projection.overall.top_unusual_expenses[0].merchant).toBe('Airline');
+    expect(res.body.projection.categories[0].category_key).toBeTruthy();
+    expect(res.body.projection.categories[0].adjusted_projected_total).toBeGreaterThan(0);
   });
 });

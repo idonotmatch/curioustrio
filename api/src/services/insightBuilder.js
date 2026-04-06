@@ -337,6 +337,54 @@ function buildProjectionInsights(projection, scope) {
     });
   }
 
+  const topCategoryProjection = (projection?.categories || [])
+    .filter((category) => Number(category.historical_period_count || 0) >= 3)
+    .map((category) => {
+      const baseline = Number(category.baseline_projected_total || 0);
+      const adjusted = Number(category.adjusted_projected_total || 0);
+      const deltaAmount = adjusted - baseline;
+      const deltaPercent = baseline > 0 ? (deltaAmount / baseline) * 100 : 0;
+      return {
+        ...category,
+        delta_amount: deltaAmount,
+        delta_percent: deltaPercent,
+      };
+    })
+    .filter((category) => Number(category.adjusted_projected_total || 0) > 0)
+    .sort((a, b) => Number(b.delta_amount || 0) - Number(a.delta_amount || 0))[0];
+
+  if (
+    topCategoryProjection &&
+    Number(topCategoryProjection.delta_amount || 0) >= 25 &&
+    Number(topCategoryProjection.delta_percent || 0) >= 15
+  ) {
+    insights.push({
+      id: `projected_category_surge:${scopeLabel}:${projection.month}:${topCategoryProjection.category_key}`,
+      type: 'projected_category_surge',
+      title: `${topCategoryProjection.category_name} is projected to finish high`,
+      body: `${topCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(topCategoryProjection.delta_amount || 0)).toFixed(0)} above its baseline pace for this period.`,
+      severity: Number(topCategoryProjection.delta_amount || 0) >= 60 ? 'high' : 'medium',
+      entity_type: 'category',
+      entity_id: topCategoryProjection.category_key,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection.month,
+        category_key: topCategoryProjection.category_key,
+        category_name: topCategoryProjection.category_name,
+        adjusted_projected_total: Number(topCategoryProjection.adjusted_projected_total || 0),
+        baseline_projected_total: Number(topCategoryProjection.baseline_projected_total || 0),
+        unusual_spend_to_date: Number(topCategoryProjection.unusual_spend_to_date || 0),
+        delta_amount: Number(topCategoryProjection.delta_amount || 0),
+        delta_percent: Number(topCategoryProjection.delta_percent || 0),
+        confidence: topCategoryProjection.confidence,
+        historical_period_count: Number(topCategoryProjection.historical_period_count || 0),
+      },
+      actions: [],
+    });
+  }
+
   return insights;
 }
 

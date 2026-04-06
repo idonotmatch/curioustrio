@@ -270,7 +270,7 @@ describe('GET /insights', () => {
     );
   });
 
-  it('returns projection insights for projected over-budget and one-off skew', async () => {
+  it('returns projection insights for projected over-budget, one-off skew, and category surge', async () => {
     const month = currentPeriod(1);
     const prior1 = shiftPeriod(month, -1);
     const prior2 = shiftPeriod(month, -2);
@@ -326,7 +326,7 @@ describe('GET /insights', () => {
     const res = await request(app).get('/insights?limit=10');
     expect(res.status).toBe(200);
     expect(res.body.map((insight) => insight.type)).toEqual(
-      expect.arrayContaining(['projected_month_end_over_budget', 'one_off_expense_skewing_projection'])
+      expect.arrayContaining(['projected_month_end_over_budget', 'one_off_expense_skewing_projection', 'projected_category_surge'])
     );
   });
 
