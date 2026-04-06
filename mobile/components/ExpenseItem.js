@@ -101,6 +101,12 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
         category_name: category.name,
         category_parent_name: category.parent_name || null,
       }));
+      saveExpenseSnapshot({
+        ...localExpense,
+        category_id: category.id,
+        category_name: category.name,
+        category_parent_name: category.parent_name || null,
+      });
       setCategoryPickerOpen(false);
     } catch {
       // Preserve the current row state if the update fails.

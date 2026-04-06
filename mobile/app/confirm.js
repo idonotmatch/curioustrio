@@ -5,6 +5,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
+import { saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { ConfirmField } from '../components/ConfirmField';
 import { LocationPicker } from '../components/LocationPicker';
 import { useCategories } from '../hooks/useCategories';
@@ -201,7 +202,7 @@ export default function ConfirmScreen() {
       }
 
       const expenseMonth = (expense.date || new Date().toISOString().slice(0, 10)).slice(0, 7);
-      await api.post('/expenses/confirm', {
+      const result = await api.post('/expenses/confirm', {
         merchant: merchant.trim() || null,
         description: description.trim() || null,
         amount: expense.amount,
@@ -231,6 +232,9 @@ export default function ConfirmScreen() {
               }))
           : undefined,
       });
+      if (result?.expense?.id) {
+        await saveExpenseSnapshot(result.expense);
+      }
       await Promise.all([
         invalidateCache(`cache:expenses:${expenseMonth}`),
         invalidateCache(`cache:budget:${expenseMonth}:personal`),

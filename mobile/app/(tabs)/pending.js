@@ -7,6 +7,7 @@ import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { DuplicateAlert } from '../../components/DuplicateAlert';
 import { api } from '../../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../../services/cache';
+import { removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expenseLocalStore';
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -52,6 +53,7 @@ export default function PendingScreen() {
   async function dismiss(id) {
     try {
       await api.post(`/expenses/${id}/dismiss`);
+      await removeExpenseSnapshot(id);
       await invalidateCache('cache:expenses:pending');
       remove(id);
     } catch { /* ignore */ }
@@ -59,7 +61,8 @@ export default function PendingScreen() {
 
   async function approve(id) {
     try {
-      await api.post(`/expenses/${id}/approve`);
+      const approved = await api.post(`/expenses/${id}/approve`);
+      if (approved?.id) await saveExpenseSnapshot(approved);
       await Promise.all([
         invalidateCache('cache:expenses:pending'),
         invalidateCacheByPrefix('cache:expenses:'),
@@ -103,7 +106,13 @@ export default function PendingScreen() {
             >
               <TouchableOpacity
                 style={styles.row}
-                onPress={() => router.push(`/expense/${item.id}`)}
+                onPress={() => router.push({
+                  pathname: '/expense/[id]',
+                  params: {
+                    id: item.id,
+                    expense: JSON.stringify(item),
+                  },
+                })}
                 activeOpacity={0.85}
               >
                 <View style={styles.rowMain}>

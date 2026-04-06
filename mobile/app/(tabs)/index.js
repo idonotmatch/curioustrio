@@ -14,6 +14,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
+import { removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expenseLocalStore';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -164,6 +165,7 @@ export default function FeedScreen() {
   async function dismissPending(id) {
     try {
       await api.post(`/expenses/${id}/dismiss`);
+      await removeExpenseSnapshot(id);
       const { invalidateCache } = await import('../../services/cache');
       await invalidateCache('cache:expenses:pending');
       refreshPending();
@@ -172,7 +174,8 @@ export default function FeedScreen() {
 
   async function approvePending(id) {
     try {
-      await api.post(`/expenses/${id}/approve`);
+      const approved = await api.post(`/expenses/${id}/approve`);
+      if (approved?.id) await saveExpenseSnapshot(approved);
       refreshPending();
       const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
       await Promise.all([

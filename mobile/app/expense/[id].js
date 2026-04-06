@@ -654,7 +654,8 @@ export default function ExpenseDetailScreen() {
             onPress={async () => {
               setActioning(true);
               try {
-                await api.post(`/expenses/${id}/approve`);
+                const approved = await api.post(`/expenses/${id}/approve`);
+                if (approved?.id) await saveExpenseSnapshot(approved);
                 const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
                 await Promise.all([
                   invalidateCache('cache:expenses:pending'),
@@ -676,6 +677,7 @@ export default function ExpenseDetailScreen() {
               setActioning(true);
               try {
                 await api.post(`/expenses/${id}/dismiss`);
+                await removeExpenseSnapshot(id);
                 const { invalidateCache } = await import('../../services/cache');
                 await invalidateCache('cache:expenses:pending');
                 router.back();
