@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 
 function formatCurrency(value) {
@@ -76,6 +76,7 @@ function buildSections(items) {
 
 export default function WatchingPlansScreen() {
   const router = useRouter();
+  const { resolved, label } = useLocalSearchParams();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -115,6 +116,15 @@ export default function WatchingPlansScreen() {
             Plans you explicitly asked Adlo to keep an eye on.
           </Text>
         </View>
+
+        {resolved === 'bought' ? (
+          <View style={styles.successBanner}>
+            <Text style={styles.successTitle}>Marked as bought</Text>
+            <Text style={styles.successBody}>
+              {label ? `${label} was moved out of your watched plans.` : 'That plan was moved out of your watched plans.'}
+            </Text>
+          </View>
+        ) : null}
 
         {loading ? (
           <View style={styles.loadingState}>
@@ -219,6 +229,16 @@ const styles = StyleSheet.create({
   hero: { gap: 6 },
   title: { fontSize: 30, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   subtitle: { fontSize: 15, color: '#99a2ad', lineHeight: 22 },
+  successBanner: {
+    backgroundColor: '#0f1913',
+    borderWidth: 1,
+    borderColor: '#284032',
+    borderRadius: 16,
+    padding: 14,
+    gap: 4,
+  },
+  successTitle: { color: '#f2f8f3', fontSize: 15, fontWeight: '600' },
+  successBody: { color: '#a7beac', fontSize: 13, lineHeight: 18 },
   loadingState: { minHeight: 180, alignItems: 'center', justifyContent: 'center' },
   emptyCard: {
     backgroundColor: '#101216',

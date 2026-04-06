@@ -15,6 +15,7 @@ export default function ConfirmScreen() {
   const parsed = JSON.parse(data);
   const router = useRouter();
   const { categories, refresh: refreshCategories } = useCategories();
+  const isWatchedPlanFlow = Boolean(parsed?.scenario_memory_id);
 
   const [expense, setExpense] = useState(parsed);
   const [amountText, setAmountText] = useState(String(Math.abs(parsed?.amount ?? 0)));
@@ -255,7 +256,17 @@ export default function ConfirmScreen() {
         invalidateCacheByPrefix('cache:budget:'),
         invalidateCacheByPrefix('cache:household-expenses:'),
       ]);
-      router.replace('/(tabs)');
+      if (isWatchedPlanFlow) {
+        router.replace({
+          pathname: '/watching-plans',
+          params: {
+            resolved: 'bought',
+            label: merchant.trim() || parsed?.merchant || parsed?.description || 'Watched plan',
+          },
+        });
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (err) {
       Alert.alert('Error', err.message);
     } finally {
@@ -265,6 +276,14 @@ export default function ConfirmScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {isWatchedPlanFlow ? (
+        <View style={styles.watchBanner}>
+          <Text style={styles.watchBannerTitle}>Logging a watched plan</Text>
+          <Text style={styles.watchBannerBody}>
+            Once you save this expense, Adlo will mark the watched plan as bought.
+          </Text>
+        </View>
+      ) : null}
       {hasReviewHint ? (
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerTitle}>Review before saving</Text>
@@ -566,6 +585,17 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20 },
+  watchBanner: {
+    backgroundColor: '#101521',
+    borderWidth: 1,
+    borderColor: '#22314a',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  watchBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  watchBannerBody: { color: '#9db2cb', fontSize: 12, lineHeight: 17 },
   reviewBanner: {
     backgroundColor: '#171717',
     borderWidth: 1,
