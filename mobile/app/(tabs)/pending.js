@@ -23,6 +23,23 @@ function formatDate(dateStr) {
   return `${MONTH_SHORT[date.getMonth()]} ${date.getDate()}`;
 }
 
+function formatFieldList(fields = []) {
+  if (!Array.isArray(fields) || !fields.length) return '';
+  return fields
+    .slice(0, 3)
+    .map((field) => `${field}`.replace(/_/g, ' '))
+    .join(', ');
+}
+
+function reviewToneStyle(tone) {
+  switch (tone) {
+    case 'positive': return { chip: styles.hintChipPositive, text: styles.hintChipTextPositive };
+    case 'warning': return { chip: styles.hintChipWarning, text: styles.hintChipTextWarning };
+    case 'caution': return { chip: styles.hintChipCaution, text: styles.hintChipTextCaution };
+    default: return { chip: styles.hintChipInfo, text: styles.hintChipTextInfo };
+  }
+}
+
 export default function PendingScreen() {
   const router = useRouter();
   const { expenses, loading, refresh } = usePendingExpenses();
@@ -94,6 +111,24 @@ export default function PendingScreen() {
                     {item.merchant || item.description || '—'}
                   </Text>
                   <Text style={styles.date}>{formatDate(item.date)}</Text>
+                  {item.gmail_review_hint ? (
+                    <View style={styles.hintWrap}>
+                      <View style={[styles.hintChip, reviewToneStyle(item.gmail_review_hint.tone).chip]}>
+                        <Text style={[styles.hintChipText, reviewToneStyle(item.gmail_review_hint.tone).text]}>
+                          {item.gmail_review_hint.headline}
+                        </Text>
+                      </View>
+                      {item.gmail_review_hint.likely_changed_fields?.length ? (
+                        <Text style={styles.hintDetail} numberOfLines={1}>
+                          Usually worth checking {formatFieldList(item.gmail_review_hint.likely_changed_fields)}.
+                        </Text>
+                      ) : (
+                        <Text style={styles.hintDetail} numberOfLines={1}>
+                          {item.gmail_review_hint.message}
+                        </Text>
+                      )}
+                    </View>
+                  ) : null}
                 </View>
                 <Text style={styles.amount}>${Number(item.amount).toFixed(2)}</Text>
               </TouchableOpacity>
@@ -133,6 +168,18 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, marginRight: 12 },
   merchant: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
+  hintWrap: { marginTop: 6, gap: 4 },
+  hintChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  hintChipText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  hintChipPositive: { backgroundColor: 'rgba(34,197,94,0.14)' },
+  hintChipTextPositive: { color: '#86efac' },
+  hintChipWarning: { backgroundColor: 'rgba(248,113,113,0.14)' },
+  hintChipTextWarning: { color: '#fca5a5' },
+  hintChipCaution: { backgroundColor: 'rgba(245,158,11,0.16)' },
+  hintChipTextCaution: { color: '#fcd34d' },
+  hintChipInfo: { backgroundColor: 'rgba(96,165,250,0.14)' },
+  hintChipTextInfo: { color: '#93c5fd' },
+  hintDetail: { fontSize: 12, color: '#8a8a8a' },
   amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
 
   approveAction: {

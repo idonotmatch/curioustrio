@@ -181,13 +181,16 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const senderDomain = extractSenderDomain(fromAddress);
   const rows = await EmailImportLog.listQualitySignalsByUser(userId, days);
   const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
-  const metrics = summarizeSenderRows(senderRows);
+  const reviewedSenderRows = senderRows.filter((row) => row.review_action || Number(row.review_edit_count || 0) > 0);
+  const metrics = summarizeSenderRows(reviewedSenderRows);
   const level = classifySenderMetrics(metrics);
+  const top_changed_fields = buildSenderSummary(senderRows, 1)[0]?.top_changed_fields || [];
 
   return {
     sender_domain: senderDomain,
     level,
     metrics,
+    top_changed_fields,
   };
 }
 

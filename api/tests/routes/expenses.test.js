@@ -345,6 +345,65 @@ describe('GET /expenses/pending', () => {
       expect(Array.isArray(expense.duplicate_flags)).toBe(true);
     }
   });
+
+  it('includes gmail_review_hint for email-sourced pending imports', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes)
+       VALUES ($1, $2, 'Hint Merchant', 10.00, '2026-03-18', 'email', 'pending', 'Imported from Gmail — needs review')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address)
+       VALUES ($1, 'hint-msg', $2, 'imported', 'Order Confirmation', 'orders@amazon.com')`,
+      [userId, expResult.rows[0].id]
+    );
+
+    const historicalOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Amazon', 12.00, '2026-03-01', 'email', 'confirmed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const historicalTwo = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Amazon', 18.00, '2026-03-02', 'email', 'confirmed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const historicalThree = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Amazon', 22.00, '2026-03-03', 'email', 'confirmed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address)
+       VALUES
+         ($1, 'hint-h1', $2, 'imported', 'orders@amazon.com'),
+         ($1, 'hint-h2', $3, 'imported', 'orders@amazon.com'),
+         ($1, 'hint-h3', $4, 'imported', 'orders@amazon.com')`,
+      [userId, historicalOne.rows[0].id, historicalTwo.rows[0].id, historicalThree.rows[0].id]
+    );
+    await db.query(
+      `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+       VALUES
+         ($1, 'approved', '[]'::jsonb, 0),
+         ($2, 'approved', '[]'::jsonb, 0),
+         ($3, 'approved', '["merchant"]'::jsonb, 1)`,
+      [historicalOne.rows[0].id, historicalTwo.rows[0].id, historicalThree.rows[0].id]
+    );
+
+    const res = await request(app).get('/expenses/pending');
+    expect(res.status).toBe(200);
+    const hinted = res.body.find((expense) => expense.id === expResult.rows[0].id);
+    expect(hinted.gmail_review_hint).toMatchObject({
+      sender_domain: 'amazon.com',
+      sender_quality_level: 'trusted',
+      headline: 'Trusted sender',
+    });
+    expect(Array.isArray(hinted.gmail_review_hint.likely_changed_fields)).toBe(true);
+  });
 });
 
 describe('POST /expenses/:id/dismiss', () => {
@@ -463,6 +522,63 @@ describe('GET /expenses/:id', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('items');
     expect(Array.isArray(res.body.items)).toBe(true);
+  });
+
+  it('includes gmail_review_hint for email imports', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes)
+       VALUES ($1, $2, 'Detail Hint', 9.99, '2026-03-16', 'email', 'pending', 'Imported from Gmail — needs review')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address)
+       VALUES ($1, 'detail-hint-msg', $2, 'imported', 'Order Confirmation', 'alerts@messy.com')`,
+      [userId, expResult.rows[0].id]
+    );
+
+    const noisyOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Messy Shop', 11.00, '2026-03-01', 'email', 'dismissed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const noisyTwo = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Messy Shop', 17.00, '2026-03-02', 'email', 'confirmed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const noisyThree = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Messy Shop', 21.00, '2026-03-03', 'email', 'confirmed')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address)
+       VALUES
+         ($1, 'detail-h1', $2, 'imported', 'alerts@messy.com'),
+         ($1, 'detail-h2', $3, 'imported', 'alerts@messy.com'),
+         ($1, 'detail-h3', $4, 'imported', 'alerts@messy.com')`,
+      [userId, noisyOne.rows[0].id, noisyTwo.rows[0].id, noisyThree.rows[0].id]
+    );
+    await db.query(
+      `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+       VALUES
+         ($1, 'dismissed', '[]'::jsonb, 0),
+         ($2, 'approved', '["merchant"]'::jsonb, 1),
+         ($3, 'approved', '["amount"]'::jsonb, 1)`,
+      [noisyOne.rows[0].id, noisyTwo.rows[0].id, noisyThree.rows[0].id]
+    );
+
+    const res = await request(app).get(`/expenses/${expResult.rows[0].id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.gmail_review_hint).toMatchObject({
+      sender_domain: 'messy.com',
+      sender_quality_level: 'noisy',
+      headline: 'Low-confidence sender',
+    });
   });
 });
 

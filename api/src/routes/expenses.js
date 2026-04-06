@@ -9,6 +9,7 @@ const MerchantMapping = require('../models/merchantMapping');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
+const { getSenderImportQuality } = require('../services/gmailImportQualityService');
 const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
@@ -57,6 +58,61 @@ function parseStartDay(value, fallback) {
   const day = parseInt(value, 10);
   if (!Number.isInteger(day) || day < 1 || day > 28) return null;
   return day;
+}
+
+function buildEmailReviewHint(log, senderQuality) {
+  if (!log?.message_id) return null;
+
+  const level = senderQuality?.level || 'unknown';
+  const likelyChangedFields = Array.isArray(senderQuality?.top_changed_fields)
+    ? senderQuality.top_changed_fields.map((entry) => entry.field).filter(Boolean)
+    : [];
+
+  let headline = 'Imported from Gmail';
+  let tone = 'info';
+  let message = 'Review the details before approving this import.';
+
+  if (level === 'trusted') {
+    tone = 'positive';
+    headline = 'Trusted sender';
+    message = 'This sender is usually accurate. A quick check is probably enough.';
+  } else if (level === 'noisy') {
+    tone = 'warning';
+    headline = 'Low-confidence sender';
+    message = 'Imports from this sender often need edits or get dismissed, so review carefully.';
+  } else if (level === 'mixed') {
+    tone = 'caution';
+    headline = 'Mixed sender history';
+    message = 'Imports from this sender are sometimes right and sometimes need correction.';
+  }
+
+  return {
+    sender_domain: senderQuality?.sender_domain || null,
+    sender_quality_level: level,
+    sender_quality_metrics: senderQuality?.metrics || null,
+    likely_changed_fields: likelyChangedFields,
+    message_subject: log.subject || null,
+    headline,
+    tone,
+    message,
+  };
+}
+
+async function attachGmailReviewHint(expense, userId) {
+  if (!expense || expense.source !== 'email') return expense;
+  const log = await EmailImportLog.findByExpenseId(expense.id);
+  if (!log?.from_address) {
+    return { ...expense, gmail_review_hint: null };
+  }
+  const senderQuality = await getSenderImportQuality(userId, log.from_address);
+  return {
+    ...expense,
+    gmail_review_hint: buildEmailReviewHint(log, senderQuality),
+  };
+}
+
+async function attachGmailReviewHints(expenses = [], userId) {
+  return Promise.all(expenses.map((expense) => attachGmailReviewHint(expense, userId)));
 }
 
 const { aiEndpoints } = require('../middleware/rateLimit');
@@ -267,7 +323,7 @@ router.get('/pending', async (req, res, next) => {
         duplicate_flags: await DuplicateFlag.findByExpenseId(e.id),
       }))
     );
-    res.json(expenses);
+    res.json(await attachGmailReviewHints(expenses, user.id));
   } catch (err) { next(err); }
 });
 
@@ -348,7 +404,7 @@ router.get('/:id', async (req, res, next) => {
     if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
     const duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
     const items = await ExpenseItem.findByExpenseId(expense.id);
-    res.json({ ...expense, duplicate_flags, items });
+    res.json(await attachGmailReviewHint({ ...expense, duplicate_flags, items }, user.id));
   } catch (err) { next(err); }
 });
 

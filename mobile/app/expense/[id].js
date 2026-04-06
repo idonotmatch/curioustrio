@@ -12,6 +12,11 @@ import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { LocationPicker } from '../../components/LocationPicker';
 
+function formatLikelyFields(fields = []) {
+  if (!Array.isArray(fields) || !fields.length) return '';
+  return fields.slice(0, 3).map((field) => `${field}`.replace(/_/g, ' ')).join(', ');
+}
+
 export default function ExpenseDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -227,6 +232,7 @@ export default function ExpenseDetailScreen() {
   const ownerLabel = expense.user_name || 'You';
   const sourceText = sourceLabel[expense.source] || expense.source;
   const reviewState = expense.status === 'pending' && /needs review/i.test(expense.notes || '');
+  const gmailReviewHint = expense.gmail_review_hint || null;
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -281,6 +287,31 @@ export default function ExpenseDetailScreen() {
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerTitle}>Needs review</Text>
           <Text style={styles.reviewBannerText}>This import was surfaced for review before it is counted in your confirmed expenses.</Text>
+        </View>
+      ) : null}
+
+      {gmailReviewHint ? (
+        <View style={[
+          styles.gmailHintCard,
+          gmailReviewHint.tone === 'positive' && styles.gmailHintCardPositive,
+          gmailReviewHint.tone === 'warning' && styles.gmailHintCardWarning,
+          gmailReviewHint.tone === 'caution' && styles.gmailHintCardCaution,
+        ]}>
+          <Text style={styles.gmailHintTitle}>{gmailReviewHint.headline}</Text>
+          <Text style={styles.gmailHintBody}>{gmailReviewHint.message}</Text>
+          {gmailReviewHint.sender_domain ? (
+            <Text style={styles.gmailHintMeta}>Sender: {gmailReviewHint.sender_domain}</Text>
+          ) : null}
+          {gmailReviewHint.likely_changed_fields?.length ? (
+            <Text style={styles.gmailHintMeta}>
+              Most often corrected: {formatLikelyFields(gmailReviewHint.likely_changed_fields)}
+            </Text>
+          ) : null}
+          {gmailReviewHint.message_subject ? (
+            <Text style={styles.gmailHintMeta} numberOfLines={2}>
+              Subject: {gmailReviewHint.message_subject}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -701,6 +732,23 @@ const styles = StyleSheet.create({
   },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
+  gmailHintCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: -4,
+    backgroundColor: '#10141b',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  gmailHintCardPositive: { backgroundColor: '#0f1712', borderColor: '#1f3b2b' },
+  gmailHintCardWarning: { backgroundColor: '#1a1010', borderColor: '#3b1f1f' },
+  gmailHintCardCaution: { backgroundColor: '#18130a', borderColor: '#3c2e11' },
+  gmailHintTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  gmailHintBody: { color: '#cfcfcf', fontSize: 12, lineHeight: 18 },
+  gmailHintMeta: { color: '#8d8d8d', fontSize: 11, lineHeight: 16, marginTop: 4 },
   recurringCard: {
     marginHorizontal: 20,
     marginTop: 12,
