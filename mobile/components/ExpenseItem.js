@@ -55,6 +55,9 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
   const ownerLabel = isOwn ? 'You' : (localExpense.user_name || 'Household member');
   const categoryOptions = categories.filter(c => !c.parent_id || c.parent_name);
   const dateLabel = formatDate(localExpense.date);
+  const hasItemDetails = Array.isArray(localExpense.items)
+    ? localExpense.items.length > 0
+    : Number(localExpense.item_count) > 0;
 
   async function toggleItems() {
     if (itemsExpanded) {
@@ -77,7 +80,23 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       const detail = await api.get(`/expenses/${localExpense.id}`);
       const nextItems = Array.isArray(detail.items) ? detail.items : [];
       setItems(nextItems);
-      saveExpenseSnapshot(detail);
+      if (!nextItems.length) {
+        const nextExpense = {
+          ...localExpense,
+          item_count: 0,
+          items: [],
+        };
+        setLocalExpense(nextExpense);
+        saveExpenseSnapshot(nextExpense);
+      } else {
+        const nextExpense = {
+          ...detail,
+          item_count: nextItems.length,
+          items: nextItems,
+        };
+        setLocalExpense(nextExpense);
+        saveExpenseSnapshot(nextExpense);
+      }
     } catch {
       setItems(prev => prev ?? []);
     } finally {
@@ -227,16 +246,16 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           </ScrollView>
         )}
 
-        {localExpense.item_count > 0 && (
+        {hasItemDetails && (
           <TouchableOpacity style={styles.itemToggleRow} onPress={toggleItems} activeOpacity={0.7}>
             <Text style={styles.itemCount}>
-              {localExpense.item_count} {localExpense.item_count === 1 ? 'item' : 'items'}
+              {Array.isArray(localExpense.items) ? localExpense.items.length : localExpense.item_count} {(Array.isArray(localExpense.items) ? localExpense.items.length : localExpense.item_count) === 1 ? 'item' : 'items'}
             </Text>
             <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-down'} size={12} color="#777" />
           </TouchableOpacity>
         )}
 
-        {itemsExpanded && localExpense.item_count > 0 && (
+        {itemsExpanded && hasItemDetails && (
           <View style={styles.itemsPanel}>
             {itemsLoading ? (
               <ActivityIndicator size="small" color="#777" style={{ paddingVertical: 8 }} />
