@@ -14,6 +14,10 @@ function scopeLabel(scope) {
   return scope === 'household' ? 'Household' : 'You';
 }
 
+function scopeContextLabel(scope) {
+  return scope === 'household' ? 'Shared room' : 'Personal room';
+}
+
 function statusLabel(status) {
   switch (status) {
     case 'comfortable': return 'Comfortable';
@@ -225,7 +229,7 @@ export default function WatchingPlansScreen() {
                         <View style={styles.rowTop}>
                           <View style={styles.textCol}>
                             <Text style={styles.label}>{plan.label}</Text>
-                            <Text style={styles.meta}>{scopeLabel(plan.scope)} · Watching</Text>
+                            <Text style={styles.meta}>{scopeLabel(plan.scope)} · {scopeContextLabel(plan.scope)} · Watching</Text>
                             {change ? <Text style={styles.change}>{change}</Text> : null}
                             {why ? <Text style={styles.why}>{why}</Text> : null}
                           </View>
@@ -306,7 +310,7 @@ export default function WatchingPlansScreen() {
                       <View style={styles.rowTop}>
                         <View style={styles.textCol}>
                           <Text style={styles.label}>{plan.label}</Text>
-                          <Text style={styles.meta}>{scopeLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
+                          <Text style={styles.meta}>{scopeLabel(plan.scope)} · {scopeContextLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
                         </View>
                         <View style={styles.rightCol}>
                           <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>

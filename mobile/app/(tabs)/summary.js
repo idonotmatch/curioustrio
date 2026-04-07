@@ -160,6 +160,8 @@ export default function SummaryScreen() {
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
   const [watchedPlans, setWatchedPlans] = useState([]);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
+  const watchedHouseholdCount = watchedPlans.filter((plan) => plan.scope === 'household').length;
+  const watchedPersonalCount = watchedPlans.filter((plan) => plan.scope !== 'household').length;
   const displayInsights = __DEV__ && insights.length === 0
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
@@ -543,6 +545,9 @@ export default function SummaryScreen() {
               {watchedImprovedCount > 0 || watchedWorsenedCount > 0
                 ? `${watchedImprovedCount > 0 ? `${watchedImprovedCount} got easier` : ''}${watchedImprovedCount > 0 && watchedWorsenedCount > 0 ? ' · ' : ''}${watchedWorsenedCount > 0 ? `${watchedWorsenedCount} got tighter` : ''}`
                 : 'Plans you asked Adlo to keep an eye on.'}
+              {(watchedHouseholdCount > 0 || watchedPersonalCount > 0)
+                ? ` ${watchedHouseholdCount > 0 ? `${watchedHouseholdCount} shared` : ''}${watchedHouseholdCount > 0 && watchedPersonalCount > 0 ? ' · ' : ''}${watchedPersonalCount > 0 ? `${watchedPersonalCount} personal` : ''}.`
+                : ''}
             </Text>
           </View>
           <View style={styles.watchingCTA}>

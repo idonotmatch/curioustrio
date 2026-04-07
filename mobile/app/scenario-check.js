@@ -110,6 +110,16 @@ function timingModeLabel(mode) {
   }
 }
 
+function scopeContextCopy(scope, isMultiMember) {
+  if (scope === 'household') {
+    return 'Using shared household room, recurring pressure, and budget context.';
+  }
+  if (isMultiMember) {
+    return 'Using only your personal room, not the shared household outlook.';
+  }
+  return 'Using your current personal spending outlook.';
+}
+
 function recommendationButtonLabel(mode) {
   switch (mode) {
     case 'next_period': return 'Try next period';
@@ -188,6 +198,7 @@ export default function ScenarioCheckScreen() {
   const [recentPlans, setRecentPlans] = useState([]);
   const [intentLoading, setIntentLoading] = useState('');
   const [watchLoading, setWatchLoading] = useState(false);
+  const [showComposer, setShowComposer] = useState(false);
   const autoRanRef = useRef(false);
   const bootstrappedInitialResultRef = useRef(false);
   const isAutoRunning = `${params.auto_run}` === '1' && !scenario && loading;
@@ -203,6 +214,50 @@ export default function ScenarioCheckScreen() {
   const status = useMemo(() => statusConfig(scenario?.status), [scenario?.status]);
   const displayLabel = scenario?.label || label.trim() || 'purchase';
   const displayAmount = scenario?.proposed_amount != null ? Number(scenario.proposed_amount) : parsedAmount;
+  const amountShareOfRoom = currentHeadroom > 0 ? Math.round((displayAmount / currentHeadroom) * 100) : null;
+
+  function renderConsiderationRows() {
+    const rows = [
+      {
+        label: 'Purchase size',
+        value: formatCurrency(displayAmount),
+        copy: currentHeadroom > 0
+          ? `${formatCurrency(displayAmount)} would use about ${amountShareOfRoom}% of the room you had left.`
+          : `${formatCurrency(displayAmount)} is being evaluated against a tight starting outlook.`,
+      },
+      {
+        label: 'Timing',
+        value: timingModeLabel(scenario?.timing_mode || timingMode),
+        copy: scenario?.timing_mode === 'spread_3_periods'
+          ? `Adlo is spreading this across ${scenario.horizon_periods?.length || 3} periods instead of treating it as one immediate hit.`
+          : scenario?.timing_mode === 'next_period'
+            ? 'Adlo is checking whether waiting until the next period creates more breathing room.'
+            : `Landing this now would leave about ${formatCurrency(postPurchaseHeadroom)} before recurring pressure.`,
+      },
+      {
+        label: 'Recurring pressure',
+        value: recurringPressure > 0 ? formatCurrency(recurringPressure) : 'Light',
+        copy: recurringPressure > 0
+          ? `${formatCurrency(recurringPressure)} of expected recurring pressure is still ahead in this horizon.`
+          : 'No major recurring pressure is currently tightening this horizon.',
+      },
+      {
+        label: 'Confidence',
+        value: statusConfig(scenario?.status).label,
+        copy: confidenceCopy(scenario?.projection_confidence),
+      },
+    ];
+
+    return rows.map((row) => (
+      <View key={row.label} style={styles.considerationRow}>
+        <View style={styles.considerationText}>
+          <Text style={styles.considerationLabel}>{row.label}</Text>
+          <Text style={styles.considerationCopy}>{row.copy}</Text>
+        </View>
+        <Text style={styles.considerationValue}>{row.value}</Text>
+      </View>
+    ));
+  }
 
   async function handleSubmit(nextTimingMode = timingMode) {
     if (!canSubmit) return;
@@ -331,6 +386,14 @@ export default function ScenarioCheckScreen() {
     handleSubmit();
   }, [params.auto_run, canSubmit, params.initial_result]);
 
+  useEffect(() => {
+    if (!scenario) {
+      setShowComposer(true);
+      return;
+    }
+    setShowComposer(false);
+  }, [scenario]);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -358,6 +421,7 @@ export default function ScenarioCheckScreen() {
               </View>
               <Text style={styles.resultTitle}>{status.headline}</Text>
               <Text style={styles.heroCopy}>{reasonCopy(result)}</Text>
+              <Text style={styles.scopeContextCopy}>{scopeContextCopy(scope, isMultiMember)}</Text>
             </View>
 
             <View style={styles.planSummaryCard}>
@@ -512,102 +576,119 @@ export default function ScenarioCheckScreen() {
           </>
         )}
 
-        <View style={styles.card}>
-          <View style={styles.composerHeader}>
-            <Text style={styles.cardTitle}>{scenario ? 'Try another plan' : 'Scenario'}</Text>
-            <Text style={styles.composerMeta}>{periodLabel(targetMonth, startDay)}</Text>
-          </View>
-
-          <View style={styles.composerRow}>
-            <View style={styles.amountPill}>
-              <Text style={styles.amountPillDollar}>$</Text>
-              <TextInput
-                value={amount}
-                onChangeText={(value) => setAmount(formatAmountInput(value))}
-                placeholder="180"
-                placeholderTextColor="#6f6f6f"
-                keyboardType="decimal-pad"
-                style={styles.amountPillInput}
-              />
+        {scenario ? (
+          <View style={styles.card}>
+            <View style={styles.composerHeader}>
+              <Text style={styles.cardTitle}>Considerations</Text>
+              <Text style={styles.composerMeta}>What drove this answer and what you could adjust.</Text>
             </View>
-            <View style={styles.inlineInputWrap}>
-              <TextInput
-                value={label}
-                onChangeText={setLabel}
-                placeholder="running shoes"
-                placeholderTextColor="#6f6f6f"
-                style={styles.inlineInput}
-              />
+            <View style={styles.considerationsList}>
+              {renderConsiderationRows()}
             </View>
+            <TouchableOpacity style={styles.secondaryLinkButton} onPress={() => setShowComposer((value) => !value)}>
+              <Text style={styles.secondaryLinkText}>{showComposer ? 'Hide adjustments' : 'Adjust this plan'}</Text>
+            </TouchableOpacity>
           </View>
+        ) : null}
 
-          <View style={styles.composerFooter}>
-            <View style={styles.composerControls}>
-              {isMultiMember ? (
-                <View style={styles.toggleRow}>
-                  <TouchableOpacity
-                    style={[styles.toggleChip, scope === 'personal' && styles.toggleChipActive]}
-                    onPress={() => setScope('personal')}
-                  >
-                    <Text style={[styles.toggleChipText, scope === 'personal' && styles.toggleChipTextActive]}>Mine</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleChip, scope === 'household' && styles.toggleChipActive]}
-                    onPress={() => setScope('household')}
-                  >
-                    <Text style={[styles.toggleChipText, scope === 'household' && styles.toggleChipTextActive]}>Household</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.periodMiniBadge}>
-                  <Text style={styles.periodMiniBadgeText}>{periodLabel(targetMonth, startDay)}</Text>
-                </View>
-              )}
+        {(!scenario || showComposer) ? (
+          <View style={styles.card}>
+            <View style={styles.composerHeader}>
+              <Text style={styles.cardTitle}>{scenario ? 'Adjustments' : 'Scenario'}</Text>
+              <Text style={styles.composerMeta}>{periodLabel(targetMonth, startDay)}</Text>
+            </View>
 
-              <View style={styles.timingRow}>
-                <TouchableOpacity
-                  style={[styles.timingChip, timingMode === 'now' && styles.timingChipActive]}
-                  onPress={() => setTimingMode('now')}
-                >
-                  <Text style={[styles.timingChipText, timingMode === 'now' && styles.timingChipTextActive]}>Now</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.timingChip, timingMode === 'next_period' && styles.timingChipActive]}
-                  onPress={() => setTimingMode('next_period')}
-                >
-                  <Text style={[styles.timingChipText, timingMode === 'next_period' && styles.timingChipTextActive]}>Next</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.timingChip, timingMode === 'spread_3_periods' && styles.timingChipActive]}
-                  onPress={() => setTimingMode('spread_3_periods')}
-                >
-                  <Text style={[styles.timingChipText, timingMode === 'spread_3_periods' && styles.timingChipTextActive]}>3 periods</Text>
-                </TouchableOpacity>
+            <View style={styles.composerRow}>
+              <View style={styles.amountPill}>
+                <Text style={styles.amountPillDollar}>$</Text>
+                <TextInput
+                  value={amount}
+                  onChangeText={(value) => setAmount(formatAmountInput(value))}
+                  placeholder="180"
+                  placeholderTextColor="#6f6f6f"
+                  keyboardType="decimal-pad"
+                  style={styles.amountPillInput}
+                />
+              </View>
+              <View style={styles.inlineInputWrap}>
+                <TextInput
+                  value={label}
+                  onChangeText={setLabel}
+                  placeholder="running shoes"
+                  placeholderTextColor="#6f6f6f"
+                  style={styles.inlineInput}
+                />
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]}
-              onPress={handleSubmit}
-              disabled={!canSubmit}
-            >
-              {loading ? (
-                <ActivityIndicator color="#000" size="small" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Run it</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+            <View style={styles.composerFooter}>
+              <View style={styles.composerControls}>
+                {isMultiMember ? (
+                  <View style={styles.toggleRow}>
+                    <TouchableOpacity
+                      style={[styles.toggleChip, scope === 'personal' && styles.toggleChipActive]}
+                      onPress={() => setScope('personal')}
+                    >
+                      <Text style={[styles.toggleChipText, scope === 'personal' && styles.toggleChipTextActive]}>Mine</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.toggleChip, scope === 'household' && styles.toggleChipActive]}
+                      onPress={() => setScope('household')}
+                    >
+                      <Text style={[styles.toggleChipText, scope === 'household' && styles.toggleChipTextActive]}>Household</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.periodMiniBadge}>
+                    <Text style={styles.periodMiniBadgeText}>{periodLabel(targetMonth, startDay)}</Text>
+                  </View>
+                )}
 
-          {isMultiMember ? (
-            <View style={styles.periodBadge}>
-              <Text style={styles.periodBadgeTitle}>{periodLabel(targetMonth, startDay)}</Text>
-              <Text style={styles.periodBadgeCopy}>Uses your active budget period and current spend projection.</Text>
+                <View style={styles.timingRow}>
+                  <TouchableOpacity
+                    style={[styles.timingChip, timingMode === 'now' && styles.timingChipActive]}
+                    onPress={() => setTimingMode('now')}
+                  >
+                    <Text style={[styles.timingChipText, timingMode === 'now' && styles.timingChipTextActive]}>Now</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.timingChip, timingMode === 'next_period' && styles.timingChipActive]}
+                    onPress={() => setTimingMode('next_period')}
+                  >
+                    <Text style={[styles.timingChipText, timingMode === 'next_period' && styles.timingChipTextActive]}>Next</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.timingChip, timingMode === 'spread_3_periods' && styles.timingChipActive]}
+                    onPress={() => setTimingMode('spread_3_periods')}
+                  >
+                    <Text style={[styles.timingChipText, timingMode === 'spread_3_periods' && styles.timingChipTextActive]}>3 periods</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]}
+                onPress={() => handleSubmit()}
+                disabled={!canSubmit}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>{scenario ? 'Update' : 'Run it'}</Text>
+                )}
+              </TouchableOpacity>
             </View>
-          ) : null}
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        </View>
+            {isMultiMember ? (
+              <View style={styles.periodBadge}>
+                <Text style={styles.periodBadgeTitle}>{periodLabel(targetMonth, startDay)}</Text>
+                <Text style={styles.periodBadgeCopy}>Uses your active budget period and current spend projection.</Text>
+              </View>
+            ) : null}
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          </View>
+        ) : null}
 
         {recentPlans.length > 0 ? (
           <View style={styles.card}>
@@ -672,6 +753,7 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 30, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   resultTitle: { fontSize: 28, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.6, lineHeight: 34 },
   heroCopy: { fontSize: 15, color: '#b5b5b5', lineHeight: 22 },
+  scopeContextCopy: { fontSize: 13, color: '#8ca7bf', lineHeight: 18 },
   planSummaryCard: {
     backgroundColor: '#101010',
     borderWidth: 1,
@@ -737,6 +819,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   composerControls: { flex: 1, gap: 10 },
+  considerationsList: { gap: 0 },
+  considerationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+  },
+  considerationText: { flex: 1, gap: 3 },
+  considerationLabel: { color: '#f1f1f1', fontSize: 14, fontWeight: '600' },
+  considerationCopy: { color: '#9a9a9a', fontSize: 13, lineHeight: 18 },
+  considerationValue: { color: '#dfefff', fontSize: 13, fontWeight: '600', textAlign: 'right', maxWidth: 118 },
+  secondaryLinkButton: {
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    paddingVertical: 4,
+  },
+  secondaryLinkText: { color: '#b6cce0', fontSize: 13, fontWeight: '600' },
   toggleRow: { flexDirection: 'row', gap: 10, flex: 1 },
   toggleChip: {
     backgroundColor: '#171717',
