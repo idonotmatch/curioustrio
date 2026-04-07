@@ -3,12 +3,18 @@ import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
 
-export function useHouseholdExpenses(month, startDayOverride) {
+export function useHouseholdExpenses(month, startDayOverride, { enabled = true } = {}) {
   const [expenses, setExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      setExpenses([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setError(null);
     const params = [
       month && `month=${month}`,
@@ -25,7 +31,7 @@ export function useHouseholdExpenses(month, startDayOverride) {
       },
       (err) => { setError(err.message); setLoading(false); },
     );
-  }, [month, startDayOverride]);
+  }, [enabled, month, startDayOverride]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

@@ -37,7 +37,8 @@ function BudgetBar({ spent, budget, label, periodText }) {
   const [expanded, setExpanded] = useState(false);
   const limit = budget?.total?.limit;
   const pct = limit ? Math.min(spent / limit, 1) : null;
-  const over = limit && spent > limit;
+  const hasLimit = Number(limit) > 0;
+  const over = hasLimit && spent > limit;
   const byParent = budget?.by_parent;
   const hasBreakdown = Array.isArray(byParent) && byParent.length > 0;
 
@@ -72,7 +73,7 @@ function BudgetBar({ spent, budget, label, periodText }) {
           <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: over ? '#ef4444' : '#4ade80' }]} />
         </View>
       )}
-      {limit && (
+      {hasLimit && (
         <Text style={styles.spendSub}>
           {over
             ? `$${(spent - limit).toFixed(0)} over budget`
@@ -129,9 +130,9 @@ export default function FeedScreen() {
   const [selectedMonth, setSelectedMonth] = useState(() => currentPeriod(transactionStartDay));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
-  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay);
+  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
-  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay });
+  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
@@ -148,19 +149,19 @@ export default function FeedScreen() {
 
   const refresh = useCallback(() => {
     refreshMine();
-    refreshHouseholdExpenses();
+    if (isMultiMember) refreshHouseholdExpenses();
     refreshPersonalBudget();
-    refreshHouseholdBudget();
+    if (isMultiMember) refreshHouseholdBudget();
     refreshPending();
     refreshHousehold();
-  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold]);
+  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold, isMultiMember]);
 
   useFocusEffect(useCallback(() => {
-    refreshHouseholdExpenses();
-    refreshHouseholdBudget();
+    if (isMultiMember) refreshHouseholdExpenses();
+    if (isMultiMember) refreshHouseholdBudget();
     refreshPersonalBudget();
     refreshPending();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending]));
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending, isMultiMember]));
 
   async function dismissPending(id) {
     try {
@@ -263,7 +264,7 @@ export default function FeedScreen() {
         selectedMonth={selectedMonth}
         transactionStartDay={transactionStartDay}
         onMonthPress={() => setShowMonthPicker(true)}
-        householdName={household?.name || ''}
+        householdName={isMultiMember ? (household?.name || '') : ''}
       />
 
       {/* Mine / Household toggle — filters the expense list only */}

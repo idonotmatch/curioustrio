@@ -235,12 +235,12 @@ export default function SummaryScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
-  const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
-  const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth);
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
-  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household');
   const { household, memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
+  const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
+  const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, null, { enabled: isMultiMember });
+  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
+  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { enabled: isMultiMember });
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
   const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight, logEvents } = useInsights(3);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
@@ -282,8 +282,8 @@ export default function SummaryScreen() {
   useFocusEffect(useCallback(() => {
     refreshExpenses();
     refreshPersonalBudget();
-    refreshHouseholdExpenses();
-    refreshHouseholdBudget();
+    if (isMultiMember) refreshHouseholdExpenses();
+    if (isMultiMember) refreshHouseholdBudget();
     refreshPending();
     loadGmailImportSummary();
     loadWatchedPlans();
@@ -297,6 +297,7 @@ export default function SummaryScreen() {
     loadGmailImportSummary,
     loadWatchedPlans,
     refreshInsights,
+    isMultiMember,
   ]));
 
   useEffect(() => {
@@ -411,12 +412,12 @@ export default function SummaryScreen() {
   const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
   const limit = personalBudget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
-  const over = limit && spent > limit;
+  const over = limit > 0 && spent > limit;
 
   const hLimit = householdBudget?.total?.limit ?? 0;
   const hSpent = householdSpent;
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
-  const hOver = hLimit && hSpent > hLimit;
+  const hOver = hLimit > 0 && hSpent > hLimit;
   const recent = (expenses || []).slice(0, 5);
   const watchedImprovedCount = watchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
   const watchedWorsenedCount = watchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;

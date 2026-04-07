@@ -4,11 +4,16 @@ import { loadWithCache, loadCacheOnly } from '../services/cache';
 
 // cacheOnly: true for personal scope (only local user mutates it).
 //            false (default) for household scope (other members can change it).
-export function useBudget(month, scope, { cacheOnly = false, startDayOverride = null } = {}) {
+export function useBudget(month, scope, { cacheOnly = false, startDayOverride = null, enabled = true } = {}) {
   const [budget, setBudget] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      setBudget(null);
+      setLoading(false);
+      return;
+    }
     const params = [
       month && `month=${month}`,
       scope && `scope=${scope}`,
@@ -22,7 +27,7 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
       (data) => { setBudget(data); setLoading(false); },
       () => { setBudget(null); setLoading(false); },
     );
-  }, [month, scope, cacheOnly, startDayOverride]);
+  }, [month, scope, cacheOnly, startDayOverride, enabled]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
