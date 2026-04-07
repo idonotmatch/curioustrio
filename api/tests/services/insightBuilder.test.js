@@ -5,6 +5,7 @@ const {
   narrativeTheme,
   buildUsageFallbackInsights,
   insightDestinationAdjustment,
+  portfolioRole,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -26,6 +27,13 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioFamily(buildInsight({ type: 'one_off_expense_skewing_projection' }))).toBe('explanation');
     expect(portfolioFamily(buildInsight({ type: 'recurring_restock_window' }))).toBe('opportunity');
     expect(portfolioFamily(buildInsight({ type: 'recurring_repurchase_due' }))).toBe('reminder');
+  });
+
+  it('classifies insights into portfolio roles', () => {
+    expect(portfolioRole(buildInsight({ type: 'usage_set_budget' }))).toBe('setup');
+    expect(portfolioRole(buildInsight({ type: 'projected_month_end_over_budget' }))).toBe('act');
+    expect(portfolioRole(buildInsight({ type: 'projected_month_end_under_budget' }))).toBe('plan');
+    expect(portfolioRole(buildInsight({ type: 'top_category_driver' }))).toBe('explain');
   });
 
   it('groups related insights into narrative clusters', () => {
@@ -99,6 +107,33 @@ describe('insightBuilder orchestration', () => {
     expect(insightDestinationAdjustment(insights[1])).toBeGreaterThan(insightDestinationAdjustment(insights[0]));
     const selected = orchestrateInsightPortfolio(insights, new Map(), 1);
     expect(selected[0].id).toBe('category-1');
+  });
+
+  it('keeps explanation cards from crowding out setup/action cards too early', () => {
+    const insights = [
+      buildInsight({
+        id: 'explain-1',
+        type: 'top_category_driver',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04', category_key: 'groceries' },
+      }),
+      buildInsight({
+        id: 'explain-2',
+        type: 'one_offs_driving_variance',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'setup-1',
+        type: 'usage_set_budget',
+        severity: 'low',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ];
+
+    const selected = orchestrateInsightPortfolio(insights, new Map(), 2);
+    expect(selected.map((insight) => insight.id)).toContain('setup-1');
+    expect(selected.filter((insight) => portfolioRole(insight) === 'explain')).toHaveLength(1);
   });
 
   it('boosts families and themes that have stronger acted history', () => {

@@ -604,6 +604,43 @@ function insightDestinationAdjustment(insight) {
   return 0;
 }
 
+function portfolioRole(insight) {
+  const type = `${insight?.type || ''}`.trim();
+
+  if (
+    type === 'usage_start_logging'
+    || type === 'usage_set_budget'
+    || type === 'usage_building_history'
+  ) return 'setup';
+
+  if (
+    type === 'projected_month_end_over_budget'
+    || type === 'budget_too_low'
+    || type === 'recurring_repurchase_due'
+    || type === 'recurring_restock_window'
+    || type === 'buy_soon_better_price'
+  ) return 'act';
+
+  if (
+    type === 'projected_month_end_under_budget'
+    || type === 'projected_category_under_baseline'
+    || type === 'usage_ready_to_plan'
+  ) return 'plan';
+
+  if (
+    type === 'top_category_driver'
+    || type === 'projected_category_surge'
+    || type === 'one_offs_driving_variance'
+    || type === 'one_off_expense_skewing_projection'
+    || type === 'recurring_cost_pressure'
+    || type === 'spend_pace_ahead'
+    || type === 'spend_pace_behind'
+    || type === 'budget_too_high'
+  ) return 'explain';
+
+  return 'other';
+}
+
 function portfolioFamily(insight) {
   const type = `${insight?.type || ''}`.trim();
   if (!type) return 'other';
@@ -775,6 +812,33 @@ function orchestrationPenalty(insight, selected = []) {
   return penalty;
 }
 
+function orchestrationRoleMixAdjustment(insight, selected = []) {
+  const role = portfolioRole(insight);
+  const selectedRoles = new Set(selected.map((picked) => portfolioRole(picked)));
+  const sameRoleCount = selected.filter((picked) => portfolioRole(picked) === role).length;
+
+  let score = 0;
+
+  if (selected.length === 0) {
+    if (role === 'act' || role === 'setup') score += 10;
+    if (role === 'explain') score -= 4;
+  }
+
+  if (!selectedRoles.has(role)) {
+    if (role === 'act' || role === 'plan' || role === 'setup') score += 14;
+    else if (role === 'explain') score += 6;
+  }
+
+  if (role === 'explain' && !selectedRoles.has('act') && !selectedRoles.has('plan') && !selectedRoles.has('setup')) {
+    score -= 8;
+  }
+
+  if (role === 'explain' && sameRoleCount > 0) score -= sameRoleCount * 10;
+  if (role === 'setup' && sameRoleCount > 0) score -= sameRoleCount * 20;
+
+  return score;
+}
+
 function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limit = 10) {
   const remaining = [...insights];
   const selected = [];
@@ -789,6 +853,7 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
       const score = insightRankScore(insight, feedbackSummary)
         + portfolioOutcomeAdjustment(insight, portfolioFeedback)
         + insightDestinationAdjustment(insight)
+        + orchestrationRoleMixAdjustment(insight, selected)
         - orchestrationPenalty(insight, selected);
       if (score > bestScore) {
         bestScore = score;
@@ -1166,6 +1231,7 @@ module.exports = {
   buildUsageFallbackInsights,
   insightRankScore,
   insightDestinationAdjustment,
+  portfolioRole,
   portfolioFamily,
   narrativeClusterKey,
   narrativeTheme,
