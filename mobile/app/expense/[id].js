@@ -432,6 +432,20 @@ export default function ExpenseDetailScreen() {
               <Text style={styles.emailContextSummaryText}>{emailSummary}</Text>
             </View>
           ) : null}
+          {gmailReviewHint?.amount_evidence || gmailReviewHint?.date_evidence || gmailReviewHint?.merchant_evidence ? (
+            <View style={styles.emailEvidenceSection}>
+              <Text style={styles.emailContextSummaryLabel}>Why these fields were chosen</Text>
+              {gmailReviewHint?.amount_evidence ? (
+                <Text style={styles.emailEvidenceText}>Amount: {gmailReviewHint.amount_evidence}</Text>
+              ) : null}
+              {gmailReviewHint?.date_evidence ? (
+                <Text style={styles.emailEvidenceText}>Date: {gmailReviewHint.date_evidence}</Text>
+              ) : null}
+              {gmailReviewHint?.merchant_evidence ? (
+                <Text style={styles.emailEvidenceText}>Merchant: {gmailReviewHint.merchant_evidence}</Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -889,6 +903,8 @@ const styles = StyleSheet.create({
   emailContextSummary: { borderTopWidth: 1, borderTopColor: '#1c1c1c', paddingTop: 10, marginTop: 2 },
   emailContextSummaryLabel: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   emailContextSummaryText: { color: '#b8b8b8', fontSize: 12, lineHeight: 18 },
+  emailEvidenceSection: { borderTopWidth: 1, borderTopColor: '#1c1c1c', paddingTop: 10, marginTop: 10 },
+  emailEvidenceText: { color: '#c7c7c7', fontSize: 12, lineHeight: 18, marginTop: 4 },
   recurringCard: {
     marginHorizontal: 20,
     marginTop: 12,

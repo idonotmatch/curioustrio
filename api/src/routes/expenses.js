@@ -60,13 +60,62 @@ function parseStartDay(value, fallback) {
   return day;
 }
 
-function buildEmailReviewHint(log, senderQuality) {
+function deriveEmailFieldEvidence(expense, log) {
+  if (!expense || !log?.message_id) return {};
+
+  const subject = `${log.subject || ''}`;
+  const fromAddress = `${log.from_address || ''}`;
+  const merchant = `${expense.merchant || ''}`.trim();
+  const amount = Math.abs(Number(expense.amount || 0));
+  const importedDate = log.imported_at ? new Date(log.imported_at).toISOString().slice(0, 10) : null;
+
+  let merchantEvidence = null;
+  if (merchant) {
+    const merchantPattern = merchant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(merchantPattern, 'i').test(subject)) {
+      merchantEvidence = 'Merchant matched from the email subject.';
+    } else if (fromAddress.toLowerCase().includes(merchant.toLowerCase().replace(/\s+/g, ''))) {
+      merchantEvidence = 'Merchant matched from the sender address.';
+    } else if (fromAddress) {
+      merchantEvidence = 'Merchant was inferred from the sender and email context.';
+    }
+  }
+
+  let amountEvidence = null;
+  if (amount > 0) {
+    const amountPattern = amount.toFixed(2).replace('.', '\\.');
+    const text = `${subject} ${expense.notes || ''}`;
+    if (new RegExp(`\\$\\s?${amountPattern}\\b`).test(text)) {
+      amountEvidence = 'Amount matched a total called out in the email.';
+    } else if (Array.isArray(expense.items) && expense.items.length > 0) {
+      amountEvidence = `Amount was checked against ${expense.items.length} extracted ${expense.items.length === 1 ? 'line item' : 'line items'}.`;
+    } else {
+      amountEvidence = 'Amount was extracted from the email purchase summary.';
+    }
+  }
+
+  let dateEvidence = null;
+  if (expense.date && importedDate && expense.date.slice(0, 10) === importedDate) {
+    dateEvidence = 'Date is based on when the email was received.';
+  } else if (expense.date) {
+    dateEvidence = 'Date was extracted from the email timing details.';
+  }
+
+  return {
+    merchant_evidence: merchantEvidence,
+    amount_evidence: amountEvidence,
+    date_evidence: dateEvidence,
+  };
+}
+
+function buildEmailReviewHint(expense, log, senderQuality) {
   if (!log?.message_id) return null;
 
   const level = senderQuality?.level || 'unknown';
   const likelyChangedFields = Array.isArray(senderQuality?.top_changed_fields)
     ? senderQuality.top_changed_fields.map((entry) => entry.field).filter(Boolean)
     : [];
+  const fieldEvidence = deriveEmailFieldEvidence(expense, log);
 
   let headline = 'Imported from Gmail';
   let tone = 'info';
@@ -81,6 +130,7 @@ function buildEmailReviewHint(log, senderQuality) {
       sender_quality_metrics: senderQuality?.metrics || null,
       likely_changed_fields: likelyChangedFields,
       message_subject: log.subject || null,
+      ...fieldEvidence,
       headline: 'Reviewed Gmail import',
       tone: 'positive',
       message: log.review_edit_count > 0
@@ -111,6 +161,7 @@ function buildEmailReviewHint(log, senderQuality) {
     sender_quality_metrics: senderQuality?.metrics || null,
     likely_changed_fields: likelyChangedFields,
     message_subject: log.subject || null,
+    ...fieldEvidence,
     headline,
     tone,
     message,
@@ -134,7 +185,7 @@ async function attachGmailReviewHint(expense, userId) {
   const senderQuality = await getSenderImportQuality(userId, log.from_address);
   return {
     ...expense,
-    gmail_review_hint: buildEmailReviewHint(log, senderQuality),
+    gmail_review_hint: buildEmailReviewHint(expense, log, senderQuality),
   };
 }
 
