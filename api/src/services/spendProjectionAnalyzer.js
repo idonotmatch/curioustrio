@@ -70,6 +70,12 @@ function median(values) {
   return sorted[middle];
 }
 
+function formatCurrency(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return '$0';
+  return `$${Math.abs(Math.round(amount))}`;
+}
+
 function getCurrentPeriodDayIndex(bounds, todayWithin = new Date()) {
   const effectiveDate = new Date(Math.min(todayWithin.getTime(), addDays(bounds.toDate, -1).getTime()));
   effectiveDate.setHours(12, 0, 0, 0);
@@ -486,6 +492,93 @@ function statusRank(status) {
     case 'comfortable': return 1;
     default: return 0;
   }
+}
+
+function statusLabel(status) {
+  switch (status) {
+    case 'comfortable': return 'Comfortable';
+    case 'absorbable': return 'Absorbable';
+    case 'tight': return 'Tight';
+    case 'risky': return 'Risky';
+    case 'not_absorbable': return 'Not absorbable';
+    default: return 'Unknown';
+  }
+}
+
+function recommendationHeadline(mode) {
+  switch (mode) {
+    case 'next_period':
+      return 'Better next period';
+    case 'spread_3_periods':
+      return 'Easier spread across 3 periods';
+    default:
+      return 'This period looks better';
+  }
+}
+
+function buildRecommendationReason({ currentScenario, suggestedScenario }) {
+  const currentStatus = statusLabel(currentScenario?.status);
+  const suggestedStatus = statusLabel(suggestedScenario?.status);
+  const currentRoom = Number(currentScenario?.risk_adjusted_headroom_amount || 0);
+  const suggestedRoom = Number(suggestedScenario?.risk_adjusted_headroom_amount || 0);
+  const delta = suggestedRoom - currentRoom;
+
+  if ((currentScenario?.can_absorb === false || currentScenario?.status === 'not_absorbable') && suggestedScenario?.can_absorb) {
+    return `This moves the plan from ${currentStatus.toLowerCase()} to ${suggestedStatus.toLowerCase()}.`;
+  }
+
+  if (delta >= 50) {
+    return `It leaves about ${formatCurrency(delta)} more risk-adjusted room.`;
+  }
+
+  if (currentScenario?.status !== suggestedScenario?.status) {
+    return `It looks ${suggestedStatus.toLowerCase()} instead of ${currentStatus.toLowerCase()}.`;
+  }
+
+  return `This looks a little easier than ${timingModeLabel(currentScenario?.timing_mode || 'now').toLowerCase()}.`;
+}
+
+function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {} }) {
+  const currentScenario = scenariosByMode[selectedMode];
+  if (!currentScenario || currentScenario.status === 'unknown') return null;
+
+  const currentRank = statusRank(currentScenario.status);
+  const candidates = Object.entries(scenariosByMode)
+    .filter(([mode, scenario]) => mode !== selectedMode && scenario && scenario.status !== 'unknown')
+    .map(([mode, scenario]) => {
+      const rankGain = currentRank - statusRank(scenario.status);
+      const absorbFlip = currentScenario.can_absorb === false && scenario.can_absorb === true;
+      const roomDelta = Number(scenario.risk_adjusted_headroom_amount || 0) - Number(currentScenario.risk_adjusted_headroom_amount || 0);
+      const material =
+        absorbFlip ||
+        rankGain >= 2 ||
+        (rankGain >= 1 && roomDelta >= 40) ||
+        (currentRank >= statusRank('tight') && rankGain >= 1);
+
+      return { mode, scenario, rankGain, absorbFlip, roomDelta, material };
+    })
+    .filter((candidate) => candidate.material)
+    .sort((a, b) => {
+      if (Number(b.absorbFlip) !== Number(a.absorbFlip)) return Number(b.absorbFlip) - Number(a.absorbFlip);
+      if (b.rankGain !== a.rankGain) return b.rankGain - a.rankGain;
+      return b.roomDelta - a.roomDelta;
+    });
+
+  const best = candidates[0];
+  if (!best) return null;
+
+  return {
+    timing_mode: best.mode,
+    timing_label: timingModeLabel(best.mode),
+    status: best.scenario.status,
+    status_label: statusLabel(best.scenario.status),
+    headline: recommendationHeadline(best.mode),
+    reason: buildRecommendationReason({
+      currentScenario: { ...currentScenario, timing_mode: selectedMode },
+      suggestedScenario: { ...best.scenario, timing_mode: best.mode },
+    }),
+    risk_adjusted_headroom_delta: Number(best.roomDelta.toFixed(2)),
+  };
 }
 
 function evaluateScenarioAgainstProjection({
@@ -928,56 +1021,86 @@ async function evaluateScenarioAffordability({
   timingMode = 'now',
 }) {
   const normalizedTimingMode = ['next_period', 'spread_3_periods'].includes(timingMode) ? timingMode : 'now';
+  const baseMonth = month || currentPeriod(user.budget_start_day || 1);
   const totalAmount = Number(proposedAmount || 0);
-  const months = normalizedTimingMode === 'next_period'
-    ? [shiftPeriod(month || currentPeriod(user.budget_start_day || 1), 1)]
-    : normalizedTimingMode === 'spread_3_periods'
-      ? [0, 1, 2].map((offset) => shiftPeriod(month || currentPeriod(user.budget_start_day || 1), offset))
-      : [month || currentPeriod(user.budget_start_day || 1)];
-  const perPeriodAmount = normalizedTimingMode === 'spread_3_periods'
-    ? Number((totalAmount / months.length).toFixed(2))
-    : totalAmount;
-
   const recurringItems = (scope === 'household' && user?.household_id)
     ? await detectRecurringItems(user.household_id)
     : [];
+  const projectionCache = new Map();
 
-  const evaluations = [];
-  for (const targetMonth of months) {
-    const projection = await analyzeSpendProjection({ user, scope, month: targetMonth });
-    const recurringPressure = projection.scope === 'household' && user?.household_id
-      ? estimateRecurringPressureWithinBounds({
-          candidates: recurringItems,
-          bounds: { from: projection.period.from, to: projection.period.to },
-        })
-      : { count: 0, total_expected_amount: 0, candidates: [] };
+  async function getProjection(targetMonth) {
+    if (!projectionCache.has(targetMonth)) {
+      projectionCache.set(targetMonth, await analyzeSpendProjection({ user, scope, month: targetMonth }));
+    }
+    return projectionCache.get(targetMonth);
+  }
 
-    evaluations.push({
-      month: projection.month,
-      period_label: projection.month,
-      applied_amount: perPeriodAmount,
-      projection,
-      scenario: evaluateScenarioAgainstProjection({
+  async function buildEvaluationsForMode(mode) {
+    const months = mode === 'next_period'
+      ? [shiftPeriod(baseMonth, 1)]
+      : mode === 'spread_3_periods'
+        ? [0, 1, 2].map((offset) => shiftPeriod(baseMonth, offset))
+        : [baseMonth];
+    const perPeriodAmount = mode === 'spread_3_periods'
+      ? Number((totalAmount / months.length).toFixed(2))
+      : totalAmount;
+    const evaluations = [];
+
+    for (const targetMonth of months) {
+      const projection = await getProjection(targetMonth);
+      const recurringPressure = projection.scope === 'household' && user?.household_id
+        ? estimateRecurringPressureWithinBounds({
+            candidates: recurringItems,
+            bounds: { from: projection.period.from, to: projection.period.to },
+          })
+        : { count: 0, total_expected_amount: 0, candidates: [] };
+
+      evaluations.push({
+        month: projection.month,
+        period_label: projection.month,
+        applied_amount: perPeriodAmount,
         projection,
-        proposedAmount: perPeriodAmount,
-        label,
-        recurringPressure,
-      }),
+        scenario: evaluateScenarioAgainstProjection({
+          projection,
+          proposedAmount: perPeriodAmount,
+          label,
+          recurringPressure,
+        }),
+      });
+    }
+
+    return evaluations;
+  }
+
+  const scenariosByMode = {};
+  const evaluationsByMode = {};
+  for (const mode of ['now', 'next_period', 'spread_3_periods']) {
+    const evaluations = await buildEvaluationsForMode(mode);
+    evaluationsByMode[mode] = evaluations;
+    scenariosByMode[mode] = summarizeScenarioEvaluations({
+      mode,
+      evaluations,
+      totalAmount,
+      label,
     });
   }
 
+  const evaluations = evaluationsByMode[normalizedTimingMode];
   const primary = evaluations[0];
+  const recommendation = chooseScenarioRecommendation({
+    selectedMode: normalizedTimingMode,
+    scenariosByMode,
+  });
+
   return {
     scope: primary.projection.scope,
     month: primary.projection.month,
     period: primary.projection.period,
     projection: primary.projection,
-    scenario: summarizeScenarioEvaluations({
-      mode: normalizedTimingMode,
-      evaluations,
-      totalAmount,
-      label,
-    }),
+    scenario: {
+      ...scenariosByMode[normalizedTimingMode],
+      recommendation,
+    },
   };
 }
 

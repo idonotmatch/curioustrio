@@ -110,6 +110,14 @@ function timingModeLabel(mode) {
   }
 }
 
+function recommendationButtonLabel(mode) {
+  switch (mode) {
+    case 'next_period': return 'Try next period';
+    case 'spread_3_periods': return 'Try 3-period spread';
+    default: return 'Try this period';
+  }
+}
+
 function projectionDeltaCopy(value) {
   if (value == null || !Number.isFinite(Number(value))) return 'Projection still building';
   const amount = Number(value);
@@ -196,7 +204,7 @@ export default function ScenarioCheckScreen() {
   const displayLabel = scenario?.label || label.trim() || 'purchase';
   const displayAmount = scenario?.proposed_amount != null ? Number(scenario.proposed_amount) : parsedAmount;
 
-  async function handleSubmit() {
+  async function handleSubmit(nextTimingMode = timingMode) {
     if (!canSubmit) return;
     try {
       setLoading(true);
@@ -206,10 +214,11 @@ export default function ScenarioCheckScreen() {
         month: targetMonth,
         proposed_amount: parsedAmount,
         label: label.trim() || 'purchase',
-        timing_mode: timingMode,
+        timing_mode: nextTimingMode,
       });
       setResult(data);
       setScenarioMemory(data?.scenario_memory || null);
+      setTimingMode(nextTimingMode);
     } catch (err) {
       setError(err?.message || 'Could not run this scenario right now.');
     } finally {
@@ -289,6 +298,12 @@ export default function ScenarioCheckScreen() {
     } finally {
       setWatchLoading(false);
     }
+  }
+
+  async function applyRecommendation(mode) {
+    if (!mode || loading) return;
+    await handleSubmit(mode);
+    loadRecentPlans();
   }
 
   useEffect(() => {
@@ -383,6 +398,29 @@ export default function ScenarioCheckScreen() {
                 </View>
               ) : null}
             </View>
+
+            {scenario.recommendation ? (
+              <View style={styles.recommendationCard}>
+                <View style={styles.recommendationText}>
+                  <Text style={styles.recommendationEyebrow}>Suggested timing</Text>
+                  <Text style={styles.recommendationTitle}>{scenario.recommendation.headline}</Text>
+                  <Text style={styles.recommendationCopy}>{scenario.recommendation.reason}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.recommendationButton}
+                  onPress={() => applyRecommendation(scenario.recommendation.timing_mode)}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#000" size="small" />
+                  ) : (
+                    <Text style={styles.recommendationButtonText}>
+                      {recommendationButtonLabel(scenario.recommendation.timing_mode)}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             {Array.isArray(scenario.horizon_periods) && scenario.horizon_periods.length > 1 ? (
               <View style={styles.card}>
@@ -790,6 +828,29 @@ const styles = StyleSheet.create({
   bodyRow: { fontSize: 14, color: '#d4d4d4', lineHeight: 21 },
   caveatsBlock: { gap: 4, marginTop: 2 },
   caveatRow: { fontSize: 13, color: '#9ca3af', lineHeight: 18 },
+  recommendationCard: {
+    backgroundColor: '#101b24',
+    borderWidth: 1,
+    borderColor: '#1a2f40',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+  },
+  recommendationText: { gap: 4 },
+  recommendationEyebrow: { fontSize: 12, color: '#8ca7bf', textTransform: 'uppercase', letterSpacing: 1.1 },
+  recommendationTitle: { fontSize: 18, color: '#dfefff', fontWeight: '600' },
+  recommendationCopy: { fontSize: 14, color: '#b6cce0', lineHeight: 20 },
+  recommendationButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    minWidth: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recommendationButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
   horizonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

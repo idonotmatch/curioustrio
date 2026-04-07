@@ -417,6 +417,44 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.scenario_memory.timing_mode).toBe('spread_3_periods');
   });
 
+  it('suggests a better timing mode when next period is materially easier', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 300)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 240, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 50, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-02-05', 'manual', 'confirmed'),
+       ($1, 45, '2026-01-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-01-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-01-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 80,
+        label: 'Shoes',
+        timing_mode: 'now',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario.recommendation).toBeTruthy();
+    expect(res.body.scenario.recommendation.timing_mode).toBe('next_period');
+    expect(res.body.scenario.recommendation.headline).toBe('Better next period');
+  });
+
   it('records user intent for a scenario memory', async () => {
     await db.query(
       `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
