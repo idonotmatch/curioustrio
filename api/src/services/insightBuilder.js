@@ -570,6 +570,40 @@ function insightRankScore(insight, feedbackSummary = new Map()) {
   return severityRank(insight.severity) * 100 + feedbackAdjustmentForInsight(insight, feedbackSummary);
 }
 
+function insightDestinationAdjustment(insight) {
+  const type = `${insight?.type || ''}`.trim();
+
+  if (
+    type === 'one_offs_driving_variance'
+    || type === 'one_off_expense_skewing_projection'
+    || type === 'recurring_cost_pressure'
+  ) return 6;
+
+  if (
+    type === 'top_category_driver'
+    || type === 'projected_category_surge'
+    || type === 'projected_category_under_baseline'
+  ) return 4;
+
+  if (
+    type === 'projected_month_end_over_budget'
+    || type === 'projected_month_end_under_budget'
+    || type === 'budget_too_low'
+    || type === 'budget_too_high'
+    || type === 'usage_ready_to_plan'
+  ) return 5;
+
+  if (
+    type === 'spend_pace_ahead'
+    || type === 'spend_pace_behind'
+    || type === 'usage_set_budget'
+    || type === 'usage_start_logging'
+    || type === 'usage_building_history'
+  ) return 1;
+
+  return 0;
+}
+
 function portfolioFamily(insight) {
   const type = `${insight?.type || ''}`.trim();
   if (!type) return 'other';
@@ -754,6 +788,7 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
       const insight = remaining[i];
       const score = insightRankScore(insight, feedbackSummary)
         + portfolioOutcomeAdjustment(insight, portfolioFeedback)
+        + insightDestinationAdjustment(insight)
         - orchestrationPenalty(insight, selected);
       if (score > bestScore) {
         bestScore = score;
@@ -1130,6 +1165,7 @@ module.exports = {
   buildInsightsForUser,
   buildUsageFallbackInsights,
   insightRankScore,
+  insightDestinationAdjustment,
   portfolioFamily,
   narrativeClusterKey,
   narrativeTheme,

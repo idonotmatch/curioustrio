@@ -4,6 +4,7 @@ const {
   narrativeClusterKey,
   narrativeTheme,
   buildUsageFallbackInsights,
+  insightDestinationAdjustment,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -73,10 +74,31 @@ describe('insightBuilder orchestration', () => {
     ];
 
     const selected = orchestrateInsightPortfolio(insights, new Map(), 3);
-    expect(selected.map((insight) => insight.id)).toContain('trend-1');
+    expect(selected.map((insight) => insight.id)).toContain('trend-2');
     expect(selected.map((insight) => insight.id)).toContain('projection-1');
     expect(selected.map((insight) => insight.id)).toContain('recurring-1');
-    expect(selected.map((insight) => insight.id)).not.toContain('trend-2');
+    expect(selected.map((insight) => insight.id)).not.toContain('trend-1');
+  });
+
+  it('prefers the card with the stronger destination when similar cards compete', () => {
+    const insights = [
+      buildInsight({
+        id: 'pace-1',
+        type: 'spend_pace_ahead',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'category-1',
+        type: 'top_category_driver',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04', category_key: 'groceries' },
+      }),
+    ];
+
+    expect(insightDestinationAdjustment(insights[1])).toBeGreaterThan(insightDestinationAdjustment(insights[0]));
+    const selected = orchestrateInsightPortfolio(insights, new Map(), 1);
+    expect(selected[0].id).toBe('category-1');
   });
 
   it('boosts families and themes that have stronger acted history', () => {
