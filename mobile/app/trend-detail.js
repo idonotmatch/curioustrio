@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
+import { getPrimaryActionForInsight } from '../services/insightPresentation';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -64,93 +65,6 @@ function sharedContextCopy(scope) {
   return `${scope}` === 'household'
     ? 'This view is using shared household spending, budget room, and recurring pressure across everyone in the household.'
     : 'This view is using only your personal spending and budget context.';
-}
-
-function primaryActionForInsight({ insightType, scope, month, categoryKey, trend }) {
-  const budgetDelta = Math.abs(Number(
-    trend?.budget_adherence?.projected_over_under
-    ?? trend?.projection?.overall?.projected_budget_delta
-    ?? 0
-  ));
-  const categoryDelta = Math.abs(Number(
-    trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey)?.delta_amount
-    ?? 0
-  ));
-  const oneOffDelta = Math.abs(Number(trend?.pace?.variance_breakdown?.one_off_delta_amount || 0));
-
-  switch (insightType) {
-    case 'projected_month_end_over_budget':
-    case 'projected_month_end_under_budget':
-    case 'budget_too_low':
-    case 'budget_too_high':
-      if (budgetDelta < 75) {
-        return {
-          title: 'Read the budget context first',
-          body: 'This looks worth understanding, but it may not be large enough to warrant a purchase scenario yet.',
-          cta: null,
-          route: null,
-        };
-      }
-      return {
-        title: 'Turn this into a plan',
-        body: 'Pressure-test a purchase against this same period and scope.',
-        cta: 'Open planner',
-        route: {
-          pathname: '/scenario-check',
-          params: { scope, month },
-        },
-      };
-    case 'one_off_expense_skewing_projection':
-      return {
-        title: 'Review the unusual spend first',
-        body: oneOffDelta >= 75
-          ? 'This month looks lifted by one-off activity, so it is more useful to understand those unusual purchases before planning around them.'
-          : 'This looks more explanatory than urgent, so it may help to understand the one-offs before planning around them.',
-        cta: null,
-        route: null,
-      };
-    case 'spend_pace_ahead':
-    case 'spend_pace_behind':
-      return {
-        title: 'See what is driving this pace',
-        body: 'Use the breakdown below to see whether this is broad-based or concentrated in just one or two categories.',
-        cta: null,
-        route: null,
-      };
-    case 'recurring_cost_pressure':
-      return {
-        title: 'Plan around recurring pressure',
-        body: 'Use the planner to test whether another purchase still fits once recurring pressure is accounted for.',
-        cta: 'Open planner',
-        route: {
-          pathname: '/scenario-check',
-          params: { scope, month },
-        },
-      };
-    case 'top_category_driver':
-    case 'projected_category_surge':
-    case 'projected_category_under_baseline':
-      return {
-        title: 'Review the category detail first',
-        body: categoryDelta >= 50
-          ? 'This category is moving enough to matter, but the next best step is still understanding the category breakdown before planning around it.'
-          : 'This looks more like a directional signal than a constraint, so the category breakdown is the next best step.',
-        cta: null,
-        route: null,
-      };
-    case 'one_offs_driving_variance':
-      return {
-        title: 'Pressure-test with the one-offs in mind',
-        body: 'Use the planner to see whether another purchase still fits once those unusual purchases are already counted.',
-        cta: 'Open planner',
-        route: {
-          pathname: '/scenario-check',
-          params: { scope, month },
-        },
-      };
-    default:
-      return null;
-  }
 }
 
 function buildMockTrend(scope, month) {
