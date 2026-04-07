@@ -74,11 +74,11 @@ function insightActionLabel(insight) {
 
   switch (`${insight?.type || ''}`) {
     case 'usage_start_logging':
-      return 'Log a few purchases';
+      return "Don't forget to log";
     case 'usage_set_budget':
       return 'Set your budget';
     case 'usage_building_history':
-      return historicalCount >= 2 ? 'Try planning ahead' : 'Keep building history';
+      return "Don't forget to log";
     case 'usage_ready_to_plan':
       return 'Try planning ahead';
     case 'spend_pace_ahead':

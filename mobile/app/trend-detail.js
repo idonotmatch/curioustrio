@@ -333,6 +333,7 @@ export default function TrendDetailScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
+  const [unusualReviewStatus, setUnusualReviewStatus] = useState('');
   const primaryAction = useMemo(
     () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
     [insightType, scope, month, categoryKey, trend]
@@ -385,6 +386,15 @@ export default function TrendDetailScreen() {
       || null,
     [trend, categoryKey]
   );
+  const unusualExpenses = useMemo(
+    () => trend?.projection?.overall?.top_unusual_expenses || [],
+    [trend]
+  );
+  const oneOffMerchants = useMemo(
+    () => trend?.pace?.variance_breakdown?.top_one_off_merchants || [],
+    [trend]
+  );
+  const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;
@@ -435,6 +445,37 @@ export default function TrendDetailScreen() {
     }
   }
 
+  async function submitUnusualReview(review) {
+    if (!insightId || !review || unusualReviewStatus === review) return;
+    try {
+      const reviewTargetType = unusualExpenses.length ? 'expense' : oneOffMerchants.length ? 'merchant' : 'unknown';
+      await api.post('/insights/events', {
+        events: [{
+          insight_id: `${insightId}`,
+          event_type: 'acted',
+          metadata: {
+            surface: 'trend_detail',
+            scope: `${scope}`,
+            month: `${month}`,
+            insight_type: `${insightType}`,
+            category_key: `${categoryKey}`,
+            review_type: 'unusual_purchase_review',
+            unusual_review: review,
+            review_target_type: reviewTargetType,
+            review_target_count: unusualExpenses.length || oneOffMerchants.length || 0,
+            historical_period_count: Number(trend?.projection?.overall?.historical_period_count || 0),
+            projected_budget_delta: Number(trend?.projection?.overall?.projected_budget_delta || 0),
+            top_unusual_expense_ids: unusualExpenses.map((expense) => expense.id).filter(Boolean),
+            top_one_off_merchants: oneOffMerchants.map((merchant) => merchant.merchant_key).filter(Boolean),
+          },
+        }],
+      });
+      setUnusualReviewStatus(review);
+    } catch {
+      // non-fatal
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: titleForInsightType(`${insightType}`, title) }} />
@@ -479,6 +520,62 @@ export default function TrendDetailScreen() {
                   >
                     <Text style={styles.actionButtonText}>{primaryAction.cta}</Text>
                   </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
+
+            {supportsUnusualReview ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Review this unusual spend</Text>
+                <Text style={styles.feedbackCopy}>
+                  Help Adlo learn whether this really was a one-off, something expected, or a new normal to learn from.
+                </Text>
+                {unusualExpenses.length ? (
+                  <View style={styles.reviewList}>
+                    {unusualExpenses.map((expense) => (
+                      <View key={expense.id || `${expense.merchant}:${expense.amount}`} style={styles.reviewRow}>
+                        <View style={styles.driverText}>
+                          <Text style={styles.driverName}>{expense.merchant}</Text>
+                          <Text style={styles.driverMeta}>
+                            {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+                          </Text>
+                        </View>
+                        <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : oneOffMerchants.length ? (
+                  <View style={styles.reviewList}>
+                    {oneOffMerchants.map((merchant) => (
+                      <View key={merchant.merchant_key} style={styles.reviewRow}>
+                        <View style={styles.driverText}>
+                          <Text style={styles.driverName}>{merchant.merchant_name}</Text>
+                          <Text style={styles.driverMeta}>One-off merchant lift</Text>
+                        </View>
+                        <Text style={styles.driverDelta}>{formatCurrency(merchant.delta_amount)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={styles.reasonList}>
+                  {[
+                    { key: 'truly_one_off', label: 'Truly one-off' },
+                    { key: 'expected', label: 'Expected spend' },
+                    { key: 'becoming_normal', label: 'Becoming normal' },
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.reasonChip, unusualReviewStatus === option.key && styles.reasonChipActive]}
+                      onPress={() => submitUnusualReview(option.key)}
+                    >
+                      <Text style={[styles.reasonChipText, unusualReviewStatus === option.key && styles.reasonChipTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {unusualReviewStatus ? (
+                  <Text style={styles.feedbackNote}>Saved. Adlo can use this to get better at spotting what should and should not shape future guidance.</Text>
                 ) : null}
               </View>
             ) : null}
@@ -792,6 +889,16 @@ const styles = StyleSheet.create({
   driverDelta: { fontSize: 13, color: '#d4d4d4', textAlign: 'right' },
   oneOffList: { gap: 6, marginTop: 4 },
   oneOffRow: { fontSize: 14, color: '#e5e5e5' },
+  reviewList: { gap: 10 },
+  reviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+  },
   emptyText: { fontSize: 13, color: '#777' },
   feedbackRow: { flexDirection: 'row', gap: 10 },
   feedbackCopy: { fontSize: 13, color: '#9d9d9d', lineHeight: 18 },
