@@ -178,6 +178,38 @@ function deriveEmailFieldEvidence(expense, log) {
   };
 }
 
+function buildEmailReviewRouting(senderQuality, itemReliability) {
+  const senderLevel = senderQuality?.level || 'unknown';
+  const itemLevel = itemReliability?.level || 'unknown';
+
+  if (
+    (senderLevel === 'trusted' && (itemLevel === 'mixed' || itemLevel === 'noisy'))
+    || (senderLevel === 'mixed' && itemLevel === 'noisy')
+  ) {
+    return {
+      review_mode: 'items_first',
+      review_title: 'Focus on the items before approving',
+      review_message: 'The overall import is often usable, but the line items from this sender are where mistakes usually show up.',
+      review_checklist: [
+        'Items: remove fee, discount, or total rows that should not count as purchases.',
+        'Items: make sure the product names and per-item amounts look right.',
+        'Amount: confirm the final total still matches what was actually charged.',
+      ],
+    };
+  }
+
+  return {
+    review_mode: 'full_review',
+    review_title: 'Review this import before approving',
+    review_message: 'Use the email context below to confirm the merchant, amount, and date before approving.',
+    review_checklist: [
+      'Merchant: does the sender and subject match the place you expect?',
+      'Amount: does the total reflect the actual charge, not a subtotal or preauth?',
+      'Date: is this the purchase day you want to track for the expense?',
+    ],
+  };
+}
+
 function buildEmailReviewHint(expense, log, senderQuality) {
   if (!log?.message_id) return null;
 
@@ -187,6 +219,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     : [];
   const itemReliability = senderQuality?.item_reliability || null;
   const fieldEvidence = deriveEmailFieldEvidence(expense, log);
+  const reviewRouting = buildEmailReviewRouting(senderQuality, itemReliability);
 
   let headline = 'Imported from Gmail';
   let tone = 'info';
@@ -203,6 +236,10 @@ function buildEmailReviewHint(expense, log, senderQuality) {
       item_reliability_level: itemReliability?.level || 'unknown',
       item_reliability_message: itemReliability?.message || null,
       item_top_signals: itemReliability?.top_signals || [],
+      review_mode: reviewRouting.review_mode,
+      review_title: reviewRouting.review_title,
+      review_message: reviewRouting.review_message,
+      review_checklist: reviewRouting.review_checklist,
       message_subject: log.subject || null,
       ...fieldEvidence,
       headline: 'Reviewed Gmail import',
@@ -237,6 +274,10 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     item_reliability_level: itemReliability?.level || 'unknown',
     item_reliability_message: itemReliability?.message || null,
     item_top_signals: itemReliability?.top_signals || [],
+    review_mode: reviewRouting.review_mode,
+    review_title: reviewRouting.review_title,
+    review_message: reviewRouting.review_message,
+    review_checklist: reviewRouting.review_checklist,
     message_subject: log.subject || null,
     ...fieldEvidence,
     headline,

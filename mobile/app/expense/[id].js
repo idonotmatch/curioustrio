@@ -45,27 +45,42 @@ function formatImportedAt(value) {
 function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
   const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
   const likelySet = new Set(likelyFields);
+  const isItemsFirst = gmailReviewHint?.review_mode === 'items_first';
+  const itemCount = Array.isArray(expense?.items) ? expense.items.length : 0;
+  const itemSignals = Array.isArray(gmailReviewHint?.item_top_signals) ? gmailReviewHint.item_top_signals : [];
+  const itemSignalSummary = itemSignals.length
+    ? itemSignals.map((entry) => `${entry.field}`.replace(/^items_/, '').replace(/_/g, ' ')).join(', ')
+    : null;
   const candidates = [
+    ...(isItemsFirst ? [{
+      key: 'items',
+      label: 'Items',
+      value: itemCount ? `${itemCount} extracted ${itemCount === 1 ? 'item' : 'items'}` : 'Review extracted items',
+      reason: itemSignalSummary
+        ? `This sender often needs item cleanup around ${itemSignalSummary}.`
+        : (gmailReviewHint?.item_reliability_message || 'This sender often needs item cleanup before approval.'),
+      weight: 110,
+    }] : []),
     {
       key: 'amount',
       label: 'Amount',
       value: `$${Math.abs(Number(expense?.amount || 0)).toFixed(2)}`,
       reason: gmailReviewHint?.amount_evidence || 'Make sure this reflects the final charged total.',
-      weight: likelySet.has('amount') ? 100 : 60,
+      weight: likelySet.has('amount') ? 100 : (isItemsFirst ? 50 : 60),
     },
     {
       key: 'date',
       label: 'Date',
       value: formattedDate,
       reason: gmailReviewHint?.date_evidence || 'Make sure this is the purchase day you want to track.',
-      weight: likelySet.has('date') ? 95 : 55,
+      weight: likelySet.has('date') ? 95 : (isItemsFirst ? 40 : 55),
     },
     {
       key: 'merchant',
       label: 'Merchant',
       value: expense?.merchant || '—',
       reason: gmailReviewHint?.merchant_evidence || 'Make sure the sender and subject match the merchant name.',
-      weight: likelySet.has('merchant') ? 90 : 50,
+      weight: likelySet.has('merchant') ? 90 : (isItemsFirst ? 35 : 50),
     },
     {
       key: 'category',
@@ -378,6 +393,7 @@ export default function ExpenseDetailScreen() {
   function activateReviewField(fieldKey) {
     setEditing(true);
     setActiveReviewField(fieldKey);
+    if (fieldKey === 'items') setItemsExpanded(true);
   }
 
   return (
@@ -432,10 +448,14 @@ export default function ExpenseDetailScreen() {
       {reviewState ? (
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerEyebrow}>Review first</Text>
-          <Text style={styles.reviewBannerTitle}>Check this Gmail import before it is counted</Text>
+          <Text style={styles.reviewBannerTitle}>
+            {isPendingEmailReview
+              ? (gmailReviewHint?.review_title || 'Check this Gmail import before it is counted')
+              : 'Check this Gmail import before it is counted'}
+          </Text>
           <Text style={styles.reviewBannerText}>
             {isPendingEmailReview
-              ? 'Use the email context below to confirm the merchant, amount, and date before approving.'
+              ? (gmailReviewHint?.review_message || 'Use the email context below to confirm the merchant, amount, and date before approving.')
               : 'This import was surfaced for review before it is counted in your confirmed expenses.'}
           </Text>
         </View>
@@ -516,9 +536,9 @@ export default function ExpenseDetailScreen() {
       {isPendingEmailReview ? (
         <View style={styles.reviewChecklistCard}>
           <Text style={styles.reviewChecklistTitle}>What to verify</Text>
-          <Text style={styles.reviewChecklistItem}>Merchant: does the sender and subject match the place you expect?</Text>
-          <Text style={styles.reviewChecklistItem}>Amount: does the total reflect the actual charge, not a subtotal or preauth?</Text>
-          <Text style={styles.reviewChecklistItem}>Date: is this the purchase day you want to track for the expense?</Text>
+          {(gmailReviewHint?.review_checklist || []).map((item) => (
+            <Text key={item} style={styles.reviewChecklistItem}>{item}</Text>
+          ))}
         </View>
       ) : null}
 
@@ -755,14 +775,14 @@ export default function ExpenseDetailScreen() {
 
       {(items.length > 0 || (editing && canEdit)) && (
         <TouchableOpacity
-          style={styles.itemsHeader}
+          style={[styles.itemsHeader, activeReviewField === 'items' && styles.itemsHeaderActive]}
           onPress={() => setItemsExpanded(e => !e)}
           activeOpacity={0.7}
         >
-          <Text style={styles.itemsHeaderText}>
+          <Text style={[styles.itemsHeaderText, activeReviewField === 'items' && styles.itemsHeaderTextActive]}>
             {items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : 'Items'}
           </Text>
-          <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-forward'} size={14} color="#444" />
+          <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-forward'} size={14} color={activeReviewField === 'items' ? '#f5f5f5' : '#444'} />
         </TouchableOpacity>
       )}
 
@@ -1209,7 +1229,9 @@ const styles = StyleSheet.create({
   deleteBtnText: { color: '#ef4444', fontSize: 14 },
 
   itemsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
+  itemsHeaderActive: { borderColor: '#263448', backgroundColor: '#0f141d' },
   itemsHeaderText: { fontSize: 13, color: '#444', fontWeight: '500' },
+  itemsHeaderTextActive: { color: '#f5f5f5' },
   itemsList: { marginHorizontal: 20, marginBottom: 4, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f', overflow: 'hidden' },
   itemReadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   itemReadDesc: { fontSize: 13, color: '#f5f5f5', flex: 1 },

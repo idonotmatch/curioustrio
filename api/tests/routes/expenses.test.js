@@ -402,6 +402,7 @@ describe('GET /expenses/pending', () => {
       sender_quality_level: 'trusted',
       headline: 'Trusted sender',
       item_reliability_level: 'unknown',
+      review_mode: 'full_review',
     });
     expect(Array.isArray(hinted.gmail_review_hint.likely_changed_fields)).toBe(true);
   });
