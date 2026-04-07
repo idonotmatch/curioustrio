@@ -1119,6 +1119,27 @@ function shouldSupplementWithUsageFallback(insights = []) {
   });
 }
 
+function determineUsageFallbackScope(insights = [], user = null) {
+  if (!user?.household_id) return 'personal';
+
+  const scopedInsights = insights.filter((insight) => insight?.metadata?.scope === 'personal' || insight?.metadata?.scope === 'household');
+  if (!scopedInsights.length) return 'personal';
+
+  let householdCount = 0;
+  let personalCount = 0;
+
+  for (const insight of scopedInsights) {
+    if (insight.metadata?.scope === 'household') householdCount += 1;
+    if (insight.metadata?.scope === 'personal') personalCount += 1;
+  }
+
+  if (householdCount > personalCount) return 'household';
+  if (personalCount > householdCount) return 'personal';
+
+  const firstScoped = scopedInsights[0]?.metadata?.scope;
+  return firstScoped === 'household' ? 'household' : 'personal';
+}
+
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
@@ -1268,16 +1289,19 @@ async function buildInsightsForUser({ user, limit = 10 }) {
 
   let supplementedRanked = ranked;
   if (shouldSupplementWithUsageFallback(ranked)) {
-    const [personalProjection, personalBudgetSettings] = await Promise.all([
-      analyzeSpendProjection({ user, scope: 'personal' }),
-      BudgetSetting.findByUser(user.id),
+    const fallbackScope = determineUsageFallbackScope(ranked, user);
+    const [fallbackProjection, fallbackBudgetSettings] = await Promise.all([
+      analyzeSpendProjection({ user, scope: fallbackScope }),
+      fallbackScope === 'household' && user.household_id
+        ? BudgetSetting.findByHousehold(user.household_id)
+        : BudgetSetting.findByUser(user.id),
     ]);
-    const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    const fallbackBudgetLimit = fallbackBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
     const fallbackInsights = buildUsageFallbackInsights({
       user,
-      projection: personalProjection,
-      budgetLimit: personalBudgetLimit,
-      scope: 'personal',
+      projection: fallbackProjection,
+      budgetLimit: fallbackBudgetLimit,
+      scope: fallbackScope,
       context: 'quiet_period',
     });
 
@@ -1296,6 +1320,7 @@ module.exports = {
   buildInsightsForUser,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
+  determineUsageFallbackScope,
   insightRankScore,
   insightDestinationAdjustment,
   portfolioRole,

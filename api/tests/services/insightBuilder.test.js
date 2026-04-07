@@ -5,6 +5,7 @@ const {
   narrativeTheme,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
+  determineUsageFallbackScope,
   insightDestinationAdjustment,
   portfolioRole,
 } = require('../../src/services/insightBuilder');
@@ -268,5 +269,43 @@ describe('insightBuilder orchestration', () => {
         metadata: { scope: 'personal', month: '2026-04' },
       }),
     ])).toBe(false);
+  });
+
+  it('defaults quiet-period fallback scope to personal for solo users', () => {
+    const scope = determineUsageFallbackScope([
+      buildInsight({
+        id: 'explain-1',
+        type: 'spend_pace_behind',
+        severity: 'low',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ], { id: 'user-1', household_id: null });
+
+    expect(scope).toBe('personal');
+  });
+
+  it('chooses household fallback scope when thin-rail signals are mostly shared', () => {
+    const scope = determineUsageFallbackScope([
+      buildInsight({
+        id: 'explain-1',
+        type: 'spend_pace_behind',
+        severity: 'low',
+        metadata: { scope: 'household', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'explain-2',
+        type: 'budget_too_high',
+        severity: 'low',
+        metadata: { scope: 'household', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'explain-3',
+        type: 'spend_pace_behind',
+        severity: 'low',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ], { id: 'user-1', household_id: 'household-1' });
+
+    expect(scope).toBe('household');
   });
 });
