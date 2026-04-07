@@ -72,6 +72,21 @@ function buildEmailReviewHint(log, senderQuality) {
   let tone = 'info';
   let message = 'Review the details before approving this import.';
 
+  if (log.review_action === 'approved') {
+    return {
+      sender_domain: senderQuality?.sender_domain || null,
+      sender_quality_level: level,
+      sender_quality_metrics: senderQuality?.metrics || null,
+      likely_changed_fields: likelyChangedFields,
+      message_subject: log.subject || null,
+      headline: 'Reviewed Gmail import',
+      tone: 'positive',
+      message: log.review_edit_count > 0
+        ? 'This Gmail import was reviewed and updated before it was confirmed.'
+        : 'This Gmail import was reviewed before it was confirmed.',
+    };
+  }
+
   if (level === 'trusted') {
     tone = 'positive';
     headline = 'Trusted sender';
@@ -96,6 +111,14 @@ function buildEmailReviewHint(log, senderQuality) {
     tone,
     message,
   };
+}
+
+function normalizeApprovedEmailNotes(notes = '') {
+  if (!notes) return notes;
+  return `${notes}`
+    .replace(/\(\s*needs review\s*\)/ig, '(imported from Gmail)')
+    .replace(/\bneeds review\b/ig, 'imported from Gmail')
+    .trim();
 }
 
 async function attachGmailReviewHint(expense, userId) {
@@ -371,12 +394,16 @@ router.post('/:id/approve', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const expense = await Expense.updateStatus(req.params.id, user.id, 'confirmed');
+    let expense = await Expense.updateStatus(req.params.id, user.id, 'confirmed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (expense.source === 'email') {
+      const normalizedNotes = normalizeApprovedEmailNotes(expense.notes || '');
+      if (normalizedNotes && normalizedNotes !== expense.notes) {
+        expense = await Expense.update(req.params.id, user.id, { notes: normalizedNotes }) || expense;
+      }
       await EmailImportLog.recordReviewFeedback(expense.id, { action: 'approved' });
     }
-    res.json(expense);
+    res.json(await attachGmailReviewHint(expense, user.id));
   } catch (err) { next(err); }
 });
 

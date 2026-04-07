@@ -125,8 +125,9 @@ async function importForUser(user) {
       const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msg.id);
       msgSubject = subject;
       msgFrom = from;
+      const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
       const senderQuality = await getSenderImportQuality(user.id, from);
-      const classification = await classifyEmailExpense(body, subject, from, todayDate, snippet);
+      const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
       const signals = analyzeEmailSignals(subject, from, body);
 
       if (classification.disposition === 'not_expense') {
@@ -144,9 +145,9 @@ async function importForUser(user) {
         }
       }
 
-      let parsed = await parseEmailExpense(body, subject, from, todayDate, snippet);
+      let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
       let importedAsPendingReview = false;
-      const maxExpenseDate = receivedAt && receivedAt < todayDate ? receivedAt : todayDate;
+      const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
 
       if (!parsed) {
         const fallbackAmount = findLikelyAmount(body);

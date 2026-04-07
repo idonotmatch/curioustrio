@@ -245,7 +245,14 @@ export default function FeedScreen() {
             </Swipeable>
           ))}
           {item.items.length > 3 && (
-            <Text style={styles.pendingMore}>+{item.items.length - 3} more</Text>
+            <TouchableOpacity
+              style={styles.pendingMoreButton}
+              onPress={() => router.push('/(tabs)/pending')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.pendingMore}>+{item.items.length - 3} more</Text>
+              <Ionicons name="chevron-forward" size={14} color="#888" />
+            </TouchableOpacity>
           )}
         </View>
       );
@@ -367,7 +374,14 @@ const styles = StyleSheet.create({
   pendingRowMain: { flex: 1, marginRight: 8 },
   pendingMerchant: { fontSize: 14, color: '#f5f5f5' },
   pendingAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
-  pendingMore: { color: '#888', fontSize: 14, paddingVertical: 8, textAlign: 'center' },
+  pendingMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+  },
+  pendingMore: { color: '#888', fontSize: 14, textAlign: 'center' },
   approveAction: { backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
   dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
   swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600' },
