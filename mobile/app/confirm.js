@@ -1,21 +1,31 @@
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
 import { saveExpenseSnapshot } from '../services/expenseLocalStore';
-import { ConfirmField } from '../components/ConfirmField';
 import { LocationPicker } from '../components/LocationPicker';
 import { useCategories } from '../hooks/useCategories';
+import { createManualExpenseDraft } from '../services/manualExpenseDraft';
+
+function parseConfirmData(value) {
+  try {
+    return value ? JSON.parse(value) : {};
+  } catch {
+    return {};
+  }
+}
 
 export default function ConfirmScreen() {
   const { data } = useLocalSearchParams();
-  const parsed = JSON.parse(data);
+  const parsed = createManualExpenseDraft(parseConfirmData(data));
   const router = useRouter();
   const { categories, refresh: refreshCategories } = useCategories();
   const isWatchedPlanFlow = Boolean(parsed?.scenario_memory_id);
+  const isManualScratchFlow = parsed?.source === 'manual' && !parsed?.merchant && !parsed?.description && !parsed?.scenario_memory_id;
 
   const [expense, setExpense] = useState(parsed);
   const [amountText, setAmountText] = useState(String(Math.abs(parsed?.amount ?? 0)));
@@ -35,6 +45,7 @@ export default function ConfirmScreen() {
   const [catCreating, setCatCreating] = useState(false);
   const [catSuggestion, setCatSuggestion] = useState(null);
   const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
       ? parsed.items.map(it => ({
@@ -124,6 +135,19 @@ export default function ConfirmScreen() {
       ...prev,
       amount: value ? -Math.abs(parseFloat(amountText) || 0) : Math.abs(parseFloat(amountText) || 0),
     }));
+  }
+
+  function updateExpenseDate(nextDate) {
+    setExpense(prev => ({ ...prev, date: nextDate }));
+  }
+
+  function handleDateChange(_, selectedDate) {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (selectedDate) {
+      updateExpenseDate(selectedDate.toISOString().slice(0, 10));
+    }
   }
 
   function selectCategory(cat) {
@@ -276,6 +300,14 @@ export default function ConfirmScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {isManualScratchFlow ? (
+        <View style={styles.manualBanner}>
+          <Text style={styles.manualBannerTitle}>Starting from scratch</Text>
+          <Text style={styles.manualBannerBody}>
+            Enter the expense directly without going through parsing first.
+          </Text>
+        </View>
+      ) : null}
       {isWatchedPlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a watched plan</Text>
@@ -348,16 +380,31 @@ export default function ConfirmScreen() {
       <View style={styles.editableGroup}>
         <View style={styles.editableRow}>
           <Text style={styles.editableLabel}>DATE</Text>
-          <TextInput
-            style={styles.editableInput}
-            value={expense.date || ''}
-            onChangeText={value => setExpense(prev => ({ ...prev, date: value }))}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#444"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {Platform.OS === 'ios' ? (
+            <DateTimePicker
+              value={expense.date ? new Date(`${expense.date}T12:00:00`) : new Date()}
+              mode="date"
+              display="compact"
+              maximumDate={new Date()}
+              onChange={handleDateChange}
+              themeVariant="dark"
+              style={styles.confirmDatePicker}
+            />
+          ) : (
+            <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
+              <Text style={styles.dateButtonText}>{expense.date || 'Select date'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
+        {Platform.OS === 'android' && showDatePicker ? (
+          <DateTimePicker
+            value={expense.date ? new Date(`${expense.date}T12:00:00`) : new Date()}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={handleDateChange}
+          />
+        ) : null}
         {reviewNote('date', 'Date was inferred and may need adjusting.')}
       </View>
 
@@ -585,6 +632,17 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20 },
+  manualBanner: {
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#232323',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  manualBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  manualBannerBody: { color: '#9a9a9a', fontSize: 12, lineHeight: 17 },
   watchBanner: {
     backgroundColor: '#101521',
     borderWidth: 1,
@@ -650,6 +708,9 @@ const styles = StyleSheet.create({
   },
   editableLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 80 },
   editableInput: { flex: 1, color: '#fff', fontSize: 15, textAlign: 'right', padding: 0 },
+  confirmDatePicker: { marginRight: -8 },
+  dateButton: { flex: 1, alignItems: 'flex-end', paddingVertical: 2 },
+  dateButtonText: { color: '#fff', fontSize: 15, textAlign: 'right' },
 
   categoryRow: {
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,

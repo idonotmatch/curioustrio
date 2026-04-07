@@ -7,6 +7,7 @@ try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not ava
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 import { useEffect, useRef, useState } from 'react';
+import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
@@ -16,6 +17,13 @@ export default function AddScreen() {
   const [scanLoading, setScanLoading] = useState(false);
   const didAutoScan = useRef(false);
 
+  function startManualEntry() {
+    router.push({
+      pathname: '/confirm',
+      params: { data: JSON.stringify(createManualExpenseDraft()) },
+    });
+  }
+
   async function handleSubmit(input) {
     try {
       setLoading(true);
@@ -24,7 +32,14 @@ export default function AddScreen() {
       router.push({ pathname: '/confirm', params: { data: JSON.stringify({ ...parsed, source: 'manual' }) } });
     } catch (err) {
       if (err.message.includes('Could not parse')) {
-        Alert.alert("Couldn't parse that", "Try: '84.50 trader joes' or 'lunch chipotle 14'");
+        Alert.alert(
+          "Couldn't parse that",
+          "Try: '84.50 trader joes' or 'lunch chipotle 14'",
+          [
+            { text: 'Keep editing', style: 'cancel' },
+            { text: 'Start from scratch', onPress: startManualEntry },
+          ]
+        );
       } else {
         Alert.alert('Error', err.message);
       }
@@ -82,7 +97,14 @@ export default function AddScreen() {
       if (msg.includes('image too large')) {
         Alert.alert('Image too large', 'Receipt image is too large. Try a closer crop.');
       } else if (msg.includes('Could not parse receipt')) {
-        Alert.alert('Could not read receipt', "Couldn't read that receipt. Try better lighting or enter manually.");
+        Alert.alert(
+          'Could not read receipt',
+          "Couldn't read that receipt. Try better lighting or enter manually.",
+          [
+            { text: 'Try again', style: 'cancel' },
+            { text: 'Start from scratch', onPress: startManualEntry },
+          ]
+        );
       } else if (msg.includes('Camera not available on simulator')) {
         Alert.alert('Simulator', 'Camera is not available in the simulator. Use "from camera roll" or test on a real device.');
       } else {
@@ -113,6 +135,9 @@ export default function AddScreen() {
         <TouchableOpacity style={styles.galleryBtn} onPress={() => handleScan(true)} disabled={scanLoading}>
           <Text style={styles.galleryText}>from camera roll</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.manualBtn} onPress={startManualEntry} disabled={scanLoading || loading}>
+          <Text style={styles.manualText}>start from scratch</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -126,4 +151,6 @@ const styles = StyleSheet.create({
   scanText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   galleryBtn: { alignItems: 'center', padding: 8 },
   galleryText: { color: '#555', fontSize: 12 },
+  manualBtn: { alignItems: 'center', padding: 8 },
+  manualText: { color: '#8a8a8a', fontSize: 12, fontWeight: '600' },
 });

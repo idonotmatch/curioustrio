@@ -13,6 +13,7 @@ import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useInsights } from '../../hooks/useInsights';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
+import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -422,6 +423,14 @@ export default function SummaryScreen() {
   const watchedImprovedCount = watchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
   const watchedWorsenedCount = watchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
 
+  function startManualEntry() {
+    setInput('');
+    router.push({
+      pathname: '/confirm',
+      params: { data: JSON.stringify(createManualExpenseDraft()) },
+    });
+  }
+
   async function handleQuickAdd() {
     if (!input.trim()) return;
     try {
@@ -433,7 +442,14 @@ export default function SummaryScreen() {
     } catch (err) {
       const msg = err?.message || '';
       if (msg.includes('Could not parse')) {
-        Alert.alert("Couldn't parse that", "Try: '84.50 trader joes' or 'lunch 14'");
+        Alert.alert(
+          "Couldn't parse that",
+          "Try: '84.50 trader joes' or 'lunch 14'",
+          [
+            { text: 'Keep editing', style: 'cancel' },
+            { text: 'Start from scratch', onPress: startManualEntry },
+          ]
+        );
       } else {
         Alert.alert('Error', msg || 'Something went wrong. Check your connection.');
       }
@@ -528,7 +544,7 @@ export default function SummaryScreen() {
       <View style={styles.spendCard}>
         <GlobalPeriodHeader
           periodText={`${periodLabel(selectedMonth, startDay)}${selectedMonth !== currentMonthStr ? ' · tap to change' : ''}`}
-          householdName={household?.name || ''}
+          householdName={isMultiMember ? (household?.name || '') : ''}
           onPress={() => setShowMonthPicker(true)}
           style={styles.globalHeader}
         />
@@ -630,13 +646,19 @@ export default function SummaryScreen() {
           </TouchableOpacity>
         </View>
         {entryMode === 'add' ? (
-          <TouchableOpacity
-            style={styles.scanLink}
-            onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
-          >
-            <Ionicons name="camera-outline" size={14} color="#888" />
-            <Text style={styles.scanLinkText}>scan a receipt</Text>
-          </TouchableOpacity>
+          <View style={styles.quickEntryActions}>
+            <TouchableOpacity
+              style={styles.scanLink}
+              onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
+            >
+              <Ionicons name="camera-outline" size={14} color="#888" />
+              <Text style={styles.scanLinkText}>scan a receipt</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.scanLink} onPress={startManualEntry}>
+              <Ionicons name="create-outline" size={14} color="#888" />
+              <Text style={styles.scanLinkText}>start from scratch</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.entryModeSpacer} />
         )}
@@ -922,7 +944,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5', borderRadius: 10,
     width: 46, justifyContent: 'center', alignItems: 'center',
   },
-  scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  quickEntryActions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 10, minHeight: 24, flexWrap: 'wrap' },
+  scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   scanLinkText: { fontSize: 14, color: '#888' },
   entryModeSpacer: { height: 24, marginTop: 10 },
 
