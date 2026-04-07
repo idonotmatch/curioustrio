@@ -345,6 +345,7 @@ export default function TrendDetailScreen() {
     month,
     insight_type: insightType = '',
     category_key: categoryKey = '',
+    insight_metadata: insightMetadataParam = '',
     title,
     insight_id: insightId = '',
     mock = '',
@@ -424,6 +425,45 @@ export default function TrendDetailScreen() {
   const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
   const supportsCategoryReview = ['top_category_driver', 'projected_category_surge', 'projected_category_under_baseline'].includes(`${insightType}`);
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
+  const insightMetadata = useMemo(() => {
+    if (!insightMetadataParam) return {};
+    try {
+      return JSON.parse(`${insightMetadataParam}`);
+    } catch {
+      return {};
+    }
+  }, [insightMetadataParam]);
+  const recurringSpikeSignals = useMemo(() => {
+    if (`${mock}` === '1') {
+      return [
+        {
+          group_key: 'mock-milk',
+          item_name: 'Whole milk',
+          latest_merchant: 'Whole Foods',
+          latest_date: '2026-04-03',
+          comparison_type: 'price',
+          latest_value: 5.49,
+          baseline_value: 4.19,
+          delta_amount: 1.3,
+          delta_percent: 31,
+        },
+        {
+          group_key: 'mock-eggs',
+          item_name: 'Eggs',
+          latest_merchant: 'Trader Joe\'s',
+          latest_date: '2026-04-04',
+          comparison_type: 'price',
+          latest_value: 6.2,
+          baseline_value: 4.9,
+          delta_amount: 1.3,
+          delta_percent: 26.5,
+        },
+      ];
+    }
+    return Array.isArray(insightMetadata?.recurring_spike_signals)
+      ? insightMetadata.recurring_spike_signals
+      : [];
+  }, [insightMetadata, mock]);
 
   useEffect(() => {
     let cancelled = false;
@@ -821,6 +861,31 @@ export default function TrendDetailScreen() {
                 <Text style={styles.feedbackCopy}>
                   Help Adlo learn whether this looks like a temporary recurring price spike, an expected cost, or a real new pressure to keep watching.
                 </Text>
+                {recurringSpikeSignals.length ? (
+                  <>
+                    <Text style={styles.sectionEyebrow}>What&apos;s driving it</Text>
+                    <View style={styles.reviewList}>
+                      {recurringSpikeSignals.map((signal) => (
+                        <View key={signal.group_key || `${signal.item_name}:${signal.latest_merchant}`} style={styles.reviewRow}>
+                          <View style={styles.driverText}>
+                            <Text style={styles.driverName}>{signal.item_name || 'Recurring item'}</Text>
+                            <Text style={styles.driverMeta}>
+                              {signal.latest_merchant || 'Latest purchase'}
+                              {signal.latest_date ? ` · ${formatShortDate(signal.latest_date)}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={styles.driverDelta}>
+                            +{formatCurrency(signal.delta_amount)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Text style={styles.metricRow}>
+                      Biggest current lift: {recurringSpikeSignals[0]?.item_name || 'Recurring item'} is about{' '}
+                      {formatCurrency(recurringSpikeSignals[0]?.latest_value)} now vs {formatCurrency(recurringSpikeSignals[0]?.baseline_value)} usual.
+                    </Text>
+                  </>
+                ) : null}
                 <View style={styles.reviewList}>
                   <View style={styles.reviewRow}>
                     <View style={styles.driverText}>

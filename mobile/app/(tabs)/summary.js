@@ -403,6 +403,7 @@ export default function SummaryScreen() {
           month: insight.metadata?.month,
           insight_type: insight.type,
           category_key: insight.metadata?.category_key || '',
+          insight_metadata: JSON.stringify(insight.metadata || {}),
           title: insight.title,
           insight_id: insight.id,
           mock: isMockInsight ? '1' : '',

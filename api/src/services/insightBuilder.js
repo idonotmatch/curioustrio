@@ -1013,6 +1013,21 @@ async function buildInsights({ user, limit = 10 }) {
         .sort((a, b) => Math.abs(Number(b.delta_amount || 0)) - Math.abs(Number(a.delta_amount || 0)))
         .slice(0, 2)
         .map((signal) => signal.item_name);
+      const topSpikeSignals = spikeSignals
+        .slice()
+        .sort((a, b) => Math.abs(Number(b.delta_amount || 0)) - Math.abs(Number(a.delta_amount || 0)))
+        .slice(0, 4)
+        .map((signal) => ({
+          group_key: signal.group_key,
+          item_name: signal.item_name,
+          latest_merchant: signal.latest_merchant,
+          latest_date: signal.latest_date,
+          comparison_type: signal.comparison_type,
+          latest_value: Number(signal.latest_value || 0),
+          baseline_value: Number(signal.baseline_value || 0),
+          delta_amount: Number(signal.delta_amount || 0),
+          delta_percent: Number(signal.delta_percent || 0),
+        }));
       insightSets.push([{
         id: `recurring_cost_pressure:${user.household_id}:${spikeSignals.map((signal) => signal.group_key).join('|')}`,
         type: 'recurring_cost_pressure',
@@ -1030,6 +1045,7 @@ async function buildInsights({ user, limit = 10 }) {
           spike_count: spikeSignals.length,
           total_delta_amount: Number(totalRecurringDelta.toFixed(2)),
           items: topItems,
+          recurring_spike_signals: topSpikeSignals,
         },
         actions: [],
       }]);
