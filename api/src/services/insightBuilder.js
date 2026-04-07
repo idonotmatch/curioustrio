@@ -1075,6 +1075,27 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
   }];
 }
 
+function shouldSupplementWithUsageFallback(insights = []) {
+  if (!insights.length) return true;
+
+  const nonUsageInsights = insights.filter((insight) => !insight?.metadata?.usage_fallback);
+  if (!nonUsageInsights.length) return false;
+
+  const hasMediumOrHighSignal = nonUsageInsights.some((insight) => severityRank(insight.severity) >= 2);
+  if (hasMediumOrHighSignal) return false;
+
+  const hasDirectNextStep = nonUsageInsights.some((insight) => {
+    const role = portfolioRole(insight);
+    return role === 'act' || role === 'plan' || role === 'setup';
+  });
+  if (hasDirectNextStep) return false;
+
+  return nonUsageInsights.every((insight) => {
+    const role = portfolioRole(insight);
+    return role === 'explain' || role === 'other';
+  });
+}
+
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
@@ -1222,13 +1243,35 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       return new Date(b.created_at) - new Date(a.created_at);
     });
 
-  return orchestrateInsightPortfolio(ranked, feedbackSummary, limit);
+  let supplementedRanked = ranked;
+  if (shouldSupplementWithUsageFallback(ranked)) {
+    const [personalProjection, personalBudgetSettings] = await Promise.all([
+      analyzeSpendProjection({ user, scope: 'personal' }),
+      BudgetSetting.findByUser(user.id),
+    ]);
+    const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    const fallbackInsights = buildUsageFallbackInsights({
+      user,
+      projection: personalProjection,
+      budgetLimit: personalBudgetLimit,
+      scope: 'personal',
+    });
+
+    supplementedRanked = dedupeInsights([...ranked, ...fallbackInsights]).sort((a, b) => {
+      const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+  }
+
+  return orchestrateInsightPortfolio(supplementedRanked, feedbackSummary, limit);
 }
 
 module.exports = {
   buildInsights,
   buildInsightsForUser,
   buildUsageFallbackInsights,
+  shouldSupplementWithUsageFallback,
   insightRankScore,
   insightDestinationAdjustment,
   portfolioRole,

@@ -4,6 +4,7 @@ const {
   narrativeClusterKey,
   narrativeTheme,
   buildUsageFallbackInsights,
+  shouldSupplementWithUsageFallback,
   insightDestinationAdjustment,
   portfolioRole,
 } = require('../../src/services/insightBuilder');
@@ -191,5 +192,60 @@ describe('insightBuilder orchestration', () => {
 
     expect(insights).toHaveLength(1);
     expect(insights[0].type).toBe('usage_ready_to_plan');
+  });
+
+  it('supplements low-signal explanatory rails with a usage fallback candidate', () => {
+    const insights = [
+      buildInsight({
+        id: 'explain-1',
+        type: 'spend_pace_behind',
+        severity: 'low',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ];
+
+    expect(shouldSupplementWithUsageFallback(insights)).toBe(true);
+  });
+
+  it('does not supplement when a stronger medium-or-high signal is already present', () => {
+    const insights = [
+      buildInsight({
+        id: 'explain-1',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: { scope: 'personal', month: '2026-04', category_key: 'groceries' },
+      }),
+    ];
+
+    expect(shouldSupplementWithUsageFallback(insights)).toBe(false);
+  });
+
+  it('does not supplement when a direct setup, plan, or action card already exists', () => {
+    expect(shouldSupplementWithUsageFallback([
+      buildInsight({
+        id: 'setup-1',
+        type: 'usage_set_budget',
+        severity: 'low',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ])).toBe(false);
+
+    expect(shouldSupplementWithUsageFallback([
+      buildInsight({
+        id: 'plan-1',
+        type: 'projected_month_end_under_budget',
+        severity: 'low',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ])).toBe(false);
+
+    expect(shouldSupplementWithUsageFallback([
+      buildInsight({
+        id: 'act-1',
+        type: 'projected_month_end_over_budget',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ])).toBe(false);
   });
 });
