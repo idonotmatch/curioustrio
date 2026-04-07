@@ -10,6 +10,7 @@ const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
 const { getSenderImportQuality } = require('../services/gmailImportQualityService');
+const { classifyExpenseItemType } = require('../services/itemClassifier');
 const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
@@ -51,6 +52,75 @@ function collectChangedFields(originalExpense, patch = {}) {
 
   if (patch.items !== undefined) changedFields.push('items');
   return [...new Set(changedFields)];
+}
+
+function normalizeReviewItem(item = {}, index = 0) {
+  const amount = item.amount == null || item.amount === '' ? null : Number(item.amount);
+  return {
+    description: `${item.description || ''}`.trim(),
+    normalized_description: `${item.description || ''}`.trim().toLowerCase(),
+    amount,
+    item_type: item.item_type || classifyExpenseItemType(item.description),
+    sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
+  };
+}
+
+function subtractSignatureCounts(sourceCounts, targetCounts) {
+  const removed = [];
+  for (const [signature, count] of sourceCounts.entries()) {
+    const remaining = count - (targetCounts.get(signature) || 0);
+    for (let i = 0; i < remaining; i += 1) removed.push(signature);
+  }
+  return removed;
+}
+
+function collectItemReviewSignals(originalItems = [], nextItems = []) {
+  const signals = [];
+  const original = (Array.isArray(originalItems) ? originalItems : []).map(normalizeReviewItem);
+  const next = (Array.isArray(nextItems) ? nextItems : []).map(normalizeReviewItem);
+
+  if (!original.length && !next.length) return signals;
+
+  if (original.length !== next.length) signals.push('items_count');
+
+  const compareLength = Math.min(original.length, next.length);
+  let descriptionChanged = false;
+  let amountChanged = false;
+  let typeChanged = false;
+  for (let i = 0; i < compareLength; i += 1) {
+    if (original[i].normalized_description !== next[i].normalized_description) descriptionChanged = true;
+    if (`${original[i].amount ?? ''}` !== `${next[i].amount ?? ''}`) amountChanged = true;
+    if (original[i].item_type !== next[i].item_type) typeChanged = true;
+  }
+  if (descriptionChanged) signals.push('items_description');
+  if (amountChanged) signals.push('items_amount');
+  if (typeChanged) signals.push('items_type');
+
+  const originalCounts = new Map();
+  const nextCounts = new Map();
+  const bySignature = new Map();
+
+  for (const item of original) {
+    const signature = JSON.stringify([item.normalized_description, item.amount, item.item_type]);
+    originalCounts.set(signature, (originalCounts.get(signature) || 0) + 1);
+    if (!bySignature.has(signature)) bySignature.set(signature, item);
+  }
+  for (const item of next) {
+    const signature = JSON.stringify([item.normalized_description, item.amount, item.item_type]);
+    nextCounts.set(signature, (nextCounts.get(signature) || 0) + 1);
+    if (!bySignature.has(signature)) bySignature.set(signature, item);
+  }
+
+  const removedRows = subtractSignatureCounts(originalCounts, nextCounts).map((signature) => bySignature.get(signature)).filter(Boolean);
+  const addedRows = subtractSignatureCounts(nextCounts, originalCounts).map((signature) => bySignature.get(signature)).filter(Boolean);
+
+  if (removedRows.length) signals.push('items_rows_removed');
+  if (addedRows.length) signals.push('items_rows_added');
+  if (removedRows.some((item) => item.item_type === 'fee')) signals.push('items_fee_rows_removed');
+  if (removedRows.some((item) => item.item_type === 'discount')) signals.push('items_discount_rows_removed');
+  if (removedRows.some((item) => item.item_type === 'summary')) signals.push('items_summary_rows_removed');
+
+  return signals;
 }
 
 function parseStartDay(value, fallback) {
@@ -517,9 +587,15 @@ router.patch('/:id', async (req, res, next) => {
     if (!originalExpense || originalExpense.user_id !== user.id) {
       return res.status(404).json({ error: 'Expense not found' });
     }
+    const originalItems = originalExpense.source === 'email' && items !== undefined
+      ? await ExpenseItem.findByExpenseId(req.params.id)
+      : [];
     const changedFields = originalExpense.source === 'email'
       ? collectChangedFields(originalExpense, req.body)
       : [];
+    if (originalExpense.source === 'email' && items !== undefined) {
+      changedFields.push(...collectItemReviewSignals(originalItems, Array.isArray(items) ? items : []));
+    }
     const expense = await Expense.update(req.params.id, user.id, {
       merchant,
       amount,

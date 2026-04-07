@@ -639,6 +639,59 @@ describe('PATCH /expenses/:id', () => {
     );
   });
 
+  it('records item-level Gmail import correction signals when imported items are edited', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes)
+       VALUES ($1, $2, 'Imported Grocer', 20.00, '2026-03-15', 'email', 'pending', 'Imported from Gmail')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'edit-item-feedback-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+    await db.query(
+      `INSERT INTO expense_items (expense_id, description, amount, sort_order, item_type)
+       VALUES
+         ($1, 'Greek Yogurt', 6.99, 0, 'product'),
+         ($1, 'Delivery Fee', 3.99, 1, 'fee'),
+         ($1, 'Order Total', 10.98, 2, 'summary')`,
+      [expenseId]
+    );
+
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({
+        items: [
+          { description: 'Greek Yogurt 32oz', amount: 7.29 },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+
+    const log = await db.query(
+      `SELECT review_action, review_edit_count, review_changed_fields
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('edited');
+    expect(Number(log.rows[0].review_edit_count)).toBe(1);
+    expect(log.rows[0].review_changed_fields).toEqual(
+      expect.arrayContaining([
+        'items',
+        'items_count',
+        'items_description',
+        'items_amount',
+        'items_rows_removed',
+        'items_fee_rows_removed',
+        'items_summary_rows_removed',
+      ])
+    );
+  });
+
   it('replaces items when items payload is provided', async () => {
     const userResult = await db.query(
       `SELECT id FROM users WHERE provider_uid = 'auth0|test-user-123'`
