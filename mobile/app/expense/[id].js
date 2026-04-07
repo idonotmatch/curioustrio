@@ -18,6 +18,30 @@ function formatLikelyFields(fields = []) {
   return fields.slice(0, 3).map((field) => `${field}`.replace(/_/g, ' ')).join(', ');
 }
 
+function cleanImportedEmailSummary(notes = '', subject = '') {
+  const raw = `${notes || ''}`.trim();
+  if (!raw) return null;
+
+  let summary = raw
+    .replace(/\(\s*needs review\s*\)/ig, '')
+    .replace(/\(\s*imported from gmail\s*\)/ig, '')
+    .trim();
+
+  if (subject) {
+    const escapedSubject = subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    summary = summary.replace(new RegExp(`^${escapedSubject}\\s*[—-]\\s*`, 'i'), '').trim();
+  }
+
+  return summary || null;
+}
+
+function formatImportedAt(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 function parseExpenseParam(value) {
   if (!value || typeof value !== 'string') return null;
   try {
@@ -297,6 +321,8 @@ export default function ExpenseDetailScreen() {
   const sourceText = sourceLabel[expense.source] || expense.source;
   const reviewState = expense.status === 'pending' && /needs review/i.test(expense.notes || '');
   const gmailReviewHint = expense.gmail_review_hint || null;
+  const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
+  const emailSummary = cleanImportedEmailSummary(expense.notes || '', gmailReviewHint?.message_subject || '');
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -375,6 +401,36 @@ export default function ExpenseDetailScreen() {
             <Text style={styles.gmailHintMeta} numberOfLines={2}>
               Subject: {gmailReviewHint.message_subject}
             </Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {expense.source === 'email' && (gmailReviewHint?.message_subject || gmailReviewHint?.from_address || importedAtLabel || emailSummary) ? (
+        <View style={styles.emailContextCard}>
+          <Text style={styles.emailContextTitle}>What Adlo saw in the email</Text>
+          {gmailReviewHint?.message_subject ? (
+            <View style={styles.emailContextRow}>
+              <Text style={styles.emailContextLabel}>Subject</Text>
+              <Text style={styles.emailContextValue}>{gmailReviewHint.message_subject}</Text>
+            </View>
+          ) : null}
+          {gmailReviewHint?.from_address ? (
+            <View style={styles.emailContextRow}>
+              <Text style={styles.emailContextLabel}>From</Text>
+              <Text style={styles.emailContextValue}>{gmailReviewHint.from_address}</Text>
+            </View>
+          ) : null}
+          {importedAtLabel ? (
+            <View style={styles.emailContextRow}>
+              <Text style={styles.emailContextLabel}>Imported</Text>
+              <Text style={styles.emailContextValue}>{importedAtLabel}</Text>
+            </View>
+          ) : null}
+          {emailSummary ? (
+            <View style={styles.emailContextSummary}>
+              <Text style={styles.emailContextSummaryLabel}>Email summary</Text>
+              <Text style={styles.emailContextSummaryText}>{emailSummary}</Text>
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -815,6 +871,24 @@ const styles = StyleSheet.create({
   gmailHintTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 4 },
   gmailHintBody: { color: '#cfcfcf', fontSize: 12, lineHeight: 18 },
   gmailHintMeta: { color: '#8d8d8d', fontSize: 11, lineHeight: 16, marginTop: 4 },
+  emailContextCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: -4,
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  emailContextTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  emailContextRow: { marginBottom: 8 },
+  emailContextLabel: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+  emailContextValue: { color: '#d4d4d4', fontSize: 12, lineHeight: 18 },
+  emailContextSummary: { borderTopWidth: 1, borderTopColor: '#1c1c1c', paddingTop: 10, marginTop: 2 },
+  emailContextSummaryLabel: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  emailContextSummaryText: { color: '#b8b8b8', fontSize: 12, lineHeight: 18 },
   recurringCard: {
     marginHorizontal: 20,
     marginTop: 12,

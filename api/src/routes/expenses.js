@@ -75,6 +75,8 @@ function buildEmailReviewHint(log, senderQuality) {
   if (log.review_action === 'approved') {
     return {
       sender_domain: senderQuality?.sender_domain || null,
+      from_address: log.from_address || null,
+      imported_at: log.imported_at || null,
       sender_quality_level: level,
       sender_quality_metrics: senderQuality?.metrics || null,
       likely_changed_fields: likelyChangedFields,
@@ -103,6 +105,8 @@ function buildEmailReviewHint(log, senderQuality) {
 
   return {
     sender_domain: senderQuality?.sender_domain || null,
+    from_address: log.from_address || null,
+    imported_at: log.imported_at || null,
     sender_quality_level: level,
     sender_quality_metrics: senderQuality?.metrics || null,
     likely_changed_fields: likelyChangedFields,
