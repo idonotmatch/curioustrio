@@ -48,6 +48,7 @@ function summarizeFeedbackEvents(events = []) {
       shown: 0,
       reasons: {},
       outcomes: {},
+      reviews: {},
       last_negative_at: null,
       last_helpful_at: null,
       last_acted_at: null,
@@ -75,6 +76,11 @@ function summarizeFeedbackEvents(events = []) {
       const outcomeType = normalizeOutcomeType(event);
       if (outcomeType) {
         current.outcomes[outcomeType] = (current.outcomes[outcomeType] || 0) + 1;
+      }
+      const reviewType = `${event?.metadata?.review_type || ''}`.trim();
+      const unusualReview = `${event?.metadata?.unusual_review || ''}`.trim();
+      if (reviewType === 'unusual_purchase_review' && unusualReview) {
+        current.reviews[unusualReview] = (current.reviews[unusualReview] || 0) + 1;
       }
       current.last_acted_at = event.created_at || current.last_acted_at;
     }
@@ -170,6 +176,12 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
     score -= 1.5;
   }
 
+  if (insight.type === 'one_offs_driving_variance' || insight.type === 'one_off_expense_skewing_projection') {
+    score += (stats.reviews.truly_one_off || 0) * 2.5;
+    score -= (stats.reviews.expected || 0) * 7;
+    score -= (stats.reviews.becoming_normal || 0) * 8;
+  }
+
   score -= (stats.reasons.not_relevant || 0) * 2;
   score -= (stats.reasons.not_accurate || 0) * 2.5;
   score -= (stats.reasons.already_knew || 0) * 1.5;
@@ -205,6 +217,7 @@ function toSerializableSummary(feedbackSummary) {
       shown: stats.shown || 0,
       reasons: stats.reasons || {},
       outcomes: stats.outcomes || {},
+      reviews: stats.reviews || {},
       last_negative_at: stats.last_negative_at || null,
       last_helpful_at: stats.last_helpful_at || null,
       last_acted_at: stats.last_acted_at || null,

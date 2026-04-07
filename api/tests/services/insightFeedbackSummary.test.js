@@ -97,6 +97,26 @@ describe('summarizeFeedbackEvents', () => {
       last_acted_at: '2026-04-04T12:00:00Z',
     }));
   });
+
+  it('captures unusual-spend review judgments from acted events', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'one_offs:personal:2026-04',
+        event_type: 'acted',
+        metadata: {
+          type: 'one_offs_driving_variance',
+          review_type: 'unusual_purchase_review',
+          unusual_review: 'expected',
+        },
+        created_at: '2026-04-04T12:00:00Z',
+      },
+    ]);
+
+    expect(summary.get('one_offs_driving_variance')).toEqual(expect.objectContaining({
+      acted: 1,
+      reviews: expect.objectContaining({ expected: 1 }),
+    }));
+  });
 });
 
 describe('feedbackAdjustmentForInsight', () => {
@@ -193,6 +213,40 @@ describe('feedbackAdjustmentForInsight', () => {
     ]);
 
     expect(feedbackAdjustmentForInsight({ type: 'projected_month_end_under_budget' }, summary)).toBeLessThan(0);
+  });
+
+  it('demotes one-off explanatory insights when users say the spend was expected', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'one_off_projection:personal:2026-04',
+        event_type: 'acted',
+        metadata: {
+          type: 'one_off_expense_skewing_projection',
+          review_type: 'unusual_purchase_review',
+          unusual_review: 'expected',
+        },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'one_off_expense_skewing_projection' }, summary)).toBeLessThan(0);
+  });
+
+  it('boosts one-off explanatory insights when users confirm the spend was truly one-off', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'one_offs:personal:2026-04',
+        event_type: 'acted',
+        metadata: {
+          type: 'one_offs_driving_variance',
+          review_type: 'unusual_purchase_review',
+          unusual_review: 'truly_one_off',
+        },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'one_offs_driving_variance' }, summary)).toBeGreaterThan(0);
   });
 });
 
