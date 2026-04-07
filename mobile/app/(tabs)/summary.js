@@ -63,6 +63,11 @@ function insightScopeLabel(insight) {
 }
 
 function insightActionLabel(insight) {
+  const delta = Math.abs(Number(insight?.metadata?.projected_budget_delta || 0));
+  const headroom = Math.abs(Number(insight?.metadata?.projected_headroom_amount || 0));
+  const driverDelta = Math.abs(Number(insight?.metadata?.delta_amount || 0));
+  const historicalCount = Number(insight?.metadata?.historical_period_count || 0);
+
   if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
     return 'Review recurring details';
   }
@@ -73,39 +78,69 @@ function insightActionLabel(insight) {
     case 'usage_set_budget':
       return 'Set your budget';
     case 'usage_building_history':
+      return historicalCount >= 2 ? 'Try planning ahead' : 'Keep building history';
     case 'usage_ready_to_plan':
       return 'Try planning ahead';
     case 'spend_pace_ahead':
+      return historicalCount >= 3 ? 'See what is driving it' : 'Keep building history';
     case 'spend_pace_behind':
       return 'See what is driving it';
     case 'budget_too_low':
+      return delta >= 100 ? 'Pressure-test a purchase' : 'See the budget impact';
     case 'budget_too_high':
+      return 'Review your budget fit';
     case 'projected_month_end_over_budget':
+      return delta >= 100 ? 'Pressure-test a purchase' : 'See the budget impact';
     case 'projected_month_end_under_budget':
+      return headroom >= 100 ? 'Try planning ahead' : 'See the budget impact';
     case 'one_off_expense_skewing_projection':
-      return 'See the budget impact';
+      return 'Review unusual purchases';
     case 'top_category_driver':
-    case 'projected_category_surge':
-    case 'projected_category_under_baseline':
       return 'Review category detail';
+    case 'projected_category_surge':
+      return 'Review category detail';
+    case 'projected_category_under_baseline':
+      return headroom >= 60 ? 'Try planning ahead' : 'Review category detail';
     case 'one_offs_driving_variance':
       return 'Review unusual purchases';
     case 'recurring_cost_pressure':
-      return 'Review recurring pressure';
+      return delta >= 50 ? 'Pressure-test a purchase' : 'Review recurring pressure';
     default:
       return 'Open detail';
   }
 }
 
 function insightActionReason(insight) {
+  const delta = Math.abs(Number(insight?.metadata?.projected_budget_delta || 0));
+  const headroom = Math.abs(Number(insight?.metadata?.projected_headroom_amount || 0));
+  const historicalCount = Number(insight?.metadata?.historical_period_count || 0);
+
   if (insight?.metadata?.scope === 'household') {
     return 'Shared context';
   }
-  if (`${insight?.type || ''}`.startsWith('usage_')) {
+  if (`${insight?.type || ''}` === 'usage_set_budget') {
+    return 'Needs setup';
+  }
+  if (`${insight?.type || ''}` === 'usage_building_history') {
+    return 'History building';
+  }
+  if (`${insight?.type || ''}` === 'usage_ready_to_plan') {
+    return 'Ready to use';
+  }
+  if (`${insight?.type || ''}` === 'usage_start_logging') {
     return 'Getting started';
   }
   if (insight?.entity_type === 'item') {
     return 'Actionable now';
+  }
+  if (historicalCount > 0 && historicalCount < 3) {
+    return 'Low confidence';
+  }
+  if (delta >= 100) {
+    return 'Tight month';
+  }
+  if (headroom >= 100) {
+    return 'Room available';
   }
   switch (`${insight?.severity || ''}`) {
     case 'high':

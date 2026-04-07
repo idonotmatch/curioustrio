@@ -59,19 +59,61 @@ function sharedContextCopy(scope) {
     : 'This view is using only your personal spending and budget context.';
 }
 
-function primaryActionForInsight({ insightType, scope, month, categoryKey }) {
+function primaryActionForInsight({ insightType, scope, month, categoryKey, trend }) {
+  const budgetDelta = Math.abs(Number(
+    trend?.budget_adherence?.projected_over_under
+    ?? trend?.projection?.overall?.projected_budget_delta
+    ?? 0
+  ));
+  const categoryDelta = Math.abs(Number(
+    trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey)?.delta_amount
+    ?? 0
+  ));
+  const oneOffDelta = Math.abs(Number(trend?.pace?.variance_breakdown?.one_off_delta_amount || 0));
+
   switch (insightType) {
     case 'projected_month_end_over_budget':
     case 'projected_month_end_under_budget':
     case 'budget_too_low':
     case 'budget_too_high':
-    case 'one_off_expense_skewing_projection':
-    case 'spend_pace_ahead':
-    case 'spend_pace_behind':
-    case 'recurring_cost_pressure':
+      if (budgetDelta < 75) {
+        return {
+          title: 'Read the budget context first',
+          body: 'This looks worth understanding, but it may not be large enough to warrant a purchase scenario yet.',
+          cta: null,
+          route: null,
+        };
+      }
       return {
         title: 'Turn this into a plan',
         body: 'Pressure-test a purchase against this same period and scope.',
+        cta: 'Open planner',
+        route: {
+          pathname: '/scenario-check',
+          params: { scope, month },
+        },
+      };
+    case 'one_off_expense_skewing_projection':
+      return {
+        title: 'Review the unusual spend first',
+        body: oneOffDelta >= 75
+          ? 'This month looks lifted by one-off activity, so it is more useful to understand those unusual purchases before planning around them.'
+          : 'This looks more explanatory than urgent, so it may help to understand the one-offs before planning around them.',
+        cta: null,
+        route: null,
+      };
+    case 'spend_pace_ahead':
+    case 'spend_pace_behind':
+      return {
+        title: 'See what is driving this pace',
+        body: 'Use the breakdown below to see whether this is broad-based or concentrated in just one or two categories.',
+        cta: null,
+        route: null,
+      };
+    case 'recurring_cost_pressure':
+      return {
+        title: 'Plan around recurring pressure',
+        body: 'Use the planner to test whether another purchase still fits once recurring pressure is accounted for.',
         cta: 'Open planner',
         route: {
           pathname: '/scenario-check',
@@ -82,13 +124,12 @@ function primaryActionForInsight({ insightType, scope, month, categoryKey }) {
     case 'projected_category_surge':
     case 'projected_category_under_baseline':
       return {
-        title: 'Pressure-test a purchase in this area',
-        body: 'Use this period and scope to test whether another purchase in this category still fits.',
-        cta: 'Open planner',
-        route: {
-          pathname: '/scenario-check',
-          params: { scope, month },
-        },
+        title: 'Review the category detail first',
+        body: categoryDelta >= 50
+          ? 'This category is moving enough to matter, but the next best step is still understanding the category breakdown before planning around it.'
+          : 'This looks more like a directional signal than a constraint, so the category breakdown is the next best step.',
+        cta: null,
+        route: null,
       };
     case 'one_offs_driving_variance':
       return {
@@ -293,8 +334,8 @@ export default function TrendDetailScreen() {
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
   const primaryAction = useMemo(
-    () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}` }),
-    [insightType, scope, month, categoryKey]
+    () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
+    [insightType, scope, month, categoryKey, trend]
   );
 
   useEffect(() => {
