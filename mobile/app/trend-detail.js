@@ -49,6 +49,16 @@ function titleForInsightType(type, fallbackTitle) {
   }
 }
 
+function subjectLabel(scope) {
+  return `${scope}` === 'household' ? 'Your household' : 'You';
+}
+
+function sharedContextCopy(scope) {
+  return `${scope}` === 'household'
+    ? 'This view is using shared household spending, budget room, and recurring pressure across everyone in the household.'
+    : 'This view is using only your personal spending and budget context.';
+}
+
 function buildMockTrend(scope, month) {
   const household = `${scope}` === 'household';
   const periodLabel = month || '2026-04';
@@ -169,33 +179,34 @@ function buildMockTrend(scope, month) {
   };
 }
 
-function summaryCopy({ insightType, trend, categoryKey }) {
+function summaryCopy({ insightType, trend, categoryKey, scope }) {
   const pace = trend?.pace;
   const budget = trend?.budget_adherence;
   const projection = trend?.projection?.overall;
   const highlightedDriver = trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey);
+  const subject = subjectLabel(scope);
 
   switch (insightType) {
     case 'spend_pace_ahead':
-      return `You are ${Math.abs(Number(pace?.delta_percent || 0))}% ahead of your usual pace for this point in the period.`;
+      return `${subject} ${`${scope}` === 'household' ? 'is' : 'are'} ${Math.abs(Number(pace?.delta_percent || 0))}% ahead of ${`${scope}` === 'household' ? 'its' : 'your'} usual pace for this point in the period.`;
     case 'spend_pace_behind':
-      return `You are ${Math.abs(Number(pace?.delta_percent || 0))}% below your usual pace for this point in the period.`;
+      return `${subject} ${`${scope}` === 'household' ? 'is' : 'are'} ${Math.abs(Number(pace?.delta_percent || 0))}% below ${`${scope}` === 'household' ? 'its' : 'your'} usual pace for this point in the period.`;
     case 'budget_too_low':
-      return `Your projected spend is ${formatCurrency(budget?.projected_over_under)} above budget, and your recent history suggests this budget may be set too low.`;
+      return `${`${scope}` === 'household' ? 'Projected household spend' : 'Your projected spend'} is ${formatCurrency(budget?.projected_over_under)} above budget, and recent history suggests this budget may be set too low.`;
     case 'budget_too_high':
-      return `Your recent history suggests this budget may be higher than you typically need.`;
+      return `${`${scope}` === 'household' ? 'Recent household history' : 'Your recent history'} suggests this budget may be higher than ${`${scope}` === 'household' ? 'you usually need together' : 'you typically need'}.`;
     case 'top_category_driver':
       return highlightedDriver
-        ? `${highlightedDriver.category_name} is running ${formatCurrency(Math.abs(highlightedDriver.delta_amount))} ${Number(highlightedDriver.delta_amount) >= 0 ? 'higher' : 'lower'} than your usual pace so far.`
+        ? `${highlightedDriver.category_name} is running ${formatCurrency(Math.abs(highlightedDriver.delta_amount))} ${Number(highlightedDriver.delta_amount) >= 0 ? 'higher' : 'lower'} than ${`${scope}` === 'household' ? 'your shared' : 'your usual'} pace so far.`
         : 'This category is one of the main reasons the period is off your normal pace.';
     case 'one_offs_driving_variance':
       return 'A few unusual merchants are contributing more to this period than your recurring baseline normally would.';
     case 'recurring_cost_pressure':
       return 'Recurring purchases are contributing more extra spend than usual this period.';
     case 'projected_month_end_over_budget':
-      return `You are projected to finish about ${formatCurrency(projection?.projected_budget_delta)} above budget by month end based on your historical spending shape.`;
+      return `${subject} ${`${scope}` === 'household' ? 'is' : 'are'} projected to finish about ${formatCurrency(projection?.projected_budget_delta)} above budget by month end based on ${`${scope}` === 'household' ? 'your shared' : 'your'} historical spending shape.`;
     case 'projected_month_end_under_budget':
-      return `You are projected to finish about ${formatCurrency(Math.abs(Number(projection?.projected_budget_delta || 0)))} under budget by month end based on your historical spending shape.`;
+      return `${subject} ${`${scope}` === 'household' ? 'is' : 'are'} projected to finish about ${formatCurrency(Math.abs(Number(projection?.projected_budget_delta || 0)))} under budget by month end based on ${`${scope}` === 'household' ? 'your shared' : 'your'} historical spending shape.`;
     case 'one_off_expense_skewing_projection':
       return 'An unusual purchase is materially lifting the all-in month-end projection above your baseline spend pattern.';
     case 'projected_category_surge': {
@@ -349,8 +360,18 @@ export default function TrendDetailScreen() {
             <View style={styles.hero}>
               <Text style={styles.scopeChip}>{`${scope}` === 'household' ? 'Household' : 'You'}</Text>
               <Text style={styles.heroTitle}>{titleForInsightType(`${insightType}`, title)}</Text>
-              <Text style={styles.heroCopy}>{summaryCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}` })}</Text>
+              <Text style={styles.heroCopy}>{summaryCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
+              <Text style={styles.heroContext}>{sharedContextCopy(scope)}</Text>
             </View>
+
+            {`${scope}` === 'household' ? (
+              <View style={styles.sharedContextCard}>
+                <Text style={styles.cardTitle}>Shared context</Text>
+                <Text style={styles.metricRow}>
+                  This insight is about the household&apos;s combined spending pattern, not just one person&apos;s activity.
+                </Text>
+              </View>
+            ) : null}
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Period snapshot</Text>
@@ -495,7 +516,7 @@ export default function TrendDetailScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Was this helpful?</Text>
                 <Text style={styles.feedbackCopy}>
-                  Your feedback helps Adlo learn which kinds of insights are actually useful for you.
+                  Your feedback helps Adlo learn which kinds of {`${scope}` === 'household' ? 'shared' : 'personal'} insights are actually useful.
                 </Text>
                 <View style={styles.feedbackRow}>
                   <TouchableOpacity
@@ -603,6 +624,15 @@ const styles = StyleSheet.create({
   },
   heroTitle: { fontSize: 30, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   heroCopy: { fontSize: 15, color: '#b5b5b5', lineHeight: 22 },
+  heroContext: { fontSize: 13, color: '#8ca7bf', lineHeight: 18 },
+  sharedContextCard: {
+    backgroundColor: '#101b24',
+    borderWidth: 1,
+    borderColor: '#1a2f40',
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+  },
   card: {
     backgroundColor: '#111',
     borderWidth: 1,
