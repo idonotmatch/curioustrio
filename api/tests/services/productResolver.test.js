@@ -109,4 +109,22 @@ describe('productResolver', () => {
     });
     expect(productId).toBeNull();
   });
+
+  it('skips product resolution for fee-like imported rows', async () => {
+    const resolution = await resolveProductMatch({
+      description: 'Delivery Fee',
+      amount: 4.99,
+    }, 'Instacart');
+    const productId = await resolveProduct({
+      description: 'Delivery Fee',
+      amount: 4.99,
+    }, 'Instacart');
+
+    expect(resolution).toBeNull();
+    expect(productId).toBeNull();
+    expect(Product.findByUpc).not.toHaveBeenCalled();
+    expect(Product.findBySkuAndMerchant).not.toHaveBeenCalled();
+    expect(Product.findByNormalizedDetails).not.toHaveBeenCalled();
+    expect(Product.create).not.toHaveBeenCalled();
+  });
 });

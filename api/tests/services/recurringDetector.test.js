@@ -170,6 +170,24 @@ describe('detectRecurringItems', () => {
     expect(candidates[0].median_unit_price).toBeTruthy();
     expect(candidates[0].merchants).toEqual(['Whole Foods']);
   });
+
+  it('ignores fee-like recurring rows even if they repeat consistently', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Instacart', 9.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Instacart', 10.19, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Instacart', 10.09, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Delivery Fee', amount: 9.99 }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Delivery Fee', amount: 10.19 }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Delivery Fee', amount: 10.09 }]);
+
+    const candidates = await detectRecurringItems(testHouseholdId);
+    expect(candidates.find((item) => item.item_name === 'Delivery Fee')).toBeFalsy();
+  });
 });
 
 describe('detectRecurringItemSignals', () => {

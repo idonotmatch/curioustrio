@@ -1,10 +1,12 @@
 const db = require('../db');
 const { normalizeItemMetadata } = require('../services/itemNormalizer');
+const { classifyExpenseItemType } = require('../services/itemClassifier');
 
 function hydrateItem(item = {}, index = 0) {
   return {
     ...item,
     sort_order: item.sort_order ?? index,
+    item_type: item.item_type || classifyExpenseItemType(item.description),
     ...normalizeItemMetadata(item),
   };
 }
@@ -13,8 +15,8 @@ async function createBulk(expenseId, items) {
   if (!items || items.length === 0) return [];
   const preparedItems = items.map((item, i) => hydrateItem(item, i));
   const values = preparedItems.map((_, i) => {
-    const offset = i * 20;
-    return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21})`;
+    const offset = i * 21;
+    return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21}, $${offset + 22})`;
   });
   const params = [expenseId];
   preparedItems.forEach((item) => {
@@ -22,6 +24,7 @@ async function createBulk(expenseId, items) {
       item.description,
       item.amount ?? null,
       item.sort_order,
+      item.item_type ?? 'product',
       item.product_id ?? null,
       item.upc ?? null,
       item.sku ?? null,
@@ -43,7 +46,7 @@ async function createBulk(expenseId, items) {
   });
   const result = await db.query(
     `INSERT INTO expense_items (
-       expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit,
+       expense_id, description, amount, sort_order, item_type, product_id, upc, sku, brand, product_size, pack_size, unit,
        normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size,
        normalized_quantity, normalized_total_size_value, normalized_total_size_unit, estimated_unit_price, comparable_key
      )
@@ -71,8 +74,8 @@ async function replaceItems(expenseId, items) {
     if (items && items.length > 0) {
       const preparedItems = items.map((item, i) => hydrateItem(item, i));
       const values = preparedItems.map((_, i) => {
-        const offset = i * 20;
-        return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21})`;
+        const offset = i * 21;
+        return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, $${offset + 17}, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21}, $${offset + 22})`;
       });
       const params = [expenseId];
       preparedItems.forEach((item) => {
@@ -80,6 +83,7 @@ async function replaceItems(expenseId, items) {
           item.description,
           item.amount ?? null,
           item.sort_order,
+          item.item_type ?? 'product',
           item.product_id ?? null,
           item.upc ?? null,
           item.sku ?? null,
@@ -101,7 +105,7 @@ async function replaceItems(expenseId, items) {
       });
       const result = await client.query(
         `INSERT INTO expense_items (
-           expense_id, description, amount, sort_order, product_id, upc, sku, brand, product_size, pack_size, unit,
+           expense_id, description, amount, sort_order, item_type, product_id, upc, sku, brand, product_size, pack_size, unit,
            normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size,
            normalized_quantity, normalized_total_size_value, normalized_total_size_unit, estimated_unit_price, comparable_key
          )

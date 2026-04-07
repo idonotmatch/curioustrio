@@ -1,5 +1,6 @@
 const Product = require('../models/product');
 const { normalizeItemMetadata } = require('./itemNormalizer');
+const { isProductLikeItem } = require('./itemClassifier');
 
 /**
  * Given a parsed item with optional product fields, find or create a product record.
@@ -21,8 +22,8 @@ async function resolveProductMatch(item, merchant) {
 
   if (!description) return null;
 
-  // Fee/tax/shipping items — skip product resolution
-  if (isNonProduct(description)) return null;
+  // Fee/tax/shipping/discount/summary items — skip product resolution
+  if (!isProductLikeItem(item)) return null;
 
   try {
     // 1. Try UPC match
@@ -121,12 +122,6 @@ function canCreateCanonicalProduct({ merchant, normalized, brand, product_size, 
 
   const tokenCount = normalized.normalized_name?.split(' ').filter(Boolean).length || 0;
   return !!merchant && tokenCount >= 2 && normalized.normalized_name?.length >= 8;
-}
-
-const NON_PRODUCT_PATTERNS = /^(tax|hst|gst|pst|vat|tip|gratuity|service charge|service fee|delivery fee|shipping|handling|bag fee|surcharge|discount|coupon|savings|subtotal|total)/i;
-
-function isNonProduct(description) {
-  return NON_PRODUCT_PATTERNS.test(description.trim());
 }
 
 module.exports = { resolveProduct, resolveProductMatch };

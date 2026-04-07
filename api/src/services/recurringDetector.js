@@ -33,6 +33,7 @@ async function loadRecurringItemOccurrences(householdId) {
      WHERE e.household_id = $1
        AND e.status = 'confirmed'
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
+       AND COALESCE(ei.item_type, 'product') = 'product'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      ORDER BY e.date ASC`,
     [householdId]
