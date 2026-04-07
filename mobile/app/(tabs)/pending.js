@@ -41,6 +41,35 @@ function reviewToneStyle(tone) {
   }
 }
 
+function reviewModePresentation(hint = {}) {
+  const mode = hint?.review_mode || 'full_review';
+  if (mode === 'quick_check') {
+    return {
+      chipLabel: 'Quick check',
+      detail: 'Usually a fast confirm of merchant, amount, and date.',
+      approveLabel: 'Quick approve',
+      accent: styles.modeChipQuick,
+      accentText: styles.modeChipTextQuick,
+    };
+  }
+  if (mode === 'items_first') {
+    return {
+      chipLabel: 'Items first',
+      detail: hint?.item_reliability_message || 'Line items are the most likely thing to need cleanup.',
+      approveLabel: 'Check items',
+      accent: styles.modeChipItems,
+      accentText: styles.modeChipTextItems,
+    };
+  }
+  return {
+    chipLabel: 'Full review',
+    detail: hint?.message || 'Review the core details before approving.',
+    approveLabel: 'Approve',
+    accent: styles.modeChipFull,
+    accentText: styles.modeChipTextFull,
+  };
+}
+
 export default function PendingScreen() {
   const router = useRouter();
   const { expenses, loading, refresh } = usePendingExpenses();
@@ -82,11 +111,12 @@ export default function PendingScreen() {
     );
   }
 
-  function renderLeftActions(id) {
+  function renderLeftActions(item) {
+    const mode = reviewModePresentation(item.gmail_review_hint);
     return (
-      <TouchableOpacity style={styles.approveAction} onPress={() => approve(id)}>
+      <TouchableOpacity style={styles.approveAction} onPress={() => approve(item.id)}>
         <Ionicons name="checkmark" size={20} color="#fff" />
-        <Text style={styles.actionLabel}>Approve</Text>
+        <Text style={styles.actionLabel}>{mode.approveLabel}</Text>
       </TouchableOpacity>
     );
   }
@@ -100,7 +130,7 @@ export default function PendingScreen() {
           <View>
             <Swipeable
               renderRightActions={() => renderRightActions(item.id)}
-              renderLeftActions={() => renderLeftActions(item.id)}
+              renderLeftActions={() => renderLeftActions(item)}
               overshootLeft={false}
               overshootRight={false}
             >
@@ -121,15 +151,27 @@ export default function PendingScreen() {
                   </Text>
                   <Text style={styles.date}>{formatDate(item.date)}</Text>
                   {item.gmail_review_hint ? (
+                    (() => {
+                      const mode = reviewModePresentation(item.gmail_review_hint);
+                      return (
                     <View style={styles.hintWrap}>
-                      <View style={[styles.hintChip, reviewToneStyle(item.gmail_review_hint.tone).chip]}>
+                      <View style={styles.hintChipRow}>
+                        <View style={[styles.hintChip, reviewToneStyle(item.gmail_review_hint.tone).chip]}>
                         <Text style={[styles.hintChipText, reviewToneStyle(item.gmail_review_hint.tone).text]}>
                           {item.gmail_review_hint.headline}
                         </Text>
+                        </View>
+                        <View style={[styles.modeChip, mode.accent]}>
+                          <Text style={[styles.modeChipText, mode.accentText]}>{mode.chipLabel}</Text>
+                        </View>
                       </View>
                       {item.gmail_review_hint.likely_changed_fields?.length ? (
                         <Text style={styles.hintDetail} numberOfLines={1}>
                           Usually worth checking {formatFieldList(item.gmail_review_hint.likely_changed_fields)}.
+                        </Text>
+                      ) : item.gmail_review_hint.review_mode ? (
+                        <Text style={styles.hintDetail} numberOfLines={1}>
+                          {mode.detail}
                         </Text>
                       ) : item.gmail_review_hint.item_reliability_message ? (
                         <Text style={styles.hintDetail} numberOfLines={1}>
@@ -141,6 +183,8 @@ export default function PendingScreen() {
                         </Text>
                       )}
                     </View>
+                      );
+                    })()
                   ) : null}
                 </View>
                 <Text style={styles.amount}>${Number(item.amount).toFixed(2)}</Text>
@@ -182,6 +226,7 @@ const styles = StyleSheet.create({
   merchant: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
   hintWrap: { marginTop: 6, gap: 4 },
+  hintChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   hintChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   hintChipText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   hintChipPositive: { backgroundColor: 'rgba(34,197,94,0.14)' },
@@ -192,6 +237,14 @@ const styles = StyleSheet.create({
   hintChipTextCaution: { color: '#fcd34d' },
   hintChipInfo: { backgroundColor: 'rgba(96,165,250,0.14)' },
   hintChipTextInfo: { color: '#93c5fd' },
+  modeChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+  modeChipText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  modeChipQuick: { backgroundColor: 'rgba(134,239,172,0.08)', borderColor: 'rgba(134,239,172,0.35)' },
+  modeChipTextQuick: { color: '#bbf7d0' },
+  modeChipItems: { backgroundColor: 'rgba(253,224,71,0.08)', borderColor: 'rgba(253,224,71,0.35)' },
+  modeChipTextItems: { color: '#fde68a' },
+  modeChipFull: { backgroundColor: 'rgba(147,197,253,0.08)', borderColor: 'rgba(147,197,253,0.28)' },
+  modeChipTextFull: { color: '#bfdbfe' },
   hintDetail: { fontSize: 12, color: '#8a8a8a' },
   amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
 
