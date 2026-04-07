@@ -425,6 +425,24 @@ export default function TrendDetailScreen() {
   const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
   const supportsCategoryReview = ['top_category_driver', 'projected_category_surge', 'projected_category_under_baseline'].includes(`${insightType}`);
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
+  const unusualDecisionBuckets = useMemo(() => {
+    const likelyDiscount = [];
+    const worthWatching = [];
+
+    for (const expense of unusualExpenses) {
+      const reason = `${expense.norm_reason || ''}`;
+      if (reason.includes('novel') || reason.includes('rare')) {
+        likelyDiscount.push(expense);
+      } else {
+        worthWatching.push(expense);
+      }
+    }
+
+    return {
+      likelyDiscount: likelyDiscount.slice(0, 3),
+      worthWatching: worthWatching.slice(0, 3),
+    };
+  }, [unusualExpenses]);
   const insightMetadata = useMemo(() => {
     if (!insightMetadataParam) return {};
     try {
@@ -714,6 +732,51 @@ export default function TrendDetailScreen() {
                 <Text style={styles.feedbackCopy}>
                   Help Adlo learn whether this really was a one-off, something expected, or a new normal to learn from.
                 </Text>
+                {unusualExpenses.length ? (
+                  <>
+                    <Text style={styles.sectionEyebrow}>How to think about this month</Text>
+                    {unusualDecisionBuckets.likelyDiscount.length ? (
+                      <>
+                        <Text style={styles.metricRow}>
+                          Probably safe to mentally discount: these look more like isolated one-offs than a real shift in your normal month shape.
+                        </Text>
+                        <View style={styles.reviewList}>
+                          {unusualDecisionBuckets.likelyDiscount.map((expense) => (
+                            <View key={`discount:${expense.id || `${expense.merchant}:${expense.amount}`}`} style={styles.reviewRow}>
+                              <View style={styles.driverText}>
+                                <Text style={styles.driverName}>{expense.merchant}</Text>
+                                <Text style={styles.driverMeta}>
+                                  {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+                                </Text>
+                              </View>
+                              <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </>
+                    ) : null}
+                    {unusualDecisionBuckets.worthWatching.length ? (
+                      <>
+                        <Text style={styles.metricRow}>
+                          Worth watching if it repeats: these are unusual, but they may be closer to a real spending-pattern shift if they show up again.
+                        </Text>
+                        <View style={styles.reviewList}>
+                          {unusualDecisionBuckets.worthWatching.map((expense) => (
+                            <View key={`watch:${expense.id || `${expense.merchant}:${expense.amount}`}`} style={styles.reviewRow}>
+                              <View style={styles.driverText}>
+                                <Text style={styles.driverName}>{expense.merchant}</Text>
+                                <Text style={styles.driverMeta}>
+                                  {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+                                </Text>
+                              </View>
+                              <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
                 {unusualExpenses.length ? (
                   <View style={styles.reviewList}>
                     {unusualExpenses.map((expense) => (
