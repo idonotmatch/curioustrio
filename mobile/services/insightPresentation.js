@@ -41,13 +41,13 @@ export function getInsightActionDescriptor(insight, context = {}) {
 
   switch (type) {
     case 'usage_start_logging':
-      return { label: "Don't forget to log", reason: 'Getting started' };
+      return { label: "Don't forget to log", reason: metadata?.usage_context === 'quiet_period' ? 'Quiet month' : 'Getting started' };
     case 'usage_set_budget':
-      return { label: 'Set your budget', reason: 'Needs setup' };
+      return { label: 'Set your budget', reason: metadata?.usage_context === 'quiet_period' ? 'Good time to set up' : 'Needs setup' };
     case 'usage_building_history':
-      return { label: "Don't forget to log", reason: 'History building' };
+      return { label: "Don't forget to log", reason: metadata?.usage_context === 'quiet_period' ? 'Quiet month' : 'History building' };
     case 'usage_ready_to_plan':
-      return { label: 'Try planning ahead', reason: 'Ready to use' };
+      return { label: 'Try planning ahead', reason: metadata?.usage_context === 'quiet_period' ? 'Good time to plan' : 'Ready to use' };
     case 'spend_pace_ahead':
       return { label: 'See what is driving it', reason: historicalCount > 0 && historicalCount < 3 ? 'Low confidence' : 'Worth checking' };
     case 'spend_pace_behind':

@@ -978,13 +978,14 @@ function resolveOpportunityCompetition(insights) {
   return insights.filter((insight) => !removals.has(insight.id) && byType.has(insight.id));
 }
 
-function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scope = 'personal' }) {
+function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scope = 'personal', context = 'default' }) {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const projectionOverall = projection?.overall || {};
   const historicalPeriodCount = Number(projectionOverall.historical_period_count || 0);
   const currentSpendToDate = Number(projectionOverall.current_spend_to_date || 0);
   const scopeLabel = scope === 'household' ? 'household' : 'personal';
+  const isQuietPeriod = context === 'quiet_period';
 
   if (currentSpendToDate <= 0) {
     return [{
@@ -1003,6 +1004,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         scope: scopeLabel,
         month: projection?.month || null,
         usage_fallback: true,
+        usage_context: context,
       },
       actions: [],
     }];
@@ -1012,10 +1014,16 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
     return [{
       id: `usage_set_budget:${scopeLabel}:${projection?.month || 'current'}`,
       type: 'usage_set_budget',
-      title: scope === 'household' ? 'Set a shared budget to sharpen guidance' : 'Set a budget to sharpen guidance',
-      body: scope === 'household'
-        ? 'A shared budget helps Adlo tell whether your household still has room or is already getting tight.'
-        : 'A monthly budget gives Adlo a clearer line for when your spending still has room and when it is getting tight.',
+      title: isQuietPeriod
+        ? (scope === 'household' ? 'Quiet month, good time to set a shared budget' : 'Quiet month, good time to set your budget')
+        : (scope === 'household' ? 'Set a shared budget to sharpen guidance' : 'Set a budget to sharpen guidance'),
+      body: isQuietPeriod
+        ? (scope === 'household'
+          ? 'Shared spending looks relatively quiet right now, which makes this a clean time to set a household budget before activity picks up.'
+          : 'Spending looks relatively quiet right now, which makes this a clean time to set a budget before the month gets busier.')
+        : (scope === 'household'
+          ? 'A shared budget helps Adlo tell whether your household still has room or is already getting tight.'
+          : 'A monthly budget gives Adlo a clearer line for when your spending still has room and when it is getting tight.'),
       severity: 'low',
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -1025,6 +1033,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         scope: scopeLabel,
         month: projection?.month || null,
         usage_fallback: true,
+        usage_context: context,
       },
       actions: [],
     }];
@@ -1034,10 +1043,16 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
     return [{
       id: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
       type: 'usage_building_history',
-      title: scope === 'household' ? 'Your household is still building a baseline' : 'You are still building a baseline',
-      body: scope === 'household'
-        ? `Adlo has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} of shared history so far. Keep logging and the guidance will get sharper.`
-        : `Adlo has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} of history so far. Keep logging and the guidance will get sharper.`,
+      title: isQuietPeriod
+        ? (scope === 'household' ? 'Quiet month, keep building the household baseline' : 'Quiet month, keep building your baseline')
+        : (scope === 'household' ? 'Your household is still building a baseline' : 'You are still building a baseline'),
+      body: isQuietPeriod
+        ? (scope === 'household'
+          ? `This month looks relatively calm, but Adlo still only has ${historicalPeriodCount} completed shared ${historicalPeriodCount === 1 ? 'period' : 'periods'} to learn from. Keep logging and the guidance will get sharper.`
+          : `This month looks relatively calm, but Adlo still only has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} to learn from. Keep logging and the guidance will get sharper.`)
+        : (scope === 'household'
+          ? `Adlo has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} of shared history so far. Keep logging and the guidance will get sharper.`
+          : `Adlo has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} of history so far. Keep logging and the guidance will get sharper.`),
       severity: 'low',
       entity_type: 'budget_period',
       entity_id: `${scopeLabel}:${projection?.month || 'current'}`,
@@ -1048,6 +1063,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         month: projection?.month || null,
         historical_period_count: historicalPeriodCount,
         usage_fallback: true,
+        usage_context: context,
       },
       actions: [],
     }];
@@ -1056,10 +1072,16 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
   return [{
     id: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}`,
     type: 'usage_ready_to_plan',
-    title: scope === 'household' ? 'You have enough history to start planning ahead' : 'You have enough history to start planning ahead',
-    body: scope === 'household'
-      ? 'You have enough shared history for Adlo to start pressure-testing household purchases with more confidence.'
-      : 'You have enough history for Adlo to start pressure-testing purchases with more confidence.',
+    title: isQuietPeriod
+      ? 'Quiet month, good time to plan ahead'
+      : 'You have enough history to start planning ahead',
+    body: isQuietPeriod
+      ? (scope === 'household'
+        ? 'Shared spending looks relatively calm right now, and you have enough history for Adlo to pressure-test household purchases with more confidence.'
+        : 'Spending looks relatively calm right now, and you have enough history for Adlo to pressure-test purchases with more confidence.')
+      : (scope === 'household'
+        ? 'You have enough shared history for Adlo to start pressure-testing household purchases with more confidence.'
+        : 'You have enough history for Adlo to start pressure-testing purchases with more confidence.'),
     severity: 'low',
     entity_type: 'budget_period',
     entity_id: `${scopeLabel}:${projection?.month || 'current'}`,
@@ -1070,6 +1092,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
       month: projection?.month || null,
       historical_period_count: historicalPeriodCount,
       usage_fallback: true,
+      usage_context: context,
     },
     actions: [],
   }];
@@ -1255,6 +1278,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       projection: personalProjection,
       budgetLimit: personalBudgetLimit,
       scope: 'personal',
+      context: 'quiet_period',
     });
 
     supplementedRanked = dedupeInsights([...ranked, ...fallbackInsights]).sort((a, b) => {

@@ -194,6 +194,27 @@ describe('insightBuilder orchestration', () => {
     expect(insights[0].type).toBe('usage_ready_to_plan');
   });
 
+  it('builds quiet-period fallback copy when supplementing a thin rail', () => {
+    const insights = buildUsageFallbackInsights({
+      user: { id: 'user-1' },
+      projection: {
+        month: '2026-04',
+        overall: {
+          current_spend_to_date: 120,
+          historical_period_count: 4,
+        },
+      },
+      budgetLimit: 500,
+      scope: 'personal',
+      context: 'quiet_period',
+    });
+
+    expect(insights).toHaveLength(1);
+    expect(insights[0].type).toBe('usage_ready_to_plan');
+    expect(insights[0].title).toBe('Quiet month, good time to plan ahead');
+    expect(insights[0].metadata.usage_context).toBe('quiet_period');
+  });
+
   it('supplements low-signal explanatory rails with a usage fallback candidate', () => {
     const insights = [
       buildInsight({
