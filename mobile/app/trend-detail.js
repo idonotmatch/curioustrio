@@ -22,6 +22,13 @@ function formatPercent(value) {
   return `${sign}${Number(value).toFixed(1)}%`;
 }
 
+function formatShortDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return `${value}`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function titleForInsightType(type, fallbackTitle) {
   if (fallbackTitle) return fallbackTitle;
   switch (type) {
@@ -266,6 +273,22 @@ function buildMockTrend(scope, month) {
   };
 }
 
+function buildMockCategoryExpenses(categoryKey) {
+  if (`${categoryKey}` === 'dining') {
+    return [
+      { id: 'mock-dining-1', merchant: 'Sweetgreen', amount: 28.4, date: '2026-04-02', category_name: 'Dining', user_name: 'Dang' },
+      { id: 'mock-dining-2', merchant: 'Joe Coffee', amount: 9.25, date: '2026-04-04', category_name: 'Dining', user_name: 'Dang' },
+      { id: 'mock-dining-3', merchant: 'Sushi Nakazawa', amount: 74.8, date: '2026-04-05', category_name: 'Dining', user_name: 'Dang' },
+    ];
+  }
+  return [
+    { id: 'mock-groceries-1', merchant: 'Costco', amount: 96.52, date: '2026-04-02', category_name: 'Groceries', user_name: 'Dang' },
+    { id: 'mock-groceries-2', merchant: 'Trader Joe\'s', amount: 48.13, date: '2026-04-03', category_name: 'Groceries', user_name: 'Dang' },
+    { id: 'mock-groceries-3', merchant: 'Whole Foods', amount: 37.91, date: '2026-04-04', category_name: 'Groceries', user_name: 'Dang' },
+    { id: 'mock-groceries-4', merchant: 'Costco', amount: 62.24, date: '2026-04-05', category_name: 'Groceries', user_name: 'Dang' },
+  ];
+}
+
 function summaryCopy({ insightType, trend, categoryKey, scope }) {
   const pace = trend?.pace;
   const budget = trend?.budget_adherence;
@@ -336,6 +359,8 @@ export default function TrendDetailScreen() {
   const [unusualReviewStatus, setUnusualReviewStatus] = useState('');
   const [categoryReviewStatus, setCategoryReviewStatus] = useState('');
   const [recurringReviewStatus, setRecurringReviewStatus] = useState('');
+  const [categoryExpenses, setCategoryExpenses] = useState([]);
+  const [categoryExpensesLoading, setCategoryExpensesLoading] = useState(false);
   const primaryAction = useMemo(
     () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
     [insightType, scope, month, categoryKey, trend]
@@ -399,6 +424,58 @@ export default function TrendDetailScreen() {
   const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
   const supportsCategoryReview = ['top_category_driver', 'projected_category_surge', 'projected_category_under_baseline'].includes(`${insightType}`);
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCategoryExpenses() {
+      if (!month || !categoryKey || !supportsCategoryReview) {
+        setCategoryExpensesLoading(false);
+        setCategoryExpenses([]);
+        return;
+      }
+      if (`${mock}` === '1') {
+        setCategoryExpensesLoading(false);
+        setCategoryExpenses(buildMockCategoryExpenses(categoryKey));
+        return;
+      }
+      try {
+        setCategoryExpensesLoading(true);
+        const params = new URLSearchParams({
+          month: `${month}`,
+          category_id: `${categoryKey}`,
+        });
+        const endpoint = `${scope}` === 'household' ? '/expenses/household' : '/expenses';
+        const rows = await api.get(`${endpoint}?${params.toString()}`);
+        if (!cancelled) setCategoryExpenses(Array.isArray(rows) ? rows.slice(0, 8) : []);
+      } catch {
+        if (!cancelled) setCategoryExpenses([]);
+      } finally {
+        if (!cancelled) setCategoryExpensesLoading(false);
+      }
+    }
+
+    loadCategoryExpenses();
+    return () => { cancelled = true; };
+  }, [categoryKey, month, mock, scope, supportsCategoryReview]);
+  const categoryMerchantSummary = useMemo(() => {
+    const totals = new Map();
+    for (const expense of categoryExpenses) {
+      const merchant = `${expense.merchant || 'Unknown merchant'}`.trim() || 'Unknown merchant';
+      const current = totals.get(merchant) || { merchant, amount: 0, count: 0 };
+      current.amount += Number(expense.amount || 0);
+      current.count += 1;
+      totals.set(merchant, current);
+    }
+    return [...totals.values()]
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 3);
+  }, [categoryExpenses]);
+  const topMerchantShare = useMemo(() => {
+    const total = categoryExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+    if (!total || !categoryMerchantSummary.length) return 0;
+    return Number(categoryMerchantSummary[0].amount || 0) / total;
+  }, [categoryExpenses, categoryMerchantSummary]);
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;
@@ -653,6 +730,46 @@ export default function TrendDetailScreen() {
                 <Text style={styles.feedbackCopy}>
                   Help Adlo learn whether this category move feels temporary, expected, or like a real spending pattern shift.
                 </Text>
+                {categoryExpensesLoading ? (
+                  <ActivityIndicator color="#f5f5f5" style={styles.inlineLoader} />
+                ) : categoryExpenses.length ? (
+                  <>
+                    <Text style={styles.sectionEyebrow}>What&apos;s driving it</Text>
+                    <Text style={styles.metricRow}>
+                      {topMerchantShare >= 0.5
+                        ? `${categoryMerchantSummary[0]?.merchant || 'One merchant'} is doing most of the lifting in this category right now.`
+                        : 'This move looks spread across a few merchants instead of coming from just one place.'}
+                    </Text>
+                    <View style={styles.reviewList}>
+                      {categoryMerchantSummary.map((merchant) => (
+                        <View key={merchant.merchant} style={styles.reviewRow}>
+                          <View style={styles.driverText}>
+                            <Text style={styles.driverName}>{merchant.merchant}</Text>
+                            <Text style={styles.driverMeta}>
+                              {merchant.count} {merchant.count === 1 ? 'purchase' : 'purchases'}
+                            </Text>
+                          </View>
+                          <Text style={styles.driverDelta}>{formatCurrency(merchant.amount)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Text style={styles.sectionEyebrow}>Recent purchases in this category</Text>
+                    <View style={styles.reviewList}>
+                      {categoryExpenses.map((expense) => (
+                        <View key={expense.id || `${expense.merchant}:${expense.date}:${expense.amount}`} style={styles.reviewRow}>
+                          <View style={styles.driverText}>
+                            <Text style={styles.driverName}>{expense.merchant || 'Unknown merchant'}</Text>
+                            <Text style={styles.driverMeta}>
+                              {formatShortDate(expense.date)}
+                              {expense.user_name ? ` · ${expense.user_name}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                ) : null}
                 {(highlightedCategoryProjection || highlightedDriver) ? (
                   <View style={styles.reviewList}>
                     <View style={styles.reviewRow}>
@@ -975,6 +1092,8 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 48, gap: 16 },
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: '#999', fontSize: 15 },
+  inlineLoader: { marginTop: 8, marginBottom: 4 },
+  sectionEyebrow: { color: '#8e8e93', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8, marginBottom: 8 },
   hero: { gap: 8, marginBottom: 8 },
   scopeChip: {
     alignSelf: 'flex-start',

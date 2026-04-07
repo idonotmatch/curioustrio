@@ -20,13 +20,22 @@ function periodBounds(month, startDay = 1) {
   };
 }
 
-async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1 } = {}) {
+async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1, categoryId = null } = {}) {
   const params = [userId, limit, offset];
   let monthClause = '';
   if (month) {
     const { from, to } = periodBounds(month, startDay);
     params.push(from, to);
     monthClause = `AND e.date >= $${params.length - 1} AND e.date < $${params.length}`;
+  }
+  let categoryClause = '';
+  if (categoryId) {
+    if (categoryId === 'uncategorized') {
+      categoryClause = 'AND e.category_id IS NULL';
+    } else {
+      params.push(categoryId);
+      categoryClause = `AND e.category_id = $${params.length}`;
+    }
   }
   const result = await db.query(
     `SELECT e.*,
@@ -40,6 +49,7 @@ async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1 
      LEFT JOIN categories  pc ON c.parent_id   = pc.id
      WHERE e.user_id = $1 AND e.status = 'confirmed'
      ${monthClause}
+     ${categoryClause}
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
     params
@@ -115,7 +125,7 @@ async function findById(id) {
   return result.rows[0] || null;
 }
 
-async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month, startDay = 1 } = {}) {
+async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month, startDay = 1, categoryId = null } = {}) {
   const params = [householdId, limit, offset];
   let privateClause = '';
   if (userId) {
@@ -127,6 +137,15 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
     const { from, to } = periodBounds(month, startDay);
     params.push(from, to);
     monthClause = `AND e.date >= $${params.length - 1} AND e.date < $${params.length}`;
+  }
+  let categoryClause = '';
+  if (categoryId) {
+    if (categoryId === 'uncategorized') {
+      categoryClause = 'AND e.category_id IS NULL';
+    } else {
+      params.push(categoryId);
+      categoryClause = `AND e.category_id = $${params.length}`;
+    }
   }
   const result = await db.query(
     `SELECT e.*,
@@ -145,6 +164,7 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
        AND e.status = 'confirmed'
      ${privateClause}
      ${monthClause}
+     ${categoryClause}
      ORDER BY e.date DESC, e.created_at DESC
      LIMIT $2 OFFSET $3`,
     params

@@ -279,10 +279,13 @@ router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const { month } = req.query;
+    const { month, category_id: categoryId } = req.query;
     const startDay = parseStartDay(req.query.start_day, user.budget_start_day || 1);
     if (startDay === null) return res.status(400).json({ error: 'start_day must be between 1 and 28' });
-    const expenses = await Expense.findByUser(user.id, { month, startDay });
+    if (categoryId !== undefined && categoryId !== null && categoryId !== '' && categoryId !== 'uncategorized' && !UUID_RE.test(categoryId)) {
+      return res.status(400).json({ error: 'category_id must be a valid UUID' });
+    }
+    const expenses = await Expense.findByUser(user.id, { month, startDay, categoryId: categoryId || null });
     res.json(expenses);
   } catch (err) { next(err); }
 });
@@ -292,13 +295,16 @@ router.get('/household', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const { month } = req.query;
+    const { month, category_id: categoryId } = req.query;
     const household = user.household_id ? await Household.findById(user.household_id) : null;
     const startDay = parseStartDay(req.query.start_day, household?.budget_start_day || user.budget_start_day || 1);
     if (startDay === null) return res.status(400).json({ error: 'start_day must be between 1 and 28' });
+    if (categoryId !== undefined && categoryId !== null && categoryId !== '' && categoryId !== 'uncategorized' && !UUID_RE.test(categoryId)) {
+      return res.status(400).json({ error: 'category_id must be a valid UUID' });
+    }
     const expenses = user.household_id
-      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay })
-      : await Expense.findByUser(user.id, { month, startDay });
+      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay, categoryId: categoryId || null })
+      : await Expense.findByUser(user.id, { month, startDay, categoryId: categoryId || null });
     res.json(expenses);
   } catch (err) { next(err); }
 });
