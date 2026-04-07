@@ -552,12 +552,18 @@ export default function ScenarioCheckScreen() {
 
             <View style={styles.watchCard}>
               <Text style={styles.watchTitle}>
-                {scenarioMemory?.watch_enabled ? 'Keeping an eye on this' : 'Keep an eye on this'}
+                {scenarioMemory?.watch_enabled
+                  ? (scope === 'household' ? 'Keeping an eye on this for the household' : 'Keeping an eye on this')
+                  : (scope === 'household' ? 'Keep an eye on this for the household' : 'Keep an eye on this')}
               </Text>
               <Text style={styles.watchMeta}>
                 {scenarioMemory?.watch_enabled
-                  ? 'Adlo will hold onto this plan longer and keep checking whether it gets easier or tighter.'
-                  : 'Only watched plans stick around longer for ongoing re-checks.'}
+                  ? (scope === 'household'
+                    ? 'Adlo will keep checking the shared household outlook to see whether this gets easier or tighter.'
+                    : 'Adlo will hold onto this plan longer and keep checking whether it gets easier or tighter.')
+                  : (scope === 'household'
+                    ? 'Watched household plans stick around so Adlo can keep checking the shared budget room.'
+                    : 'Only watched plans stick around longer for ongoing re-checks.')}
               </Text>
               <TouchableOpacity
                 style={[styles.watchButton, scenarioMemory?.watch_enabled && styles.watchButtonActive]}

@@ -91,6 +91,25 @@ function buildSections(items) {
   return groups.filter((group) => group.items.length > 0);
 }
 
+function buildScopeGroups(items) {
+  const household = items.filter((plan) => plan.scope === 'household');
+  const personal = items.filter((plan) => plan.scope !== 'household');
+  return [
+    {
+      key: 'household',
+      title: 'Shared household plans',
+      subtitle: 'Things you are keeping an eye on for shared room and timing.',
+      items: household,
+    },
+    {
+      key: 'personal',
+      title: 'Personal plans',
+      subtitle: 'Things you are keeping an eye on just for your own spending room.',
+      items: personal,
+    },
+  ].filter((group) => group.items.length > 0);
+}
+
 export default function WatchingPlansScreen() {
   const router = useRouter();
   const { resolved, label } = useLocalSearchParams();
@@ -116,7 +135,7 @@ export default function WatchingPlansScreen() {
     load();
   }, [load]));
 
-  const sections = buildSections(items);
+  const scopeGroups = buildScopeGroups(items);
 
   async function handleResolve(plan, action) {
     try {
@@ -204,89 +223,97 @@ export default function WatchingPlansScreen() {
           </>
         ) : (
           <>
-            {sections.map((section) => (
-              <View key={section.key} style={styles.section}>
-                <Text style={styles.sectionLabel}>{section.title}</Text>
-                {section.items.map((plan) => {
-                  const change = changeCopy(plan);
-                  const why = whyChangedCopy(plan);
-                  return (
-                    <View key={plan.id} style={styles.card}>
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        onPress={() => router.push({
-                          pathname: '/scenario-check',
-                          params: {
-                            month: plan.month,
-                            scope: plan.scope,
-                            amount: `${plan.amount}`,
-                            label: plan.label,
-                            auto_run: '1',
-                            timing_mode: plan.timing_mode || 'now',
-                          },
-                        })}
-                      >
-                        <View style={styles.rowTop}>
-                          <View style={styles.textCol}>
-                            <Text style={styles.label}>{plan.label}</Text>
-                            <Text style={styles.meta}>{scopeLabel(plan.scope)} · {scopeContextLabel(plan.scope)} · Watching</Text>
-                            {change ? <Text style={styles.change}>{change}</Text> : null}
-                            {why ? <Text style={styles.why}>{why}</Text> : null}
-                          </View>
-                          <View style={styles.rightCol}>
-                            <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
-                            <Text style={styles.amount}>{formatCurrency(plan.amount)}</Text>
+            {scopeGroups.map((scopeGroup) => (
+              <View key={scopeGroup.key} style={styles.scopeSection}>
+                <View style={styles.scopeHeader}>
+                  <Text style={styles.scopeTitle}>{scopeGroup.title}</Text>
+                  <Text style={styles.scopeSubtitle}>{scopeGroup.subtitle}</Text>
+                </View>
+                {buildSections(scopeGroup.items).map((section) => (
+                  <View key={`${scopeGroup.key}-${section.key}`} style={styles.section}>
+                    <Text style={styles.sectionLabel}>{section.title}</Text>
+                    {section.items.map((plan) => {
+                      const change = changeCopy(plan);
+                      const why = whyChangedCopy(plan);
+                      return (
+                        <View key={plan.id} style={styles.card}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => router.push({
+                              pathname: '/scenario-check',
+                              params: {
+                                month: plan.month,
+                                scope: plan.scope,
+                                amount: `${plan.amount}`,
+                                label: plan.label,
+                                auto_run: '1',
+                                timing_mode: plan.timing_mode || 'now',
+                              },
+                            })}
+                          >
+                            <View style={styles.rowTop}>
+                              <View style={styles.textCol}>
+                                <Text style={styles.label}>{plan.label}</Text>
+                                <Text style={styles.meta}>{scopeLabel(plan.scope)} · {scopeContextLabel(plan.scope)} · Watching</Text>
+                                {change ? <Text style={styles.change}>{change}</Text> : null}
+                                {why ? <Text style={styles.why}>{why}</Text> : null}
+                              </View>
+                              <View style={styles.rightCol}>
+                                <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
+                                <Text style={styles.amount}>{formatCurrency(plan.amount)}</Text>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                          <View style={styles.actionsRow}>
+                            <TouchableOpacity
+                              style={styles.primaryAction}
+                              onPress={() => router.push({
+                                pathname: '/confirm',
+                                params: {
+                                  data: JSON.stringify({
+                                    merchant: plan.label,
+                                    description: plan.label,
+                                    amount: Number(plan.amount),
+                                    date: new Date().toISOString().slice(0, 10),
+                                    source: 'manual',
+                                    scenario_memory_id: plan.id,
+                                  }),
+                                },
+                              })}
+                            >
+                              <Text style={styles.primaryActionText}>Bought it</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.secondaryAction}
+                              onPress={() => handleDefer(plan)}
+                            >
+                              <Text style={styles.secondaryActionText}>Revisit next month</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.tertiaryAction}
+                              onPress={() => handleResolve(plan, 'not_buying')}
+                            >
+                              <Text style={styles.tertiaryActionText}>Not buying it</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.quaternaryAction}
+                              onPress={async () => {
+                                try {
+                                  await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
+                                  load();
+                                } catch {
+                                  // non-fatal
+                                }
+                              }}
+                            >
+                              <Text style={styles.quaternaryActionText}>Stop watching</Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
-                      </TouchableOpacity>
-                      <View style={styles.actionsRow}>
-                        <TouchableOpacity
-                          style={styles.primaryAction}
-                          onPress={() => router.push({
-                            pathname: '/confirm',
-                            params: {
-                              data: JSON.stringify({
-                                merchant: plan.label,
-                                description: plan.label,
-                                amount: Number(plan.amount),
-                                date: new Date().toISOString().slice(0, 10),
-                                source: 'manual',
-                                scenario_memory_id: plan.id,
-                              }),
-                            },
-                          })}
-                        >
-                          <Text style={styles.primaryActionText}>Bought it</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.secondaryAction}
-                          onPress={() => handleDefer(plan)}
-                        >
-                          <Text style={styles.secondaryActionText}>Revisit next month</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.tertiaryAction}
-                          onPress={() => handleResolve(plan, 'not_buying')}
-                        >
-                          <Text style={styles.tertiaryActionText}>Not buying it</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.quaternaryAction}
-                          onPress={async () => {
-                            try {
-                              await api.post(`/trends/scenario-memory/${plan.id}/watch`, { enabled: false });
-                              load();
-                            } catch {
-                              // non-fatal
-                            }
-                          }}
-                        >
-                          <Text style={styles.quaternaryActionText}>Stop watching</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })}
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
             ))}
             {deferredItems.length > 0 ? (
@@ -372,6 +399,10 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#e3ebf3', fontSize: 17, fontWeight: '600' },
   emptyBody: { color: '#8fa0b2', fontSize: 14, lineHeight: 20 },
+  scopeSection: { gap: 12 },
+  scopeHeader: { gap: 4 },
+  scopeTitle: { color: '#f0f4f8', fontSize: 20, fontWeight: '600', letterSpacing: -0.4 },
+  scopeSubtitle: { color: '#8fa0b2', fontSize: 13, lineHeight: 18 },
   section: { gap: 10 },
   sectionLabel: {
     color: '#8e8e8e',
