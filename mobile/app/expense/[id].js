@@ -42,6 +42,50 @@ function formatImportedAt(value) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
+  const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
+  const likelySet = new Set(likelyFields);
+  const candidates = [
+    {
+      key: 'amount',
+      label: 'Amount',
+      value: `$${Math.abs(Number(expense?.amount || 0)).toFixed(2)}`,
+      reason: gmailReviewHint?.amount_evidence || 'Make sure this reflects the final charged total.',
+      weight: likelySet.has('amount') ? 100 : 60,
+    },
+    {
+      key: 'date',
+      label: 'Date',
+      value: formattedDate,
+      reason: gmailReviewHint?.date_evidence || 'Make sure this is the purchase day you want to track.',
+      weight: likelySet.has('date') ? 95 : 55,
+    },
+    {
+      key: 'merchant',
+      label: 'Merchant',
+      value: expense?.merchant || '—',
+      reason: gmailReviewHint?.merchant_evidence || 'Make sure the sender and subject match the merchant name.',
+      weight: likelySet.has('merchant') ? 90 : 50,
+    },
+    {
+      key: 'category',
+      label: 'Category',
+      value: categoryLabel,
+      reason: likelySet.has('category_id')
+        ? 'This sender often needs a category correction.'
+        : 'Check this if the purchase type looks off.',
+      weight: likelySet.has('category_id') ? 85 : 35,
+    },
+  ];
+
+  return candidates
+    .sort((a, b) => b.weight - a.weight)
+    .map((field, index) => ({
+      ...field,
+      priority: index === 0 ? 'Most worth checking' : index === 1 ? 'Also worth checking' : null,
+    }));
+}
+
 function parseExpenseParam(value) {
   if (!value || typeof value !== 'string') return null;
   try {
@@ -324,6 +368,9 @@ export default function ExpenseDetailScreen() {
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const emailSummary = cleanImportedEmailSummary(expense.notes || '', gmailReviewHint?.message_subject || '');
   const isPendingEmailReview = reviewState && expense.source === 'email';
+  const priorityReviewFields = isPendingEmailReview
+    ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
+    : [];
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -461,6 +508,36 @@ export default function ExpenseDetailScreen() {
           <Text style={styles.reviewChecklistItem}>Merchant: does the sender and subject match the place you expect?</Text>
           <Text style={styles.reviewChecklistItem}>Amount: does the total reflect the actual charge, not a subtotal or preauth?</Text>
           <Text style={styles.reviewChecklistItem}>Date: is this the purchase day you want to track for the expense?</Text>
+        </View>
+      ) : null}
+
+      {isPendingEmailReview ? (
+        <View style={styles.priorityFieldsCard}>
+          <View style={styles.priorityFieldsHeader}>
+            <View>
+              <Text style={styles.priorityFieldsEyebrow}>Most worth checking</Text>
+              <Text style={styles.priorityFieldsTitle}>Focus here before approving</Text>
+            </View>
+            {!editing ? (
+              <TouchableOpacity onPress={() => setEditing(true)} activeOpacity={0.8}>
+                <Text style={styles.priorityFieldsAction}>Edit fields</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {priorityReviewFields.map((field) => (
+            <View key={field.key} style={styles.priorityFieldRow}>
+              <View style={styles.priorityFieldTop}>
+                <Text style={styles.priorityFieldLabel}>{field.label}</Text>
+                {field.priority ? (
+                  <View style={styles.priorityBadge}>
+                    <Text style={styles.priorityBadgeText}>{field.priority}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={styles.priorityFieldValue}>{field.value}</Text>
+              <Text style={styles.priorityFieldReason}>{field.reason}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -941,6 +1018,28 @@ const styles = StyleSheet.create({
   },
   reviewChecklistTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
   reviewChecklistItem: { color: '#b9c2ce', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  priorityFieldsCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: -4,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  priorityFieldsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 8 },
+  priorityFieldsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  priorityFieldsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
+  priorityFieldsAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600', marginTop: 2 },
+  priorityFieldRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  priorityFieldTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  priorityFieldLabel: { color: '#d6d6d6', fontSize: 12, fontWeight: '600' },
+  priorityBadge: { backgroundColor: '#1a2432', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  priorityBadgeText: { color: '#aac7ff', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  priorityFieldValue: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginTop: 5 },
+  priorityFieldReason: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
   reviewFieldsHeader: {
     marginHorizontal: 20,
     marginTop: 16,
