@@ -169,6 +169,7 @@ export default function ExpenseDetailScreen() {
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [recurringFrequencyDays, setRecurringFrequencyDays] = useState('');
   const [recurringNotes, setRecurringNotes] = useState('');
+  const [secondaryDetailsExpanded, setSecondaryDetailsExpanded] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -371,6 +372,7 @@ export default function ExpenseDetailScreen() {
   const priorityReviewFields = isPendingEmailReview
     ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
     : [];
+  const showSecondaryDetails = !isPendingEmailReview || secondaryDetailsExpanded;
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -548,7 +550,7 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {canEdit ? (
+      {canEdit && showSecondaryDetails ? (
         <View style={styles.recurringCard}>
           <View style={styles.recurringHeader}>
             <View style={{ flex: 1 }}>
@@ -669,7 +671,23 @@ export default function ExpenseDetailScreen() {
         </View>
       </View>
 
-      {((editing && canEdit) || locationData || expense.place_name || expense.address) ? (
+      {isPendingEmailReview ? (
+        <TouchableOpacity
+          style={styles.secondaryDetailsToggle}
+          onPress={() => setSecondaryDetailsExpanded((value) => !value)}
+          activeOpacity={0.8}
+        >
+          <View>
+            <Text style={styles.secondaryDetailsEyebrow}>Secondary details</Text>
+            <Text style={styles.secondaryDetailsTitle}>
+              {secondaryDetailsExpanded ? 'Hide lower-priority fields' : 'Show payment, notes, location, and other details'}
+            </Text>
+          </View>
+          <Ionicons name={secondaryDetailsExpanded ? 'chevron-up' : 'chevron-forward'} size={16} color="#7d7d7d" />
+        </TouchableOpacity>
+      ) : null}
+
+      {showSecondaryDetails && ((editing && canEdit) || locationData || expense.place_name || expense.address) ? (
         <View style={styles.locationSection}>
           {editing && canEdit ? (
             <LocationPicker
@@ -699,7 +717,7 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {((editing && canEdit) || expense.notes) && (
+      {showSecondaryDetails && ((editing && canEdit) || expense.notes) && (
         <View style={styles.noteCard}>
           <Text style={styles.noteCardLabel}>Notes</Text>
           {editing && canEdit ? (
@@ -1047,6 +1065,19 @@ const styles = StyleSheet.create({
   },
   reviewFieldsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   reviewFieldsTitle: { color: '#d9d9d9', fontSize: 14, fontWeight: '600' },
+  secondaryDetailsToggle: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: -2,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  secondaryDetailsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  secondaryDetailsTitle: { color: '#cfcfcf', fontSize: 13, lineHeight: 18 },
   recurringCard: {
     marginHorizontal: 20,
     marginTop: 12,
