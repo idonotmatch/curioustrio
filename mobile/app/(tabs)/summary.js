@@ -68,6 +68,13 @@ function insightActionLabel(insight) {
   }
 
   switch (`${insight?.type || ''}`) {
+    case 'usage_start_logging':
+      return 'Log a few purchases';
+    case 'usage_set_budget':
+      return 'Set your budget';
+    case 'usage_building_history':
+    case 'usage_ready_to_plan':
+      return 'Try planning ahead';
     case 'spend_pace_ahead':
     case 'spend_pace_behind':
       return 'See what is driving it';
@@ -93,6 +100,9 @@ function insightActionLabel(insight) {
 function insightActionReason(insight) {
   if (insight?.metadata?.scope === 'household') {
     return 'Shared context';
+  }
+  if (`${insight?.type || ''}`.startsWith('usage_')) {
+    return 'Getting started';
   }
   if (insight?.entity_type === 'item') {
     return 'Actionable now';
@@ -302,6 +312,27 @@ export default function SummaryScreen() {
           group_key: insight.metadata.group_key,
           title: insight.metadata.item_name || insight.title,
           insight_id: insight.id,
+        },
+      });
+      return;
+    }
+
+    if (insight?.type === 'usage_start_logging') {
+      router.push('/(tabs)/add');
+      return;
+    }
+
+    if (insight?.type === 'usage_set_budget') {
+      router.push('/budget-period');
+      return;
+    }
+
+    if (insight?.type === 'usage_building_history' || insight?.type === 'usage_ready_to_plan') {
+      router.push({
+        pathname: '/scenario-check',
+        params: {
+          scope: insight.metadata?.scope || 'personal',
+          month: insight.metadata?.month || currentMonthStr,
         },
       });
       return;

@@ -2,6 +2,7 @@ const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
+const BudgetSetting = require('../models/budgetSetting');
 const { inferOutcomeEventsForUser } = require('./insightOutcomeInference');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
@@ -647,6 +648,66 @@ function narrativeClusterKey(insight) {
   return `${type}:${scope}:${month}`;
 }
 
+function narrativeTheme(insight) {
+  return narrativeClusterKey(insight).split(':')[0] || 'other';
+}
+
+function aggregatePortfolioFeedback(feedbackSummary = new Map()) {
+  const family = new Map();
+  const theme = new Map();
+
+  for (const [insightType, stats] of feedbackSummary.entries()) {
+    const familyKey = portfolioFamily({ type: insightType });
+    const themeKey = narrativeTheme({ type: insightType });
+
+    const addToBucket = (bucket, key) => {
+      const current = bucket.get(key) || {
+        shown: 0,
+        helpful: 0,
+        not_helpful: 0,
+        dismissed: 0,
+        acted: 0,
+      };
+      current.shown += Number(stats.shown || 0);
+      current.helpful += Number(stats.helpful || 0);
+      current.not_helpful += Number(stats.not_helpful || 0);
+      current.dismissed += Number(stats.dismissed || 0);
+      current.acted += Number(stats.acted || 0);
+      bucket.set(key, current);
+    };
+
+    addToBucket(family, familyKey);
+    addToBucket(theme, themeKey);
+  }
+
+  return { family, theme };
+}
+
+function portfolioBucketAdjustment(stats = {}) {
+  const shown = Number(stats.shown || 0);
+  const helpful = Number(stats.helpful || 0);
+  const notHelpful = Number(stats.not_helpful || 0);
+  const dismissed = Number(stats.dismissed || 0);
+  const acted = Number(stats.acted || 0);
+
+  let score = 0;
+  score += helpful * 1.5;
+  score += acted * 2.5;
+  score -= notHelpful * 2;
+  score -= dismissed * 1.25;
+
+  if (shown >= 4 && acted === 0 && helpful === 0) score -= 3;
+  if (shown >= 3 && acted / shown >= 0.25) score += 2;
+
+  return score;
+}
+
+function portfolioOutcomeAdjustment(insight, portfolioFeedback = { family: new Map(), theme: new Map() }) {
+  const familyStats = portfolioFeedback.family.get(portfolioFamily(insight));
+  const themeStats = portfolioFeedback.theme.get(narrativeTheme(insight));
+  return portfolioBucketAdjustment(familyStats) + portfolioBucketAdjustment(themeStats) * 0.75;
+}
+
 function orchestrationPenalty(insight, selected = []) {
   const family = portfolioFamily(insight);
   const sameFamilyCount = selected.filter((picked) => portfolioFamily(picked) === family).length;
@@ -683,6 +744,7 @@ function orchestrationPenalty(insight, selected = []) {
 function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limit = 10) {
   const remaining = [...insights];
   const selected = [];
+  const portfolioFeedback = aggregatePortfolioFeedback(feedbackSummary);
 
   while (remaining.length && selected.length < limit) {
     let bestIndex = 0;
@@ -690,7 +752,9 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
 
     for (let i = 0; i < remaining.length; i += 1) {
       const insight = remaining[i];
-      const score = insightRankScore(insight, feedbackSummary) - orchestrationPenalty(insight, selected);
+      const score = insightRankScore(insight, feedbackSummary)
+        + portfolioOutcomeAdjustment(insight, portfolioFeedback)
+        - orchestrationPenalty(insight, selected);
       if (score > bestScore) {
         bestScore = score;
         bestIndex = i;
@@ -814,6 +878,103 @@ function resolveOpportunityCompetition(insights) {
   return insights.filter((insight) => !removals.has(insight.id) && byType.has(insight.id));
 }
 
+function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scope = 'personal' }) {
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const projectionOverall = projection?.overall || {};
+  const historicalPeriodCount = Number(projectionOverall.historical_period_count || 0);
+  const currentSpendToDate = Number(projectionOverall.current_spend_to_date || 0);
+  const scopeLabel = scope === 'household' ? 'household' : 'personal';
+
+  if (currentSpendToDate <= 0) {
+    return [{
+      id: `usage_start_logging:${scopeLabel}:${projection?.month || 'current'}`,
+      type: 'usage_start_logging',
+      title: scope === 'household' ? 'Start logging shared spending' : 'Start logging spending',
+      body: scope === 'household'
+        ? 'Add a few shared expenses and Adlo will start turning that activity into household guidance.'
+        : 'Log a few purchases and Adlo will start turning that activity into more personalized guidance.',
+      severity: 'low',
+      entity_type: 'budget_period',
+      entity_id: `${scopeLabel}:${projection?.month || 'current'}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection?.month || null,
+        usage_fallback: true,
+      },
+      actions: [],
+    }];
+  }
+
+  if (!(Number(budgetLimit) > 0)) {
+    return [{
+      id: `usage_set_budget:${scopeLabel}:${projection?.month || 'current'}`,
+      type: 'usage_set_budget',
+      title: scope === 'household' ? 'Set a shared budget to sharpen guidance' : 'Set a budget to sharpen guidance',
+      body: scope === 'household'
+        ? 'A shared budget helps Adlo tell whether your household still has room or is already getting tight.'
+        : 'A monthly budget gives Adlo a clearer line for when your spending still has room and when it is getting tight.',
+      severity: 'low',
+      entity_type: 'budget',
+      entity_id: `${scopeLabel}:total`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection?.month || null,
+        usage_fallback: true,
+      },
+      actions: [],
+    }];
+  }
+
+  if (historicalPeriodCount < 3) {
+    return [{
+      id: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
+      type: 'usage_building_history',
+      title: scope === 'household' ? 'Your household is still building a baseline' : 'You are still building a baseline',
+      body: scope === 'household'
+        ? `Adlo has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} of shared history so far. Keep logging and the guidance will get sharper.`
+        : `Adlo has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'} of history so far. Keep logging and the guidance will get sharper.`,
+      severity: 'low',
+      entity_type: 'budget_period',
+      entity_id: `${scopeLabel}:${projection?.month || 'current'}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: {
+        scope: scopeLabel,
+        month: projection?.month || null,
+        historical_period_count: historicalPeriodCount,
+        usage_fallback: true,
+      },
+      actions: [],
+    }];
+  }
+
+  return [{
+    id: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}`,
+    type: 'usage_ready_to_plan',
+    title: scope === 'household' ? 'You have enough history to start planning ahead' : 'You have enough history to start planning ahead',
+    body: scope === 'household'
+      ? 'You have enough shared history for Adlo to start pressure-testing household purchases with more confidence.'
+      : 'You have enough history for Adlo to start pressure-testing purchases with more confidence.',
+    severity: 'low',
+    entity_type: 'budget_period',
+    entity_id: `${scopeLabel}:${projection?.month || 'current'}`,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    metadata: {
+      scope: scopeLabel,
+      month: projection?.month || null,
+      historical_period_count: historicalPeriodCount,
+      usage_fallback: true,
+    },
+    actions: [],
+  }];
+}
+
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
@@ -890,13 +1051,25 @@ async function buildInsights({ user, limit = 10 }) {
     insightSets.push(buildRestockWindowInsights({ projection: householdProjection, watchCandidates: householdWatchCandidates }));
   }
 
-  const deduped = dedupeInsights(
+  let deduped = dedupeInsights(
     insightSets
       .flat()
       .filter(Boolean)
       .filter((insight) => !!insight?.id)
       .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
   );
+
+  if (deduped.length === 0 && user?.id) {
+    const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
+    const personalBudgetSettings = await BudgetSetting.findByUser(user.id);
+    const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    deduped = buildUsageFallbackInsights({
+      user,
+      projection: personalProjection,
+      budgetLimit: personalBudgetLimit,
+      scope: 'personal',
+    });
+  }
 
   return resolveOpportunityCompetition(deduped)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
@@ -939,8 +1112,10 @@ async function buildInsightsForUser({ user, limit = 10 }) {
 module.exports = {
   buildInsights,
   buildInsightsForUser,
+  buildUsageFallbackInsights,
   insightRankScore,
   portfolioFamily,
   narrativeClusterKey,
+  narrativeTheme,
   orchestrateInsightPortfolio,
 };
