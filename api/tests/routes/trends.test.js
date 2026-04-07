@@ -23,6 +23,7 @@ beforeAll(async () => {
        label TEXT NOT NULL,
        amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
        month TEXT NOT NULL,
+       timing_mode TEXT NOT NULL DEFAULT 'now',
        memory_state TEXT NOT NULL DEFAULT 'ephemeral'
          CHECK (memory_state IN ('ephemeral', 'considering', 'suppressed', 'deferred')),
        intent_signal TEXT
@@ -55,6 +56,7 @@ beforeAll(async () => {
        ADD COLUMN IF NOT EXISTS last_material_change TEXT,
        ADD COLUMN IF NOT EXISTS watch_enabled BOOLEAN NOT NULL DEFAULT FALSE,
        ADD COLUMN IF NOT EXISTS watch_started_at TIMESTAMPTZ,
+       ADD COLUMN IF NOT EXISTS timing_mode TEXT NOT NULL DEFAULT 'now',
        ADD COLUMN IF NOT EXISTS resolution_action TEXT,
        ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ,
        ADD COLUMN IF NOT EXISTS resolved_expense_id UUID,
@@ -328,6 +330,7 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.scenario_memory).toBeTruthy();
     expect(res.body.scenario_memory.memory_state).toBe('ephemeral');
     expect(res.body.scenario_memory.intent_signal).toBeNull();
+    expect(res.body.scenario_memory.timing_mode).toBe('now');
   });
 
   it('returns 400 for invalid proposed amounts', async () => {
@@ -339,6 +342,79 @@ describe('POST /trends/scenario-check', () => {
       });
 
     expect(res.status).toBe(400);
+  });
+
+  it('returns an early low-confidence answer with limited history', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 40, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 20, '2026-04-02', 'manual', 'confirmed'),
+       ($1, 60, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 40, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 30, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-02-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 75,
+        label: 'Coffee table',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario.status).not.toBe('unknown');
+    expect(res.body.scenario.projection_confidence).toBe('very_low');
+    expect(res.body.scenario.history_stage).toBe('early');
+    expect(res.body.scenario.historical_period_count).toBe(2);
+    expect(Array.isArray(res.body.scenario.caveats)).toBe(true);
+    expect(res.body.scenario.caveats.length).toBeGreaterThan(0);
+  });
+
+  it('persists timing mode on scenario memory', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 40, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 20, '2026-04-02', 'manual', 'confirmed'),
+       ($1, 60, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 40, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 30, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-02-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 300,
+        label: 'Sofa',
+        timing_mode: 'spread_3_periods',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario.timing_mode).toBe('spread_3_periods');
+    expect(res.body.scenario_memory.timing_mode).toBe('spread_3_periods');
   });
 
   it('records user intent for a scenario memory', async () => {

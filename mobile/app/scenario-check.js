@@ -80,11 +80,18 @@ function reasonCopy(result) {
     case 'insufficient_history':
       return 'Adlo does not have enough historical periods yet to answer this with confidence.';
     default:
+      if (scenario.timing_mode === 'next_period') {
+        return `This is based on how ${label} fits in the next budget period instead of landing all at once right now.`;
+      }
+      if (scenario.timing_mode === 'spread_3_periods') {
+        return `This assumes ${label} is spread across three budget periods instead of hitting this one all at once.`;
+      }
       return 'This is based on your current projection, recent period shape, and expected recurring pressure.';
   }
 }
 
 function confidenceCopy(confidence) {
+  if (confidence === 'very_low') return 'Very low confidence from limited spending history so far.';
   if (confidence === 'high') return 'High confidence from a stable spending pattern.';
   if (confidence === 'medium') return 'Moderate confidence based on your recent spending history.';
   if (confidence === 'low') return 'Lower confidence because this period is still early or more variable than usual.';
@@ -93,6 +100,14 @@ function confidenceCopy(confidence) {
 
 function scopeLabel(scope) {
   return scope === 'household' ? 'Household' : 'You';
+}
+
+function timingModeLabel(mode) {
+  switch (mode) {
+    case 'next_period': return 'Next period';
+    case 'spread_3_periods': return 'Spread over 3 periods';
+    default: return 'This period';
+  }
 }
 
 function projectionDeltaCopy(value) {
@@ -155,6 +170,9 @@ export default function ScenarioCheckScreen() {
   const [scope, setScope] = useState(
     params.scope === 'household' && isMultiMember ? 'household' : 'personal'
   );
+  const [timingMode, setTimingMode] = useState(
+    ['next_period', 'spread_3_periods'].includes(params.timing_mode) ? params.timing_mode : 'now'
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -188,6 +206,7 @@ export default function ScenarioCheckScreen() {
         month: targetMonth,
         proposed_amount: parsedAmount,
         label: label.trim() || 'purchase',
+        timing_mode: timingMode,
       });
       setResult(data);
       setScenarioMemory(data?.scenario_memory || null);
@@ -217,9 +236,11 @@ export default function ScenarioCheckScreen() {
         month: nextMonth,
         proposed_amount: nextAmount,
         label: nextLabel,
+        timing_mode: nextPlan.timing_mode || 'now',
       });
       setResult(data);
       setScenarioMemory(data?.scenario_memory || null);
+      setTimingMode(nextPlan.timing_mode || 'now');
       loadRecentPlans();
     } catch (err) {
       setError(err?.message || 'Could not re-check this plan right now.');
@@ -328,7 +349,7 @@ export default function ScenarioCheckScreen() {
               <View style={styles.planSummaryText}>
                 <Text style={styles.planSummaryLabel}>{displayLabel}</Text>
                 <Text style={styles.planSummaryMeta}>
-                  {scopeLabel(scope)} · {periodLabel(targetMonth, startDay)}
+                  {scopeLabel(scope)} · {timingModeLabel(scenario?.timing_mode || timingMode)}
                 </Text>
               </View>
               <Text style={styles.planSummaryAmount}>{formatCurrency(displayAmount)}</Text>
@@ -354,7 +375,32 @@ export default function ScenarioCheckScreen() {
               <Text style={styles.bodyRow}>Current month outlook: {projectionDeltaCopy(projection?.projected_budget_delta)}</Text>
               <Text style={styles.bodyRow}>After this purchase, risk-adjusted room: {formatCurrency(riskAdjustedHeadroom)}</Text>
               <Text style={styles.bodyRow}>{confidenceCopy(scenario.projection_confidence)}</Text>
+              {Array.isArray(scenario.caveats) && scenario.caveats.length > 0 ? (
+                <View style={styles.caveatsBlock}>
+                  {scenario.caveats.map((caveat, index) => (
+                    <Text key={`${caveat}-${index}`} style={styles.caveatRow}>• {caveat}</Text>
+                  ))}
+                </View>
+              ) : null}
             </View>
+
+            {Array.isArray(scenario.horizon_periods) && scenario.horizon_periods.length > 1 ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Across the horizon</Text>
+                {scenario.horizon_periods.map((period) => (
+                  <View key={`${period.month}-${period.applied_amount}`} style={styles.horizonRow}>
+                    <View style={styles.horizonText}>
+                      <Text style={styles.horizonLabel}>{period.label}</Text>
+                      <Text style={styles.horizonMeta}>{formatCurrency(period.applied_amount)} applied</Text>
+                    </View>
+                    <View style={styles.horizonRight}>
+                      <Text style={styles.horizonStatus}>{statusConfig(period.status).label}</Text>
+                      <Text style={styles.horizonAmount}>{formatCurrency(period.risk_adjusted_headroom_amount)}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>How should Adlo treat this?</Text>
@@ -431,7 +477,7 @@ export default function ScenarioCheckScreen() {
         <View style={styles.card}>
           <View style={styles.composerHeader}>
             <Text style={styles.cardTitle}>{scenario ? 'Try another plan' : 'Scenario'}</Text>
-            <Text style={styles.composerMeta}>Pressure-test it against {periodLabel(targetMonth, startDay)}.</Text>
+            <Text style={styles.composerMeta}>{periodLabel(targetMonth, startDay)}</Text>
           </View>
 
           <View style={styles.composerRow}>
@@ -458,26 +504,49 @@ export default function ScenarioCheckScreen() {
           </View>
 
           <View style={styles.composerFooter}>
-            {isMultiMember ? (
-              <View style={styles.toggleRow}>
+            <View style={styles.composerControls}>
+              {isMultiMember ? (
+                <View style={styles.toggleRow}>
+                  <TouchableOpacity
+                    style={[styles.toggleChip, scope === 'personal' && styles.toggleChipActive]}
+                    onPress={() => setScope('personal')}
+                  >
+                    <Text style={[styles.toggleChipText, scope === 'personal' && styles.toggleChipTextActive]}>Mine</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.toggleChip, scope === 'household' && styles.toggleChipActive]}
+                    onPress={() => setScope('household')}
+                  >
+                    <Text style={[styles.toggleChipText, scope === 'household' && styles.toggleChipTextActive]}>Household</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.periodMiniBadge}>
+                  <Text style={styles.periodMiniBadgeText}>{periodLabel(targetMonth, startDay)}</Text>
+                </View>
+              )}
+
+              <View style={styles.timingRow}>
                 <TouchableOpacity
-                  style={[styles.toggleChip, scope === 'personal' && styles.toggleChipActive]}
-                  onPress={() => setScope('personal')}
+                  style={[styles.timingChip, timingMode === 'now' && styles.timingChipActive]}
+                  onPress={() => setTimingMode('now')}
                 >
-                  <Text style={[styles.toggleChipText, scope === 'personal' && styles.toggleChipTextActive]}>Mine</Text>
+                  <Text style={[styles.timingChipText, timingMode === 'now' && styles.timingChipTextActive]}>Now</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.toggleChip, scope === 'household' && styles.toggleChipActive]}
-                  onPress={() => setScope('household')}
+                  style={[styles.timingChip, timingMode === 'next_period' && styles.timingChipActive]}
+                  onPress={() => setTimingMode('next_period')}
                 >
-                  <Text style={[styles.toggleChipText, scope === 'household' && styles.toggleChipTextActive]}>Household</Text>
+                  <Text style={[styles.timingChipText, timingMode === 'next_period' && styles.timingChipTextActive]}>Next</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.timingChip, timingMode === 'spread_3_periods' && styles.timingChipActive]}
+                  onPress={() => setTimingMode('spread_3_periods')}
+                >
+                  <Text style={[styles.timingChipText, timingMode === 'spread_3_periods' && styles.timingChipTextActive]}>3 periods</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <View style={styles.periodMiniBadge}>
-                <Text style={styles.periodMiniBadgeText}>{periodLabel(targetMonth, startDay)}</Text>
-              </View>
-            )}
+            </View>
 
             <TouchableOpacity
               style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]}
@@ -590,27 +659,27 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
   composerHeader: { gap: 4 },
-  composerMeta: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
+  composerMeta: { color: '#777', fontSize: 12, lineHeight: 16 },
   composerRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   amountPill: {
-    minWidth: 108,
+    minWidth: 94,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#151515',
     borderColor: '#262626',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
   },
-  amountPillDollar: { color: '#8f8f8f', fontSize: 22, fontWeight: '600' },
+  amountPillDollar: { color: '#7c7c7c', fontSize: 17, fontWeight: '600' },
   amountPillInput: {
     flex: 1,
     color: '#f5f5f5',
-    fontSize: 24,
+    fontSize: 19,
     fontWeight: '600',
-    letterSpacing: -0.6,
+    letterSpacing: -0.3,
     padding: 0,
   },
   inlineInputWrap: {
@@ -618,17 +687,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#151515',
     borderColor: '#262626',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
   },
-  inlineInput: { color: '#f5f5f5', fontSize: 16, padding: 0 },
+  inlineInput: { color: '#f5f5f5', fontSize: 15, padding: 0 },
   composerFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 10,
   },
+  composerControls: { flex: 1, gap: 10 },
   toggleRow: { flexDirection: 'row', gap: 10, flex: 1 },
   toggleChip: {
     backgroundColor: '#171717',
@@ -637,16 +707,31 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 92,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    minWidth: 82,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
   toggleChipActive: {
     backgroundColor: '#f5f5f5',
     borderColor: '#f5f5f5',
   },
-  toggleChipText: { color: '#d4d4d4', fontSize: 14, fontWeight: '600' },
+  toggleChipText: { color: '#d4d4d4', fontSize: 13, fontWeight: '600' },
   toggleChipTextActive: { color: '#000' },
+  timingRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  timingChip: {
+    backgroundColor: '#141414',
+    borderColor: '#242424',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  timingChipActive: {
+    backgroundColor: '#e8eef7',
+    borderColor: '#e8eef7',
+  },
+  timingChipText: { color: '#c9d1da', fontSize: 12, fontWeight: '600' },
+  timingChipTextActive: { color: '#000', fontSize: 12, fontWeight: '700' },
   periodBadge: {
     backgroundColor: '#101b24',
     borderWidth: 1,
@@ -662,21 +747,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1a2f40',
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  periodMiniBadgeText: { color: '#dfefff', fontSize: 13, fontWeight: '600' },
+  periodMiniBadgeText: { color: '#dfefff', fontSize: 12, fontWeight: '600' },
   primaryButton: {
     backgroundColor: '#f5f5f5',
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    minWidth: 104,
-    paddingHorizontal: 18,
+    minHeight: 42,
+    minWidth: 76,
+    paddingHorizontal: 14,
   },
   primaryButtonDisabled: { opacity: 0.45 },
-  primaryButtonText: { color: '#000', fontSize: 15, fontWeight: '700' },
+  primaryButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
   errorText: { color: '#fca5a5', fontSize: 13, lineHeight: 18 },
   statusChip: {
     alignSelf: 'flex-start',
@@ -703,6 +788,22 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
   metricValue: { fontSize: 28, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   bodyRow: { fontSize: 14, color: '#d4d4d4', lineHeight: 21 },
+  caveatsBlock: { gap: 4, marginTop: 2 },
+  caveatRow: { fontSize: 13, color: '#9ca3af', lineHeight: 18 },
+  horizonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+  },
+  horizonText: { flex: 1 },
+  horizonLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
+  horizonMeta: { fontSize: 12, color: '#888', marginTop: 2 },
+  horizonRight: { alignItems: 'flex-end', gap: 4 },
+  horizonStatus: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 },
+  horizonAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
   intentRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

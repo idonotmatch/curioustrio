@@ -20,6 +20,7 @@ async function create({
   label,
   amount,
   month,
+  timingMode = 'now',
   scenario,
 }) {
   const result = await db.query(
@@ -30,6 +31,7 @@ async function create({
        label,
        amount,
        month,
+       timing_mode,
        memory_state,
        last_affordability_status,
        last_can_absorb,
@@ -40,9 +42,9 @@ async function create({
        expires_at
      )
      VALUES (
-       $1, $2, $3, $4, $5, $6,
+       $1, $2, $3, $4, $5, $6, $7,
        'ephemeral',
-       $7, $8, $9, $10, $11,
+       $8, $9, $10, $11, $12,
        NOW(),
        NOW() + INTERVAL '7 days'
      )
@@ -54,6 +56,7 @@ async function create({
       label,
       amount,
       month,
+      timingMode,
       scenario?.status || null,
       scenario?.can_absorb ?? null,
       scenario?.projected_headroom_amount ?? null,

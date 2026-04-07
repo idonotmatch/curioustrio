@@ -1,7 +1,7 @@
 const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
-const { detectRecurringWatchCandidates } = require('./recurringDetector');
+const { detectRecurringItems } = require('./recurringDetector');
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -45,6 +45,10 @@ function shiftPeriod(month, deltaMonths) {
   const [year, mon] = month.split('-').map(Number);
   const shifted = new Date(year, mon - 1 + deltaMonths, 1, 12, 0, 0, 0);
   return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}`;
+}
+
+function compareDateOnly(a, b) {
+  return parseDateOnly(a).getTime() - parseDateOnly(b).getTime();
 }
 
 function currentPeriod(startDay = 1) {
@@ -362,11 +366,44 @@ function getTopProjectedCategoryPressures({
 }
 
 function projectionConfidence({ historicalPeriodCount, unusualSpendShare, expectedShare, dayIndex, totalDays }) {
-  if (historicalPeriodCount < 3 || !expectedShare || expectedShare < 0.12) return 'low';
+  if (historicalPeriodCount <= 0 || !expectedShare || expectedShare < 0.05) return null;
+  if (historicalPeriodCount < 3 || expectedShare < 0.12) return 'very_low';
   const progress = totalDays ? dayIndex / totalDays : 0;
   if (historicalPeriodCount >= 5 && unusualSpendShare < 0.25 && progress >= 0.2) return 'high';
   if (historicalPeriodCount >= 3 && unusualSpendShare < 0.45 && progress >= 0.1) return 'medium';
   return 'low';
+}
+
+function historyStage(historicalPeriodCount) {
+  const count = Number(historicalPeriodCount || 0);
+  if (count <= 0) return 'none';
+  if (count < 3) return 'early';
+  if (count < 5) return 'developing';
+  return 'established';
+}
+
+function buildScenarioCaveats({ overall, recurringPressure }) {
+  const caveats = [];
+  const historicalPeriodCount = Number(overall?.historical_period_count || 0);
+  const confidence = overall?.confidence || null;
+
+  if (historicalPeriodCount === 0) {
+    caveats.push('No completed budget periods yet.');
+  } else if (historicalPeriodCount < 3) {
+    caveats.push(`Only ${historicalPeriodCount} completed budget ${historicalPeriodCount === 1 ? 'period' : 'periods'} so far.`);
+  }
+
+  if (confidence === 'very_low') {
+    caveats.push('Projection is still stabilizing from limited period history.');
+  } else if (confidence === 'low') {
+    caveats.push('This month still looks somewhat variable versus prior periods.');
+  }
+
+  if (Number(recurringPressure?.count || 0) > 0) {
+    caveats.push('Upcoming recurring purchases could still tighten the month.');
+  }
+
+  return caveats;
 }
 
 function estimateRemainingRecurringPressure({ candidates = [], periodEnd }) {
@@ -393,6 +430,62 @@ function estimateRemainingRecurringPressure({ candidates = [], periodEnd }) {
     total_expected_amount: dueCandidates.reduce((sum, candidate) => sum + candidate.median_amount, 0),
     candidates: dueCandidates.slice(0, 5),
   };
+}
+
+function estimateRecurringPressureWithinBounds({ candidates = [], bounds }) {
+  const periodStart = parseDateOnly(bounds.from);
+  const periodEnd = parseDateOnly(bounds.to);
+  const dueCandidates = [];
+
+  for (const candidate of candidates || []) {
+    if (!candidate?.next_expected_date || !candidate?.average_gap_days || candidate.median_amount == null) continue;
+    let cursor = parseDateOnly(candidate.next_expected_date);
+    const gapDays = Number(candidate.average_gap_days || 0);
+    if (!(gapDays > 0)) continue;
+
+    while (cursor < periodStart) {
+      cursor = addDays(cursor, gapDays);
+    }
+
+    while (cursor < periodEnd) {
+      dueCandidates.push({
+        group_key: candidate.group_key,
+        item_name: candidate.item_name || 'Recurring purchase',
+        next_expected_date: dateOnly(cursor),
+        median_amount: Number(candidate.median_amount || 0),
+        status: 'upcoming',
+        days_until_due: diffDays(periodStart, cursor),
+      });
+      cursor = addDays(cursor, gapDays);
+    }
+  }
+
+  return {
+    count: dueCandidates.length,
+    total_expected_amount: dueCandidates.reduce((sum, candidate) => sum + candidate.median_amount, 0),
+    candidates: dueCandidates
+      .sort((a, b) => compareDateOnly(a.next_expected_date, b.next_expected_date) || b.median_amount - a.median_amount)
+      .slice(0, 5),
+  };
+}
+
+function timingModeLabel(mode) {
+  switch (mode) {
+    case 'next_period': return 'Next period';
+    case 'spread_3_periods': return 'Spread over 3 periods';
+    default: return 'This period';
+  }
+}
+
+function statusRank(status) {
+  switch (status) {
+    case 'not_absorbable': return 5;
+    case 'risky': return 4;
+    case 'tight': return 3;
+    case 'absorbable': return 2;
+    case 'comfortable': return 1;
+    default: return 0;
+  }
 }
 
 function evaluateScenarioAgainstProjection({
@@ -424,7 +517,12 @@ function evaluateScenarioAgainstProjection({
   let canAbsorb = false;
   let reason = 'projected_over_budget_after_purchase';
 
-  if (overall.confidence == null || Number(overall.historical_period_count || 0) < 3) {
+  const historicalPeriodCount = Number(overall.historical_period_count || 0);
+  const confidence = overall.confidence ?? null;
+  const stage = historyStage(historicalPeriodCount);
+  const caveats = buildScenarioCaveats({ overall, recurringPressure });
+
+  if (projectedBudgetDelta == null || confidence == null) {
     status = 'unknown';
     canAbsorb = null;
     reason = 'insufficient_history';
@@ -452,7 +550,10 @@ function evaluateScenarioAgainstProjection({
     status,
     can_absorb: canAbsorb,
     reason,
-    projection_confidence: overall.confidence,
+    projection_confidence: confidence,
+    history_stage: stage,
+    historical_period_count: historicalPeriodCount,
+    caveats,
     projected_headroom_amount: projectedHeadroomAmount,
     post_purchase_projected_delta: postPurchaseProjectedDelta,
     post_purchase_headroom_amount: postPurchaseHeadroomAmount,
@@ -460,6 +561,76 @@ function evaluateScenarioAgainstProjection({
     recurring_pressure_count: Number(recurringPressure?.count || 0),
     recurring_pressure_amount: recurringPressureAmount,
     recurring_candidates: recurringPressure?.candidates || [],
+  };
+}
+
+function summarizeScenarioEvaluations({ mode, evaluations = [], totalAmount, label }) {
+  const ordered = [...evaluations].sort((a, b) => statusRank(b.scenario?.status) - statusRank(a.scenario?.status));
+  const worst = ordered[0] || null;
+  if (!worst) {
+    return {
+      label,
+      proposed_amount: Number(totalAmount || 0),
+      status: 'unknown',
+      can_absorb: null,
+      reason: 'insufficient_history',
+      timing_mode: mode,
+      timing_label: timingModeLabel(mode),
+      horizon_periods: [],
+      projection_confidence: null,
+      history_stage: 'none',
+      historical_period_count: 0,
+      caveats: ['Not enough history yet to evaluate this plan.'],
+    };
+  }
+
+  const scenarios = evaluations.map((entry) => entry.scenario || {});
+  const confidences = scenarios.map((scenario) => scenario.projection_confidence).filter(Boolean);
+  const historicalCounts = scenarios.map((scenario) => Number(scenario.historical_period_count || 0));
+  const caveats = Array.from(new Set(scenarios.flatMap((scenario) => scenario.caveats || [])));
+
+  let overallCanAbsorb = scenarios.every((scenario) => scenario.can_absorb !== false);
+  if (scenarios.some((scenario) => scenario.can_absorb == null)) {
+    overallCanAbsorb = null;
+  }
+
+  const confidence = confidences.includes('very_low')
+    ? 'very_low'
+    : confidences.includes('low')
+      ? 'low'
+      : confidences.includes('medium')
+        ? 'medium'
+        : confidences.includes('high')
+          ? 'high'
+          : null;
+
+  return {
+    ...worst.scenario,
+    label,
+    proposed_amount: Number(totalAmount || 0),
+    can_absorb: overallCanAbsorb,
+    timing_mode: mode,
+    timing_label: timingModeLabel(mode),
+    horizon_periods: evaluations.map((entry) => ({
+      month: entry.month,
+      label: entry.period_label,
+      applied_amount: entry.applied_amount,
+      status: entry.scenario?.status || null,
+      projected_headroom_amount: entry.scenario?.projected_headroom_amount ?? null,
+      post_purchase_headroom_amount: entry.scenario?.post_purchase_headroom_amount ?? null,
+      risk_adjusted_headroom_amount: entry.scenario?.risk_adjusted_headroom_amount ?? null,
+      recurring_pressure_amount: entry.scenario?.recurring_pressure_amount ?? null,
+    })),
+    projection_confidence: confidence,
+    history_stage: historicalCounts.some((count) => count <= 0)
+      ? 'none'
+      : historicalCounts.some((count) => count < 3)
+        ? 'early'
+        : historicalCounts.some((count) => count < 5)
+          ? 'developing'
+          : 'established',
+    historical_period_count: historicalCounts.length ? Math.min(...historicalCounts) : 0,
+    caveats,
   };
 }
 
@@ -471,7 +642,7 @@ function projectOverallSpend({
   budgetLimit = null,
 }) {
   const totalDays = diffDays(bounds.fromDate, bounds.toDate);
-  if (historicalPeriods.length < 3) {
+  if (historicalPeriods.length === 0) {
     return {
       current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
       normal_spend_to_date: null,
@@ -483,6 +654,7 @@ function projectOverallSpend({
       projected_budget_delta: null,
       confidence: null,
       historical_period_count: historicalPeriods.length,
+      history_stage: historyStage(historicalPeriods.length),
       top_unusual_expenses: [],
     };
   }
@@ -502,8 +674,15 @@ function projectOverallSpend({
       adjusted_projected_total: null,
       projection_excluding_unusuals: null,
       projected_budget_delta: null,
-      confidence: 'low',
+      confidence: projectionConfidence({
+        historicalPeriodCount: historicalPeriods.length,
+        unusualSpendShare: split.unusual_spend_share,
+        expectedShare,
+        dayIndex,
+        totalDays,
+      }),
       historical_period_count: historicalPeriods.length,
+      history_stage: historyStage(historicalPeriods.length),
       top_unusual_expenses: split.top_unusual_expenses,
     };
   }
@@ -530,6 +709,7 @@ function projectOverallSpend({
     projected_budget_delta: budgetLimit != null ? adjusted - budgetLimit : null,
     confidence,
     historical_period_count: historicalPeriods.length,
+    history_stage: historyStage(historicalPeriods.length),
     top_unusual_expenses: split.top_unusual_expenses,
   };
 }
@@ -745,31 +925,58 @@ async function evaluateScenarioAffordability({
   month = null,
   proposedAmount,
   label = 'purchase',
+  timingMode = 'now',
 }) {
-  const projection = await analyzeSpendProjection({ user, scope, month });
-  let recurringPressure = { count: 0, total_expected_amount: 0, candidates: [] };
+  const normalizedTimingMode = ['next_period', 'spread_3_periods'].includes(timingMode) ? timingMode : 'now';
+  const totalAmount = Number(proposedAmount || 0);
+  const months = normalizedTimingMode === 'next_period'
+    ? [shiftPeriod(month || currentPeriod(user.budget_start_day || 1), 1)]
+    : normalizedTimingMode === 'spread_3_periods'
+      ? [0, 1, 2].map((offset) => shiftPeriod(month || currentPeriod(user.budget_start_day || 1), offset))
+      : [month || currentPeriod(user.budget_start_day || 1)];
+  const perPeriodAmount = normalizedTimingMode === 'spread_3_periods'
+    ? Number((totalAmount / months.length).toFixed(2))
+    : totalAmount;
 
-  if (projection.scope === 'household' && user?.household_id) {
-    const watchCandidates = await detectRecurringWatchCandidates(user.household_id, {
-      windowDays: Math.max(5, Number(projection?.period?.days_in_period || 0)),
-      maxOverdueDays: 14,
-    });
-    recurringPressure = estimateRemainingRecurringPressure({
-      candidates: watchCandidates,
-      periodEnd: projection.period.to,
+  const recurringItems = (scope === 'household' && user?.household_id)
+    ? await detectRecurringItems(user.household_id)
+    : [];
+
+  const evaluations = [];
+  for (const targetMonth of months) {
+    const projection = await analyzeSpendProjection({ user, scope, month: targetMonth });
+    const recurringPressure = projection.scope === 'household' && user?.household_id
+      ? estimateRecurringPressureWithinBounds({
+          candidates: recurringItems,
+          bounds: { from: projection.period.from, to: projection.period.to },
+        })
+      : { count: 0, total_expected_amount: 0, candidates: [] };
+
+    evaluations.push({
+      month: projection.month,
+      period_label: projection.month,
+      applied_amount: perPeriodAmount,
+      projection,
+      scenario: evaluateScenarioAgainstProjection({
+        projection,
+        proposedAmount: perPeriodAmount,
+        label,
+        recurringPressure,
+      }),
     });
   }
 
+  const primary = evaluations[0];
   return {
-    scope: projection.scope,
-    month: projection.month,
-    period: projection.period,
-    projection,
-    scenario: evaluateScenarioAgainstProjection({
-      projection,
-      proposedAmount,
+    scope: primary.projection.scope,
+    month: primary.projection.month,
+    period: primary.projection.period,
+    projection: primary.projection,
+    scenario: summarizeScenarioEvaluations({
+      mode: normalizedTimingMode,
+      evaluations,
+      totalAmount,
       label,
-      recurringPressure,
     }),
   };
 }

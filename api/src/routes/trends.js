@@ -57,12 +57,17 @@ router.post('/scenario-check', async (req, res, next) => {
       return res.status(400).json({ error: 'proposed_amount must be greater than 0' });
     }
 
+    const timingMode = ['now', 'next_period', 'spread_3_periods'].includes(req.body.timing_mode)
+      ? req.body.timing_mode
+      : 'now';
+
     const result = await evaluateScenarioAffordability({
       user,
       scope: requestedScope,
       month: req.body.month || null,
       proposedAmount,
       label: req.body.label || 'purchase',
+      timingMode,
     });
 
     let memory = null;
@@ -74,6 +79,7 @@ router.post('/scenario-check', async (req, res, next) => {
         label: result.scenario?.label || req.body.label || 'purchase',
         amount: proposedAmount,
         month: result.month,
+        timingMode,
         scenario: result.scenario,
       });
     } catch (memoryErr) {

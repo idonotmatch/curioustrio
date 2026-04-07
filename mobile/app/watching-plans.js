@@ -218,6 +218,7 @@ export default function WatchingPlansScreen() {
                             amount: `${plan.amount}`,
                             label: plan.label,
                             auto_run: '1',
+                            timing_mode: plan.timing_mode || 'now',
                           },
                         })}
                       >
@@ -293,13 +294,14 @@ export default function WatchingPlansScreen() {
                       activeOpacity={0.85}
                       onPress={() => router.push({
                         pathname: '/scenario-check',
-                        params: {
-                          month: plan.month,
-                          scope: plan.scope,
-                          amount: `${plan.amount}`,
-                          label: plan.label,
-                        },
-                      })}
+                          params: {
+                            month: plan.month,
+                            scope: plan.scope,
+                            amount: `${plan.amount}`,
+                            label: plan.label,
+                            timing_mode: plan.timing_mode || 'now',
+                          },
+                        })}
                     >
                       <View style={styles.rowTop}>
                         <View style={styles.textCol}>

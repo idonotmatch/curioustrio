@@ -68,6 +68,15 @@ function parseScenarioInput(raw, { allowHousehold = false } = {}) {
 
   let normalized = trimmed.toLowerCase();
   normalized = normalized.replace(/^(can i afford|could i afford|check|scenario)\s+/i, '');
+  let timingMode = 'now';
+
+  if (/\b(next month|next period)\b/i.test(normalized)) {
+    timingMode = 'next_period';
+    normalized = normalized.replace(/\b(next month|next period)\b/gi, ' ');
+  } else if (/\b(spread( it)? over (a few|few|3|three) months?|over (a few|few|3|three) months?)\b/i.test(normalized)) {
+    timingMode = 'spread_3_periods';
+    normalized = normalized.replace(/\b(spread( it)? over (a few|few|3|three) months?|over (a few|few|3|three) months?)\b/gi, ' ');
+  }
 
   let scope = 'personal';
   if (allowHousehold && normalized.startsWith('household ')) {
@@ -90,6 +99,7 @@ function parseScenarioInput(raw, { allowHousehold = false } = {}) {
     amount,
     label,
     scope,
+    timingMode,
   };
 }
 
@@ -335,6 +345,7 @@ export default function SummaryScreen() {
         month: currentMonthStr,
         proposed_amount: Number(parsed.amount),
         label: parsed.label || 'purchase',
+        timing_mode: parsed.timingMode || 'now',
       });
       setInput('');
       router.push({
@@ -344,6 +355,7 @@ export default function SummaryScreen() {
           scope: parsed.scope,
           amount: parsed.amount,
           label: parsed.label,
+          timing_mode: parsed.timingMode || 'now',
           initial_result: JSON.stringify(data),
         },
       });
