@@ -117,6 +117,46 @@ describe('summarizeFeedbackEvents', () => {
       reviews: expect.objectContaining({ expected: 1 }),
     }));
   });
+
+  it('captures category-shift review judgments from acted events', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'top_driver:personal:2026-04:groceries',
+        event_type: 'acted',
+        metadata: {
+          type: 'top_category_driver',
+          review_type: 'category_shift_review',
+          category_review: 'expected_pattern',
+        },
+        created_at: '2026-04-04T12:00:00Z',
+      },
+    ]);
+
+    expect(summary.get('top_category_driver')).toEqual(expect.objectContaining({
+      acted: 1,
+      reviews: expect.objectContaining({ expected_pattern: 1 }),
+    }));
+  });
+
+  it('captures recurring-pressure review judgments from acted events', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_cost_pressure:household:abc',
+        event_type: 'acted',
+        metadata: {
+          type: 'recurring_cost_pressure',
+          review_type: 'recurring_pressure_review',
+          recurring_review: 'expected_cost',
+        },
+        created_at: '2026-04-04T12:00:00Z',
+      },
+    ]);
+
+    expect(summary.get('recurring_cost_pressure')).toEqual(expect.objectContaining({
+      acted: 1,
+      reviews: expect.objectContaining({ expected_cost: 1 }),
+    }));
+  });
 });
 
 describe('feedbackAdjustmentForInsight', () => {
@@ -247,6 +287,74 @@ describe('feedbackAdjustmentForInsight', () => {
     ]);
 
     expect(feedbackAdjustmentForInsight({ type: 'one_offs_driving_variance' }, summary)).toBeGreaterThan(0);
+  });
+
+  it('demotes category explanatory insights when users say the pattern was expected', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'top_driver:personal:2026-04:groceries',
+        event_type: 'acted',
+        metadata: {
+          type: 'top_category_driver',
+          review_type: 'category_shift_review',
+          category_review: 'expected_pattern',
+        },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'top_category_driver' }, summary)).toBeLessThan(0);
+  });
+
+  it('boosts category explanatory insights when users say the shift reflects a new pattern', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'projected_category_surge:personal:2026-04:groceries',
+        event_type: 'acted',
+        metadata: {
+          type: 'projected_category_surge',
+          review_type: 'category_shift_review',
+          category_review: 'new_pattern',
+        },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'projected_category_surge' }, summary)).toBeGreaterThan(0);
+  });
+
+  it('demotes recurring pressure insights when users say the cost is expected', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_cost_pressure:household:abc',
+        event_type: 'acted',
+        metadata: {
+          type: 'recurring_cost_pressure',
+          review_type: 'recurring_pressure_review',
+          recurring_review: 'expected_cost',
+        },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'recurring_cost_pressure' }, summary)).toBeLessThan(0);
+  });
+
+  it('boosts recurring pressure insights when users say the pressure is real', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'recurring_cost_pressure:household:abc',
+        event_type: 'acted',
+        metadata: {
+          type: 'recurring_cost_pressure',
+          review_type: 'recurring_pressure_review',
+          recurring_review: 'new_pressure',
+        },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(feedbackAdjustmentForInsight({ type: 'recurring_cost_pressure' }, summary)).toBeGreaterThan(0);
   });
 });
 

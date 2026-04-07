@@ -82,6 +82,14 @@ function summarizeFeedbackEvents(events = []) {
       if (reviewType === 'unusual_purchase_review' && unusualReview) {
         current.reviews[unusualReview] = (current.reviews[unusualReview] || 0) + 1;
       }
+      const categoryReview = `${event?.metadata?.category_review || ''}`.trim();
+      if (reviewType === 'category_shift_review' && categoryReview) {
+        current.reviews[categoryReview] = (current.reviews[categoryReview] || 0) + 1;
+      }
+      const recurringReview = `${event?.metadata?.recurring_review || ''}`.trim();
+      if (reviewType === 'recurring_pressure_review' && recurringReview) {
+        current.reviews[recurringReview] = (current.reviews[recurringReview] || 0) + 1;
+      }
       current.last_acted_at = event.created_at || current.last_acted_at;
     }
 
@@ -180,6 +188,22 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
     score += (stats.reviews.truly_one_off || 0) * 2.5;
     score -= (stats.reviews.expected || 0) * 7;
     score -= (stats.reviews.becoming_normal || 0) * 8;
+  }
+
+  if (
+    insight.type === 'top_category_driver'
+    || insight.type === 'projected_category_surge'
+    || insight.type === 'projected_category_under_baseline'
+  ) {
+    score += (stats.reviews.temporary_swing || 0) * 1.5;
+    score -= (stats.reviews.expected_pattern || 0) * 7;
+    score += (stats.reviews.new_pattern || 0) * 2.5;
+  }
+
+  if (insight.type === 'recurring_cost_pressure') {
+    score += (stats.reviews.temporary_spike || 0) * 1.5;
+    score -= (stats.reviews.expected_cost || 0) * 7;
+    score += (stats.reviews.new_pressure || 0) * 3;
   }
 
   score -= (stats.reasons.not_relevant || 0) * 2;

@@ -334,6 +334,8 @@ export default function TrendDetailScreen() {
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
   const [unusualReviewStatus, setUnusualReviewStatus] = useState('');
+  const [categoryReviewStatus, setCategoryReviewStatus] = useState('');
+  const [recurringReviewStatus, setRecurringReviewStatus] = useState('');
   const primaryAction = useMemo(
     () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
     [insightType, scope, month, categoryKey, trend]
@@ -395,6 +397,8 @@ export default function TrendDetailScreen() {
     [trend]
   );
   const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
+  const supportsCategoryReview = ['top_category_driver', 'projected_category_surge', 'projected_category_under_baseline'].includes(`${insightType}`);
+  const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;
@@ -471,6 +475,69 @@ export default function TrendDetailScreen() {
         }],
       });
       setUnusualReviewStatus(review);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function submitCategoryReview(review) {
+    if (!insightId || !review || categoryReviewStatus === review) return;
+    try {
+      const category = highlightedCategoryProjection || highlightedDriver;
+      await api.post('/insights/events', {
+        events: [{
+          insight_id: `${insightId}`,
+          event_type: 'acted',
+          metadata: {
+            surface: 'trend_detail',
+            scope: `${scope}`,
+            month: `${month}`,
+            insight_type: `${insightType}`,
+            category_key: `${categoryKey}`,
+            review_type: 'category_shift_review',
+            category_review: review,
+            category_name: category?.category_name || null,
+            category_delta_amount: Number(
+              category?.delta_amount
+              ?? category?.projected_budget_delta
+              ?? 0
+            ),
+            historical_period_count: Number(
+              category?.historical_period_count
+              ?? trend?.projection?.overall?.historical_period_count
+              ?? 0
+            ),
+          },
+        }],
+      });
+      setCategoryReviewStatus(review);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function submitRecurringReview(review) {
+    if (!insightId || !review || recurringReviewStatus === review) return;
+    try {
+      await api.post('/insights/events', {
+        events: [{
+          insight_id: `${insightId}`,
+          event_type: 'acted',
+          metadata: {
+            surface: 'trend_detail',
+            scope: `${scope}`,
+            month: `${month}`,
+            insight_type: `${insightType}`,
+            category_key: `${categoryKey}`,
+            review_type: 'recurring_pressure_review',
+            recurring_review: review,
+            recurring_delta_amount: Number(trend?.pace?.variance_breakdown?.recurring_delta_amount || 0),
+            historical_period_count: Number(trend?.projection?.overall?.historical_period_count || 0),
+            projected_budget_delta: Number(trend?.projection?.overall?.projected_budget_delta || 0),
+          },
+        }],
+      });
+      setRecurringReviewStatus(review);
     } catch {
       // non-fatal
     }
@@ -576,6 +643,97 @@ export default function TrendDetailScreen() {
                 </View>
                 {unusualReviewStatus ? (
                   <Text style={styles.feedbackNote}>Saved. Adlo can use this to get better at spotting what should and should not shape future guidance.</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {supportsCategoryReview ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Review this category shift</Text>
+                <Text style={styles.feedbackCopy}>
+                  Help Adlo learn whether this category move feels temporary, expected, or like a real spending pattern shift.
+                </Text>
+                {(highlightedCategoryProjection || highlightedDriver) ? (
+                  <View style={styles.reviewList}>
+                    <View style={styles.reviewRow}>
+                      <View style={styles.driverText}>
+                        <Text style={styles.driverName}>
+                          {(highlightedCategoryProjection || highlightedDriver)?.category_name || 'Category'}
+                        </Text>
+                        <Text style={styles.driverMeta}>
+                          {`${insightType}` === 'projected_category_under_baseline'
+                            ? 'Tracking below its usual finish'
+                            : 'Tracking above its usual finish'}
+                        </Text>
+                      </View>
+                      <Text style={styles.driverDelta}>
+                        {formatCurrency(
+                          (highlightedCategoryProjection || highlightedDriver)?.delta_amount
+                            ?? (highlightedCategoryProjection || highlightedDriver)?.projected_budget_delta
+                        )}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+                <View style={styles.reasonList}>
+                  {[
+                    { key: 'temporary_swing', label: 'Temporary swing' },
+                    { key: 'expected_pattern', label: 'Expected pattern' },
+                    { key: 'new_pattern', label: 'New pattern' },
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.reasonChip, categoryReviewStatus === option.key && styles.reasonChipActive]}
+                      onPress={() => submitCategoryReview(option.key)}
+                    >
+                      <Text style={[styles.reasonChipText, categoryReviewStatus === option.key && styles.reasonChipTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {categoryReviewStatus ? (
+                  <Text style={styles.feedbackNote}>Saved. Adlo can use this to get better at telling normal category patterns from changes that really matter.</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {supportsRecurringReview ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Review this recurring pressure</Text>
+                <Text style={styles.feedbackCopy}>
+                  Help Adlo learn whether this looks like a temporary recurring price spike, an expected cost, or a real new pressure to keep watching.
+                </Text>
+                <View style={styles.reviewList}>
+                  <View style={styles.reviewRow}>
+                    <View style={styles.driverText}>
+                      <Text style={styles.driverName}>Recurring cost pressure</Text>
+                      <Text style={styles.driverMeta}>Extra recurring lift versus your recent baseline</Text>
+                    </View>
+                    <Text style={styles.driverDelta}>
+                      {formatCurrency(trend?.pace?.variance_breakdown?.recurring_delta_amount)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.reasonList}>
+                  {[
+                    { key: 'temporary_spike', label: 'Temporary spike' },
+                    { key: 'expected_cost', label: 'Expected cost' },
+                    { key: 'new_pressure', label: 'New pressure' },
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.reasonChip, recurringReviewStatus === option.key && styles.reasonChipActive]}
+                      onPress={() => submitRecurringReview(option.key)}
+                    >
+                      <Text style={[styles.reasonChipText, recurringReviewStatus === option.key && styles.reasonChipTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {recurringReviewStatus ? (
+                  <Text style={styles.feedbackNote}>Saved. Adlo can use this to learn when recurring cost changes are worth treating as real pressure.</Text>
                 ) : null}
               </View>
             ) : null}
