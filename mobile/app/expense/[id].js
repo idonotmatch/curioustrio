@@ -453,6 +453,9 @@ export default function ExpenseDetailScreen() {
           {gmailReviewHint.sender_domain ? (
             <Text style={styles.gmailHintMeta}>Sender: {gmailReviewHint.sender_domain}</Text>
           ) : null}
+          {gmailReviewHint.item_reliability_message ? (
+            <Text style={styles.gmailHintMeta}>{gmailReviewHint.item_reliability_message}</Text>
+          ) : null}
           {gmailReviewHint.likely_changed_fields?.length ? (
             <Text style={styles.gmailHintMeta}>
               Most often corrected: {formatLikelyFields(gmailReviewHint.likely_changed_fields)}

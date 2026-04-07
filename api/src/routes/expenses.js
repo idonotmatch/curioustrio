@@ -185,6 +185,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
   const likelyChangedFields = Array.isArray(senderQuality?.top_changed_fields)
     ? senderQuality.top_changed_fields.map((entry) => entry.field).filter(Boolean)
     : [];
+  const itemReliability = senderQuality?.item_reliability || null;
   const fieldEvidence = deriveEmailFieldEvidence(expense, log);
 
   let headline = 'Imported from Gmail';
@@ -199,6 +200,9 @@ function buildEmailReviewHint(expense, log, senderQuality) {
       sender_quality_level: level,
       sender_quality_metrics: senderQuality?.metrics || null,
       likely_changed_fields: likelyChangedFields,
+      item_reliability_level: itemReliability?.level || 'unknown',
+      item_reliability_message: itemReliability?.message || null,
+      item_top_signals: itemReliability?.top_signals || [],
       message_subject: log.subject || null,
       ...fieldEvidence,
       headline: 'Reviewed Gmail import',
@@ -230,6 +234,9 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     sender_quality_level: level,
     sender_quality_metrics: senderQuality?.metrics || null,
     likely_changed_fields: likelyChangedFields,
+    item_reliability_level: itemReliability?.level || 'unknown',
+    item_reliability_message: itemReliability?.message || null,
+    item_top_signals: itemReliability?.top_signals || [],
     message_subject: log.subject || null,
     ...fieldEvidence,
     headline,

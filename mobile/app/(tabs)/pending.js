@@ -131,6 +131,10 @@ export default function PendingScreen() {
                         <Text style={styles.hintDetail} numberOfLines={1}>
                           Usually worth checking {formatFieldList(item.gmail_review_hint.likely_changed_fields)}.
                         </Text>
+                      ) : item.gmail_review_hint.item_reliability_message ? (
+                        <Text style={styles.hintDetail} numberOfLines={1}>
+                          {item.gmail_review_hint.item_reliability_message}
+                        </Text>
                       ) : (
                         <Text style={styles.hintDetail} numberOfLines={1}>
                           {item.gmail_review_hint.message}

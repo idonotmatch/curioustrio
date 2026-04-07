@@ -390,7 +390,7 @@ describe('GET /expenses/pending', () => {
        VALUES
          ($1, 'approved', '[]'::jsonb, 0),
          ($2, 'approved', '[]'::jsonb, 0),
-         ($3, 'approved', '["merchant"]'::jsonb, 1)`,
+         ($3, 'approved', '["merchant","items_fee_rows_removed"]'::jsonb, 1)`,
       [historicalOne.rows[0].id, historicalTwo.rows[0].id, historicalThree.rows[0].id]
     );
 
@@ -401,6 +401,7 @@ describe('GET /expenses/pending', () => {
       sender_domain: 'amazon.com',
       sender_quality_level: 'trusted',
       headline: 'Trusted sender',
+      item_reliability_level: 'unknown',
     });
     expect(Array.isArray(hinted.gmail_review_hint.likely_changed_fields)).toBe(true);
   });

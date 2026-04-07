@@ -10,6 +10,56 @@ function toRate(numerator, denominator) {
   return Number((numerator / denominator).toFixed(4));
 }
 
+function isItemField(field = '') {
+  return `${field}`.startsWith('items');
+}
+
+function summarizeItemReliability(rows = []) {
+  const imports = rows.length;
+  const itemFieldCounts = new Map();
+  let itemEdited = 0;
+
+  for (const row of rows) {
+    const changedFields = Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [];
+    const itemFields = changedFields.filter(isItemField);
+    if (itemFields.length) itemEdited += 1;
+    for (const field of itemFields) {
+      itemFieldCounts.set(field, (itemFieldCounts.get(field) || 0) + 1);
+    }
+  }
+
+  const editRate = toRate(itemEdited, imports);
+  let level = 'unknown';
+  if (imports >= 3) {
+    if (editRate <= 0.15) level = 'trusted';
+    else if (editRate >= 0.5) level = 'noisy';
+    else level = 'mixed';
+  }
+
+  const topSignals = [...itemFieldCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 3)
+    .map(([field, count]) => ({ field, count }));
+
+  let message = null;
+  if (level === 'trusted') {
+    message = 'Line items from this sender are usually usable as-is.';
+  } else if (level === 'mixed') {
+    message = 'Line items from this sender sometimes need cleanup.';
+  } else if (level === 'noisy') {
+    message = 'Line items from this sender often need cleanup before approval.';
+  }
+
+  return {
+    level,
+    imports,
+    edited: itemEdited,
+    edit_rate: editRate,
+    top_signals: topSignals,
+    message,
+  };
+}
+
 function summarizeSenderRows(rows = []) {
   const imported = rows.length;
   let reviewed = 0;
@@ -90,8 +140,9 @@ function buildSenderSummary(rows, limit = 5) {
         dismissal_rate: toRate(entry.dismissed, entry.imported),
         edit_rate: toRate(entry.edited, entry.imported),
         review_rate: toRate(entry.reviewed, entry.imported),
-        top_changed_fields: changedFieldCounts,
-      };
+      top_changed_fields: changedFieldCounts,
+      item_reliability: summarizeItemReliability(rows.filter((row) => extractSenderDomain(row.from_address) === entry.sender_domain)),
+    };
     })
     .sort((a, b) =>
       b.imported - a.imported
@@ -185,12 +236,14 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const metrics = summarizeSenderRows(reviewedSenderRows);
   const level = classifySenderMetrics(metrics);
   const top_changed_fields = buildSenderSummary(senderRows, 1)[0]?.top_changed_fields || [];
+  const item_reliability = summarizeItemReliability(senderRows);
 
   return {
     sender_domain: senderDomain,
     level,
     metrics,
     top_changed_fields,
+    item_reliability,
   };
 }
 

@@ -96,12 +96,18 @@ describe('gmailImportQualityService', () => {
         imported: 2,
         clean_approved: 1,
         approved_after_changes: 1,
+        item_reliability: expect.objectContaining({
+          level: 'unknown',
+        }),
       }),
       expect.objectContaining({
         sender_domain: 'target.com',
         imported: 2,
         dismissed: 1,
         edited: 1,
+        item_reliability: expect.objectContaining({
+          level: 'unknown',
+        }),
       }),
     ]));
     expect(summary.debug.top_corrected_senders).toEqual(expect.arrayContaining([
@@ -134,6 +140,28 @@ describe('gmailImportQualityService', () => {
       sender_domain: 'messy.com',
       level: 'noisy',
       metrics: expect.objectContaining({ imported: 3 }),
+    });
+  });
+
+  it('captures item reliability separately from top-level sender quality', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['items_fee_rows_removed', 'items'] },
+      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['items_description', 'items_amount'] },
+      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['merchant'] },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'orders@shop.com')).resolves.toMatchObject({
+      sender_domain: 'shop.com',
+      item_reliability: expect.objectContaining({
+        level: 'noisy',
+        edited: 2,
+        top_signals: expect.arrayContaining([
+          expect.objectContaining({ field: 'items', count: 1 }),
+          expect.objectContaining({ field: 'items_amount', count: 1 }),
+          expect.objectContaining({ field: 'items_description', count: 1 }),
+        ]),
+      }),
     });
   });
 });
