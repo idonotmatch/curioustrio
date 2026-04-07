@@ -73,6 +73,48 @@ function insightActionReason(insight) {
   return getInsightActionDescriptor(insight).reason;
 }
 
+function insightRoleLabel(insight) {
+  const type = `${insight?.type || ''}`;
+  if (type.startsWith('usage_')) return 'Setup';
+  if (type === 'one_offs_driving_variance' || type === 'one_off_expense_skewing_projection' || type === 'top_category_driver' || type === 'projected_category_surge' || type === 'recurring_cost_pressure') {
+    return 'Explain';
+  }
+  if (type === 'projected_month_end_over_budget' || type === 'budget_too_low') return 'Act';
+  if (type === 'projected_month_end_under_budget' || type === 'projected_category_under_baseline' || type === 'usage_ready_to_plan') return 'Plan';
+  if (insight?.entity_type === 'item') return 'Act';
+  return 'Review';
+}
+
+function insightToneStyles(insight) {
+  const role = insightRoleLabel(insight);
+  if (role === 'Act') {
+    return {
+      card: styles.insightCardWarn,
+      roleChip: styles.insightRoleChipWarn,
+      roleText: styles.insightRoleTextWarn,
+    };
+  }
+  if (role === 'Plan') {
+    return {
+      card: styles.insightCardPlan,
+      roleChip: styles.insightRoleChipPlan,
+      roleText: styles.insightRoleTextPlan,
+    };
+  }
+  if (role === 'Setup') {
+    return {
+      card: styles.insightCardSetup,
+      roleChip: styles.insightRoleChipSetup,
+      roleText: styles.insightRoleTextSetup,
+    };
+  }
+  return {
+    card: styles.insightCardExplain,
+    roleChip: styles.insightRoleChipExplain,
+    roleText: styles.insightRoleTextExplain,
+  };
+}
+
 function parseScenarioInput(raw, { allowHousehold = false } = {}) {
   const trimmed = `${raw || ''}`.trim();
   if (!trimmed) return null;
@@ -628,37 +670,47 @@ export default function SummaryScreen() {
             ]}
           >
             {displayInsights.map((insight) => (
-              <TouchableOpacity
-                key={insight.id}
-                style={[styles.insightCard, { width: insightCardWidth }]}
-                activeOpacity={0.92}
-                onPress={() => handlePressInsight(insight)}
-              >
-                <View style={styles.insightHeader}>
-                  <View style={styles.insightHeaderTop}>
-                    <View style={styles.insightScopeChip}>
-                      <Text style={styles.insightScopeText}>{insightScopeLabel(insight)}</Text>
+              (() => {
+                const tone = insightToneStyles(insight);
+                return (
+                  <TouchableOpacity
+                    key={insight.id}
+                    style={[styles.insightCard, tone.card, { width: insightCardWidth }]}
+                    activeOpacity={0.92}
+                    onPress={() => handlePressInsight(insight)}
+                  >
+                    <View style={styles.insightHeader}>
+                      <View style={styles.insightHeaderTop}>
+                        <View style={styles.insightMetaRow}>
+                          <View style={styles.insightScopeChip}>
+                            <Text style={styles.insightScopeText}>{insightScopeLabel(insight)}</Text>
+                          </View>
+                          <View style={[styles.insightRoleChip, tone.roleChip]}>
+                            <Text style={[styles.insightRoleText, tone.roleText]}>{insightRoleLabel(insight)}</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          onPress={(event) => {
+                            event?.stopPropagation?.();
+                            handleDismissInsight(insight.id);
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Dismiss insight: ${insight.title}`}
+                        >
+                          <Ionicons name="close" size={16} color="#666" />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.insightTitle}>{insight.title}</Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={(event) => {
-                        event?.stopPropagation?.();
-                        handleDismissInsight(insight.id);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Dismiss insight: ${insight.title}`}
-                    >
-                      <Ionicons name="close" size={16} color="#666" />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.insightTitle}>{insight.title}</Text>
-                </View>
-                <Text style={styles.insightBody}>{insight.body}</Text>
-                <View style={styles.insightFooter}>
-                  <Text style={styles.insightActionReason}>{insightActionReason(insight)}</Text>
-                  <Text style={styles.insightActionLabel}>{insightActionLabel(insight)}</Text>
-                </View>
-              </TouchableOpacity>
+                    <Text style={styles.insightBody}>{insight.body}</Text>
+                    <View style={styles.insightFooter}>
+                      <Text style={styles.insightActionReason}>{insightActionReason(insight)}</Text>
+                      <Text style={styles.insightActionLabel}>{insightActionLabel(insight)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })()
             ))}
           </ScrollView>
         </View>
@@ -772,8 +824,13 @@ const styles = StyleSheet.create({
     borderColor: '#1a1a1a',
     minHeight: 132,
   },
+  insightCardWarn: { backgroundColor: '#141111', borderColor: '#2d1d1d' },
+  insightCardPlan: { backgroundColor: '#101317', borderColor: '#1b2a38' },
+  insightCardSetup: { backgroundColor: '#12120f', borderColor: '#2b2818' },
+  insightCardExplain: { backgroundColor: '#111214', borderColor: '#20252b' },
   insightHeader: { marginBottom: 8, gap: 10 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  insightMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   insightScopeChip: {
     alignSelf: 'flex-start',
     backgroundColor: '#1a1a1a',
@@ -784,6 +841,22 @@ const styles = StyleSheet.create({
     borderColor: '#262626',
   },
   insightScopeText: { fontSize: 11, color: '#cfcfcf', fontWeight: '600', letterSpacing: 0.3 },
+  insightRoleChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  insightRoleChipWarn: { backgroundColor: '#251717', borderColor: '#4a2424' },
+  insightRoleChipPlan: { backgroundColor: '#13202b', borderColor: '#28435b' },
+  insightRoleChipSetup: { backgroundColor: '#252110', borderColor: '#4b4118' },
+  insightRoleChipExplain: { backgroundColor: '#171b20', borderColor: '#2d353e' },
+  insightRoleText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  insightRoleTextWarn: { color: '#f2b4b4' },
+  insightRoleTextPlan: { color: '#a9d2f8' },
+  insightRoleTextSetup: { color: '#e6d08d' },
+  insightRoleTextExplain: { color: '#b6c1cc' },
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
   insightFooter: {
