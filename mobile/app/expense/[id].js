@@ -323,6 +323,7 @@ export default function ExpenseDetailScreen() {
   const gmailReviewHint = expense.gmail_review_hint || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const emailSummary = cleanImportedEmailSummary(expense.notes || '', gmailReviewHint?.message_subject || '');
+  const isPendingEmailReview = reviewState && expense.source === 'email';
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -375,8 +376,13 @@ export default function ExpenseDetailScreen() {
 
       {reviewState ? (
         <View style={styles.reviewBanner}>
-          <Text style={styles.reviewBannerTitle}>Needs review</Text>
-          <Text style={styles.reviewBannerText}>This import was surfaced for review before it is counted in your confirmed expenses.</Text>
+          <Text style={styles.reviewBannerEyebrow}>Review first</Text>
+          <Text style={styles.reviewBannerTitle}>Check this Gmail import before it is counted</Text>
+          <Text style={styles.reviewBannerText}>
+            {isPendingEmailReview
+              ? 'Use the email context below to confirm the merchant, amount, and date before approving.'
+              : 'This import was surfaced for review before it is counted in your confirmed expenses.'}
+          </Text>
         </View>
       ) : null}
 
@@ -446,6 +452,22 @@ export default function ExpenseDetailScreen() {
               ) : null}
             </View>
           ) : null}
+        </View>
+      ) : null}
+
+      {isPendingEmailReview ? (
+        <View style={styles.reviewChecklistCard}>
+          <Text style={styles.reviewChecklistTitle}>What to verify</Text>
+          <Text style={styles.reviewChecklistItem}>Merchant: does the sender and subject match the place you expect?</Text>
+          <Text style={styles.reviewChecklistItem}>Amount: does the total reflect the actual charge, not a subtotal or preauth?</Text>
+          <Text style={styles.reviewChecklistItem}>Date: is this the purchase day you want to track for the expense?</Text>
+        </View>
+      ) : null}
+
+      {isPendingEmailReview ? (
+        <View style={styles.reviewFieldsHeader}>
+          <Text style={styles.reviewFieldsEyebrow}>Editable fields</Text>
+          <Text style={styles.reviewFieldsTitle}>Approve with these expense details</Text>
         </View>
       ) : null}
 
@@ -866,7 +888,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  reviewBannerEyebrow: { color: '#cbb37c', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
+  reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginBottom: 4 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
   gmailHintCard: {
     marginHorizontal: 20,
@@ -905,6 +928,26 @@ const styles = StyleSheet.create({
   emailContextSummaryText: { color: '#b8b8b8', fontSize: 12, lineHeight: 18 },
   emailEvidenceSection: { borderTopWidth: 1, borderTopColor: '#1c1c1c', paddingTop: 10, marginTop: 10 },
   emailEvidenceText: { color: '#c7c7c7', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  reviewChecklistCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: -4,
+    backgroundColor: '#101216',
+    borderWidth: 1,
+    borderColor: '#1c2431',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reviewChecklistTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  reviewChecklistItem: { color: '#b9c2ce', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  reviewFieldsHeader: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: -2,
+  },
+  reviewFieldsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  reviewFieldsTitle: { color: '#d9d9d9', fontSize: 14, fontWeight: '600' },
   recurringCard: {
     marginHorizontal: 20,
     marginTop: 12,
