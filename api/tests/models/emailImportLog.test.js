@@ -196,3 +196,59 @@ describe('EmailImportLog.summarizeByUser', () => {
     ]));
   });
 });
+
+describe('EmailImportLog without email_import_feedback table', () => {
+  afterEach(async () => {
+    await db.query(
+      `CREATE TABLE IF NOT EXISTS email_import_feedback (
+         expense_id UUID PRIMARY KEY REFERENCES expenses(id) ON DELETE CASCADE,
+         review_action TEXT CHECK (review_action IN ('approved', 'dismissed', 'edited')),
+         review_changed_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+         review_edit_count INT NOT NULL DEFAULT 0,
+         reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`
+    );
+  });
+
+  it('falls back cleanly when review feedback table is missing', async () => {
+    const expenseResult = await db.query(
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes)
+       VALUES ($1, 'Missing Feedback Merchant', 21.5, '2026-03-22', 'pending', 'email', 'Imported from Gmail — needs review')
+       RETURNING id`,
+      [testUserId]
+    );
+    const expenseId = expenseResult.rows[0].id;
+
+    await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-missing-feedback-table',
+      expenseId,
+      status: 'imported',
+    });
+
+    await db.query(`DROP TABLE IF EXISTS email_import_feedback`);
+
+    const found = await EmailImportLog.findByMessageId(testUserId, 'msg-missing-feedback-table');
+    expect(found).toBeTruthy();
+    expect(found.review_action).toBeNull();
+    expect(found.review_edit_count).toBe(0);
+
+    const review = await EmailImportLog.recordReviewFeedback(expenseId, {
+      action: 'approved',
+      changedFields: ['amount'],
+      incrementEditCount: true,
+    });
+    expect(review.review_action).toBe('approved');
+    expect(review.review_changed_fields).toEqual(expect.arrayContaining(['amount']));
+    expect(review.review_edit_count).toBe(1);
+
+    const summary = await EmailImportLog.summarizeByUser(testUserId, 30);
+    expect(summary.imported).toBeGreaterThanOrEqual(1);
+    expect(summary.reviewed_approved).toBe(0);
+
+    const qualitySignals = await EmailImportLog.listQualitySignalsByUser(testUserId, 30);
+    expect(Array.isArray(qualitySignals)).toBe(true);
+    expect(qualitySignals.some((row) => row.message_id === 'msg-missing-feedback-table')).toBe(true);
+  });
+});
