@@ -300,14 +300,6 @@ export default function ConfirmScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {isManualScratchFlow ? (
-        <View style={styles.manualBanner}>
-          <Text style={styles.manualBannerTitle}>Starting from scratch</Text>
-          <Text style={styles.manualBannerBody}>
-            Enter the expense directly without going through parsing first.
-          </Text>
-        </View>
-      ) : null}
       {isWatchedPlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a watched plan</Text>
@@ -325,15 +317,17 @@ export default function ConfirmScreen() {
         </View>
       ) : null}
       {/* Merchant / Description — editable */}
-      <View style={styles.editableRow}>
-        <Text style={styles.editableLabel}>{merchant.trim() ? 'MERCHANT' : 'DESCRIPTION'}</Text>
-        <TextInput
-          style={styles.editableInput}
-          value={merchant.trim() ? merchant : description}
-          onChangeText={merchant.trim() ? setMerchant : setDescription}
-          placeholder={merchant.trim() ? 'Merchant name' : 'What was this for?'}
-          placeholderTextColor="#444"
-        />
+      <View style={styles.editableGroup}>
+        <View style={styles.editableRow}>
+          <Text style={styles.editableLabel}>{merchant.trim() ? 'MERCHANT' : 'DETAILS'}</Text>
+          <TextInput
+            style={styles.editableInput}
+            value={merchant.trim() ? merchant : description}
+            onChangeText={merchant.trim() ? setMerchant : setDescription}
+            placeholder={merchant.trim() ? 'Merchant name' : 'What was this for?'}
+            placeholderTextColor="#444"
+          />
+        </View>
       </View>
       {merchant.trim()
         ? reviewNote('merchant', 'Merchant was inferred from the parse.')
@@ -487,6 +481,15 @@ export default function ConfirmScreen() {
 
       <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
 
+      {isManualScratchFlow && items.length === 0 ? (
+        <TouchableOpacity style={styles.addItemsPrompt} onPress={handleAddItem}>
+          <Text style={styles.addItemsPromptTitle}>Add item details</Text>
+          <Text style={styles.addItemsPromptBody}>
+            Optional for split purchases or receipts you want to break down.
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+
       {(items.length > 0 || parsed?.source === 'camera' || parsed?.source === 'email') && (
         <View style={styles.itemsSection}>
           <Text style={styles.sectionLabel}>ITEMS</Text>
@@ -632,17 +635,6 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20 },
-  manualBanner: {
-    backgroundColor: '#121212',
-    borderWidth: 1,
-    borderColor: '#232323',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  manualBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  manualBannerBody: { color: '#9a9a9a', fontSize: 12, lineHeight: 17 },
   watchBanner: {
     backgroundColor: '#101521',
     borderWidth: 1,
@@ -706,7 +698,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  editableLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 80 },
+  editableLabel: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 92 },
   editableInput: { flex: 1, color: '#fff', fontSize: 15, textAlign: 'right', padding: 0 },
   confirmDatePicker: { marginRight: -8 },
   dateButton: { flex: 1, alignItems: 'flex-end', paddingVertical: 2 },
@@ -763,6 +755,9 @@ const styles = StyleSheet.create({
   removeItemText: { color: '#999', fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingVertical: 6 },
   addItemText: { color: '#999', fontSize: 14 },
+  addItemsPrompt: { backgroundColor: '#151515', borderRadius: 8, borderWidth: 1, borderColor: '#242424', padding: 12, marginBottom: 8 },
+  addItemsPromptTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  addItemsPromptBody: { color: '#8b8b8b', fontSize: 12, lineHeight: 17 },
 
   actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
   discard: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },

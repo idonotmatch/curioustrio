@@ -364,7 +364,12 @@ export default function SummaryScreen() {
       return;
     }
 
-    if (insight?.type === 'usage_building_history' || insight?.type === 'usage_ready_to_plan') {
+    if (insight?.type === 'usage_building_history') {
+      router.push('/(tabs)/add');
+      return;
+    }
+
+    if (insight?.type === 'usage_ready_to_plan') {
       router.push({
         pathname: '/scenario-check',
         params: {
@@ -646,19 +651,13 @@ export default function SummaryScreen() {
           </TouchableOpacity>
         </View>
         {entryMode === 'add' ? (
-          <View style={styles.quickEntryActions}>
-            <TouchableOpacity
-              style={styles.scanLink}
-              onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
-            >
-              <Ionicons name="camera-outline" size={14} color="#888" />
-              <Text style={styles.scanLinkText}>scan a receipt</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.scanLink} onPress={startManualEntry}>
-              <Ionicons name="create-outline" size={14} color="#888" />
-              <Text style={styles.scanLinkText}>start from scratch</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.scanLink}
+            onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
+          >
+            <Ionicons name="camera-outline" size={14} color="#888" />
+            <Text style={styles.scanLinkText}>scan a receipt</Text>
+          </TouchableOpacity>
         ) : (
           <View style={styles.entryModeSpacer} />
         )}
@@ -944,8 +943,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5', borderRadius: 10,
     width: 46, justifyContent: 'center', alignItems: 'center',
   },
-  quickEntryActions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 10, minHeight: 24, flexWrap: 'wrap' },
-  scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   scanLinkText: { fontSize: 14, color: '#888' },
   entryModeSpacer: { height: 24, marginTop: 10 },
 
