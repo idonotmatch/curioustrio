@@ -122,9 +122,9 @@ describe('gmailImportQualityService', () => {
 
   it('classifies sender domains as trusted or noisy based on review history', async () => {
     EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0 },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0 },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 1 },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant'] },
       { from_address: 'alerts@messy.com', review_action: 'dismissed', review_edit_count: 0 },
       { from_address: 'alerts@messy.com', review_action: null, review_edit_count: 1 },
       { from_address: 'alerts@messy.com', review_action: null, review_edit_count: 1 },
@@ -134,6 +134,7 @@ describe('gmailImportQualityService', () => {
       sender_domain: 'amazon.com',
       level: 'trusted',
       metrics: expect.objectContaining({ imported: 3 }),
+      item_reliability: expect.objectContaining({ level: 'trusted' }),
     });
 
     await expect(getSenderImportQuality('user-1', 'alerts@messy.com')).resolves.toMatchObject({

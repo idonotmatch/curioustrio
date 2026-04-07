@@ -385,6 +385,8 @@ export default function ExpenseDetailScreen() {
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const emailSummary = cleanImportedEmailSummary(expense.notes || '', gmailReviewHint?.message_subject || '');
   const isPendingEmailReview = reviewState && expense.source === 'email';
+  const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
+  const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
   const priorityReviewFields = isPendingEmailReview
     ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
     : [];
@@ -447,7 +449,9 @@ export default function ExpenseDetailScreen() {
 
       {reviewState ? (
         <View style={styles.reviewBanner}>
-          <Text style={styles.reviewBannerEyebrow}>Review first</Text>
+          <Text style={styles.reviewBannerEyebrow}>
+            {isPendingEmailReview && isQuickCheckReview ? 'Quick check' : 'Review first'}
+          </Text>
           <Text style={styles.reviewBannerTitle}>
             {isPendingEmailReview
               ? (gmailReviewHint?.review_title || 'Check this Gmail import before it is counted')
@@ -546,12 +550,18 @@ export default function ExpenseDetailScreen() {
         <View style={styles.priorityFieldsCard}>
           <View style={styles.priorityFieldsHeader}>
             <View>
-              <Text style={styles.priorityFieldsEyebrow}>Most worth checking</Text>
-              <Text style={styles.priorityFieldsTitle}>Focus here before approving</Text>
+              <Text style={styles.priorityFieldsEyebrow}>
+                {isQuickCheckReview ? 'Quickest check' : 'Most worth checking'}
+              </Text>
+              <Text style={styles.priorityFieldsTitle}>
+                {isQuickCheckReview ? 'A fast confirmation is probably enough' : 'Focus here before approving'}
+              </Text>
             </View>
             {!editing ? (
               <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
-                <Text style={styles.priorityFieldsAction}>Edit fields</Text>
+                <Text style={styles.priorityFieldsAction}>
+                  {isItemsFirstReview ? 'Review items' : isQuickCheckReview ? 'Quick edit' : 'Edit fields'}
+                </Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -893,7 +903,9 @@ export default function ExpenseDetailScreen() {
               catch (e) { Alert.alert('Error', e.message); setActioning(false); }
             }}
           >
-            <Text style={styles.approveBtnText}>Approve</Text>
+            <Text style={styles.approveBtnText}>
+              {isItemsFirstReview ? 'Approve after item check' : isQuickCheckReview ? 'Approve after quick check' : 'Approve'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.dismissBtn, actioning && { opacity: 0.5 }]}
