@@ -62,6 +62,51 @@ function insightScopeLabel(insight) {
   return insight?.entity_type === 'item' ? 'Household' : 'You';
 }
 
+function insightActionLabel(insight) {
+  if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
+    return 'Review recurring details';
+  }
+
+  switch (`${insight?.type || ''}`) {
+    case 'spend_pace_ahead':
+    case 'spend_pace_behind':
+      return 'See what is driving it';
+    case 'budget_too_low':
+    case 'budget_too_high':
+    case 'projected_month_end_over_budget':
+    case 'projected_month_end_under_budget':
+    case 'one_off_expense_skewing_projection':
+      return 'See the budget impact';
+    case 'top_category_driver':
+    case 'projected_category_surge':
+    case 'projected_category_under_baseline':
+      return 'Review category detail';
+    case 'one_offs_driving_variance':
+      return 'Review unusual purchases';
+    case 'recurring_cost_pressure':
+      return 'Review recurring pressure';
+    default:
+      return 'Open detail';
+  }
+}
+
+function insightActionReason(insight) {
+  if (insight?.metadata?.scope === 'household') {
+    return 'Shared context';
+  }
+  if (insight?.entity_type === 'item') {
+    return 'Actionable now';
+  }
+  switch (`${insight?.severity || ''}`) {
+    case 'high':
+      return 'Needs attention';
+    case 'medium':
+      return 'Worth checking';
+    default:
+      return 'More detail';
+  }
+}
+
 function parseScenarioInput(raw, { allowHousehold = false } = {}) {
   const trimmed = `${raw || ''}`.trim();
   if (!trimmed) return null;
@@ -600,6 +645,10 @@ export default function SummaryScreen() {
                   <Text style={styles.insightTitle}>{insight.title}</Text>
                 </View>
                 <Text style={styles.insightBody}>{insight.body}</Text>
+                <View style={styles.insightFooter}>
+                  <Text style={styles.insightActionReason}>{insightActionReason(insight)}</Text>
+                  <Text style={styles.insightActionLabel}>{insightActionLabel(insight)}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -728,6 +777,18 @@ const styles = StyleSheet.create({
   insightScopeText: { fontSize: 11, color: '#cfcfcf', fontWeight: '600', letterSpacing: 0.3 },
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
+  insightFooter: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1f1f1f',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  insightActionReason: { fontSize: 11, color: '#7e8791', textTransform: 'uppercase', letterSpacing: 0.8 },
+  insightActionLabel: { fontSize: 12, color: '#dce8f5', fontWeight: '700' },
 
   quickAdd: { marginTop: 18, marginBottom: 32 },
   watchingCard: {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 
 const FEEDBACK_REASONS = [
@@ -57,6 +57,52 @@ function sharedContextCopy(scope) {
   return `${scope}` === 'household'
     ? 'This view is using shared household spending, budget room, and recurring pressure across everyone in the household.'
     : 'This view is using only your personal spending and budget context.';
+}
+
+function primaryActionForInsight({ insightType, scope, month, categoryKey }) {
+  switch (insightType) {
+    case 'projected_month_end_over_budget':
+    case 'projected_month_end_under_budget':
+    case 'budget_too_low':
+    case 'budget_too_high':
+    case 'one_off_expense_skewing_projection':
+    case 'spend_pace_ahead':
+    case 'spend_pace_behind':
+    case 'recurring_cost_pressure':
+      return {
+        title: 'Turn this into a plan',
+        body: 'Pressure-test a purchase against this same period and scope.',
+        cta: 'Open planner',
+        route: {
+          pathname: '/scenario-check',
+          params: { scope, month },
+        },
+      };
+    case 'top_category_driver':
+    case 'projected_category_surge':
+    case 'projected_category_under_baseline':
+      return {
+        title: 'Pressure-test a purchase in this area',
+        body: 'Use this period and scope to test whether another purchase in this category still fits.',
+        cta: 'Open planner',
+        route: {
+          pathname: '/scenario-check',
+          params: { scope, month },
+        },
+      };
+    case 'one_offs_driving_variance':
+      return {
+        title: 'Pressure-test with the one-offs in mind',
+        body: 'Use the planner to see whether another purchase still fits once those unusual purchases are already counted.',
+        cta: 'Open planner',
+        route: {
+          pathname: '/scenario-check',
+          params: { scope, month },
+        },
+      };
+    default:
+      return null;
+  }
 }
 
 function buildMockTrend(scope, month) {
@@ -229,6 +275,7 @@ function summaryCopy({ insightType, trend, categoryKey, scope }) {
 }
 
 export default function TrendDetailScreen() {
+  const router = useRouter();
   const {
     scope = 'personal',
     month,
@@ -245,6 +292,10 @@ export default function TrendDetailScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
+  const primaryAction = useMemo(
+    () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}` }),
+    [insightType, scope, month, categoryKey]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -370,6 +421,24 @@ export default function TrendDetailScreen() {
                 <Text style={styles.metricRow}>
                   This insight is about the household&apos;s combined spending pattern, not just one person&apos;s activity.
                 </Text>
+              </View>
+            ) : null}
+
+            {primaryAction ? (
+              <View style={styles.actionCard}>
+                <View style={styles.actionText}>
+                  <Text style={styles.cardTitle}>What to do next</Text>
+                  <Text style={styles.actionTitle}>{primaryAction.title}</Text>
+                  <Text style={styles.actionBody}>{primaryAction.body}</Text>
+                </View>
+                {primaryAction.route ? (
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => router.push(primaryAction.route)}
+                  >
+                    <Text style={styles.actionButtonText}>{primaryAction.cta}</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
 
@@ -633,6 +702,25 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
   },
+  actionCard: {
+    backgroundColor: '#12161b',
+    borderWidth: 1,
+    borderColor: '#253140',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+  },
+  actionText: { gap: 6 },
+  actionTitle: { fontSize: 18, color: '#eef5fb', fontWeight: '600' },
+  actionBody: { fontSize: 14, color: '#9eb1c5', lineHeight: 20 },
+  actionButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  actionButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
   card: {
     backgroundColor: '#111',
     borderWidth: 1,
