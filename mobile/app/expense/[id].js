@@ -170,6 +170,7 @@ export default function ExpenseDetailScreen() {
   const [recurringFrequencyDays, setRecurringFrequencyDays] = useState('');
   const [recurringNotes, setRecurringNotes] = useState('');
   const [secondaryDetailsExpanded, setSecondaryDetailsExpanded] = useState(false);
+  const [activeReviewField, setActiveReviewField] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -374,6 +375,11 @@ export default function ExpenseDetailScreen() {
     : [];
   const showSecondaryDetails = !isPendingEmailReview || secondaryDetailsExpanded;
 
+  function activateReviewField(fieldKey) {
+    setEditing(true);
+    setActiveReviewField(fieldKey);
+  }
+
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{
@@ -389,8 +395,8 @@ export default function ExpenseDetailScreen() {
       <View style={styles.hero}>
         {editing && canEdit ? (
           <View style={styles.editRow}>
-            <TextInput style={[styles.editInput, { flex: 1 }]} value={merchant} onChangeText={setMerchant} placeholderTextColor="#444" placeholder="Merchant" />
-            <TextInput style={[styles.editInput, styles.editAmount]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#444" />
+            <TextInput style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]} value={merchant} onChangeText={setMerchant} placeholderTextColor="#444" placeholder="Merchant" />
+            <TextInput style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#444" />
           </View>
         ) : (
           <>
@@ -521,13 +527,18 @@ export default function ExpenseDetailScreen() {
               <Text style={styles.priorityFieldsTitle}>Focus here before approving</Text>
             </View>
             {!editing ? (
-              <TouchableOpacity onPress={() => setEditing(true)} activeOpacity={0.8}>
+              <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
                 <Text style={styles.priorityFieldsAction}>Edit fields</Text>
               </TouchableOpacity>
             ) : null}
           </View>
           {priorityReviewFields.map((field) => (
-            <View key={field.key} style={styles.priorityFieldRow}>
+            <TouchableOpacity
+              key={field.key}
+              style={[styles.priorityFieldRow, activeReviewField === field.key && styles.priorityFieldRowActive]}
+              onPress={() => activateReviewField(field.key)}
+              activeOpacity={0.82}
+            >
               <View style={styles.priorityFieldTop}>
                 <Text style={styles.priorityFieldLabel}>{field.label}</Text>
                 {field.priority ? (
@@ -538,7 +549,7 @@ export default function ExpenseDetailScreen() {
               </View>
               <Text style={styles.priorityFieldValue}>{field.value}</Text>
               <Text style={styles.priorityFieldReason}>{field.reason}</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       ) : null}
@@ -576,34 +587,38 @@ export default function ExpenseDetailScreen() {
       {editing && canEdit ? (
         <View style={styles.editDetailsCard}>
           <Text style={styles.editDetailsTitle}>Details</Text>
-          <Row label="Date">
-            <DateTimePicker
-              value={date ? new Date(date + 'T12:00:00') : new Date()}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'compact' : 'default'}
-              maximumDate={new Date()}
-              onChange={(_, selected) => {
-                if (selected) setDate(selected.toISOString().slice(0, 10));
-              }}
-              themeVariant="dark"
-              style={styles.datePicker}
-            />
-          </Row>
-          <Row label="Category">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {(categories || []).map(c => (
-                  <TouchableOpacity
-                    key={c.id}
-                    style={[styles.catChip, categoryId === c.id && styles.catChipActive]}
-                    onPress={() => setCategoryId(c.id)}
-                  >
-                    <Text style={[styles.catChipText, categoryId === c.id && styles.catChipTextActive]}>{c.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </Row>
+          <View style={activeReviewField === 'date' ? styles.reviewFieldWrapActive : null}>
+            <Row label="Date">
+              <DateTimePicker
+                value={date ? new Date(date + 'T12:00:00') : new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                maximumDate={new Date()}
+                onChange={(_, selected) => {
+                  if (selected) setDate(selected.toISOString().slice(0, 10));
+                }}
+                themeVariant="dark"
+                style={styles.datePicker}
+              />
+            </Row>
+          </View>
+          <View style={activeReviewField === 'category' ? styles.reviewFieldWrapActive : null}>
+            <Row label="Category">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(categories || []).map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.catChip, categoryId === c.id && styles.catChipActive]}
+                      onPress={() => setCategoryId(c.id)}
+                    >
+                      <Text style={[styles.catChipText, categoryId === c.id && styles.catChipTextActive]}>{c.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </Row>
+          </View>
         </View>
       ) : null}
 
@@ -1052,6 +1067,7 @@ const styles = StyleSheet.create({
   priorityFieldsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
   priorityFieldsAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600', marginTop: 2 },
   priorityFieldRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  priorityFieldRowActive: { backgroundColor: '#0f141d', marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 8 },
   priorityFieldTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   priorityFieldLabel: { color: '#d6d6d6', fontSize: 12, fontWeight: '600' },
   priorityBadge: { backgroundColor: '#1a2432', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
@@ -1115,9 +1131,18 @@ const styles = StyleSheet.create({
 
   editRow: { flexDirection: 'row', gap: 10 },
   editInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
+  editInputFocused: { borderColor: '#8ab4ff', backgroundColor: '#0f141d' },
   editAmount: { width: 100 },
   editInputInline: { color: '#f5f5f5', fontSize: 14, textAlign: 'right', flex: 1, padding: 4 },
   datePicker: { marginRight: -8 },
+  reviewFieldWrapActive: {
+    borderWidth: 1,
+    borderColor: '#263448',
+    backgroundColor: '#0f141d',
+    borderRadius: 10,
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+  },
 
   section: { paddingHorizontal: 20 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
