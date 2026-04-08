@@ -130,6 +130,7 @@ async function listByUser(userId, limit = 100) {
   try {
     const result = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.notes
        FROM email_import_log l
@@ -145,6 +146,7 @@ async function listByUser(userId, limit = 100) {
     if (!isMissingFeedbackTableError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              l.user_feedback, l.user_feedback_at,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
@@ -159,6 +161,23 @@ async function listByUser(userId, limit = 100) {
     );
     return fallback.rows;
   }
+}
+
+async function recordLogFeedback(logId, userId, feedback) {
+  const cleanFeedback = `${feedback || ''}`.trim();
+  const allowed = new Set(['should_have_imported', 'didnt_need_review', 'needed_more_review']);
+  if (!allowed.has(cleanFeedback)) return null;
+
+  const result = await db.query(
+    `UPDATE email_import_log
+     SET user_feedback = $3,
+         user_feedback_at = NOW()
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [logId, userId, cleanFeedback]
+  );
+  return result.rows[0] || null;
 }
 
 async function summarizeByUser(userId, days = 30) {
@@ -314,6 +333,7 @@ module.exports = {
   recordReviewFeedback,
   findByMessageId,
   listByUser,
+  recordLogFeedback,
   summarizeByUser,
   listQualitySignalsByUser,
 };

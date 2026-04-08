@@ -25,6 +25,7 @@ export default function GmailImportScreen() {
   const [gmailSyncing, setGmailSyncing] = useState(false);
   const [senderPreferenceSaving, setSenderPreferenceSaving] = useState({});
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
+  const [logFeedbackSaving, setLogFeedbackSaving] = useState({});
 
   const loadGmailStatus = useCallback(async () => {
     try {
@@ -92,6 +93,28 @@ export default function GmailImportScreen() {
   function formatLogDetail(entry) {
     if (entry.status === 'imported') return null;
     return getImportReasonMeta(entry.skip_reason).detail;
+  }
+
+  function feedbackLabel(value) {
+    switch (value) {
+      case 'should_have_imported': return 'Marked should have imported';
+      case 'didnt_need_review': return 'Marked did not need review';
+      case 'needed_more_review': return 'Marked needed more review';
+      default: return null;
+    }
+  }
+
+  function feedbackOptionsForEntry(entry) {
+    if (entry.status === 'skipped' || entry.status === 'failed') {
+      return [{ key: 'should_have_imported', label: 'Should have imported' }];
+    }
+    if (entry.status === 'imported') {
+      return [
+        { key: 'didnt_need_review', label: "Didn't need review" },
+        { key: 'needed_more_review', label: 'Needed more review' },
+      ];
+    }
+    return [];
   }
 
   function formatRelativeTime(value) {
@@ -238,6 +261,22 @@ function rankSenderCard(sender = {}) {
       Alert.alert('Gmail sender settings', e?.message || 'Could not update this sender preference');
     } finally {
       setSenderPreferenceSaving(prev => ({ ...prev, [senderDomain]: false }));
+    }
+  }
+
+  async function submitLogFeedback(logId, feedback) {
+    setLogFeedbackSaving((prev) => ({ ...prev, [logId]: feedback }));
+    try {
+      const updated = await api.post(`/gmail/import-log/${logId}/feedback`, { feedback });
+      setImportLog((current) => current.map((entry) => (
+        entry.id === logId
+          ? { ...entry, user_feedback: updated.user_feedback, user_feedback_at: updated.user_feedback_at }
+          : entry
+      )));
+    } catch (e) {
+      Alert.alert('Import log feedback', e?.message || 'Could not save feedback');
+    } finally {
+      setLogFeedbackSaving((prev) => ({ ...prev, [logId]: null }));
     }
   }
 
@@ -437,6 +476,30 @@ function rankSenderCard(sender = {}) {
                           {formatLogDetail(entry)}
                         </Text>
                       ) : null}
+                      {entry.user_feedback ? (
+                        <Text style={styles.logFeedbackSaved}>
+                          {feedbackLabel(entry.user_feedback)}
+                        </Text>
+                      ) : null}
+                      {!entry.user_feedback && feedbackOptionsForEntry(entry).length > 0 ? (
+                        <View style={styles.logFeedbackRow}>
+                          {feedbackOptionsForEntry(entry).map((option) => (
+                            <TouchableOpacity
+                              key={option.key}
+                              style={[
+                                styles.logFeedbackChip,
+                                logFeedbackSaving[entry.id] === option.key && styles.actionBtnDisabled,
+                              ]}
+                              onPress={() => submitLogFeedback(entry.id, option.key)}
+                              disabled={!!logFeedbackSaving[entry.id]}
+                            >
+                              <Text style={styles.logFeedbackChipText}>
+                                {logFeedbackSaving[entry.id] === option.key ? 'Saving…' : option.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ) : null}
                     </View>
                     <View style={styles.logRowRight}>
                       <Text style={[
@@ -534,6 +597,17 @@ const styles = StyleSheet.create({
   logSubject: { color: '#f5f5f5', fontSize: 13 },
   logFrom: { color: '#555', fontSize: 11, marginTop: 2 },
   logDetail: { color: '#555', fontSize: 11, marginTop: 4 },
+  logFeedbackSaved: { color: '#8ab4ff', fontSize: 11, marginTop: 6 },
+  logFeedbackRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  logFeedbackChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#141414',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  logFeedbackChipText: { color: '#cfcfcf', fontSize: 11, fontWeight: '600' },
   logRowRight: { alignItems: 'flex-end' },
   logStatus: { fontSize: 11, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   logStatusImported: { color: '#4ade80' },

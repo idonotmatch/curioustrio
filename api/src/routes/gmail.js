@@ -91,6 +91,20 @@ router.get('/import-log', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/import-log/:id/feedback', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const feedback = `${req.body?.feedback || ''}`.trim();
+    if (!['should_have_imported', 'didnt_need_review', 'needed_more_review'].includes(feedback)) {
+      return res.status(400).json({ error: 'Invalid feedback' });
+    }
+    const log = await EmailImportLog.recordLogFeedback(req.params.id, user.id, feedback);
+    if (!log) return res.status(404).json({ error: 'Import log not found' });
+    res.json(log);
+  } catch (err) { next(err); }
+});
+
 router.post('/sender-preferences', authenticate, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
