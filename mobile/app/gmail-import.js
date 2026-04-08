@@ -134,6 +134,11 @@ export default function GmailImportScreen() {
     return 'Still learning';
   }
 
+  const reasonChips = summarizeReasonChips(importSummary?.reasons || []);
+  const senderQuality = Array.isArray(importSummary?.quality?.sender_quality)
+    ? importSummary.quality.sender_quality
+    : [];
+
   async function connectGmail() {
     try {
       const data = await api.get('/gmail/auth');
@@ -265,26 +270,38 @@ export default function GmailImportScreen() {
                     <Text style={styles.summaryLabel}>Failed</Text>
                   </View>
                 </View>
-                {Array.isArray(importSummary.reasons) && importSummary.reasons.length > 0 && (
-                  <View style={styles.reasonWrap}>
-                    {summarizeReasonChips(importSummary.reasons).slice(0, 4).map(item => (
-                      <View key={item.label} style={styles.reasonChip}>
-                        <Text style={styles.reasonChipText}>
-                          {item.label} · {item.count}{item.detail ? ` · ${item.detail}` : ''}
-                        </Text>
-                      </View>
-                    ))}
+                <View style={styles.senderTrustSection}>
+                  <View style={styles.senderTrustHeader}>
+                    <Text style={styles.senderTrustTitle}>Import filters</Text>
+                    <Text style={styles.senderTrustSub}>
+                      Why messages were filtered or sent down a review path.
+                    </Text>
                   </View>
-                )}
-                {Array.isArray(importSummary?.quality?.sender_quality) && importSummary.quality.sender_quality.length > 0 && (
-                  <View style={styles.senderTrustSection}>
-                    <View style={styles.senderTrustHeader}>
-                      <Text style={styles.senderTrustTitle}>Sender trust</Text>
-                      <Text style={styles.senderTrustSub}>
-                        Fast-lane senders can skip heavier review.
-                      </Text>
+                  {reasonChips.length > 0 ? (
+                    <View style={styles.reasonWrap}>
+                      {reasonChips.slice(0, 6).map(item => (
+                        <View key={item.label} style={styles.reasonChip}>
+                          <Text style={styles.reasonChipText}>
+                            {item.label} · {item.count}{item.detail ? ` · ${item.detail}` : ''}
+                          </Text>
+                        </View>
+                      ))}
                     </View>
-                    {importSummary.quality.sender_quality.map((sender) => (
+                  ) : (
+                    <Text style={styles.sectionEmptyText}>
+                      No recent filter or skip reasons yet.
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.senderTrustSection}>
+                  <View style={styles.senderTrustHeader}>
+                    <Text style={styles.senderTrustTitle}>Sender trust</Text>
+                    <Text style={styles.senderTrustSub}>
+                      Fast-lane senders can skip heavier review.
+                    </Text>
+                  </View>
+                  {senderQuality.length > 0 ? (
+                    senderQuality.map((sender) => (
                       <View key={sender.sender_domain} style={styles.senderTrustCard}>
                         <View style={styles.senderTrustTopRow}>
                           <Text style={styles.senderTrustDomain}>{sender.sender_domain}</Text>
@@ -320,9 +337,13 @@ export default function GmailImportScreen() {
                           </Text>
                         </TouchableOpacity>
                       </View>
-                    ))}
-                  </View>
-                )}
+                    ))
+                  ) : (
+                    <Text style={styles.sectionEmptyText}>
+                      Sender trust will appear here once Adlo has enough recent Gmail review history.
+                    </Text>
+                  )}
+                </View>
                 <Text style={styles.summaryWindow}>Last {importSummary.window_days} days</Text>
               </>
             ) : null
@@ -412,6 +433,7 @@ const styles = StyleSheet.create({
   senderTrustHeader: { gap: 3 },
   senderTrustTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600' },
   senderTrustSub: { color: '#666', fontSize: 11 },
+  sectionEmptyText: { color: '#666', fontSize: 12, lineHeight: 18 },
   senderTrustCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1e1e1e', padding: 12 },
   senderTrustTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   senderTrustDomain: { color: '#f5f5f5', fontSize: 13, fontWeight: '500', flex: 1 },
