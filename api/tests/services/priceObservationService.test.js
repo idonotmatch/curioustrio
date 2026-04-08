@@ -108,6 +108,7 @@ describe('findObservationOpportunities', () => {
       {
         group_key: 'product:abc',
         product_id: 'abc',
+        identity_confidence: 'high',
         item_name: 'Pampers Pure',
         brand: 'Pampers',
         median_amount: 39.23,
@@ -142,5 +143,41 @@ describe('findObservationOpportunities', () => {
       merchant: 'Target',
       next_expected_date: '2026-04-08',
     });
+  });
+
+  it('is stricter about medium-confidence item opportunities', async () => {
+    detectRecurringWatchCandidates.mockResolvedValueOnce([
+      {
+        group_key: 'comparable:pampers-pure',
+        comparable_key: 'pampers-pure',
+        identity_confidence: 'medium',
+        item_name: 'Pampers Pure',
+        brand: 'Pampers',
+        median_amount: 39.23,
+        median_unit_price: 0.4784,
+        normalized_total_size_value: 82,
+        normalized_total_size_unit: 'count',
+        next_expected_date: '2026-04-08',
+        days_until_due: 4,
+        status: 'watching',
+        merchants: ['Target'],
+      },
+    ]);
+
+    ProductPriceObservation.findRecentByIdentity.mockResolvedValueOnce([
+      {
+        merchant: 'Target',
+        observed_price: 37.95,
+        observed_unit_price: 0.4628,
+        normalized_total_size_value: 82,
+        normalized_total_size_unit: 'count',
+        observed_at: '2026-04-04T10:00:00Z',
+        source_type: 'manual',
+        url: 'https://example.com/target',
+      },
+    ]);
+
+    const opportunities = await findObservationOpportunities('household-1');
+    expect(opportunities).toHaveLength(0);
   });
 });

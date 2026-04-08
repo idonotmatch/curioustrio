@@ -62,7 +62,8 @@ function compareObservationToBaseline(candidate, observation) {
 
 function isMeaningfulOpportunity(candidate, observation, comparison) {
   if (!comparison) return false;
-  if (comparison.discount_percent < 5) return false;
+  const minimumDiscountPercent = candidate?.identity_confidence === 'medium' ? 8 : 5;
+  if (comparison.discount_percent < minimumDiscountPercent) return false;
 
   if (comparison.comparison_type === 'unit_price') {
     const candidateTotalSize = Number(candidate?.normalized_total_size_value || 0);
@@ -73,10 +74,12 @@ function isMeaningfulOpportunity(candidate, observation, comparison) {
     const estimatedSavings = candidateTotalSize
       ? Number(((comparison.baseline_value - comparison.observed_value) * candidateTotalSize).toFixed(2))
       : comparison.savings_amount;
-    return estimatedSavings >= 1.5;
+    const minimumSavings = candidate?.identity_confidence === 'medium' ? 2.5 : 1.5;
+    return estimatedSavings >= minimumSavings;
   }
 
-  return comparison.savings_amount >= 1.5;
+  const minimumSavings = candidate?.identity_confidence === 'medium' ? 2.5 : 1.5;
+  return comparison.savings_amount >= minimumSavings;
 }
 
 async function findBestObservationForCandidate(candidate, { freshnessHours = 72 } = {}) {
