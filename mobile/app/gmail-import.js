@@ -13,6 +13,8 @@ import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 
+const SUMMARY_WINDOW_DAYS = 90;
+
 export default function GmailImportScreen() {
   const [gmailStatus, setGmailStatus] = useState(null);
   const [importLog, setImportLog] = useState([]);
@@ -22,6 +24,7 @@ export default function GmailImportScreen() {
   const [importSummaryLoading, setImportSummaryLoading] = useState(false);
   const [gmailSyncing, setGmailSyncing] = useState(false);
   const [senderPreferenceSaving, setSenderPreferenceSaving] = useState({});
+  const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
 
   const loadGmailStatus = useCallback(async () => {
     try {
@@ -125,19 +128,49 @@ export default function GmailImportScreen() {
     }
   }
 
-  function formatSenderReviewPath(sender = {}) {
-    const reliability = sender.review_path_reliability || {};
-    if (reliability.fast_lane_eligible) return 'Fast lane active';
-    if ((reliability.quick_check_count || 0) > 0) return `${reliability.quick_check_count} quick approvals`;
-    if ((reliability.items_first_count || 0) > 0) return 'Often needs item cleanup';
-    if ((reliability.full_review_count || 0) > 0) return 'Usually opened for full review';
-    return 'Still learning';
-  }
+function formatSenderReviewPath(sender = {}) {
+  const reliability = sender.review_path_reliability || {};
+  if (reliability.fast_lane_eligible) return 'Fast lane active';
+  if ((reliability.quick_check_count || 0) > 0) return `${reliability.quick_check_count} quick approvals`;
+  if ((reliability.items_first_count || 0) > 0) return 'Often needs item cleanup';
+  if ((reliability.full_review_count || 0) > 0) return 'Usually opened for full review';
+  return 'Still learning';
+}
+
+function rankSenderCard(sender = {}) {
+  if (sender.sender_preference?.force_review) return 0;
+  if (sender.level === 'noisy') return 1;
+  if (sender.level === 'mixed') return 2;
+  if (sender.review_path_reliability?.fast_lane_eligible) return 4;
+  if (sender.level === 'trusted') return 3;
+  return 5;
+}
 
   const reasonChips = summarizeReasonChips(importSummary?.reasons || []);
   const senderQuality = Array.isArray(importSummary?.quality?.sender_quality)
     ? importSummary.quality.sender_quality
     : [];
+  const senderPreferences = Array.isArray(importSummary?.sender_preferences)
+    ? importSummary.sender_preferences
+    : [];
+  const senderCards = (senderQuality.length > 0
+    ? senderQuality
+    : senderPreferences.map((preference) => ({
+      sender_domain: preference.sender_domain,
+      level: 'unknown',
+      top_changed_fields: [],
+      item_reliability: { level: 'unknown' },
+      sender_preference: {
+        force_review: !!preference.force_review,
+      },
+      review_path_reliability: {},
+    })))
+    .sort((a, b) =>
+      rankSenderCard(a) - rankSenderCard(b)
+      || (b.review_path_reliability?.items_first_count || 0) - (a.review_path_reliability?.items_first_count || 0)
+      || (b.imported || 0) - (a.imported || 0)
+      || a.sender_domain.localeCompare(b.sender_domain));
+  const visibleSenderCards = senderTrustExpanded ? senderCards : senderCards.slice(0, 3);
 
   async function connectGmail() {
     try {
@@ -166,7 +199,7 @@ export default function GmailImportScreen() {
   async function loadImportSummary() {
     setImportSummaryLoading(true);
     try {
-      const data = await api.get('/gmail/import-summary?days=30');
+      const data = await api.get(`/gmail/import-summary?days=${SUMMARY_WINDOW_DAYS}&sender_limit=10`);
       setImportSummary(data);
     } catch {
       setImportSummary(null);
@@ -300,8 +333,9 @@ export default function GmailImportScreen() {
                       Fast-lane senders can skip heavier review.
                     </Text>
                   </View>
-                  {senderQuality.length > 0 ? (
-                    senderQuality.map((sender) => (
+                  {senderCards.length > 0 ? (
+                    <>
+                      {visibleSenderCards.map((sender) => (
                       <View key={sender.sender_domain} style={styles.senderTrustCard}>
                         <View style={styles.senderTrustTopRow}>
                           <Text style={styles.senderTrustDomain}>{sender.sender_domain}</Text>
@@ -337,14 +371,33 @@ export default function GmailImportScreen() {
                           </Text>
                         </TouchableOpacity>
                       </View>
-                    ))
+                      ))}
+                      {senderCards.length > 3 ? (
+                        <TouchableOpacity
+                          style={styles.expandToggle}
+                          onPress={() => setSenderTrustExpanded((current) => !current)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.expandToggleText}>
+                            {senderTrustExpanded
+                              ? 'Show fewer senders'
+                              : `Show ${senderCards.length - visibleSenderCards.length} more sender${senderCards.length - visibleSenderCards.length === 1 ? '' : 's'}`}
+                          </Text>
+                          <Ionicons
+                            name={senderTrustExpanded ? 'chevron-up' : 'chevron-down'}
+                            size={14}
+                            color="#888"
+                          />
+                        </TouchableOpacity>
+                      ) : null}
+                    </>
                   ) : (
                     <Text style={styles.sectionEmptyText}>
                       Sender trust will appear here once Adlo has enough recent Gmail review history.
                     </Text>
                   )}
                 </View>
-                <Text style={styles.summaryWindow}>Last {importSummary.window_days} days</Text>
+                <Text style={styles.summaryWindow}>Last {importSummary.window_days || SUMMARY_WINDOW_DAYS} days</Text>
               </>
             ) : null
           )}
@@ -461,6 +514,19 @@ const styles = StyleSheet.create({
   },
   senderTrustToggleText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
   senderTrustToggleTextActive: { color: '#fcd34d' },
+  expandToggle: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    backgroundColor: '#0f0f0f',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  expandToggleText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
   summaryWindow: { color: '#444', fontSize: 11, marginTop: 10 },
   logToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#111' },
