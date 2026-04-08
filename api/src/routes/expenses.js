@@ -9,7 +9,7 @@ const MerchantMapping = require('../models/merchantMapping');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
-const { getSenderImportQuality } = require('../services/gmailImportQualityService');
+const { getSenderImportQuality, recommendReviewMode } = require('../services/gmailImportQualityService');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
 const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
@@ -187,15 +187,13 @@ function deriveEmailFieldEvidence(expense, log) {
 }
 
 function buildEmailReviewRouting(senderQuality, itemReliability) {
-  const senderLevel = senderQuality?.level || 'unknown';
-  const itemLevel = itemReliability?.level || 'unknown';
-  const fastLaneEligible = !!senderQuality?.review_path_reliability?.fast_lane_eligible;
+  const reviewMode = recommendReviewMode({ ...senderQuality, item_reliability: itemReliability });
 
-  if (senderLevel === 'trusted' && (itemLevel === 'trusted' || fastLaneEligible)) {
+  if (reviewMode === 'quick_check') {
     return {
       review_mode: 'quick_check',
       review_title: 'Quick check before approving',
-      review_message: fastLaneEligible
+      review_message: senderQuality?.review_path_reliability?.fast_lane_eligible
         ? 'You usually quick-approve imports from this sender, so a fast confirmation is probably enough here.'
         : 'This sender is usually accurate, so a fast confirmation is probably enough here.',
       review_checklist: [
@@ -205,10 +203,7 @@ function buildEmailReviewRouting(senderQuality, itemReliability) {
     };
   }
 
-  if (
-    (senderLevel === 'trusted' && (itemLevel === 'mixed' || itemLevel === 'noisy'))
-    || (senderLevel === 'mixed' && itemLevel === 'noisy')
-  ) {
+  if (reviewMode === 'items_first') {
     return {
       review_mode: 'items_first',
       review_title: 'Focus on the items before approving',

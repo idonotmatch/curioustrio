@@ -380,11 +380,11 @@ export default function ExpenseDetailScreen() {
   const categoryLabel = expense.category_parent_name || expense.category_name || 'Uncategorized';
   const ownerLabel = expense.user_name || 'You';
   const sourceText = sourceLabel[expense.source] || expense.source;
-  const reviewState = expense.status === 'pending' && /needs review/i.test(expense.notes || '');
+  const reviewState = expense.status === 'pending' && expense.source === 'email';
   const gmailReviewHint = expense.gmail_review_hint || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const emailSummary = cleanImportedEmailSummary(expense.notes || '', gmailReviewHint?.message_subject || '');
-  const isPendingEmailReview = reviewState && expense.source === 'email';
+  const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
   const priorityReviewFields = isPendingEmailReview

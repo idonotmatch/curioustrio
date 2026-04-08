@@ -96,6 +96,25 @@ function summarizeReviewPathReliability(reviewPaths = [], metrics = {}) {
   };
 }
 
+function recommendReviewMode(senderQuality = {}) {
+  const senderLevel = senderQuality?.level || 'unknown';
+  const itemLevel = senderQuality?.item_reliability?.level || 'unknown';
+  const fastLaneEligible = !!senderQuality?.review_path_reliability?.fast_lane_eligible;
+
+  if (senderLevel === 'trusted' && (itemLevel === 'trusted' || fastLaneEligible)) {
+    return 'quick_check';
+  }
+
+  if (
+    (senderLevel === 'trusted' && (itemLevel === 'mixed' || itemLevel === 'noisy'))
+    || (senderLevel === 'mixed' && itemLevel === 'noisy')
+  ) {
+    return 'items_first';
+  }
+
+  return 'full_review';
+}
+
 function summarizeSenderRows(rows = []) {
   const imported = rows.length;
   let reviewed = 0;
@@ -311,4 +330,5 @@ module.exports = {
   extractSenderDomain,
   getSenderImportQuality,
   classifySenderMetrics,
+  recommendReviewMode,
 };

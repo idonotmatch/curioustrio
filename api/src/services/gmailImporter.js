@@ -17,7 +17,7 @@ const { assignCategory } = require('./categoryAssigner');
 const { resolveProduct } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
-const { getSenderImportQuality } = require('./gmailImportQualityService');
+const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -103,6 +103,9 @@ async function importForUser(user) {
   const outcomes = {
     imported_parsed: 0,
     imported_pending_review: 0,
+    imported_fast_lane: 0,
+    imported_items_first: 0,
+    imported_full_review: 0,
     skipped_existing: 0,
     skipped_reasons: {},
     failed_reasons: {},
@@ -127,6 +130,7 @@ async function importForUser(user) {
       msgFrom = from;
       const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
       const senderQuality = await getSenderImportQuality(user.id, from);
+      const reviewMode = recommendReviewMode(senderQuality);
       const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
       const signals = analyzeEmailSignals(subject, from, body);
 
@@ -280,6 +284,13 @@ async function importForUser(user) {
         fromAddress: msgFrom,
       });
       imported++;
+      if (reviewMode === 'quick_check') {
+        outcomes.imported_fast_lane++;
+      } else if (reviewMode === 'items_first') {
+        outcomes.imported_items_first++;
+      } else {
+        outcomes.imported_full_review++;
+      }
       if (importedAsPendingReview || /needs review/i.test(parsed.notes || '')) {
         outcomes.imported_pending_review++;
       } else {

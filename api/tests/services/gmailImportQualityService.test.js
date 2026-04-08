@@ -8,6 +8,7 @@ const {
   getGmailImportQualitySummary,
   extractSenderDomain,
   getSenderImportQuality,
+  recommendReviewMode,
 } = require('../../src/services/gmailImportQualityService');
 
 describe('gmailImportQualityService', () => {
@@ -191,5 +192,13 @@ describe('gmailImportQualityService', () => {
         quick_check_count: 2,
       }),
     });
+  });
+
+  it('recommends quick_check when a trusted sender has earned the fast lane', () => {
+    expect(recommendReviewMode({
+      level: 'trusted',
+      item_reliability: { level: 'mixed' },
+      review_path_reliability: { fast_lane_eligible: true },
+    })).toBe('quick_check');
   });
 });

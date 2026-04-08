@@ -195,6 +195,9 @@ describe('POST /gmail/import', () => {
     expect(res.body.outcomes).toMatchObject({
       imported_parsed: 1,
       imported_pending_review: 0,
+      imported_fast_lane: 0,
+      imported_items_first: 0,
+      imported_full_review: 1,
       skipped_existing: 0,
       skipped_reasons: { classifier_not_expense: 1 },
     });
