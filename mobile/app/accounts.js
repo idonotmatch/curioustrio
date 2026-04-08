@@ -138,6 +138,33 @@ export default function AccountsScreen() {
     return `${days} days ago`;
   }
 
+  function formatSenderTrustLevel(level) {
+    switch (level) {
+      case 'trusted': return 'Trusted';
+      case 'mixed': return 'Mixed';
+      case 'noisy': return 'Noisy';
+      default: return 'Learning';
+    }
+  }
+
+  function senderTrustTone(level) {
+    switch (level) {
+      case 'trusted': return styles.senderTrustChipTrusted;
+      case 'mixed': return styles.senderTrustChipMixed;
+      case 'noisy': return styles.senderTrustChipNoisy;
+      default: return styles.senderTrustChipUnknown;
+    }
+  }
+
+  function formatSenderReviewPath(sender = {}) {
+    const reliability = sender.review_path_reliability || {};
+    if (reliability.fast_lane_eligible) return 'Fast lane active';
+    if ((reliability.quick_check_count || 0) > 0) return `${reliability.quick_check_count} quick approvals`;
+    if ((reliability.items_first_count || 0) > 0) return 'Often needs item cleanup';
+    if ((reliability.full_review_count || 0) > 0) return 'Usually opened for full review';
+    return 'Still learning';
+  }
+
   async function connectGmail() {
     try {
       const data = await api.get('/gmail/auth');
@@ -185,9 +212,10 @@ export default function AccountsScreen() {
       const result = await api.post('/gmail/import', {});
       await Promise.all([loadImportLog(), loadImportSummary()]);
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
+      const autoConfirmed = result?.outcomes?.imported_auto_confirmed ?? 0;
       Alert.alert(
         'Gmail sync',
-        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} need review` : ''}`
+        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${autoConfirmed ? `, ${autoConfirmed} auto-confirmed` : ''}${pendingReview ? `, ${pendingReview} need review` : ''}`
       );
     } catch (e) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
@@ -560,6 +588,37 @@ export default function AccountsScreen() {
                     ))}
                   </View>
                 )}
+                {Array.isArray(importSummary?.quality?.sender_quality) && importSummary.quality.sender_quality.length > 0 && (
+                  <View style={styles.senderTrustSection}>
+                    <View style={styles.senderTrustHeader}>
+                      <Text style={styles.senderTrustTitle}>Sender trust</Text>
+                      <Text style={styles.senderTrustSub}>
+                        Fast-lane senders can skip heavier review.
+                      </Text>
+                    </View>
+                    {importSummary.quality.sender_quality.slice(0, 3).map((sender) => (
+                      <View key={sender.sender_domain} style={styles.senderTrustCard}>
+                        <View style={styles.senderTrustTopRow}>
+                          <Text style={styles.senderTrustDomain}>{sender.sender_domain}</Text>
+                          <View style={[styles.senderTrustChip, senderTrustTone(sender.level)]}>
+                            <Text style={styles.senderTrustChipText}>{formatSenderTrustLevel(sender.level)}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.senderTrustMeta}>
+                          {formatSenderReviewPath(sender)}
+                          {sender.item_reliability?.level && sender.item_reliability.level !== 'unknown'
+                            ? ` · Items ${sender.item_reliability.level}`
+                            : ''}
+                        </Text>
+                        {Array.isArray(sender.top_changed_fields) && sender.top_changed_fields.length > 0 ? (
+                          <Text style={styles.senderTrustDetail}>
+                            Usually corrected: {sender.top_changed_fields.map((entry) => entry.field.replace(/_/g, ' ')).join(', ')}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                )}
                 <Text style={styles.summaryWindow}>Last {importSummary.window_days} days</Text>
               </>
             ) : null
@@ -675,6 +734,21 @@ const styles = StyleSheet.create({
   reasonWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   reasonChip: { borderRadius: 999, borderWidth: 1, borderColor: '#1f1f1f', backgroundColor: '#111', paddingHorizontal: 10, paddingVertical: 6 },
   reasonChipText: { color: '#777', fontSize: 11 },
+  senderTrustSection: { marginTop: 14, gap: 10 },
+  senderTrustHeader: { gap: 3 },
+  senderTrustTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600' },
+  senderTrustSub: { color: '#666', fontSize: 11 },
+  senderTrustCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1e1e1e', padding: 12 },
+  senderTrustTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  senderTrustDomain: { color: '#f5f5f5', fontSize: 13, fontWeight: '500', flex: 1 },
+  senderTrustChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  senderTrustChipTrusted: { backgroundColor: 'rgba(34,197,94,0.14)' },
+  senderTrustChipMixed: { backgroundColor: 'rgba(245,158,11,0.16)' },
+  senderTrustChipNoisy: { backgroundColor: 'rgba(248,113,113,0.14)' },
+  senderTrustChipUnknown: { backgroundColor: 'rgba(96,165,250,0.14)' },
+  senderTrustChipText: { color: '#f5f5f5', fontSize: 11, fontWeight: '700' },
+  senderTrustMeta: { color: '#777', fontSize: 11, marginTop: 6 },
+  senderTrustDetail: { color: '#555', fontSize: 11, marginTop: 4, lineHeight: 16 },
   summaryWindow: { color: '#444', fontSize: 11, marginTop: 10 },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontSize: 15 },
