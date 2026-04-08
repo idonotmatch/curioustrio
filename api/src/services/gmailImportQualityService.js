@@ -70,6 +70,32 @@ function summarizeItemReliability(rows = []) {
   };
 }
 
+function summarizeReviewPathReliability(reviewPaths = [], metrics = {}) {
+  const counts = new Map((Array.isArray(reviewPaths) ? reviewPaths : []).map((entry) => [entry.path, Number(entry.count || 0)]));
+  const quickCheckCount = counts.get('quick_check') || 0;
+  const fullReviewCount = counts.get('full_review') || 0;
+  const itemsFirstCount = counts.get('items_first') || 0;
+  const total = quickCheckCount + fullReviewCount + itemsFirstCount;
+  const quickCheckRate = toRate(quickCheckCount, total);
+
+  const fastLaneEligible = (
+    Number(metrics.imported || 0) >= 3
+    && (metrics.clean_approval_rate || 0) >= 0.6
+    && (metrics.dismissal_rate || 0) <= 0.15
+    && quickCheckCount >= 2
+    && quickCheckRate >= 0.5
+    && fullReviewCount <= 1
+  );
+
+  return {
+    quick_check_count: quickCheckCount,
+    items_first_count: itemsFirstCount,
+    full_review_count: fullReviewCount,
+    quick_check_rate: quickCheckRate,
+    fast_lane_eligible: fastLaneEligible,
+  };
+}
+
 function summarizeSenderRows(rows = []) {
   const imported = rows.length;
   let reviewed = 0;
@@ -151,16 +177,23 @@ function buildSenderSummary(rows, limit = 5) {
       const review_paths = [...(entry._reviewPathCounts || new Map()).entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([path, count]) => ({ path, count }));
+      const metrics = {
+        imported: entry.imported,
+        clean_approval_rate: toRate(entry.clean_approved, entry.imported),
+        dismissal_rate: toRate(entry.dismissed, entry.imported),
+      };
+      const review_path_reliability = summarizeReviewPathReliability(review_paths, metrics);
       delete entry._changedFieldCounts;
       delete entry._reviewPathCounts;
       return {
         ...entry,
-        clean_approval_rate: toRate(entry.clean_approved, entry.imported),
-        dismissal_rate: toRate(entry.dismissed, entry.imported),
+        clean_approval_rate: metrics.clean_approval_rate,
+        dismissal_rate: metrics.dismissal_rate,
         edit_rate: toRate(entry.edited, entry.imported),
         review_rate: toRate(entry.reviewed, entry.imported),
         top_changed_fields: changedFieldCounts,
         review_paths,
+        review_path_reliability,
         item_reliability: summarizeItemReliability(rows.filter((row) => extractSenderDomain(row.from_address) === entry.sender_domain)),
       };
     })
@@ -259,6 +292,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const senderSummary = buildSenderSummary(senderRows, 1)[0] || {};
   const top_changed_fields = senderSummary.top_changed_fields || [];
   const review_paths = senderSummary.review_paths || [];
+  const review_path_reliability = senderSummary.review_path_reliability || summarizeReviewPathReliability([], metrics);
   const item_reliability = summarizeItemReliability(senderRows);
 
   return {
@@ -267,6 +301,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
     metrics,
     top_changed_fields,
     review_paths,
+    review_path_reliability,
     item_reliability,
   };
 }

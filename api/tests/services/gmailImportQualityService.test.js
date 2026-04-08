@@ -186,6 +186,10 @@ describe('gmailImportQualityService', () => {
         expect.objectContaining({ path: 'quick_check', count: 2 }),
         expect.objectContaining({ path: 'full_review', count: 1 }),
       ]),
+      review_path_reliability: expect.objectContaining({
+        fast_lane_eligible: true,
+        quick_check_count: 2,
+      }),
     });
   });
 });

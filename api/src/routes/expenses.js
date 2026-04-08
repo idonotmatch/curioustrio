@@ -189,12 +189,15 @@ function deriveEmailFieldEvidence(expense, log) {
 function buildEmailReviewRouting(senderQuality, itemReliability) {
   const senderLevel = senderQuality?.level || 'unknown';
   const itemLevel = itemReliability?.level || 'unknown';
+  const fastLaneEligible = !!senderQuality?.review_path_reliability?.fast_lane_eligible;
 
-  if (senderLevel === 'trusted' && itemLevel === 'trusted') {
+  if (senderLevel === 'trusted' && (itemLevel === 'trusted' || fastLaneEligible)) {
     return {
       review_mode: 'quick_check',
       review_title: 'Quick check before approving',
-      review_message: 'This sender is usually accurate, so a fast confirmation is probably enough here.',
+      review_message: fastLaneEligible
+        ? 'You usually quick-approve imports from this sender, so a fast confirmation is probably enough here.'
+        : 'This sender is usually accurate, so a fast confirmation is probably enough here.',
       review_checklist: [
         'Amount: confirm this is the final charged total.',
         'Merchant and date: make sure they look right at a glance.',
