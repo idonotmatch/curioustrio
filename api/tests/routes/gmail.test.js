@@ -195,6 +195,7 @@ describe('POST /gmail/import', () => {
     expect(res.body.outcomes).toMatchObject({
       imported_parsed: 1,
       imported_pending_review: 0,
+      imported_auto_confirmed: 0,
       imported_fast_lane: 0,
       imported_items_first: 0,
       imported_full_review: 1,
@@ -371,9 +372,9 @@ describe('POST /gmail/import', () => {
     await db.query(
       `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
        VALUES
-         ($1, 'approved', '[]'::jsonb, 0),
-         ($2, 'approved', '[]'::jsonb, 0),
-         ($3, 'approved', '["merchant"]'::jsonb, 1)`,
+         ($1, 'approved', '["review_path_quick_check"]'::jsonb, 0),
+         ($2, 'approved', '["review_path_quick_check"]'::jsonb, 0),
+         ($3, 'approved', '["merchant","review_path_full_review"]'::jsonb, 1)`,
       [cleanOne.rows[0].id, cleanTwo.rows[0].id, cleanThree.rows[0].id]
     );
 
@@ -406,6 +407,80 @@ describe('POST /gmail/import', () => {
     );
     expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
     expect(expense.rows[0].notes).not.toMatch(/needs review/i);
+  });
+
+  it('auto-confirms high-trust fast-lane Gmail imports', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    const cleanOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Amazon', 12.34, '2026-03-01', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const cleanTwo = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Amazon', 18.99, '2026-03-02', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const cleanThree = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Amazon', 21.50, '2026-03-03', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address)
+       VALUES
+         ($1, 'fast-1', $2, 'imported', 'orders@amazon.com'),
+         ($1, 'fast-2', $3, 'imported', 'orders@amazon.com'),
+         ($1, 'fast-3', $4, 'imported', 'orders@amazon.com')`,
+      [userId, cleanOne.rows[0].id, cleanTwo.rows[0].id, cleanThree.rows[0].id]
+    );
+    await db.query(
+      `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+       VALUES
+         ($1, 'approved', '["review_path_quick_check"]'::jsonb, 0),
+         ($2, 'approved', '["review_path_quick_check"]'::jsonb, 0),
+         ($3, 'approved', '["review_path_quick_check"]'::jsonb, 0)`,
+      [cleanOne.rows[0].id, cleanTwo.rows[0].id, cleanThree.rows[0].id]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'fast-lane-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Order Confirmation',
+      from: 'orders@amazon.com',
+      body: 'Total: $29.99',
+      snippet: 'Total: $29.99',
+      receivedAt: '2026-03-21',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Amazon', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Amazon',
+      amount: 29.99,
+      date: '2026-03-21',
+      notes: 'Imported from Gmail',
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.outcomes.imported_auto_confirmed).toBe(1);
+    expect(res.body.outcomes.imported_fast_lane).toBe(1);
+    expect(res.body.outcomes.imported_pending_review).toBe(0);
+
+    const expense = await db.query(
+      `SELECT status, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    expect(expense.rows[0].status).toBe('confirmed');
+    expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
   });
 
   it('surfaces classifier false negatives when the email still has strong transaction signals', async () => {

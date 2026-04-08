@@ -63,6 +63,14 @@ function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'nee
     : `Imported from Gmail (${reason})`;
 }
 
+function shouldAutoConfirmImport({ senderQuality, reviewMode, importedAsPendingReview, notes }) {
+  if (importedAsPendingReview) return false;
+  if (reviewMode !== 'quick_check') return false;
+  if (senderQuality?.level !== 'trusted') return false;
+  if (/needs review/i.test(`${notes || ''}`)) return false;
+  return true;
+}
+
 async function resolveEmailLocation({ merchant = '', subject = '', from = '', body = '' }) {
   const modality = classifyEmailModality(subject, from, body);
   if (!['in_person', 'pickup'].includes(modality)) {
@@ -103,6 +111,7 @@ async function importForUser(user) {
   const outcomes = {
     imported_parsed: 0,
     imported_pending_review: 0,
+    imported_auto_confirmed: 0,
     imported_fast_lane: 0,
     imported_items_first: 0,
     imported_full_review: 0,
@@ -249,6 +258,12 @@ async function importForUser(user) {
         from,
         body,
       });
+      const shouldAutoConfirm = shouldAutoConfirmImport({
+        senderQuality,
+        reviewMode,
+        importedAsPendingReview,
+        notes: parsed.notes,
+      });
 
       const expense = await Expense.create({
         userId: user.id,
@@ -258,7 +273,7 @@ async function importForUser(user) {
         date: parsed.date,
         categoryId: category_id,
         source: 'email',
-        status: 'pending',
+        status: shouldAutoConfirm ? 'confirmed' : 'pending',
         notes: parsed.notes,
         placeName: location?.place_name || null,
         address: location?.address || null,
@@ -291,7 +306,10 @@ async function importForUser(user) {
       } else {
         outcomes.imported_full_review++;
       }
-      if (importedAsPendingReview || /needs review/i.test(parsed.notes || '')) {
+      if (shouldAutoConfirm) {
+        outcomes.imported_auto_confirmed++;
+      }
+      if (!shouldAutoConfirm && (importedAsPendingReview || /needs review/i.test(parsed.notes || ''))) {
         outcomes.imported_pending_review++;
       } else {
         outcomes.imported_parsed++;
