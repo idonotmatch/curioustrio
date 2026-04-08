@@ -11,23 +11,23 @@ jest.mock('../../src/middleware/auth', () => ({
 jest.mock('../../src/services/nlParser');
 jest.mock('../../src/services/categoryAssigner');
 jest.mock('../../src/services/receiptParser', () => ({
-  parseReceipt: jest.fn(),
+  parseReceiptDetailed: jest.fn(),
 }));
 jest.mock('../../src/services/mapkitService', () => ({
   searchPlace: jest.fn(),
 }));
 
-const { parseExpense } = require('../../src/services/nlParser');
+const { parseExpenseDetailed } = require('../../src/services/nlParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
-const { parseReceipt } = require('../../src/services/receiptParser');
+const { parseReceiptDetailed } = require('../../src/services/receiptParser');
 const { searchPlace } = require('../../src/services/mapkitService');
 
 let householdId;
 let userId;
 
 beforeEach(() => {
-  parseReceipt.mockReset();
-  parseExpense.mockReset();
+  parseReceiptDetailed.mockReset();
+  parseExpenseDetailed.mockReset();
   assignCategory.mockReset();
   searchPlace.mockReset();
   searchPlace.mockResolvedValue(null);
@@ -41,6 +41,20 @@ beforeAll(async () => {
        review_changed_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
        review_edit_count INT NOT NULL DEFAULT 0,
        reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`
+  );
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS ingest_attempt_log (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+       source TEXT NOT NULL,
+       status TEXT NOT NULL,
+       failure_reason TEXT,
+       input_preview TEXT,
+       parse_status TEXT,
+       review_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
      )`
   );
@@ -71,6 +85,7 @@ afterAll(async () => {
      WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
     [householdId]
   );
+  await db.query(`DELETE FROM ingest_attempt_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM duplicate_flags WHERE expense_id_a IN (
     SELECT id FROM expenses WHERE household_id = $1
@@ -83,7 +98,7 @@ afterAll(async () => {
 
 describe('POST /expenses/parse', () => {
   it('returns parsed expense with category suggestion', async () => {
-    parseExpense.mockResolvedValueOnce({
+    parseExpenseDetailed.mockResolvedValueOnce({ parsed: {
       merchant: "Trader Joe's",
       amount: 84.17,
       date: '2026-03-20',
@@ -91,7 +106,7 @@ describe('POST /expenses/parse', () => {
       parse_status: 'partial',
       review_fields: ['items'],
       field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({
       category_id: 'some-cat-id', source: 'memory', confidence: 4,
     });
@@ -108,7 +123,7 @@ describe('POST /expenses/parse', () => {
   });
 
   it('returns partial parse data when amount and description are usable', async () => {
-    parseExpense.mockResolvedValueOnce({
+    parseExpenseDetailed.mockResolvedValueOnce({ parsed: {
       merchant: null,
       description: 'coffee',
       amount: 5,
@@ -117,7 +132,7 @@ describe('POST /expenses/parse', () => {
       parse_status: 'partial',
       review_fields: ['items'],
       field_confidence: { merchant: 'medium', description: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({
       category_id: null, source: 'claude', confidence: 0,
     });
@@ -133,13 +148,15 @@ describe('POST /expenses/parse', () => {
   });
 
   it('returns 422 when input cannot be parsed', async () => {
-    parseExpense.mockResolvedValueOnce(null);
+    parseExpenseDetailed.mockResolvedValueOnce({ parsed: null, failureReason: 'missing_amount' });
 
     const res = await request(app)
       .post('/expenses/parse')
       .send({ input: 'asdfjkl', today: '2026-03-20' });
 
     expect(res.status).toBe(422);
+    expect(res.body.reason_code).toBe('missing_amount');
+    expect(Array.isArray(res.body.suggested_actions)).toBe(true);
   });
 });
 
@@ -275,7 +292,7 @@ describe('POST /expenses/confirm', () => {
 
 describe('POST /expenses/scan', () => {
   it('returns receipt-derived location fields when a store address is available', async () => {
-    parseReceipt.mockResolvedValueOnce({
+    parseReceiptDetailed.mockResolvedValueOnce({ parsed: {
       merchant: 'Trader Joe\'s',
       amount: 28.5,
       date: '2026-03-21',
@@ -285,7 +302,7 @@ describe('POST /expenses/scan', () => {
       parse_status: 'partial',
       review_fields: ['items'],
       field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({
       category_id: null, source: 'claude', confidence: 0,
     });
@@ -866,7 +883,7 @@ describe('DELETE /expenses/:id', () => {
 
 describe('POST /expenses/scan', () => {
   it('returns parsed expense with source camera', async () => {
-    parseReceipt.mockResolvedValue({
+    parseReceiptDetailed.mockResolvedValue({ parsed: {
       merchant: 'Whole Foods',
       amount: 87.32,
       date: '2026-03-21',
@@ -874,7 +891,7 @@ describe('POST /expenses/scan', () => {
       parse_status: 'complete',
       review_fields: [],
       field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({
       category_id: null, source: 'default', confidence: 0,
     });
@@ -889,7 +906,7 @@ describe('POST /expenses/scan', () => {
   });
 
   it('returns partial receipt data when merchant and amount are usable', async () => {
-    parseReceipt.mockResolvedValue({
+    parseReceiptDetailed.mockResolvedValue({ parsed: {
       merchant: null,
       amount: 18.25,
       date: '2026-03-21',
@@ -897,7 +914,7 @@ describe('POST /expenses/scan', () => {
       parse_status: 'partial',
       review_fields: ['merchant', 'items'],
       field_confidence: { merchant: 'low', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({
       category_id: null, source: 'default', confidence: 0,
     });
@@ -922,12 +939,14 @@ describe('POST /expenses/scan', () => {
   });
 
   it('returns 422 when receipt cannot be parsed', async () => {
-    parseReceipt.mockResolvedValue(null);
+    parseReceiptDetailed.mockResolvedValue({ parsed: null, failureReason: 'missing_total' });
     const res = await request(app)
       .post('/expenses/scan')
       .set('Authorization', 'Bearer test')
       .send({ image_base64: 'base64data' });
     expect(res.status).toBe(422);
+    expect(res.body.reason_code).toBe('missing_total');
+    expect(Array.isArray(res.body.suggested_actions)).toBe(true);
   });
 });
 
@@ -978,7 +997,7 @@ describe('expense response includes category_parent_name', () => {
 
 describe('POST /expenses/parse — category_name in response', () => {
   it('returns category_name alongside category_id', async () => {
-    parseExpense.mockResolvedValueOnce({
+    parseExpenseDetailed.mockResolvedValueOnce({ parsed: {
       merchant: "Trader Joe's",
       amount: 84.17,
       date: '2026-03-20',
@@ -986,7 +1005,7 @@ describe('POST /expenses/parse — category_name in response', () => {
       parse_status: 'partial',
       review_fields: ['items'],
       field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     const catRes = await db.query(
       `INSERT INTO categories (name, household_id) VALUES ('Groceries', $1) RETURNING id, name`,
       [householdId]
@@ -1007,7 +1026,7 @@ describe('POST /expenses/parse — category_name in response', () => {
   });
 
   it('returns category_name: null when no category matched', async () => {
-    parseExpense.mockResolvedValueOnce({
+    parseExpenseDetailed.mockResolvedValueOnce({ parsed: {
       merchant: 'Unknown Shop',
       amount: 10,
       date: '2026-03-20',
@@ -1015,7 +1034,7 @@ describe('POST /expenses/parse — category_name in response', () => {
       parse_status: 'partial',
       review_fields: ['items'],
       field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({ category_id: null, source: 'claude', confidence: 0 });
 
     const res = await request(app)
@@ -1068,7 +1087,7 @@ describe('POST /expenses/scan — category_name in response', () => {
       [householdId]
     );
     const catId = catRes.rows[0].id;
-    parseReceipt.mockResolvedValueOnce({
+    parseReceiptDetailed.mockResolvedValueOnce({ parsed: {
       merchant: 'Whole Foods',
       amount: 87.32,
       date: '2026-03-21',
@@ -1076,7 +1095,7 @@ describe('POST /expenses/scan — category_name in response', () => {
       parse_status: 'complete',
       review_fields: [],
       field_confidence: { merchant: 'high', amount: 'high', date: 'high', items: 'low' },
-    });
+    }});
     assignCategory.mockResolvedValueOnce({ category_id: catId, source: 'memory', confidence: 4 });
 
     const res = await request(app)

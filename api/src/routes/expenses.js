@@ -9,10 +9,11 @@ const MerchantMapping = require('../models/merchantMapping');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
+const IngestAttemptLog = require('../models/ingestAttemptLog');
 const { getSenderImportQuality, recommendReviewMode } = require('../services/gmailImportQualityService');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
-const { parseExpense } = require('../services/nlParser');
-const { parseReceipt } = require('../services/receiptParser');
+const { parseExpenseDetailed } = require('../services/nlParser');
+const { parseReceiptDetailed } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
 const detectDuplicates = require('../services/duplicateDetector');
 const { resolveProductMatch } = require('../services/productResolver');
@@ -343,6 +344,20 @@ const { aiEndpoints } = require('../middleware/rateLimit');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function truncateInputPreview(input, max = 180) {
+  const text = `${input || ''}`.trim();
+  if (!text) return null;
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function buildIngestFailure(source, failureReason) {
+  const family = source === 'receipt' ? 'receipt' : 'nl';
+  return {
+    error: family === 'receipt' ? 'Could not parse receipt' : 'Could not parse expense',
+    reason_code: failureReason || 'missing_required_fields',
+  };
+}
+
 // Parse NL input → structured expense (does NOT save to DB)
 router.post('/parse', aiEndpoints, async (req, res, next) => {
   try {
@@ -350,10 +365,40 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
     if (!input) return res.status(400).json({ error: 'input required' });
     if (input.length > 500) return res.status(400).json({ error: 'input too long (max 500 characters)' });
 
-    const parsed = await parseExpense(input, today || new Date().toISOString().split('T')[0]);
-    if (!parsed) return res.status(422).json({ error: 'Could not parse expense' });
-
     const user = await getUser(req);
+    const todayDate = today || new Date().toISOString().split('T')[0];
+    let parsedResult;
+    try {
+      parsedResult = await parseExpenseDetailed(input, todayDate);
+    } catch (err) {
+      await IngestAttemptLog.create({
+        userId: user?.id || null,
+        source: 'nl',
+        status: 'failed',
+        failureReason: 'ai_unavailable',
+        inputPreview: truncateInputPreview(input),
+        metadata: {
+          error: err.message,
+          input_length: `${input || ''}`.trim().length,
+        },
+      });
+      return res.status(503).json(buildIngestFailure('nl', 'ai_unavailable'));
+    }
+
+    const parsed = parsedResult?.parsed || null;
+    if (!parsed) {
+      const failure = buildIngestFailure('nl', parsedResult?.failureReason);
+      await IngestAttemptLog.create({
+        userId: user?.id || null,
+        source: 'nl',
+        status: 'failed',
+        failureReason: failure.reason_code,
+        inputPreview: truncateInputPreview(input),
+        metadata: parsedResult?.diagnostics || { raw_present: Boolean(parsedResult?.raw) },
+      });
+      return res.status(422).json(failure);
+    }
+
     const categories = await Category.findByHousehold(user?.household_id);
     const { category_id, source, confidence } = await assignCategory({
       merchant: parsed.merchant,
@@ -362,6 +407,21 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
       categories,
     });
     const matchedCat = categories.find(c => c.id === category_id);
+
+    await IngestAttemptLog.create({
+      userId: user?.id || null,
+      source: 'nl',
+      status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
+      inputPreview: truncateInputPreview(input),
+      parseStatus: parsed.parse_status,
+      reviewFields: parsed.review_fields,
+      metadata: {
+        ...(parsedResult?.diagnostics || {}),
+        category_id,
+        category_source: source,
+        category_confidence: confidence,
+      },
+    });
 
     res.json({ ...parsed, category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
   } catch (err) { next(err); }
@@ -374,11 +434,38 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
     if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
     if (image_base64.length > 3_000_000) return res.status(400).json({ error: 'image too large (max ~2MB)' });
 
-    const todayDate = today || new Date().toISOString().split('T')[0];
-    const parsed = await parseReceipt(image_base64, todayDate);
-    if (!parsed) return res.status(422).json({ error: 'Could not parse receipt' });
-
     const user = await getUser(req);
+    const todayDate = today || new Date().toISOString().split('T')[0];
+    let parsedResult;
+    try {
+      parsedResult = await parseReceiptDetailed(image_base64, todayDate);
+    } catch (err) {
+      await IngestAttemptLog.create({
+        userId: user?.id || null,
+        source: 'receipt',
+        status: 'failed',
+        failureReason: 'ai_unavailable',
+        metadata: {
+          image_size: image_base64.length,
+          error: err.message,
+        },
+      });
+      return res.status(503).json(buildIngestFailure('receipt', 'ai_unavailable'));
+    }
+
+    const parsed = parsedResult?.parsed || null;
+    if (!parsed) {
+      const failure = buildIngestFailure('receipt', parsedResult?.failureReason);
+      await IngestAttemptLog.create({
+        userId: user?.id || null,
+        source: 'receipt',
+        status: 'failed',
+        failureReason: failure.reason_code,
+        metadata: parsedResult?.diagnostics || { image_size: image_base64.length, raw_present: Boolean(parsedResult?.raw) },
+      });
+      return res.status(422).json(failure);
+    }
+
     const categories = await Category.findByHousehold(user?.household_id);
     const { category_id, source, confidence } = await assignCategory({
       merchant: parsed.merchant,
@@ -401,6 +488,20 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
         matchedLocation = null;
       }
     }
+
+    await IngestAttemptLog.create({
+      userId: user?.id || null,
+      source: 'receipt',
+      status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
+      parseStatus: parsed.parse_status,
+      reviewFields: parsed.review_fields,
+      metadata: {
+        ...(parsedResult?.diagnostics || {}),
+        category_id,
+        category_source: source,
+        category_confidence: confidence,
+      },
+    });
 
     res.json({
       ...parsed,

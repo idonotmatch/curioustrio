@@ -13,6 +13,26 @@ Return ONLY a JSON object with these fields:
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
 
+function buildReceiptDiagnostics(imageBase64, raw = null) {
+  const rawObject = raw && typeof raw === 'object' ? raw : null;
+  const rawKeys = rawObject ? Object.keys(rawObject).sort() : [];
+  const rawAmount = rawObject ? Number(rawObject.amount) : null;
+  const rawMerchant = rawObject && typeof rawObject.merchant === 'string' ? rawObject.merchant.trim() : '';
+  const rawItems = Array.isArray(rawObject?.items) ? rawObject.items : [];
+  const serialized = `${imageBase64 || ''}`;
+
+  return {
+    image_size: serialized.length,
+    raw_present: Boolean(rawObject),
+    raw_keys: rawKeys,
+    raw_amount_present: Number.isFinite(rawAmount) && rawAmount !== 0,
+    raw_merchant_present: Boolean(rawMerchant),
+    raw_items_count: rawItems.length,
+    raw_store_address_present: Boolean(rawObject?.store_address),
+    raw_store_number_present: Boolean(rawObject?.store_number),
+  };
+}
+
 function cleanParsedReceipt(parsed, todayDate) {
   if (!parsed || typeof parsed !== 'object') return null;
 
@@ -56,6 +76,11 @@ function cleanParsedReceipt(parsed, todayDate) {
 }
 
 async function parseReceipt(imageBase64, todayDate) {
+  const result = await parseReceiptDetailed(imageBase64, todayDate);
+  return result.parsed;
+}
+
+async function parseReceiptDetailed(imageBase64, todayDate) {
   if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
     throw new Error('imageBase64 must be a non-empty string');
   }
@@ -70,14 +95,29 @@ async function parseReceipt(imageBase64, todayDate) {
     text: `Today's date: ${todayDate}. Extract expense data from this receipt.`,
   });
 
-  if (!text) return null;
+  if (!text) return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildReceiptDiagnostics(imageBase64) };
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  if (!cleaned || cleaned === 'null') return null;
+  if (!cleaned || cleaned === 'null') {
+    return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildReceiptDiagnostics(imageBase64) };
+  }
   try {
-    return cleanParsedReceipt(JSON.parse(cleaned), todayDate);
+    const raw = JSON.parse(cleaned);
+    const parsed = cleanParsedReceipt(raw, todayDate);
+    const diagnostics = buildReceiptDiagnostics(imageBase64, raw);
+    if (parsed) return { parsed, failureReason: null, raw, diagnostics };
+
+    const amount = Number(raw?.amount);
+    const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
+    let failureReason = 'missing_required_fields';
+    if (!Number.isFinite(amount) || amount === 0) {
+      failureReason = 'missing_total';
+    } else if (!merchant) {
+      failureReason = 'missing_required_fields';
+    }
+    return { parsed: null, failureReason, raw, diagnostics };
   } catch {
-    return null;
+    return { parsed: null, failureReason: 'invalid_model_json', raw: null, diagnostics: buildReceiptDiagnostics(imageBase64) };
   }
 }
 
-module.exports = { parseReceipt, cleanParsedReceipt };
+module.exports = { parseReceipt, parseReceiptDetailed, cleanParsedReceipt };

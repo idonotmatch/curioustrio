@@ -31,7 +31,9 @@ async function request(path, options = {}, tokenOverride) {
     // due to misconfiguration (e.g. missing SUPABASE_PROJECT_REF) rather than
     // a truly expired token. Supabase handles token refresh natively via
     // autoRefreshToken; a forced signOut here would cause a login loop.
-    throw new Error(error.error || `HTTP ${res.status}`);
+    const enriched = new Error(error.error || `HTTP ${res.status}`);
+    Object.assign(enriched, error);
+    throw enriched;
   }
 
   if (res.status === 204) return null;

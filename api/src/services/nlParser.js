@@ -24,6 +24,29 @@ If the input cannot be parsed as an expense or refund, return null.
 Today's date is provided in the user message. If no date is mentioned, use today's date.
 Do not include any text outside the JSON object.`;
 
+function buildNlDiagnostics(input, raw = null) {
+  const text = `${input || ''}`.trim();
+  const normalized = text.toLowerCase();
+  const rawObject = raw && typeof raw === 'object' ? raw : null;
+  const rawKeys = rawObject ? Object.keys(rawObject).sort() : [];
+  const rawAmount = rawObject ? Number(rawObject.amount) : null;
+  const rawMerchant = rawObject && typeof rawObject.merchant === 'string' ? rawObject.merchant.trim() : '';
+  const rawDescription = rawObject && typeof rawObject.description === 'string' ? rawObject.description.trim() : '';
+
+  return {
+    input_length: text.length,
+    token_count: text ? text.split(/\s+/).length : 0,
+    had_numeric_token: /-?\$?\d+(?:\.\d{1,2})?/.test(text),
+    had_date_like_token: /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)\b/.test(text),
+    had_payment_hint: /\b(cash|debit|credit|visa|mastercard|amex|american express)\b/.test(normalized),
+    raw_present: Boolean(rawObject),
+    raw_keys: rawKeys,
+    raw_amount_present: Number.isFinite(rawAmount) && rawAmount !== 0,
+    raw_merchant_present: Boolean(rawMerchant),
+    raw_description_present: Boolean(rawDescription),
+  };
+}
+
 function cleanParsedExpense(parsed, todayDate) {
   if (!parsed || typeof parsed !== 'object') return null;
 
@@ -76,8 +99,13 @@ function cleanParsedExpense(parsed, todayDate) {
 }
 
 async function parseExpense(input, todayDate) {
+  const result = await parseExpenseDetailed(input, todayDate);
+  return result.parsed;
+}
+
+async function parseExpenseDetailed(input, todayDate) {
   if (!input || typeof input !== 'string' || input.trim().length === 0) {
-    return null;
+    return { parsed: null, failureReason: 'missing_required_fields', raw: null, diagnostics: buildNlDiagnostics(input) };
   }
 
   // Validate todayDate is an ISO date string (YYYY-MM-DD)
@@ -90,18 +118,36 @@ async function parseExpense(input, todayDate) {
     messages: [{ role: 'user', content: `Today's date: ${todayDate}\nExpense input: ${input}` }],
   });
 
-  if (!text) return null;
+  if (!text) return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildNlDiagnostics(input) };
 
   // Strip markdown code fences if present
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
-  if (!cleaned || cleaned === 'null') return null;
+  if (!cleaned || cleaned === 'null') {
+    return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildNlDiagnostics(input) };
+  }
 
   try {
-    return cleanParsedExpense(JSON.parse(cleaned), todayDate);
+    const raw = JSON.parse(cleaned);
+    const parsed = cleanParsedExpense(raw, todayDate);
+    const diagnostics = buildNlDiagnostics(input, raw);
+    if (parsed) return { parsed, failureReason: null, raw, diagnostics };
+
+    const amount = Number(raw?.amount);
+    const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
+    const description = typeof raw?.description === 'string' ? raw.description.trim() : '';
+
+    let failureReason = 'missing_required_fields';
+    if (!Number.isFinite(amount) || amount === 0) {
+      failureReason = (!merchant && !description) ? 'missing_required_fields' : 'missing_amount';
+    } else if (!merchant && !description) {
+      failureReason = 'missing_merchant_or_description';
+    }
+
+    return { parsed: null, failureReason, raw, diagnostics };
   } catch {
-    return null;
+    return { parsed: null, failureReason: 'invalid_model_json', raw: null, diagnostics: buildNlDiagnostics(input) };
   }
 }
 
-module.exports = { parseExpense, cleanParsedExpense };
+module.exports = { parseExpense, parseExpenseDetailed, cleanParsedExpense };
