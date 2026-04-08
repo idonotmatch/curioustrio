@@ -54,6 +54,14 @@ function collectChangedFields(originalExpense, patch = {}) {
   return [...new Set(changedFields)];
 }
 
+function normalizeReviewContext(value) {
+  const raw = `${value || ''}`.trim().toLowerCase();
+  if (raw === 'quick_check') return 'review_path_quick_check';
+  if (raw === 'items_first') return 'review_path_items_first';
+  if (raw === 'full_review') return 'review_path_full_review';
+  return null;
+}
+
 function normalizeReviewItem(item = {}, index = 0) {
   const amount = item.amount == null || item.amount === '' ? null : Number(item.amount);
   return {
@@ -586,7 +594,11 @@ router.post('/:id/approve', async (req, res, next) => {
       if (normalizedNotes && normalizedNotes !== expense.notes) {
         expense = await Expense.update(req.params.id, user.id, { notes: normalizedNotes }) || expense;
       }
-      await EmailImportLog.recordReviewFeedback(expense.id, { action: 'approved' });
+      const reviewContextField = normalizeReviewContext(req.body?.review_context);
+      await EmailImportLog.recordReviewFeedback(expense.id, {
+        action: 'approved',
+        changedFields: reviewContextField ? [reviewContextField] : [],
+      });
     }
     res.json(await attachGmailReviewHint(expense, user.id));
   } catch (err) { next(err); }

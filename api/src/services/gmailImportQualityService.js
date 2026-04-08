@@ -14,6 +14,16 @@ function isItemField(field = '') {
   return `${field}`.startsWith('items');
 }
 
+function isReviewPathField(field = '') {
+  return `${field}`.startsWith('review_path_');
+}
+
+function extractReviewPath(changedFields = []) {
+  const fields = Array.isArray(changedFields) ? changedFields : [];
+  const match = fields.find(isReviewPathField);
+  return match ? `${match}`.replace(/^review_path_/, '') : null;
+}
+
 function summarizeItemReliability(rows = []) {
   const imports = rows.length;
   const itemFieldCounts = new Map();
@@ -111,6 +121,7 @@ function buildSenderSummary(rows, limit = 5) {
     current.imported += 1;
     const editCount = Number(row.review_edit_count || 0);
     const changedFields = Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [];
+    const reviewPath = extractReviewPath(changedFields);
     const hasReview = !!row.review_action || editCount > 0;
     if (hasReview) current.reviewed += 1;
     if (row.review_action === 'dismissed') current.dismissed += 1;
@@ -119,9 +130,13 @@ function buildSenderSummary(rows, limit = 5) {
     if (editCount > 0) {
       current.edited += 1;
       current._changedFieldCounts = current._changedFieldCounts || new Map();
-      for (const field of changedFields) {
+      for (const field of changedFields.filter((field) => !isReviewPathField(field))) {
         current._changedFieldCounts.set(field, (current._changedFieldCounts.get(field) || 0) + 1);
       }
+    }
+    if (reviewPath) {
+      current._reviewPathCounts = current._reviewPathCounts || new Map();
+      current._reviewPathCounts.set(reviewPath, (current._reviewPathCounts.get(reviewPath) || 0) + 1);
     }
 
     grouped.set(senderDomain, current);
@@ -133,16 +148,21 @@ function buildSenderSummary(rows, limit = 5) {
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 3)
         .map(([field, count]) => ({ field, count }));
+      const review_paths = [...(entry._reviewPathCounts || new Map()).entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([path, count]) => ({ path, count }));
       delete entry._changedFieldCounts;
+      delete entry._reviewPathCounts;
       return {
         ...entry,
         clean_approval_rate: toRate(entry.clean_approved, entry.imported),
         dismissal_rate: toRate(entry.dismissed, entry.imported),
         edit_rate: toRate(entry.edited, entry.imported),
         review_rate: toRate(entry.reviewed, entry.imported),
-      top_changed_fields: changedFieldCounts,
-      item_reliability: summarizeItemReliability(rows.filter((row) => extractSenderDomain(row.from_address) === entry.sender_domain)),
-    };
+        top_changed_fields: changedFieldCounts,
+        review_paths,
+        item_reliability: summarizeItemReliability(rows.filter((row) => extractSenderDomain(row.from_address) === entry.sender_domain)),
+      };
     })
     .sort((a, b) =>
       b.imported - a.imported
@@ -179,7 +199,8 @@ function buildQualityDebug(rows, senderLimit = 5) {
 
   const fieldCounts = new Map();
   for (const row of rows) {
-    const changedFields = Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [];
+    const changedFields = (Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [])
+      .filter((field) => !isReviewPathField(field));
     for (const field of changedFields) {
       fieldCounts.set(field, (fieldCounts.get(field) || 0) + 1);
     }
@@ -235,7 +256,9 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const reviewedSenderRows = senderRows.filter((row) => row.review_action || Number(row.review_edit_count || 0) > 0);
   const metrics = summarizeSenderRows(reviewedSenderRows);
   const level = classifySenderMetrics(metrics);
-  const top_changed_fields = buildSenderSummary(senderRows, 1)[0]?.top_changed_fields || [];
+  const senderSummary = buildSenderSummary(senderRows, 1)[0] || {};
+  const top_changed_fields = senderSummary.top_changed_fields || [];
+  const review_paths = senderSummary.review_paths || [];
   const item_reliability = summarizeItemReliability(senderRows);
 
   return {
@@ -243,6 +266,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
     level,
     metrics,
     top_changed_fields,
+    review_paths,
     item_reliability,
   };
 }

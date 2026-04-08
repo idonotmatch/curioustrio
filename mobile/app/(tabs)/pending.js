@@ -90,7 +90,11 @@ export default function PendingScreen() {
 
   async function approve(id) {
     try {
-      const approved = await api.post(`/expenses/${id}/approve`);
+      const item = displayExpenses.find((entry) => entry.id === id);
+      const reviewContext = item?.gmail_review_hint?.review_mode === 'quick_check'
+        ? 'quick_check'
+        : null;
+      const approved = await api.post(`/expenses/${id}/approve`, reviewContext ? { review_context: reviewContext } : {});
       if (approved?.id) await saveExpenseSnapshot(approved);
       await Promise.all([
         invalidateCache('cache:expenses:pending'),

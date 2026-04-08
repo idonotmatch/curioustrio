@@ -48,7 +48,7 @@ describe('gmailImportQualityService', () => {
         from_address: 'orders@amazon.com',
         review_action: 'approved',
         review_edit_count: 1,
-        review_changed_fields: ['merchant'],
+        review_changed_fields: ['merchant', 'review_path_full_review'],
       },
       {
         from_address: 'receipts@target.com',
@@ -90,12 +90,16 @@ describe('gmailImportQualityService', () => {
       expect.objectContaining({ field: 'date', count: 1 }),
       expect.objectContaining({ field: 'merchant', count: 1 }),
     ]));
+    expect(summary.debug.top_corrected_fields.find((entry) => entry.field === 'review_path_full_review')).toBeFalsy();
     expect(summary.quality.sender_quality).toEqual(expect.arrayContaining([
       expect.objectContaining({
         sender_domain: 'amazon.com',
         imported: 2,
         clean_approved: 1,
         approved_after_changes: 1,
+        review_paths: expect.arrayContaining([
+          expect.objectContaining({ path: 'full_review', count: 1 }),
+        ]),
         item_reliability: expect.objectContaining({
           level: 'unknown',
         }),
@@ -163,6 +167,25 @@ describe('gmailImportQualityService', () => {
           expect.objectContaining({ field: 'items_description', count: 1 }),
         ]),
       }),
+    });
+  });
+
+  it('tracks quick-check approvals separately from changed fields', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant', 'review_path_full_review'] },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'orders@amazon.com')).resolves.toMatchObject({
+      sender_domain: 'amazon.com',
+      top_changed_fields: expect.arrayContaining([
+        expect.objectContaining({ field: 'merchant', count: 1 }),
+      ]),
+      review_paths: expect.arrayContaining([
+        expect.objectContaining({ path: 'quick_check', count: 2 }),
+        expect.objectContaining({ path: 'full_review', count: 1 }),
+      ]),
     });
   });
 });

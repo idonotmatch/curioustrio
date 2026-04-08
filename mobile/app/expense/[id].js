@@ -889,7 +889,12 @@ export default function ExpenseDetailScreen() {
             onPress={async () => {
               setActioning(true);
               try {
-                const approved = await api.post(`/expenses/${id}/approve`);
+                const reviewContext = isItemsFirstReview
+                  ? 'items_first'
+                  : isQuickCheckReview
+                    ? 'quick_check'
+                    : 'full_review';
+                const approved = await api.post(`/expenses/${id}/approve`, { review_context: reviewContext });
                 if (approved?.id) await saveExpenseSnapshot(approved);
                 const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
                 await Promise.all([
