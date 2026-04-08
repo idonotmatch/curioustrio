@@ -19,6 +19,7 @@ async function loadRecurringItemOccurrences(householdId) {
     `SELECT
        ei.product_id,
        ei.comparable_key,
+       ei.product_match_confidence,
        COALESCE(p.name, ei.description) AS item_name,
        COALESCE(p.brand, ei.brand) AS brand,
        ei.normalized_total_size_value,
@@ -49,6 +50,7 @@ async function loadRecurringItemOccurrences(householdId) {
     groups.get(key).push({
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
+      product_match_confidence: row.product_match_confidence || null,
       item_name: row.item_name,
       brand: row.brand || null,
       merchant: row.merchant,
@@ -123,6 +125,12 @@ async function detectRecurringItems(householdId) {
 
   const candidates = [];
   for (const [groupKey, occurrences] of groups.entries()) {
+    const hasStrongProductIdentity = occurrences.some((entry) => entry.product_id);
+    const hasOnlyMediumComparableIdentity = !hasStrongProductIdentity
+      && occurrences.every((entry) => entry.comparable_key && entry.product_match_confidence === 'medium');
+
+    if (hasOnlyMediumComparableIdentity && occurrences.length < 4) continue;
+
     if (occurrences.length < 3) continue;
 
     const dates = occurrences.map(o => o.date).sort((a, b) => a - b);
@@ -154,6 +162,7 @@ async function detectRecurringItems(householdId) {
       group_key: groupKey,
       product_id: occurrences[0].product_id,
       comparable_key: occurrences[0].comparable_key,
+      identity_confidence: hasStrongProductIdentity ? 'high' : 'medium',
       item_name: occurrences[0].item_name,
       brand: occurrences[0].brand,
       frequency: classifyFrequency(medianGap),
@@ -209,6 +218,7 @@ async function getRecurringItemHistory(householdId, groupKey) {
     group_key: groupKey,
     product_id: latest.product_id,
     comparable_key: latest.comparable_key,
+    identity_confidence: latest.product_id ? 'high' : (latest.product_match_confidence || null),
     item_name: latest.item_name,
     brand: latest.brand,
     frequency: averageGapDays != null ? classifyFrequency(averageGapDays) : null,
@@ -275,6 +285,7 @@ async function detectRecurringWatchCandidates(householdId, options = {}) {
         kind: 'watch_candidate',
         group_key: item.group_key,
         product_id: item.product_id,
+        identity_confidence: item.identity_confidence || null,
         item_name: item.item_name,
         brand: item.brand,
         occurrence_count: item.occurrence_count,
@@ -346,6 +357,7 @@ async function detectRecurringWatchCandidates(householdId, options = {}) {
       kind: 'watch_candidate',
       group_key: pref.product_id ? `product:${pref.product_id}` : pref.comparable_key ? `comparable:${pref.comparable_key}` : `manual:${pref.expense_id}`,
       product_id: pref.product_id,
+      identity_confidence: pref.product_id ? 'high' : (pref.comparable_key ? 'medium' : null),
       item_name: pref.item_name || pref.merchant || 'Recurring purchase',
       brand: pref.brand || null,
       occurrence_count: 1,
@@ -417,6 +429,7 @@ async function detectRecurringItemSignals(householdId) {
         group_key: groupKey,
         product_id: latest.product_id,
         comparable_key: latest.comparable_key,
+        identity_confidence: latest.product_id ? 'high' : (latest.product_match_confidence || null),
         item_name: latest.item_name,
         brand: latest.brand,
         latest_merchant: latest.merchant,
@@ -458,6 +471,7 @@ async function detectRecurringItemSignals(householdId) {
             group_key: groupKey,
             product_id: latest.product_id,
             comparable_key: latest.comparable_key,
+            identity_confidence: latest.product_id ? 'high' : (latest.product_match_confidence || null),
             item_name: latest.item_name,
             brand: latest.brand,
             latest_merchant: latest.merchant,
