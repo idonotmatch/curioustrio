@@ -15,7 +15,7 @@ const { parseExpense } = require('../services/nlParser');
 const { parseReceipt } = require('../services/receiptParser');
 const { assignCategory } = require('../services/categoryAssigner');
 const detectDuplicates = require('../services/duplicateDetector');
-const { resolveProduct } = require('../services/productResolver');
+const { resolveProductMatch } = require('../services/productResolver');
 const { searchPlace } = require('../services/mapkitService');
 const db = require('../db');
 
@@ -136,6 +136,16 @@ function parseStartDay(value, fallback) {
   const day = parseInt(value, 10);
   if (!Number.isInteger(day) || day < 1 || day > 28) return null;
   return day;
+}
+
+async function enrichItemWithResolution(item, merchant) {
+  const resolution = await resolveProductMatch(item, merchant);
+  return {
+    ...item,
+    product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
+    product_match_confidence: resolution?.confidence || null,
+    product_match_reason: resolution?.reason || null,
+  };
 }
 
 function deriveEmailFieldEvidence(expense, log) {
@@ -449,10 +459,7 @@ router.post('/confirm', async (req, res, next) => {
 
     if (Array.isArray(items) && items.length > 0) {
       const resolvedItems = await Promise.all(
-        items.map(async (item) => {
-          const product_id = await resolveProduct(item, merchant);
-          return { ...item, product_id };
-        })
+        items.map((item) => enrichItemWithResolution(item, merchant))
       );
       await ExpenseItem.createBulk(expense.id, resolvedItems);
     }
@@ -682,7 +689,12 @@ router.patch('/:id', async (req, res, next) => {
     });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (items !== undefined) {
-      await ExpenseItem.replaceItems(req.params.id, Array.isArray(items) ? items : []);
+      const resolvedItems = await Promise.all(
+        (Array.isArray(items) ? items : []).map((item) =>
+          enrichItemWithResolution(item, merchant ?? expense.merchant)
+        )
+      );
+      await ExpenseItem.replaceItems(req.params.id, resolvedItems);
     }
     if (expense.source === 'email' && changedFields.length) {
       await EmailImportLog.recordReviewFeedback(expense.id, {

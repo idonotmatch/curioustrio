@@ -14,7 +14,7 @@ const {
   clampExpenseDate,
 } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
-const { resolveProduct } = require('./productResolver');
+const { resolveProductMatch } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
 const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
@@ -283,8 +283,13 @@ async function importForUser(user) {
       if (Array.isArray(parsed.items) && parsed.items.length > 0) {
         const itemsWithProducts = await Promise.all(
           parsed.items.filter(it => it.description).map(async (item) => {
-            const product_id = await resolveProduct(item, parsed.merchant);
-            return { ...item, product_id };
+            const resolution = await resolveProductMatch(item, parsed.merchant);
+            return {
+              ...item,
+              product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
+              product_match_confidence: resolution?.confidence || null,
+              product_match_reason: resolution?.reason || null,
+            };
           })
         );
         await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
