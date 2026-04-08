@@ -206,6 +206,7 @@ export default function AccountsScreen() {
   }
 
   const [gmailSyncing, setGmailSyncing] = useState(false);
+  const [senderPreferenceSaving, setSenderPreferenceSaving] = useState({});
   async function syncGmail() {
     setGmailSyncing(true);
     try {
@@ -221,6 +222,21 @@ export default function AccountsScreen() {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
     } finally {
       setGmailSyncing(false);
+    }
+  }
+
+  async function toggleSenderForceReview(senderDomain, forceReview) {
+    setSenderPreferenceSaving(prev => ({ ...prev, [senderDomain]: true }));
+    try {
+      await api.post('/gmail/sender-preferences', {
+        sender_domain: senderDomain,
+        force_review: forceReview,
+      });
+      await loadImportSummary();
+    } catch (e) {
+      Alert.alert('Gmail sender settings', e?.message || 'Could not update this sender preference');
+    } finally {
+      setSenderPreferenceSaving(prev => ({ ...prev, [senderDomain]: false }));
     }
   }
 
@@ -615,6 +631,22 @@ export default function AccountsScreen() {
                             Usually corrected: {sender.top_changed_fields.map((entry) => entry.field.replace(/_/g, ' ')).join(', ')}
                           </Text>
                         ) : null}
+                        <TouchableOpacity
+                          style={[
+                            styles.senderTrustToggle,
+                            sender.sender_preference?.force_review && styles.senderTrustToggleActive,
+                            senderPreferenceSaving[sender.sender_domain] && styles.actionBtnDisabled,
+                          ]}
+                          onPress={() => toggleSenderForceReview(sender.sender_domain, !sender.sender_preference?.force_review)}
+                          disabled={!!senderPreferenceSaving[sender.sender_domain]}
+                        >
+                          <Text style={[
+                            styles.senderTrustToggleText,
+                            sender.sender_preference?.force_review && styles.senderTrustToggleTextActive,
+                          ]}>
+                            {sender.sender_preference?.force_review ? 'Keep reviewing' : 'Allow fast lane'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     ))}
                   </View>
@@ -749,6 +781,22 @@ const styles = StyleSheet.create({
   senderTrustChipText: { color: '#f5f5f5', fontSize: 11, fontWeight: '700' },
   senderTrustMeta: { color: '#777', fontSize: 11, marginTop: 6 },
   senderTrustDetail: { color: '#555', fontSize: 11, marginTop: 4, lineHeight: 16 },
+  senderTrustToggle: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#151515',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  senderTrustToggleActive: {
+    borderColor: '#fcd34d',
+    backgroundColor: 'rgba(245,158,11,0.12)',
+  },
+  senderTrustToggleText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
+  senderTrustToggleTextActive: { color: '#fcd34d' },
   summaryWindow: { color: '#444', fontSize: 11, marginTop: 10 },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontSize: 15 },

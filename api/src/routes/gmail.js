@@ -5,6 +5,7 @@ const db = require('../db');
 const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
+const GmailSenderPreference = require('../models/gmailSenderPreference');
 const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
 const { importForUser } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
@@ -87,6 +88,19 @@ router.get('/import-log', authenticate, async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const logs = await EmailImportLog.listByUser(user.id, limit);
     res.json(logs);
+  } catch (err) { next(err); }
+});
+
+router.post('/sender-preferences', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const senderDomain = `${req.body?.sender_domain || ''}`.trim().toLowerCase();
+    if (!senderDomain) return res.status(400).json({ error: 'sender_domain required' });
+    const preference = await GmailSenderPreference.upsert(user.id, senderDomain, {
+      forceReview: !!req.body?.force_review,
+    });
+    res.json(preference);
   } catch (err) { next(err); }
 });
 

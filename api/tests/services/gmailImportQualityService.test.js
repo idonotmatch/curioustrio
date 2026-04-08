@@ -2,8 +2,13 @@ jest.mock('../../src/models/emailImportLog', () => ({
   summarizeByUser: jest.fn(),
   listQualitySignalsByUser: jest.fn(),
 }));
+jest.mock('../../src/models/gmailSenderPreference', () => ({
+  findByUserAndDomain: jest.fn(),
+  listByUser: jest.fn(),
+}));
 
 const EmailImportLog = require('../../src/models/emailImportLog');
+const GmailSenderPreference = require('../../src/models/gmailSenderPreference');
 const {
   getGmailImportQualitySummary,
   extractSenderDomain,
@@ -15,6 +20,10 @@ describe('gmailImportQualityService', () => {
   beforeEach(() => {
     EmailImportLog.summarizeByUser.mockReset();
     EmailImportLog.listQualitySignalsByUser.mockReset();
+    GmailSenderPreference.findByUserAndDomain.mockReset();
+    GmailSenderPreference.listByUser.mockReset();
+    GmailSenderPreference.findByUserAndDomain.mockResolvedValue(null);
+    GmailSenderPreference.listByUser.mockResolvedValue([]);
   });
 
   it('extracts sender domains from from-address strings', () => {
@@ -104,6 +113,7 @@ describe('gmailImportQualityService', () => {
         item_reliability: expect.objectContaining({
           level: 'unknown',
         }),
+        sender_preference: expect.objectContaining({ force_review: false }),
       }),
       expect.objectContaining({
         sender_domain: 'target.com',
@@ -113,6 +123,7 @@ describe('gmailImportQualityService', () => {
         item_reliability: expect.objectContaining({
           level: 'unknown',
         }),
+        sender_preference: expect.objectContaining({ force_review: false }),
       }),
     ]));
     expect(summary.debug.top_corrected_senders).toEqual(expect.arrayContaining([
@@ -200,5 +211,21 @@ describe('gmailImportQualityService', () => {
       item_reliability: { level: 'mixed' },
       review_path_reliability: { fast_lane_eligible: true },
     })).toBe('quick_check');
+  });
+
+  it('forces full_review when the user opts a sender out of the fast lane', async () => {
+    GmailSenderPreference.findByUserAndDomain.mockResolvedValue({
+      force_review: true,
+      sender_domain: 'amazon.com',
+    });
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+    ]);
+
+    const senderQuality = await getSenderImportQuality('user-1', 'orders@amazon.com');
+    expect(senderQuality.sender_preference.force_review).toBe(true);
+    expect(recommendReviewMode(senderQuality)).toBe('full_review');
   });
 });

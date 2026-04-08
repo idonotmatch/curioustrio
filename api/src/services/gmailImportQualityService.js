@@ -1,4 +1,5 @@
 const EmailImportLog = require('../models/emailImportLog');
+const GmailSenderPreference = require('../models/gmailSenderPreference');
 
 function extractSenderDomain(fromAddress = '') {
   const match = `${fromAddress || ''}`.toLowerCase().match(/@([a-z0-9.-]+\.[a-z]{2,})/i);
@@ -97,6 +98,9 @@ function summarizeReviewPathReliability(reviewPaths = [], metrics = {}) {
 }
 
 function recommendReviewMode(senderQuality = {}) {
+  if (senderQuality?.sender_preference?.force_review) {
+    return 'full_review';
+  }
   const senderLevel = senderQuality?.level || 'unknown';
   const itemLevel = senderQuality?.item_reliability?.level || 'unknown';
   const fastLaneEligible = !!senderQuality?.review_path_reliability?.fast_lane_eligible;
@@ -275,6 +279,14 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
     EmailImportLog.summarizeByUser(userId, days),
     EmailImportLog.listQualitySignalsByUser(userId, days),
   ]);
+  const senderPreferences = await GmailSenderPreference.listByUser(userId);
+  const preferenceMap = new Map(senderPreferences.map((pref) => [pref.sender_domain, pref]));
+  const senderQuality = buildSenderSummary(rows, senderLimit).map((sender) => ({
+    ...sender,
+    sender_preference: {
+      force_review: !!preferenceMap.get(sender.sender_domain)?.force_review,
+    },
+  }));
 
   const imported = Number(summary.imported || 0);
   const cleanApproved = Number(summary.approved_without_changes || 0);
@@ -295,14 +307,16 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
       review_rate: toRate(reviewedTotal, imported),
       dismissal_rate: toRate(dismissed, imported),
       edit_rate: toRate(edited, imported),
-      sender_quality: buildSenderSummary(rows, senderLimit),
+      sender_quality: senderQuality,
     },
     debug: buildQualityDebug(rows, senderLimit),
+    sender_preferences: senderPreferences,
   };
 }
 
 async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const senderDomain = extractSenderDomain(fromAddress);
+  const senderPreference = await GmailSenderPreference.findByUserAndDomain(userId, senderDomain);
   const rows = await EmailImportLog.listQualitySignalsByUser(userId, days);
   const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
   const reviewedSenderRows = senderRows.filter((row) => row.review_action || Number(row.review_edit_count || 0) > 0);
@@ -322,6 +336,9 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
     review_paths,
     review_path_reliability,
     item_reliability,
+    sender_preference: senderPreference
+      ? { force_review: !!senderPreference.force_review }
+      : { force_review: false },
   };
 }
 
