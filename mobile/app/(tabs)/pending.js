@@ -182,6 +182,19 @@ export default function PendingScreen() {
                           {item.gmail_review_hint.message}
                         </Text>
                       )}
+                      {item.gmail_review_hint.review_mode === 'quick_check' ? (
+                        <TouchableOpacity
+                          style={styles.inlineApproveButton}
+                          onPress={(event) => {
+                            event.stopPropagation?.();
+                            approve(item.id);
+                          }}
+                          activeOpacity={0.82}
+                        >
+                          <Ionicons name="checkmark-circle" size={14} color="#bbf7d0" />
+                          <Text style={styles.inlineApproveText}>Approve now</Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                       );
                     })()
@@ -246,6 +259,20 @@ const styles = StyleSheet.create({
   modeChipFull: { backgroundColor: 'rgba(147,197,253,0.08)', borderColor: 'rgba(147,197,253,0.28)' },
   modeChipTextFull: { color: '#bfdbfe' },
   hintDetail: { fontSize: 12, color: '#8a8a8a' },
+  inlineApproveButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(134,239,172,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.3)',
+  },
+  inlineApproveText: { fontSize: 12, fontWeight: '600', color: '#bbf7d0' },
   amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
 
   approveAction: {
