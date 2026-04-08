@@ -75,7 +75,8 @@ function insightActionReason(insight) {
 
 function insightRoleLabel(insight) {
   const type = `${insight?.type || ''}`;
-  if (type.startsWith('usage_')) return 'Setup';
+  if (type === 'usage_set_budget') return 'Setup';
+  if (type === 'usage_start_logging' || type === 'usage_building_history') return 'Learning';
   if (type === 'one_offs_driving_variance' || type === 'one_off_expense_skewing_projection' || type === 'top_category_driver' || type === 'projected_category_surge' || type === 'recurring_cost_pressure') {
     return 'Explain';
   }
@@ -106,6 +107,13 @@ function insightToneStyles(insight) {
       card: styles.insightCardSetup,
       roleChip: styles.insightRoleChipSetup,
       roleText: styles.insightRoleTextSetup,
+    };
+  }
+  if (role === 'Learning') {
+    return {
+      card: styles.insightCardLearning,
+      roleChip: styles.insightRoleChipLearning,
+      roleText: styles.insightRoleTextLearning,
     };
   }
   return {
@@ -827,6 +835,7 @@ const styles = StyleSheet.create({
   insightCardWarn: { backgroundColor: '#141111', borderColor: '#2d1d1d' },
   insightCardPlan: { backgroundColor: '#101317', borderColor: '#1b2a38' },
   insightCardSetup: { backgroundColor: '#12120f', borderColor: '#2b2818' },
+  insightCardLearning: { backgroundColor: '#101512', borderColor: '#1d3424' },
   insightCardExplain: { backgroundColor: '#111214', borderColor: '#20252b' },
   insightHeader: { marginBottom: 8, gap: 10 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -851,11 +860,13 @@ const styles = StyleSheet.create({
   insightRoleChipWarn: { backgroundColor: '#251717', borderColor: '#4a2424' },
   insightRoleChipPlan: { backgroundColor: '#13202b', borderColor: '#28435b' },
   insightRoleChipSetup: { backgroundColor: '#252110', borderColor: '#4b4118' },
+  insightRoleChipLearning: { backgroundColor: '#132219', borderColor: '#275234' },
   insightRoleChipExplain: { backgroundColor: '#171b20', borderColor: '#2d353e' },
   insightRoleText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
   insightRoleTextWarn: { color: '#f2b4b4' },
   insightRoleTextPlan: { color: '#a9d2f8' },
   insightRoleTextSetup: { color: '#e6d08d' },
+  insightRoleTextLearning: { color: '#a9e0b3' },
   insightRoleTextExplain: { color: '#b6c1cc' },
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
