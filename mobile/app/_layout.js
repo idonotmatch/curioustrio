@@ -202,6 +202,7 @@ function AppNavigator() {
       <Stack.Screen name="budget-period" options={{ title: 'Budget Period', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="categories" options={{ title: 'Category Details', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="accounts" options={{ title: 'Accounts', headerBackTitle: 'Settings' }} />
+      <Stack.Screen name="gmail-import" options={{ title: 'Gmail Import', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Feed' }} />
       <Stack.Screen name="scenario-check" options={{ title: 'Scenario Check', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="watching-plans" options={{ title: 'Watching', headerBackTitle: 'Summary' }} />

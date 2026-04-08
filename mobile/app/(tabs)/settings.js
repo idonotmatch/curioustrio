@@ -145,6 +145,10 @@ export default function SettingsScreen() {
           <Text style={styles.navRowText}>Manage accounts</Text>
           <Ionicons name="chevron-forward" size={16} color="#888" />
         </TouchableOpacity>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/gmail-import')}>
+          <Text style={styles.navRowText}>Manage Gmail import</Text>
+          <Ionicons name="chevron-forward" size={16} color="#888" />
+        </TouchableOpacity>
       </View>
 
       {/* Categories */}
