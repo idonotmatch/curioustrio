@@ -1,6 +1,7 @@
 jest.mock('../../src/models/emailImportLog', () => ({
   summarizeByUser: jest.fn(),
   listQualitySignalsByUser: jest.fn(),
+  listDecisionFeedbackByUser: jest.fn(),
 }));
 jest.mock('../../src/models/gmailSenderPreference', () => ({
   findByUserAndDomain: jest.fn(),
@@ -20,10 +21,12 @@ describe('gmailImportQualityService', () => {
   beforeEach(() => {
     EmailImportLog.summarizeByUser.mockReset();
     EmailImportLog.listQualitySignalsByUser.mockReset();
+    EmailImportLog.listDecisionFeedbackByUser.mockReset();
     GmailSenderPreference.findByUserAndDomain.mockReset();
     GmailSenderPreference.listByUser.mockReset();
     GmailSenderPreference.findByUserAndDomain.mockResolvedValue(null);
     GmailSenderPreference.listByUser.mockResolvedValue([]);
+    EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([]);
   });
 
   it('extracts sender domains from from-address strings', () => {
@@ -231,9 +234,13 @@ describe('gmailImportQualityService', () => {
 
   it('uses import-log feedback to make sender trust more conservative', async () => {
     EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'], user_feedback: 'needed_more_review' },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'], user_feedback: 'needed_more_review' },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'], user_feedback: null },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+    ]);
+    EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', user_feedback: 'needed_more_review' },
+      { from_address: 'orders@amazon.com', user_feedback: 'needed_more_review' },
     ]);
 
     await expect(getSenderImportQuality('user-1', 'orders@amazon.com')).resolves.toMatchObject({

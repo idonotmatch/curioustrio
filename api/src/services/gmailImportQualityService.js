@@ -99,6 +99,24 @@ function summarizeReviewPathReliability(reviewPaths = [], metrics = {}) {
   };
 }
 
+function summarizeSenderFeedback(feedbackRows = []) {
+  let shouldHaveImported = 0;
+  let didntNeedReview = 0;
+  let neededMoreReview = 0;
+
+  for (const row of feedbackRows) {
+    if (row.user_feedback === 'should_have_imported') shouldHaveImported += 1;
+    if (row.user_feedback === 'didnt_need_review') didntNeedReview += 1;
+    if (row.user_feedback === 'needed_more_review') neededMoreReview += 1;
+  }
+
+  return {
+    should_have_imported: shouldHaveImported,
+    didnt_need_review: didntNeedReview,
+    needed_more_review: neededMoreReview,
+  };
+}
+
 function recommendReviewMode(senderQuality = {}) {
   if (senderQuality?.sender_preference?.force_review) {
     return 'full_review';
@@ -121,16 +139,13 @@ function recommendReviewMode(senderQuality = {}) {
   return 'full_review';
 }
 
-function summarizeSenderRows(rows = []) {
+function summarizeSenderRows(rows = [], feedbackSummary = {}) {
   const imported = rows.length;
   let reviewed = 0;
   let cleanApproved = 0;
   let approvedAfterChanges = 0;
   let dismissed = 0;
   let edited = 0;
-  let shouldHaveImported = 0;
-  let didntNeedReview = 0;
-  let neededMoreReview = 0;
 
   for (const row of rows) {
     const editCount = Number(row.review_edit_count || 0);
@@ -140,10 +155,11 @@ function summarizeSenderRows(rows = []) {
     if (row.review_action === 'approved' && editCount === 0) cleanApproved += 1;
     if (row.review_action === 'approved' && editCount > 0) approvedAfterChanges += 1;
     if (editCount > 0) edited += 1;
-    if (row.user_feedback === 'should_have_imported') shouldHaveImported += 1;
-    if (row.user_feedback === 'didnt_need_review') didntNeedReview += 1;
-    if (row.user_feedback === 'needed_more_review') neededMoreReview += 1;
   }
+
+  const shouldHaveImported = Number(feedbackSummary.should_have_imported || 0);
+  const didntNeedReview = Number(feedbackSummary.didnt_need_review || 0);
+  const neededMoreReview = Number(feedbackSummary.needed_more_review || 0);
 
   return {
     imported,
@@ -166,6 +182,7 @@ function summarizeSenderRows(rows = []) {
 }
 
 function buildSenderSummary(rows, limit = 5) {
+  const feedbackBySender = arguments[2] || new Map();
   const grouped = new Map();
 
   for (const row of rows) {
@@ -220,11 +237,12 @@ function buildSenderSummary(rows, limit = 5) {
       const review_paths = [...(entry._reviewPathCounts || new Map()).entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([path, count]) => ({ path, count }));
+      const feedbackSummary = feedbackBySender.get(entry.sender_domain) || {};
       const metrics = {
         imported: entry.imported,
         clean_approval_rate: toRate(entry.clean_approved, entry.imported),
         dismissal_rate: toRate(entry.dismissed, entry.imported),
-        needed_more_review_rate: toRate(entry.needed_more_review || 0, entry.imported),
+        needed_more_review_rate: toRate(feedbackSummary.needed_more_review || 0, entry.imported),
       };
       metrics.level = classifySenderMetrics({
         imported: entry.imported,
@@ -242,9 +260,12 @@ function buildSenderSummary(rows, limit = 5) {
         dismissal_rate: metrics.dismissal_rate,
         edit_rate: toRate(entry.edited, entry.imported),
         review_rate: toRate(entry.reviewed, entry.imported),
-        should_have_imported_rate: toRate(entry.should_have_imported || 0, entry.imported),
-        didnt_need_review_rate: toRate(entry.didnt_need_review || 0, entry.imported),
-        needed_more_review_rate: toRate(entry.needed_more_review || 0, entry.imported),
+        should_have_imported: Number(feedbackSummary.should_have_imported || 0),
+        didnt_need_review: Number(feedbackSummary.didnt_need_review || 0),
+        needed_more_review: Number(feedbackSummary.needed_more_review || 0),
+        should_have_imported_rate: toRate(feedbackSummary.should_have_imported || 0, entry.imported),
+        didnt_need_review_rate: toRate(feedbackSummary.didnt_need_review || 0, entry.imported),
+        needed_more_review_rate: toRate(feedbackSummary.needed_more_review || 0, entry.imported),
         top_changed_fields: changedFieldCounts,
         review_paths,
         review_path_reliability,
@@ -307,13 +328,23 @@ function buildQualityDebug(rows, senderLimit = 5) {
 }
 
 async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) {
-  const [summary, rows] = await Promise.all([
+  const [summary, rows, feedbackRows] = await Promise.all([
     EmailImportLog.summarizeByUser(userId, days),
     EmailImportLog.listQualitySignalsByUser(userId, days),
+    EmailImportLog.listDecisionFeedbackByUser(userId, days),
   ]);
   const senderPreferences = await GmailSenderPreference.listByUser(userId);
   const preferenceMap = new Map(senderPreferences.map((pref) => [pref.sender_domain, pref]));
-  const senderQuality = buildSenderSummary(rows, senderLimit).map((sender) => ({
+  const feedbackBySender = new Map();
+  for (const row of feedbackRows) {
+    const senderDomain = extractSenderDomain(row.from_address);
+    const current = feedbackBySender.get(senderDomain) || { should_have_imported: 0, didnt_need_review: 0, needed_more_review: 0 };
+    if (row.user_feedback === 'should_have_imported') current.should_have_imported += 1;
+    if (row.user_feedback === 'didnt_need_review') current.didnt_need_review += 1;
+    if (row.user_feedback === 'needed_more_review') current.needed_more_review += 1;
+    feedbackBySender.set(senderDomain, current);
+  }
+  const senderQuality = buildSenderSummary(rows, senderLimit, feedbackBySender).map((sender) => ({
     ...sender,
     sender_preference: {
       force_review: !!preferenceMap.get(sender.sender_domain)?.force_review,
@@ -349,13 +380,19 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
 async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const senderDomain = extractSenderDomain(fromAddress);
   const senderPreference = await GmailSenderPreference.findByUserAndDomain(userId, senderDomain);
-  const rows = await EmailImportLog.listQualitySignalsByUser(userId, days);
+  const [rows, feedbackRows] = await Promise.all([
+    EmailImportLog.listQualitySignalsByUser(userId, days),
+    EmailImportLog.listDecisionFeedbackByUser(userId, days),
+  ]);
   const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
+  const senderFeedbackSummary = summarizeSenderFeedback(
+    feedbackRows.filter((row) => extractSenderDomain(row.from_address) === senderDomain)
+  );
   const reviewedSenderRows = senderRows.filter((row) => row.review_action || Number(row.review_edit_count || 0) > 0);
-  const metrics = summarizeSenderRows(reviewedSenderRows);
+  const metrics = summarizeSenderRows(reviewedSenderRows, senderFeedbackSummary);
   const level = classifySenderMetrics(metrics);
   metrics.level = level;
-  const senderSummary = buildSenderSummary(senderRows, 1)[0] || {};
+  const senderSummary = buildSenderSummary(senderRows, 1, new Map([[senderDomain, senderFeedbackSummary]]))[0] || {};
   const top_changed_fields = senderSummary.top_changed_fields || [];
   const review_paths = senderSummary.review_paths || [];
   const review_path_reliability = senderSummary.review_path_reliability || summarizeReviewPathReliability([], metrics);

@@ -71,6 +71,14 @@ function shouldAutoConfirmImport({ senderQuality, reviewMode, importedAsPendingR
   return true;
 }
 
+function shouldSoftenSkipBehavior(senderQuality = {}) {
+  const metrics = senderQuality?.metrics || {};
+  return (
+    Number(metrics.should_have_imported || 0) >= 1
+    || Number(metrics.should_have_imported_rate || 0) >= 0.2
+  );
+}
+
 async function resolveEmailLocation({ merchant = '', subject = '', from = '', body = '' }) {
   const modality = classifyEmailModality(subject, from, body);
   if (!['in_person', 'pickup'].includes(modality)) {
@@ -140,11 +148,12 @@ async function importForUser(user) {
       const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
       const senderQuality = await getSenderImportQuality(user.id, from);
       const reviewMode = recommendReviewMode(senderQuality);
+      const softenSkipBehavior = shouldSoftenSkipBehavior(senderQuality);
       const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
       const signals = analyzeEmailSignals(subject, from, body);
 
       if (classification.disposition === 'not_expense') {
-        if (signals.shouldSurfaceToReview) {
+        if (signals.shouldSurfaceToReview || softenSkipBehavior) {
           classification.disposition = 'uncertain';
         } else {
         const skipReason = classification.reason || 'classifier_not_expense';
@@ -174,7 +183,7 @@ async function importForUser(user) {
           increment(outcomes.skipped_reasons, skipReason);
           continue;
         }
-        if (senderQuality.level === 'noisy') {
+        if (senderQuality.level === 'noisy' && !softenSkipBehavior) {
           const skipReason = 'low_sender_quality';
           await EmailImportLog.create({
             userId: user.id, messageId: msg.id, status: 'skipped',

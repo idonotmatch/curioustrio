@@ -336,6 +336,75 @@ describe('POST /gmail/import', () => {
     expect(res.body.outcomes.skipped_reasons.low_sender_quality).toBe(1);
   });
 
+  it('softens noisy-sender fallback skips when the user said similar emails should have imported', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    const dismissedOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Messy Shop', 12.34, '2026-03-01', 'dismissed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const editedOne = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Messy Shop', 18.99, '2026-03-02', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const editedTwo = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source)
+       VALUES ($1, $2, 'Messy Shop', 21.50, '2026-03-03', 'confirmed', 'email')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const skippedLog = await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, status, from_address, skip_reason, user_feedback, user_feedback_at)
+       VALUES ($1, 'messy-skipped', 'skipped', 'alerts@messy.com', 'classifier_not_expense', 'should_have_imported', NOW())
+       RETURNING id`,
+      [userId]
+    );
+    expect(skippedLog.rows[0].id).toBeTruthy();
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address)
+       VALUES
+         ($1, 'messy-1', $2, 'imported', 'alerts@messy.com'),
+         ($1, 'messy-2', $3, 'imported', 'alerts@messy.com'),
+         ($1, 'messy-3', $4, 'imported', 'alerts@messy.com')`,
+      [userId, dismissedOne.rows[0].id, editedOne.rows[0].id, editedTwo.rows[0].id]
+    );
+    await db.query(
+      `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+       VALUES
+         ($1, 'dismissed', '[]'::jsonb, 0),
+         ($2, 'approved', '["merchant"]'::jsonb, 1),
+         ($3, 'approved', '["amount"]'::jsonb, 1)`,
+      [dismissedOne.rows[0].id, editedOne.rows[0].id, editedTwo.rows[0].id]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'uncertain-noisy-should-import-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your order details',
+      from: 'alerts@messy.com',
+      body: 'Thanks for your purchase. Grand total: $41.22.',
+      snippet: 'Grand total: $41.22',
+      receivedAt: '2026-03-21',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'uncertain', merchant: 'Messy Shop', reason: 'missing structured receipt' });
+    parseEmailExpense.mockResolvedValue(null);
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+    expect(res.body.outcomes.imported_pending_review).toBe(1);
+    expect(res.body.outcomes.skipped_reasons.low_sender_quality).toBeUndefined();
+  });
+
   it('reduces unnecessary review notes for trusted senders', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)

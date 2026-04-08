@@ -327,6 +327,20 @@ async function listQualitySignalsByUser(userId, days = 30) {
   }
 }
 
+async function listDecisionFeedbackByUser(userId, days = 30) {
+  const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
+  const result = await db.query(
+    `SELECT from_address, status, user_feedback
+     FROM email_import_log
+     WHERE user_id = $1
+       AND imported_at >= NOW() - ($2::text || ' days')::interval
+       AND user_feedback IS NOT NULL
+     ORDER BY imported_at DESC`,
+    [userId, safeDays]
+  );
+  return result.rows;
+}
+
 module.exports = {
   create,
   findByExpenseId,
@@ -336,4 +350,5 @@ module.exports = {
   recordLogFeedback,
   summarizeByUser,
   listQualitySignalsByUser,
+  listDecisionFeedbackByUser,
 };
