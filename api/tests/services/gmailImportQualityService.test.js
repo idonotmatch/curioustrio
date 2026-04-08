@@ -228,4 +228,24 @@ describe('gmailImportQualityService', () => {
     expect(senderQuality.sender_preference.force_review).toBe(true);
     expect(recommendReviewMode(senderQuality)).toBe('full_review');
   });
+
+  it('uses import-log feedback to make sender trust more conservative', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'], user_feedback: 'needed_more_review' },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'], user_feedback: 'needed_more_review' },
+      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'], user_feedback: null },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'orders@amazon.com')).resolves.toMatchObject({
+      sender_domain: 'amazon.com',
+      level: 'noisy',
+      metrics: expect.objectContaining({
+        needed_more_review: 2,
+        needed_more_review_rate: expect.any(Number),
+      }),
+      review_path_reliability: expect.objectContaining({
+        fast_lane_eligible: false,
+      }),
+    });
+  });
 });

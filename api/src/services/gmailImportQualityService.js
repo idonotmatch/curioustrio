@@ -83,6 +83,8 @@ function summarizeReviewPathReliability(reviewPaths = [], metrics = {}) {
     Number(metrics.imported || 0) >= 3
     && (metrics.clean_approval_rate || 0) >= 0.6
     && (metrics.dismissal_rate || 0) <= 0.15
+    && (metrics.needed_more_review_rate || 0) <= 0.15
+    && (metrics.level || 'unknown') === 'trusted'
     && quickCheckCount >= 2
     && quickCheckRate >= 0.5
     && fullReviewCount <= 1
@@ -126,6 +128,9 @@ function summarizeSenderRows(rows = []) {
   let approvedAfterChanges = 0;
   let dismissed = 0;
   let edited = 0;
+  let shouldHaveImported = 0;
+  let didntNeedReview = 0;
+  let neededMoreReview = 0;
 
   for (const row of rows) {
     const editCount = Number(row.review_edit_count || 0);
@@ -135,6 +140,9 @@ function summarizeSenderRows(rows = []) {
     if (row.review_action === 'approved' && editCount === 0) cleanApproved += 1;
     if (row.review_action === 'approved' && editCount > 0) approvedAfterChanges += 1;
     if (editCount > 0) edited += 1;
+    if (row.user_feedback === 'should_have_imported') shouldHaveImported += 1;
+    if (row.user_feedback === 'didnt_need_review') didntNeedReview += 1;
+    if (row.user_feedback === 'needed_more_review') neededMoreReview += 1;
   }
 
   return {
@@ -144,10 +152,16 @@ function summarizeSenderRows(rows = []) {
     approved_after_changes: approvedAfterChanges,
     dismissed,
     edited,
+    should_have_imported: shouldHaveImported,
+    didnt_need_review: didntNeedReview,
+    needed_more_review: neededMoreReview,
     clean_approval_rate: toRate(cleanApproved, imported),
     dismissal_rate: toRate(dismissed, imported),
     edit_rate: toRate(edited, imported),
     review_rate: toRate(reviewed, imported),
+    should_have_imported_rate: toRate(shouldHaveImported, imported),
+    didnt_need_review_rate: toRate(didntNeedReview, imported),
+    needed_more_review_rate: toRate(neededMoreReview, imported),
   };
 }
 
@@ -164,6 +178,9 @@ function buildSenderSummary(rows, limit = 5) {
       approved_after_changes: 0,
       dismissed: 0,
       edited: 0,
+      should_have_imported: 0,
+      didnt_need_review: 0,
+      needed_more_review: 0,
       top_changed_fields: [],
     };
 
@@ -183,6 +200,9 @@ function buildSenderSummary(rows, limit = 5) {
         current._changedFieldCounts.set(field, (current._changedFieldCounts.get(field) || 0) + 1);
       }
     }
+    if (row.user_feedback === 'should_have_imported') current.should_have_imported += 1;
+    if (row.user_feedback === 'didnt_need_review') current.didnt_need_review += 1;
+    if (row.user_feedback === 'needed_more_review') current.needed_more_review += 1;
     if (reviewPath) {
       current._reviewPathCounts = current._reviewPathCounts || new Map();
       current._reviewPathCounts.set(reviewPath, (current._reviewPathCounts.get(reviewPath) || 0) + 1);
@@ -204,7 +224,15 @@ function buildSenderSummary(rows, limit = 5) {
         imported: entry.imported,
         clean_approval_rate: toRate(entry.clean_approved, entry.imported),
         dismissal_rate: toRate(entry.dismissed, entry.imported),
+        needed_more_review_rate: toRate(entry.needed_more_review || 0, entry.imported),
       };
+      metrics.level = classifySenderMetrics({
+        imported: entry.imported,
+        clean_approval_rate: metrics.clean_approval_rate,
+        dismissal_rate: metrics.dismissal_rate,
+        edit_rate: toRate(entry.edited, entry.imported),
+        needed_more_review_rate: metrics.needed_more_review_rate,
+      });
       const review_path_reliability = summarizeReviewPathReliability(review_paths, metrics);
       delete entry._changedFieldCounts;
       delete entry._reviewPathCounts;
@@ -214,6 +242,9 @@ function buildSenderSummary(rows, limit = 5) {
         dismissal_rate: metrics.dismissal_rate,
         edit_rate: toRate(entry.edited, entry.imported),
         review_rate: toRate(entry.reviewed, entry.imported),
+        should_have_imported_rate: toRate(entry.should_have_imported || 0, entry.imported),
+        didnt_need_review_rate: toRate(entry.didnt_need_review || 0, entry.imported),
+        needed_more_review_rate: toRate(entry.needed_more_review || 0, entry.imported),
         top_changed_fields: changedFieldCounts,
         review_paths,
         review_path_reliability,
@@ -229,6 +260,7 @@ function buildSenderSummary(rows, limit = 5) {
 
 function classifySenderMetrics(metrics) {
   if (metrics.imported < 3) return 'unknown';
+  if ((metrics.needed_more_review_rate || 0) >= 0.3) return 'noisy';
   if (metrics.clean_approval_rate >= 0.6 && metrics.dismissal_rate <= 0.15 && metrics.edit_rate <= 0.35) return 'trusted';
   if (metrics.dismissal_rate >= 0.4 || metrics.edit_rate >= 0.6) return 'noisy';
   return 'mixed';
@@ -322,6 +354,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const reviewedSenderRows = senderRows.filter((row) => row.review_action || Number(row.review_edit_count || 0) > 0);
   const metrics = summarizeSenderRows(reviewedSenderRows);
   const level = classifySenderMetrics(metrics);
+  metrics.level = level;
   const senderSummary = buildSenderSummary(senderRows, 1)[0] || {};
   const top_changed_fields = senderSummary.top_changed_fields || [];
   const review_paths = senderSummary.review_paths || [];
