@@ -22,6 +22,9 @@ Return ONLY a JSON object with:
 - amount (number): the FINAL total actually charged to the payment method — this must include subtotal, shipping, tax, and any other fees. Do NOT use the subtotal. If the email shows "Order total: $53.42" or "Total charged: $53.42", use that number.
 - date (ISO date string YYYY-MM-DD)
 - notes (string or null)
+- payment_method (string or null): one of "cash", "credit", "debit", or null if not visible. Infer "visa", "mastercard", "amex", "credit" as credit; "debit" as debit.
+- card_label (string or null): card brand or nickname shown in the email when visible (for example "Visa", "Chase Sapphire", "Amex Gold"). null if not visible.
+- card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
 - items (array or null): individual line items from the email, each as { "description": string, "amount": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. For fee/tax/shipping lines set upc/sku/brand/product_size/pack_size/unit to null. Set items to null if the email does not list individual items.
 
 If the email describes a refund or return, set amount as a negative number.
@@ -139,6 +142,20 @@ function parseJsonResponse(text) {
   }
 }
 
+function normalizeParsedPaymentFields(parsed = {}) {
+  if (!parsed || typeof parsed !== 'object') return parsed;
+  const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
+  const cardLabel = typeof parsed.card_label === 'string' && parsed.card_label.trim() ? parsed.card_label.trim() : null;
+  const rawLast4 = typeof parsed.card_last4 === 'string' ? parsed.card_last4 : parsed.card_last4 != null ? String(parsed.card_last4) : '';
+  const cardLast4 = /^\d{4}$/.test(rawLast4.trim()) ? rawLast4.trim() : null;
+  return {
+    ...parsed,
+    payment_method: paymentMethod,
+    card_label: cardLabel,
+    card_last4: cardLast4,
+  };
+}
+
 async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate, snippet = '') {
   if (!emailBody || typeof emailBody !== 'string' || emailBody.trim().length === 0) {
     throw new Error('emailBody is required');
@@ -189,7 +206,7 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
     }],
   });
 
-  return parseJsonResponse(text);
+  return normalizeParsedPaymentFields(parseJsonResponse(text));
 }
 
 function clampExpenseDate(candidateDate, maxDate) {

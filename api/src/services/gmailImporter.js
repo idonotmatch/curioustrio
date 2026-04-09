@@ -287,6 +287,9 @@ async function importForUser(user) {
         placeName: location?.place_name || null,
         address: location?.address || null,
         mapkitStableId: location?.mapkit_stable_id || null,
+        paymentMethod: parsed.payment_method || 'unknown',
+        cardLast4: parsed.card_last4 || null,
+        cardLabel: parsed.card_label || null,
       });
 
       if (Array.isArray(parsed.items) && parsed.items.length > 0) {

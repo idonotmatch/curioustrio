@@ -6,6 +6,9 @@ Return ONLY a JSON object with these fields:
 - amount (number): the total paid (including tax and fees)
 - date (ISO date string YYYY-MM-DD)
 - notes (string or null)
+- payment_method (string or null): one of "cash", "credit", "debit", or null if not visible. Infer "visa", "mastercard", "amex", "credit" as credit; "debit" as debit.
+- card_label (string or null): card brand or nickname shown on the receipt when visible (for example "Visa", "Amex Gold"). null if not visible.
+- card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
 - store_address (string or null): the physical store address if clearly visible on the receipt
 - store_number (string or null): the store/location number if clearly visible on the receipt
 - items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null }. Include up to 30 of the most legible product and fee lines you can read. Omit subtotal lines. If more than 30 items are visible, prefer the clearest rows and valid JSON over exhaustive extraction. Set to null if line items are not clearly visible.
@@ -19,6 +22,9 @@ Return ONLY a JSON object with these fields:
 - amount (number or null): the final total paid
 - date (ISO date string YYYY-MM-DD or null)
 - notes (string or null)
+- payment_method (string or null): one of "cash", "credit", "debit", or null if not visible
+- card_label (string or null): card brand or nickname shown on the receipt when visible
+- card_last4 (string or null): the final 4 digits of the card if visible
 - store_address (string or null)
 - store_number (string or null)
 - items (array or null): simple visible line items as { "description": string, "amount": number or null }. Do not include product metadata. If items are unclear, return null.
@@ -126,12 +132,19 @@ function cleanParsedReceipt(parsed, todayDate) {
   const rawDate = typeof parsed.date === 'string' ? parsed.date.trim() : '';
   const hasValidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate);
   const items = Array.isArray(parsed.items) ? parsed.items : null;
+  const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
+  const cardLabel = typeof parsed.card_label === 'string' && parsed.card_label.trim() ? parsed.card_label.trim() : null;
+  const cardLast4Raw = typeof parsed.card_last4 === 'string' ? parsed.card_last4 : parsed.card_last4 != null ? String(parsed.card_last4) : '';
+  const cardLast4 = /^\d{4}$/.test(cardLast4Raw.trim()) ? cardLast4Raw.trim() : null;
 
   const normalized = {
     merchant: merchant || null,
     amount: Number.isFinite(amount) && amount !== 0 ? amount : null,
     date: hasValidDate ? rawDate : todayDate,
     notes: typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null,
+    payment_method: paymentMethod,
+    card_label: cardLabel,
+    card_last4: cardLast4,
     store_address: typeof parsed.store_address === 'string' && parsed.store_address.trim() ? parsed.store_address.trim() : null,
     store_number: typeof parsed.store_number === 'string' && parsed.store_number.trim() ? parsed.store_number.trim() : null,
     items,
@@ -142,6 +155,9 @@ function cleanParsedReceipt(parsed, todayDate) {
     merchant: normalized.merchant ? 'high' : 'low',
     amount: normalized.amount != null ? 'high' : 'low',
     date: hasValidDate ? 'high' : 'medium',
+    payment_method: normalized.payment_method ? 'medium' : 'low',
+    card_label: normalized.card_label ? 'medium' : 'low',
+    card_last4: normalized.card_last4 ? 'high' : 'low',
     items: items?.length ? 'medium' : 'low',
   };
 
@@ -149,6 +165,7 @@ function cleanParsedReceipt(parsed, todayDate) {
   if (normalized.amount == null) review_fields.push('amount');
   if (!hasValidDate) review_fields.push('date');
   if (!items?.length) review_fields.push('items');
+  if (!normalized.payment_method && (normalized.card_label || normalized.card_last4)) review_fields.push('payment method');
 
   if (normalized.amount == null) return null;
 

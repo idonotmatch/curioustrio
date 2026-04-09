@@ -41,7 +41,7 @@ export default function ConfirmScreen() {
   const [saveToRoll, setSaveToRoll] = useState(false);
   const [isRefund, setIsRefund] = useState((parsed?.amount ?? 0) < 0);
   const [paymentMethod, setPaymentMethod] = useState(parsed.payment_method || 'unknown');
-  const [cardLast4, setCardLast4] = useState('');
+  const [cardLast4, setCardLast4] = useState(parsed.card_last4 || '');
   const [cardLabel, setCardLabel] = useState(parsed.card_label || '');
   const [savedCards, setSavedCards] = useState([]);
   const [selectedSavedCardKey, setSelectedSavedCardKey] = useState(null);
@@ -93,6 +93,20 @@ export default function ConfirmScreen() {
   useEffect(() => {
     refreshSavedCards().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const matchingCard = savedCards.find((card) => {
+      if (!paymentMethod || paymentMethod === 'unknown') return false;
+      if (card.payment_method !== paymentMethod) return false;
+      if (cardLast4 && card.card_last4 === cardLast4) return true;
+      if (cardLabel && card.card_label && card.card_label.toLowerCase() === cardLabel.toLowerCase()) return true;
+      return false;
+    });
+    if (!matchingCard) return;
+    setSelectedSavedCardKey(savedCardKey(matchingCard));
+    if (!cardLast4 && matchingCard.card_last4) setCardLast4(matchingCard.card_last4);
+    if (!cardLabel && matchingCard.card_label) setCardLabel(matchingCard.card_label);
+  }, [savedCards, paymentMethod, cardLast4, cardLabel]);
 
   useEffect(() => {
     if (parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id) {
