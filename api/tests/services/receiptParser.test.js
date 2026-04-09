@@ -1,4 +1,4 @@
-const { parseReceipt, cleanParsedReceipt } = require('../../src/services/receiptParser');
+const { parseReceipt, parseReceiptDetailed, cleanParsedReceipt, parseJsonWithRecovery } = require('../../src/services/receiptParser');
 
 // Mock Claude SDK - singleton instance shared across all constructor calls
 jest.mock('@anthropic-ai/sdk', () => {
@@ -70,6 +70,35 @@ describe('parseReceipt', () => {
     expect(result).toBeNull();
   });
 
+  it('recovers when Claude wraps JSON with extra prose', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: 'Here is the receipt data:\n```json\n{"merchant":"Costco","amount":52.14,"date":"2026-03-21","notes":null,"items":null}\n```'
+      }]
+    });
+
+    const result = await parseReceipt('fakebase64data', '2026-03-21');
+    expect(result.merchant).toBe('Costco');
+    expect(result.amount).toBe(52.14);
+  });
+
+  it('records raw text preview and extracted parser mode on recovered parse', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: 'Result:\n{"merchant":"Safeway","amount":41.02,"date":"2026-03-21","notes":null,"items":null,}'
+      }]
+    });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-03-21');
+    expect(result.parsed.merchant).toBe('Safeway');
+    expect(result.diagnostics.parser_mode).toBe('extracted');
+    expect(result.diagnostics.raw_text_preview).toContain('Safeway');
+  });
+
   it('throws when imageBase64 is empty string', async () => {
     await expect(parseReceipt('', '2026-03-21')).rejects.toThrow();
   });
@@ -117,5 +146,13 @@ describe('parseReceipt', () => {
     }, '2026-03-21');
 
     expect(result).toBeNull();
+  });
+});
+
+describe('parseJsonWithRecovery', () => {
+  it('extracts a valid object from surrounding prose', () => {
+    const result = parseJsonWithRecovery('Receipt:\n{"merchant":"Aldi","amount":12.45}');
+    expect(result.raw.merchant).toBe('Aldi');
+    expect(result.parser_mode).toBe('extracted');
   });
 });

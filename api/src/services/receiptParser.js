@@ -13,7 +13,76 @@ Return ONLY a JSON object with these fields:
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
 
-function buildReceiptDiagnostics(imageBase64, raw = null) {
+function clipTextPreview(text, max = 600) {
+  const value = `${text || ''}`.trim();
+  if (!value) return null;
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function extractJSONObjectCandidate(text) {
+  const source = `${text || ''}`;
+  const start = source.indexOf('{');
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i += 1) {
+    const char = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+
+  return source.slice(start).trim() || null;
+}
+
+function repairJsonCandidate(text) {
+  let candidate = `${text || ''}`.trim();
+  if (!candidate) return null;
+  candidate = candidate.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+  return candidate;
+}
+
+function parseJsonWithRecovery(text) {
+  const cleaned = repairJsonCandidate(text);
+  if (!cleaned || cleaned === 'null') {
+    return { raw: null, parser_mode: 'empty' };
+  }
+
+  try {
+    return { raw: JSON.parse(cleaned), parser_mode: 'direct' };
+  } catch {
+    const extracted = extractJSONObjectCandidate(cleaned);
+    if (!extracted) return { raw: null, parser_mode: 'invalid' };
+    const repaired = repairJsonCandidate(extracted);
+    try {
+      return { raw: JSON.parse(repaired), parser_mode: 'extracted' };
+    } catch {
+      return { raw: null, parser_mode: 'invalid' };
+    }
+  }
+}
+
+function buildReceiptDiagnostics(imageBase64, raw = null, extra = {}) {
   const rawObject = raw && typeof raw === 'object' ? raw : null;
   const rawKeys = rawObject ? Object.keys(rawObject).sort() : [];
   const rawAmount = rawObject ? Number(rawObject.amount) : null;
@@ -30,6 +99,7 @@ function buildReceiptDiagnostics(imageBase64, raw = null) {
     raw_items_count: rawItems.length,
     raw_store_address_present: Boolean(rawObject?.store_address),
     raw_store_number_present: Boolean(rawObject?.store_number),
+    ...extra,
   };
 }
 
@@ -95,29 +165,47 @@ async function parseReceiptDetailed(imageBase64, todayDate) {
     text: `Today's date: ${todayDate}. Extract expense data from this receipt.`,
   });
 
-  if (!text) return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildReceiptDiagnostics(imageBase64) };
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  if (!cleaned || cleaned === 'null') {
-    return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildReceiptDiagnostics(imageBase64) };
+  if (!text) {
+    return {
+      parsed: null,
+      failureReason: 'empty_model_response',
+      raw: null,
+      diagnostics: buildReceiptDiagnostics(imageBase64, null, {
+        response_length: 0,
+        raw_text_preview: null,
+        parser_mode: 'empty',
+      }),
+    };
   }
-  try {
-    const raw = JSON.parse(cleaned);
-    const parsed = cleanParsedReceipt(raw, todayDate);
-    const diagnostics = buildReceiptDiagnostics(imageBase64, raw);
-    if (parsed) return { parsed, failureReason: null, raw, diagnostics };
 
-    const amount = Number(raw?.amount);
-    const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
-    let failureReason = 'missing_required_fields';
-    if (!Number.isFinite(amount) || amount === 0) {
-      failureReason = 'missing_total';
-    } else if (!merchant) {
-      failureReason = 'missing_required_fields';
-    }
-    return { parsed: null, failureReason, raw, diagnostics };
-  } catch {
-    return { parsed: null, failureReason: 'invalid_model_json', raw: null, diagnostics: buildReceiptDiagnostics(imageBase64) };
+  const { raw, parser_mode } = parseJsonWithRecovery(text);
+  const diagnostics = buildReceiptDiagnostics(imageBase64, raw, {
+    response_length: `${text}`.length,
+    raw_text_preview: clipTextPreview(text),
+    parser_mode,
+  });
+
+  if (!raw) {
+    return { parsed: null, failureReason: 'invalid_model_json', raw: null, diagnostics };
   }
+
+  const parsed = cleanParsedReceipt(raw, todayDate);
+  if (parsed) return { parsed, failureReason: null, raw, diagnostics };
+
+  const amount = Number(raw?.amount);
+  const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
+  let failureReason = 'missing_required_fields';
+  if (!Number.isFinite(amount) || amount === 0) {
+    failureReason = 'missing_total';
+  } else if (!merchant) {
+    failureReason = 'missing_required_fields';
+  }
+  return { parsed: null, failureReason, raw, diagnostics };
 }
 
-module.exports = { parseReceipt, parseReceiptDetailed, cleanParsedReceipt };
+module.exports = {
+  parseReceipt,
+  parseReceiptDetailed,
+  cleanParsedReceipt,
+  parseJsonWithRecovery,
+};
