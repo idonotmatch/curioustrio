@@ -34,6 +34,20 @@ function formatDate(dateStr) {
   });
 }
 
+function normalizeComparableText(value) {
+  return `${value || ''}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+}
+
+function deriveLocationLabel(expense = {}) {
+  const merchant = normalizeComparableText(expense.merchant);
+  const placeName = `${expense.place_name || ''}`.trim();
+  const normalizedPlace = normalizeComparableText(placeName);
+  if (placeName && normalizedPlace && normalizedPlace !== merchant && !normalizedPlace.includes(merchant)) {
+    return placeName;
+  }
+  return null;
+}
+
 export function ExpenseItem({ expense, categories = [], showUser = false, onDelete, pending = false }) {
   const router = useRouter();
   const { userId: currentUserId } = useCurrentUser();
@@ -83,6 +97,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
   const color = categoryColor(localExpense.category_name);
   const isRefund = Number(localExpense.amount) < 0;
   const categoryLabel = localExpense.category_parent_name || localExpense.category_name || 'Uncategorized';
+  const locationLabel = deriveLocationLabel(localExpense);
   const ownerLabel = isOwn ? 'You' : (localExpense.user_name || 'Household member');
   const categoryOptions = categories.filter(c => !c.parent_id || c.parent_name);
   const dateLabel = formatDate(localExpense.date);
@@ -206,37 +221,46 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           <View style={styles.left}>
             <View style={styles.headerRow}>
               <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
+              <View style={styles.rightCol}>
+                <View style={styles.categoryChipTop}>
+                  <View style={[styles.dot, { backgroundColor: color }]} />
+                  <Text style={styles.categoryChipText} numberOfLines={1}>{categoryLabel}</Text>
+                  {isOwn && !pending ? (
+                    categorySavingId ? (
+                      <ActivityIndicator size="small" color="#777" style={styles.categorySpinner} />
+                    ) : null
+                  ) : null}
+                </View>
+                <Text style={[styles.amount, isRefund && styles.amountRefund]}>
+                  {isRefund ? '−' : ''}${Math.abs(Number(localExpense.amount)).toFixed(2)}
+                </Text>
+              </View>
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.metaText}>{dateLabel}</Text>
-              <Text style={styles.metaDivider}>·</Text>
-              <TouchableOpacity
-                style={[styles.categoryChip, categoryPickerOpen && styles.categoryChipActive, !isOwn && styles.categoryChipStatic]}
-                onPress={isOwn && !pending ? () => setCategoryPickerOpen(open => !open) : undefined}
-                activeOpacity={isOwn && !pending ? 0.7 : 1}
-              >
-                <View style={[styles.dot, { backgroundColor: color }]} />
-                <Text style={styles.categoryChipText} numberOfLines={1}>{categoryLabel}</Text>
-                {isOwn && !pending ? (
-                  categorySavingId ? (
-                    <ActivityIndicator size="small" color="#777" style={styles.categorySpinner} />
-                  ) : (
-                    <Ionicons
-                      name={categoryPickerOpen ? 'chevron-up' : 'chevron-down'}
-                      size={11}
-                      color="#777"
-                      style={styles.categoryChevron}
-                    />
-                  )
-                ) : null}
-              </TouchableOpacity>
-              {localExpense.place_name ? (
+              {locationLabel ? (
                 <>
                   <Text style={styles.metaDivider}>·</Text>
-                  <Text style={styles.metaText} numberOfLines={1}>{localExpense.place_name}</Text>
+                  <Text style={styles.metaText} numberOfLines={1}>{locationLabel}</Text>
                 </>
               ) : null}
             </View>
+            {isOwn && !pending && categoryOptions.length > 0 ? (
+              <TouchableOpacity
+                style={[styles.inlineCategoryToggle, categoryPickerOpen && styles.inlineCategoryToggleActive]}
+                onPress={() => setCategoryPickerOpen(open => !open)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.inlineCategoryToggleText}>
+                  {categoryPickerOpen ? 'Hide category options' : 'Change category'}
+                </Text>
+                <Ionicons
+                  name={categoryPickerOpen ? 'chevron-up' : 'chevron-down'}
+                  size={12}
+                  color="#777"
+                />
+              </TouchableOpacity>
+            ) : null}
             {(showUser || localExpense.is_private) ? (
               <View style={styles.ownerRow}>
                 {showUser ? (
@@ -248,9 +272,6 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
               </View>
             ) : null}
           </View>
-          <Text style={[styles.amount, isRefund && styles.amountRefund]}>
-            {isRefund ? '−' : ''}${Math.abs(Number(localExpense.amount)).toFixed(2)}
-          </Text>
         </TouchableOpacity>
 
         {categoryPickerOpen && isOwn && !pending && categoryOptions.length > 0 && (
@@ -322,7 +343,7 @@ const styles = StyleSheet.create({
   },
   rowPress: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   containerPending: {
     backgroundColor: '#141008',
@@ -338,15 +359,21 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
+    alignItems: 'flex-start',
+    gap: 10,
   },
   merchant: {
     flex: 1,
+    minWidth: 0,
     fontSize: 15,
     color: '#f5f5f5',
     fontWeight: '500',
     letterSpacing: -0.2,
+  },
+  rightCol: {
+    alignItems: 'flex-end',
+    minWidth: 108,
+    gap: 6,
   },
   metaRow: {
     flexDirection: 'row',
@@ -368,10 +395,10 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     marginRight: 6,
   },
-  categoryChip: {
+  categoryChipTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '58%',
+    maxWidth: 120,
     backgroundColor: '#161616',
     borderWidth: 1,
     borderColor: '#222',
@@ -379,23 +406,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  categoryChipActive: {
-    borderColor: '#333',
-  },
-  categoryChipStatic: {
-    paddingRight: 10,
-  },
   categoryChipText: {
     color: '#d7d7d7',
     fontSize: 12,
     fontWeight: '500',
     flexShrink: 1,
   },
-  categoryChevron: {
-    marginLeft: 4,
-  },
   categorySpinner: {
     marginLeft: 6,
+  },
+  inlineCategoryToggle: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+  },
+  inlineCategoryToggleActive: {
+    opacity: 0.9,
+  },
+  inlineCategoryToggleText: {
+    fontSize: 11,
+    color: '#777',
+    fontWeight: '500',
   },
   metaText: {
     fontSize: 12,
@@ -432,11 +465,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   amount: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#f5f5f5',
     fontWeight: '600',
-    paddingRight: 14,
     letterSpacing: -0.3,
+    textAlign: 'right',
   },
   amountRefund: {
     color: '#4ade80',

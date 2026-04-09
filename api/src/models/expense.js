@@ -177,22 +177,48 @@ async function update(id, userId, {
   paymentMethod, cardLast4, cardLabel, isPrivate,
   placeName, address, mapkitStableId,
 } = {}) {
+  const hasMerchant = merchant !== undefined;
+  const hasAmount = amount !== undefined;
+  const hasDate = date !== undefined;
+  const hasCategoryId = categoryId !== undefined;
+  const hasNotes = notes !== undefined;
+  const hasPaymentMethod = paymentMethod !== undefined;
+  const hasCardLast4 = cardLast4 !== undefined;
+  const hasCardLabel = cardLabel !== undefined;
+  const hasIsPrivate = isPrivate !== undefined;
+  const hasPlaceName = placeName !== undefined;
+  const hasAddress = address !== undefined;
+  const hasMapkitStableId = mapkitStableId !== undefined;
   const result = await db.query(
     `UPDATE expenses SET
-       merchant = COALESCE($3, merchant),
-       amount = COALESCE($4, amount),
-       date = COALESCE($5, date),
-       category_id = COALESCE($6, category_id),
-       notes = COALESCE($7, notes),
-       payment_method = COALESCE($8, payment_method),
-       card_last4 = COALESCE($9, card_last4),
-       card_label = COALESCE($10, card_label),
-       is_private = COALESCE($11, is_private),
-       place_name = COALESCE($12, place_name),
-       address = COALESCE($13, address),
-       mapkit_stable_id = COALESCE($14, mapkit_stable_id)
+       merchant = CASE WHEN $3 THEN $4 ELSE merchant END,
+       amount = CASE WHEN $5 THEN $6 ELSE amount END,
+       date = CASE WHEN $7 THEN $8 ELSE date END,
+       category_id = CASE WHEN $9 THEN $10 ELSE category_id END,
+       notes = CASE WHEN $11 THEN $12 ELSE notes END,
+       payment_method = CASE WHEN $13 THEN $14 ELSE payment_method END,
+       card_last4 = CASE WHEN $15 THEN $16 ELSE card_last4 END,
+       card_label = CASE WHEN $17 THEN $18 ELSE card_label END,
+       is_private = CASE WHEN $19 THEN $20 ELSE is_private END,
+       place_name = CASE WHEN $21 THEN $22 ELSE place_name END,
+       address = CASE WHEN $23 THEN $24 ELSE address END,
+       mapkit_stable_id = CASE WHEN $25 THEN $26 ELSE mapkit_stable_id END
      WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [id, userId, merchant, amount, date, categoryId, notes, paymentMethod, cardLast4, cardLabel, isPrivate, placeName, address, mapkitStableId]
+    [
+      id, userId,
+      hasMerchant, merchant,
+      hasAmount, amount,
+      hasDate, date,
+      hasCategoryId, categoryId,
+      hasNotes, notes,
+      hasPaymentMethod, paymentMethod,
+      hasCardLast4, cardLast4,
+      hasCardLabel, cardLabel,
+      hasIsPrivate, isPrivate,
+      hasPlaceName, placeName,
+      hasAddress, address,
+      hasMapkitStableId, mapkitStableId,
+    ]
   );
   return result.rows[0] || null;
 }

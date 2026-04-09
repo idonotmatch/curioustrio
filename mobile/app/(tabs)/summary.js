@@ -482,6 +482,12 @@ export default function SummaryScreen() {
     await handleQuickAdd();
   }
 
+  const quickEntryProcessingMessage = loading
+    ? (entryMode === 'check'
+      ? 'Checking this plan against your current month...'
+      : 'Parsing your expense...')
+    : null;
+
   async function deleteExpense(id) {
     try {
       await api.delete(`/expenses/${id}`);
@@ -621,6 +627,12 @@ export default function SummaryScreen() {
               : <Ionicons name="arrow-forward" size={18} color="#000" />}
           </TouchableOpacity>
         </View>
+        {quickEntryProcessingMessage ? (
+          <View style={styles.quickEntryProcessing}>
+            <ActivityIndicator color="#d4d4d4" size="small" />
+            <Text style={styles.quickEntryProcessingText}>{quickEntryProcessingMessage}</Text>
+          </View>
+        ) : null}
         {entryMode === 'add' ? (
           <TouchableOpacity
             style={styles.scanLink}
@@ -950,6 +962,19 @@ const styles = StyleSheet.create({
   },
   scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   scanLinkText: { fontSize: 14, color: '#888' },
+  quickEntryProcessing: {
+    marginTop: 10,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#262626',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  quickEntryProcessingText: { color: '#cfcfcf', fontSize: 12, flex: 1, lineHeight: 17 },
   entryModeSpacer: { height: 24, marginTop: 10 },
 
   recent: {},

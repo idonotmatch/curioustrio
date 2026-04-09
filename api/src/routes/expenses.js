@@ -856,6 +856,68 @@ router.get('/cards', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.patch('/cards/rename', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const {
+      payment_method,
+      card_label,
+      card_last4,
+      next_card_label,
+      next_card_last4,
+    } = req.body || {};
+    if (!['credit', 'debit'].includes(payment_method)) {
+      return res.status(400).json({ error: 'payment_method must be credit or debit' });
+    }
+    if (!next_card_label && !next_card_last4) {
+      return res.status(400).json({ error: 'next card details required' });
+    }
+    const result = await db.query(
+      `UPDATE expenses
+       SET card_label = $5,
+           card_last4 = $6
+       WHERE user_id = $1
+         AND payment_method = $2
+         AND COALESCE(card_label, '') = COALESCE($3, '')
+         AND COALESCE(card_last4, '') = COALESCE($4, '')
+       RETURNING id`,
+      [
+        user.id,
+        payment_method,
+        card_label || null,
+        card_last4 || null,
+        next_card_label || null,
+        next_card_last4 || null,
+      ]
+    );
+    res.json({ updated: result.rowCount || 0 });
+  } catch (err) { next(err); }
+});
+
+router.post('/cards/forget', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const { payment_method, card_label, card_last4 } = req.body || {};
+    if (!['credit', 'debit'].includes(payment_method)) {
+      return res.status(400).json({ error: 'payment_method must be credit or debit' });
+    }
+    const result = await db.query(
+      `UPDATE expenses
+       SET card_label = NULL,
+           card_last4 = NULL
+       WHERE user_id = $1
+         AND payment_method = $2
+         AND COALESCE(card_label, '') = COALESCE($3, '')
+         AND COALESCE(card_last4, '') = COALESCE($4, '')
+       RETURNING id`,
+      [user.id, payment_method, card_label || null, card_last4 || null]
+    );
+    res.json({ removed: result.rowCount || 0 });
+  } catch (err) { next(err); }
+});
+
 // Dismiss a pending expense
 router.post('/:id/dismiss', async (req, res, next) => {
   try {
@@ -900,11 +962,25 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     const ownedByUser = expense.user_id === user?.id;
     const ownedByHousehold = user?.household_id && expense.household_id === user.household_id;
     if (!ownedByUser && !ownedByHousehold) return res.status(404).json({ error: 'Expense not found' });
-    // Re-assert ownership in the DELETE itself to close the TOCTOU window.
-    await db.query(
-      `DELETE FROM expenses WHERE id = $1 AND (user_id = $2 OR household_id = $3)`,
-      [req.params.id, user.id, user.household_id || null]
-    );
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`UPDATE expenses SET linked_expense_id = NULL WHERE linked_expense_id = $1`, [req.params.id]);
+      await client.query(`UPDATE email_import_log SET expense_id = NULL WHERE expense_id = $1`, [req.params.id]);
+      await client.query(`DELETE FROM duplicate_flags WHERE expense_id_a = $1 OR expense_id_b = $1`, [req.params.id]);
+      await client.query(`DELETE FROM expense_items WHERE expense_id = $1`, [req.params.id]);
+      await client.query(`DELETE FROM recurring_preferences WHERE expense_id = $1`, [req.params.id]);
+      await client.query(
+        `DELETE FROM expenses WHERE id = $1 AND (user_id = $2 OR household_id = $3)`,
+        [req.params.id, user.id, user.household_id || null]
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
     res.status(204).end();
   } catch (err) { next(err); }
 });

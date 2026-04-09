@@ -16,6 +16,11 @@ export default function AddScreen() {
   const [loading, setLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const didAutoScan = useRef(false);
+  const processingMessage = scanLoading
+    ? 'Reading your receipt. This can take a few seconds.'
+    : loading
+      ? 'Parsing your expense...'
+      : null;
 
   function startManualEntry() {
     router.push({
@@ -127,7 +132,12 @@ export default function AddScreen() {
         try: "242.50 trader joes" · "lunch chipotle 14.50" · "60 gas yesterday"
       </Text>
       <NLInput onSubmit={handleSubmit} loading={loading} />
-      {loading && <ActivityIndicator color="#fff" style={{ marginTop: 16 }} />}
+      {processingMessage ? (
+        <View style={styles.processingBanner}>
+          <ActivityIndicator color="#fff" />
+          <Text style={styles.processingText}>{processingMessage}</Text>
+        </View>
+      ) : null}
       <View style={styles.scanRow}>
         <TouchableOpacity style={styles.scanBtn} onPress={() => handleScan(false)} disabled={scanLoading}>
           <Text style={styles.scanText}>{scanLoading ? 'scanning...' : '📷  scan receipt'}</Text>
@@ -146,6 +156,19 @@ export default function AddScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a', paddingHorizontal: 20, paddingBottom: 20 },
   hint: { color: '#555', fontSize: 12, marginBottom: 16, lineHeight: 18 },
+  processingBanner: {
+    marginTop: 16,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#262626',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  processingText: { color: '#d4d4d4', fontSize: 13, flex: 1, lineHeight: 18 },
   scanRow: { marginTop: 24, gap: 10 },
   scanBtn: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },
   scanText: { color: '#fff', fontSize: 14, fontWeight: '600' },

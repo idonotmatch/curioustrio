@@ -19,6 +19,10 @@ function parseConfirmData(value) {
   }
 }
 
+function savedCardKey(card = {}) {
+  return `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
+}
+
 export default function ConfirmScreen() {
   const { data } = useLocalSearchParams();
   const parsed = createManualExpenseDraft(parseConfirmData(data));
@@ -39,6 +43,7 @@ export default function ConfirmScreen() {
   const [cardLast4, setCardLast4] = useState('');
   const [cardLabel, setCardLabel] = useState(parsed.card_label || '');
   const [savedCards, setSavedCards] = useState([]);
+  const [selectedSavedCardKey, setSelectedSavedCardKey] = useState(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [catSearch, setCatSearch] = useState('');
@@ -79,8 +84,13 @@ export default function ConfirmScreen() {
     );
   }
 
+  async function refreshSavedCards() {
+    const cards = await api.get('/expenses/cards');
+    setSavedCards(cards || []);
+  }
+
   useEffect(() => {
-    api.get('/expenses/cards').then(setSavedCards).catch(() => {});
+    refreshSavedCards().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -92,6 +102,12 @@ export default function ConfirmScreen() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    if (selectedSavedCard && selectedSavedCard.payment_method !== paymentMethod) {
+      setSelectedSavedCardKey(null);
+    }
+  }, [paymentMethod, selectedSavedCard, selectedSavedCardKey]);
 
   useEffect(() => {
     if (!merchant?.trim()) return; // only auto-populate when merchant is known
@@ -118,6 +134,13 @@ export default function ConfirmScreen() {
   }, []); // run once on mount; merchant is captured from closure at parse time
 
   const isCameraSource = parsed.source === 'camera';
+  const cardsForMethod = savedCards.filter(c => c.payment_method === paymentMethod);
+  const selectedSavedCard = cardsForMethod.find(c => savedCardKey(c) === selectedSavedCardKey) || null;
+  const canRenameSavedCard = Boolean(
+    selectedSavedCard
+      && ((cardLabel || '') !== (selectedSavedCard.card_label || '') || (cardLast4 || '') !== (selectedSavedCard.card_last4 || ''))
+      && (cardLabel || cardLast4)
+  );
 
   function handleItemChange(index, field, value) {
     setItems(prev => prev.map((it, i) => i === index ? { ...it, [field]: value } : it));
@@ -135,6 +158,45 @@ export default function ConfirmScreen() {
       ...prev,
       amount: value ? -Math.abs(parseFloat(amountText) || 0) : Math.abs(parseFloat(amountText) || 0),
     }));
+  }
+
+  async function forgetSavedCard(card) {
+    try {
+      await api.post('/expenses/cards/forget', {
+        payment_method: card.payment_method,
+        card_label: card.card_label || null,
+        card_last4: card.card_last4 || null,
+      });
+      if (savedCardKey(card) === selectedSavedCardKey) {
+        setSelectedSavedCardKey(null);
+        if ((cardLabel || '') === (card.card_label || '')) setCardLabel('');
+        if ((cardLast4 || '') === (card.card_last4 || '')) setCardLast4('');
+      }
+      await refreshSavedCards();
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not remove saved card');
+    }
+  }
+
+  async function renameSavedCard() {
+    if (!selectedSavedCard) return;
+    try {
+      await api.patch('/expenses/cards/rename', {
+        payment_method: selectedSavedCard.payment_method,
+        card_label: selectedSavedCard.card_label || null,
+        card_last4: selectedSavedCard.card_last4 || null,
+        next_card_label: cardLabel || null,
+        next_card_last4: cardLast4 || null,
+      });
+      await refreshSavedCards();
+      setSelectedSavedCardKey(savedCardKey({
+        payment_method: selectedSavedCard.payment_method,
+        card_label: cardLabel || null,
+        card_last4: cardLast4 || null,
+      }));
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not update saved card');
+    }
   }
 
   function updateExpenseDate(nextDate) {
@@ -556,9 +618,9 @@ export default function ConfirmScreen() {
         </View>
         {(paymentMethod === 'debit' || paymentMethod === 'credit') && (
           <>
-            {savedCards.filter(c => c.payment_method === paymentMethod).length > 0 && (
+            {cardsForMethod.length > 0 && (
               <View style={styles.savedCardsRow}>
-                {savedCards.filter(c => c.payment_method === paymentMethod).map((c, i) => {
+                {cardsForMethod.map((c, i) => {
                   const isSelected = cardLabel === (c.card_label || '') && cardLast4 === (c.card_last4 || '');
                   return (
                     <TouchableOpacity
@@ -567,7 +629,18 @@ export default function ConfirmScreen() {
                       onPress={() => {
                         setCardLabel(c.card_label || '');
                         setCardLast4(c.card_last4 || '');
+                        setSelectedSavedCardKey(savedCardKey(c));
                       }}
+                      onLongPress={() =>
+                        Alert.alert(
+                          'Saved card',
+                          'What would you like to do with this saved card?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Forget card', style: 'destructive', onPress: () => forgetSavedCard(c) },
+                          ]
+                        )
+                      }
                     >
                       <Text style={[styles.savedCardChipText, isSelected && styles.savedCardChipTextActive]}>
                         {c.card_label || ''}
@@ -578,6 +651,9 @@ export default function ConfirmScreen() {
                 })}
               </View>
             )}
+            {cardsForMethod.length > 0 ? (
+              <Text style={styles.savedCardsHint}>Long-press a saved card to remove it.</Text>
+            ) : null}
             <View style={styles.cardRow}>
               <TextInput
                 style={[styles.cardInput, { flex: 1 }]}
@@ -596,6 +672,11 @@ export default function ConfirmScreen() {
                 maxLength={4}
               />
             </View>
+            {canRenameSavedCard ? (
+              <TouchableOpacity style={styles.savedCardUpdateBtn} onPress={renameSavedCard}>
+                <Text style={styles.savedCardUpdateText}>Update saved card</Text>
+              </TouchableOpacity>
+            ) : null}
           </>
         )}
       </View>
@@ -750,6 +831,9 @@ const styles = StyleSheet.create({
   savedCardChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   savedCardChipText: { fontSize: 14, color: '#999' },
   savedCardChipTextActive: { color: '#000', fontWeight: '600' },
+  savedCardsHint: { color: '#666', fontSize: 11, marginTop: 8 },
+  savedCardUpdateBtn: { marginTop: 10, alignSelf: 'flex-end' },
+  savedCardUpdateText: { color: '#8ab4ff', fontSize: 13, fontWeight: '600' },
   cardRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   cardInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
 
