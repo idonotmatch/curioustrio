@@ -149,6 +149,10 @@ export default function SettingsScreen() {
           <Text style={styles.navRowText}>Manage Gmail import</Text>
           <Ionicons name="chevron-forward" size={16} color="#888" />
         </TouchableOpacity>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/payment-methods')}>
+          <Text style={styles.navRowText}>Saved card labels</Text>
+          <Ionicons name="chevron-forward" size={16} color="#888" />
+        </TouchableOpacity>
       </View>
 
       {/* Categories */}
