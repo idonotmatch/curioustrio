@@ -13,6 +13,20 @@ Return ONLY a JSON object with these fields:
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
 
+const FALLBACK_SYSTEM_PROMPT = `You are a receipt parser. Extract only the core purchase details from a receipt image.
+Return ONLY a JSON object with these fields:
+- merchant (string or null)
+- amount (number or null): the final total paid
+- date (ISO date string YYYY-MM-DD or null)
+- notes (string or null)
+- store_address (string or null)
+- store_number (string or null)
+- items (array or null): simple visible line items as { "description": string, "amount": number or null }. Do not include product metadata. If items are unclear, return null.
+
+Prioritize finding the final total and merchant correctly even if items are incomplete.
+If you cannot extract the data, return null.
+Do not include any text outside the JSON object.`;
+
 function clipTextPreview(text, max = 600) {
   const value = `${text || ''}`.trim();
   if (!value) return null;
@@ -183,24 +197,95 @@ async function parseReceiptDetailed(imageBase64, todayDate) {
     response_length: `${text}`.length,
     raw_text_preview: clipTextPreview(text),
     parser_mode,
+    fallback_attempted: false,
+    fallback_succeeded: false,
   });
 
-  if (!raw) {
-    return { parsed: null, failureReason: 'invalid_model_json', raw: null, diagnostics };
+  const primaryParsed = raw ? cleanParsedReceipt(raw, todayDate) : null;
+  if (primaryParsed) return { parsed: primaryParsed, failureReason: null, raw, diagnostics };
+
+  let primaryFailureReason = 'invalid_model_json';
+  if (raw) {
+    const amount = Number(raw?.amount);
+    const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
+    primaryFailureReason = 'missing_required_fields';
+    if (!Number.isFinite(amount) || amount === 0) {
+      primaryFailureReason = 'missing_total';
+    } else if (!merchant) {
+      primaryFailureReason = 'missing_required_fields';
+    }
   }
 
-  const parsed = cleanParsedReceipt(raw, todayDate);
-  if (parsed) return { parsed, failureReason: null, raw, diagnostics };
+  const fallbackText = await completeWithImage({
+    system: FALLBACK_SYSTEM_PROMPT,
+    imageBase64,
+    text: `Today's date: ${todayDate}. Extract the merchant, final total, date, and any obvious line items from this grocery receipt. If item details are messy, still prioritize merchant and final total.`,
+  });
 
-  const amount = Number(raw?.amount);
-  const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
-  let failureReason = 'missing_required_fields';
-  if (!Number.isFinite(amount) || amount === 0) {
-    failureReason = 'missing_total';
-  } else if (!merchant) {
-    failureReason = 'missing_required_fields';
+  if (!fallbackText) {
+    return {
+      parsed: null,
+      failureReason: primaryFailureReason,
+      raw,
+      diagnostics: {
+        ...diagnostics,
+        fallback_attempted: true,
+        fallback_succeeded: false,
+        fallback_response_length: 0,
+        fallback_raw_text_preview: null,
+        fallback_parser_mode: 'empty',
+      },
+    };
   }
-  return { parsed: null, failureReason, raw, diagnostics };
+
+  const { raw: fallbackRaw, parser_mode: fallbackParserMode } = parseJsonWithRecovery(fallbackText);
+  const fallbackDiagnostics = buildReceiptDiagnostics(imageBase64, fallbackRaw, {
+    ...diagnostics,
+    fallback_attempted: true,
+    fallback_succeeded: false,
+    fallback_response_length: `${fallbackText}`.length,
+    fallback_raw_text_preview: clipTextPreview(fallbackText),
+    fallback_parser_mode: fallbackParserMode,
+  });
+
+  if (!fallbackRaw) {
+    return {
+      parsed: null,
+      failureReason: primaryFailureReason === 'invalid_model_json' ? 'invalid_model_json' : primaryFailureReason,
+      raw,
+      diagnostics: fallbackDiagnostics,
+    };
+  }
+
+  const fallbackParsed = cleanParsedReceipt(fallbackRaw, todayDate);
+  if (fallbackParsed) {
+    return {
+      parsed: fallbackParsed,
+      failureReason: null,
+      raw: fallbackRaw,
+      diagnostics: {
+        ...fallbackDiagnostics,
+        fallback_succeeded: true,
+        parser_mode: diagnostics.parser_mode,
+      },
+    };
+  }
+
+  const fallbackAmount = Number(fallbackRaw?.amount);
+  const fallbackMerchant = typeof fallbackRaw?.merchant === 'string' ? fallbackRaw.merchant.trim() : '';
+  let fallbackFailureReason = 'missing_required_fields';
+  if (!Number.isFinite(fallbackAmount) || fallbackAmount === 0) {
+    fallbackFailureReason = 'missing_total';
+  } else if (!fallbackMerchant) {
+    fallbackFailureReason = 'missing_required_fields';
+  }
+
+  return {
+    parsed: null,
+    failureReason: fallbackFailureReason,
+    raw: fallbackRaw,
+    diagnostics: fallbackDiagnostics,
+  };
 }
 
 module.exports = {

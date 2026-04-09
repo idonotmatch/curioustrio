@@ -53,9 +53,13 @@ describe('parseReceipt', () => {
   it('returns null when Claude returns "null"', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();
-    instance.messages.create.mockResolvedValueOnce({
-      content: [{ text: 'null' }]
-    });
+    instance.messages.create
+      .mockResolvedValueOnce({
+        content: [{ text: 'null' }]
+      })
+      .mockResolvedValueOnce({
+        content: [{ text: 'null' }]
+      });
     const result = await parseReceipt('fakebase64data', '2026-03-21');
     expect(result).toBeNull();
   });
@@ -63,9 +67,13 @@ describe('parseReceipt', () => {
   it('returns null when Claude returns invalid JSON', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();
-    instance.messages.create.mockResolvedValueOnce({
-      content: [{ text: 'not valid json {{{' }]
-    });
+    instance.messages.create
+      .mockResolvedValueOnce({
+        content: [{ text: 'not valid json {{{' }]
+      })
+      .mockResolvedValueOnce({
+        content: [{ text: 'still not valid json {{{' }]
+      });
     const result = await parseReceipt('fakebase64data', '2026-03-21');
     expect(result).toBeNull();
   });
@@ -97,6 +105,44 @@ describe('parseReceipt', () => {
     expect(result.parsed.merchant).toBe('Safeway');
     expect(result.diagnostics.parser_mode).toBe('extracted');
     expect(result.diagnostics.raw_text_preview).toContain('Safeway');
+  });
+
+  it('falls back to a smaller schema when the primary parse is unusable', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create
+      .mockResolvedValueOnce({
+        content: [{ text: 'not valid json {{{' }]
+      })
+      .mockResolvedValueOnce({
+        content: [{
+          text: '{"merchant":"Kroger","amount":73.44,"date":"2026-03-21","notes":null,"items":[{"description":"Groceries","amount":73.44}]}'
+        }]
+      });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-03-21');
+    expect(result.parsed.merchant).toBe('Kroger');
+    expect(result.parsed.amount).toBe(73.44);
+    expect(result.diagnostics.fallback_attempted).toBe(true);
+    expect(result.diagnostics.fallback_succeeded).toBe(true);
+  });
+
+  it('keeps the original failure classification when fallback also fails', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create
+      .mockResolvedValueOnce({
+        content: [{ text: 'not valid json {{{' }]
+      })
+      .mockResolvedValueOnce({
+        content: [{ text: 'still not json' }]
+      });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-03-21');
+    expect(result.parsed).toBeNull();
+    expect(result.failureReason).toBe('invalid_model_json');
+    expect(result.diagnostics.fallback_attempted).toBe(true);
+    expect(result.diagnostics.fallback_succeeded).toBe(false);
   });
 
   it('throws when imageBase64 is empty string', async () => {
