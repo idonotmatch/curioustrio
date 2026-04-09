@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Switch, TextInput, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
 import { saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { LocationPicker } from '../components/LocationPicker';
+import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
@@ -411,7 +412,7 @@ export default function ConfirmScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
       {isWatchedPlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a watched plan</Text>
@@ -762,7 +763,7 @@ export default function ConfirmScreen() {
           <Text style={styles.confirmText}>{saving ? 'saving...' : 'confirm →'}</Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+    </DismissKeyboardScrollView>
   );
 }
 

@@ -7,6 +7,7 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
+import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 
 export default function CategoriesScreen() {
   const [categories, setCategories] = useState([]);
@@ -403,7 +404,7 @@ export default function CategoriesScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Category Details' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
           <ActivityIndicator color="#555" style={{ marginTop: 40 }} />
         ) : (
@@ -601,7 +602,7 @@ export default function CategoriesScreen() {
             )}
           </>
         )}
-      </ScrollView>
+      </DismissKeyboardScrollView>
     </>
   );
 }

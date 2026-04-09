@@ -7,10 +7,10 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
-  ScrollView,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { api } from '../services/api';
+import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 
 function cardKey(card = {}) {
   return `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
@@ -97,7 +97,7 @@ export default function PaymentMethodsScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Saved Card Labels' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.sectionTitle}>SAVED CARD LABELS</Text>
         <Text style={styles.sectionIntro}>
           These are card labels remembered from past expense entries. You can rename or forget them here.
@@ -168,7 +168,7 @@ export default function PaymentMethodsScreen() {
             );
           })
         )}
-      </ScrollView>
+      </DismissKeyboardScrollView>
     </>
   );
 }

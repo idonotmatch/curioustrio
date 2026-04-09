@@ -11,6 +11,7 @@ import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { LocationPicker } from '../../components/LocationPicker';
+import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 
@@ -400,7 +401,7 @@ export default function ExpenseDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <DismissKeyboardScrollView style={styles.container}>
       <Stack.Screen options={{
         title: expense.merchant,
         headerRight: editing || !canEdit ? undefined : () => (
@@ -993,7 +994,7 @@ export default function ExpenseDetailScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </DismissKeyboardScrollView>
   );
 }
 

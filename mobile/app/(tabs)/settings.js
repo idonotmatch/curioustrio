@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -13,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -76,7 +76,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
+    <DismissKeyboardScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
 
       {/* Budget */}
       <View style={styles.section}>
@@ -167,7 +167,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-    </ScrollView>
+    </DismissKeyboardScrollView>
   );
 }
 

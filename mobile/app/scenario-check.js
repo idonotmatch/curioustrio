@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useMonth, currentPeriod, periodLabel } from '../contexts/MonthContext';
 import { useHousehold } from '../hooks/useHousehold';
 import { api } from '../services/api';
+import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 
 function formatCurrency(value) {
   const amount = Number(value);
@@ -396,7 +397,7 @@ export default function ScenarioCheckScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
         {isAutoRunning ? (
           <View style={styles.loadingHero}>
             <ActivityIndicator color="#f5f5f5" />
@@ -732,7 +733,7 @@ export default function ScenarioCheckScreen() {
             })}
           </View>
         ) : null}
-      </ScrollView>
+      </DismissKeyboardScrollView>
     </SafeAreaView>
   );
 }

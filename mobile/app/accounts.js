@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
-  TextInput, Alert, ScrollView, Share,
+  TextInput, Alert, Share,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { signOut } from '../lib/auth';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 
 export default function AccountsScreen() {
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
@@ -184,7 +185,7 @@ export default function AccountsScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Accounts' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
 
         {/* Household */}
         <View style={styles.section}>
@@ -354,7 +355,7 @@ export default function AccountsScreen() {
           </TouchableOpacity>
         </View>
 
-      </ScrollView>
+      </DismissKeyboardScrollView>
     </>
   );
 }
