@@ -39,4 +39,56 @@ async function create({
   }
 }
 
-module.exports = { create };
+async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
+  if (!userId) return null;
+  const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
+  const params = [userId, safeDays];
+  let sourceClause = '';
+  if (source) {
+    params.push(source);
+    sourceClause = `AND source = $${params.length}`;
+  }
+
+  try {
+    const countsResult = await db.query(
+      `SELECT
+         COUNT(*)::int AS attempts,
+         COUNT(*) FILTER (WHERE status = 'parsed')::int AS parsed,
+         COUNT(*) FILTER (WHERE status = 'partial')::int AS partial,
+         COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'fallback_attempted')::boolean, false))::int AS fallback_attempted,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'fallback_succeeded')::boolean, false))::int AS fallback_succeeded,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'context_retry_attempted')::boolean, false))::int AS context_retry_attempted,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'context_retry_used')::boolean, false))::int AS context_retry_used,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'did_status_improve')::boolean, false))::int AS status_improved,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'did_review_count_improve')::boolean, false))::int AS review_count_improved,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'retry_was_unnecessary')::boolean, false))::int AS retry_unnecessary
+       FROM ingest_attempt_log
+       WHERE user_id = $1
+         AND created_at >= NOW() - ($2::text || ' days')::interval
+         ${sourceClause}`,
+      params
+    );
+
+    const reasonsResult = await db.query(
+      `SELECT COALESCE(failure_reason, 'none') AS reason, COUNT(*)::int AS count
+       FROM ingest_attempt_log
+       WHERE user_id = $1
+         AND created_at >= NOW() - ($2::text || ' days')::interval
+         ${sourceClause}
+       GROUP BY COALESCE(failure_reason, 'none')
+       ORDER BY count DESC, reason ASC`,
+      params
+    );
+
+    return {
+      counts: countsResult.rows[0] || {},
+      reasons: reasonsResult.rows,
+    };
+  } catch (err) {
+    if (!isMissingTableError(err)) throw err;
+    return null;
+  }
+}
+
+module.exports = { create, summarizeByUser };

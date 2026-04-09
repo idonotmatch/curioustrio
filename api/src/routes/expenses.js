@@ -404,6 +404,18 @@ function compareReceiptOutcomes(firstOutcome, finalOutcome) {
   };
 }
 
+router.get('/ingest-summary', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+
+    const days = req.query.days ? Number(req.query.days) : 30;
+    const source = req.query.source ? `${req.query.source}`.trim() : null;
+    const summary = await IngestAttemptLog.summarizeByUser(user.id, { source, days });
+    res.json(summary || { counts: {}, reasons: [] });
+  } catch (err) { next(err); }
+});
+
 // Parse NL input → structured expense (does NOT save to DB)
 router.post('/parse', aiEndpoints, async (req, res, next) => {
   try {

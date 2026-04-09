@@ -8,7 +8,7 @@ Return ONLY a JSON object with these fields:
 - notes (string or null)
 - store_address (string or null): the physical store address if clearly visible on the receipt
 - store_number (string or null): the store/location number if clearly visible on the receipt
-- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null }. Include the most legible product and fee lines you can read. Omit subtotal lines. If item details are too dense or cut off, prefer a shorter partial items array over malformed JSON. Set to null if line items are not clearly visible.
+- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null }. Include up to 30 of the most legible product and fee lines you can read. Omit subtotal lines. If more than 30 items are visible, prefer the clearest rows and valid JSON over exhaustive extraction. Set to null if line items are not clearly visible.
 
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
@@ -87,11 +87,12 @@ function parseJsonWithRecovery(text) {
   } catch {
     const extracted = extractJSONObjectCandidate(cleaned);
     if (!extracted) return { raw: null, parser_mode: 'invalid' };
+    const endsAbruptly = extracted.trim().startsWith('{') && !extracted.trim().endsWith('}');
     const repaired = repairJsonCandidate(extracted);
     try {
       return { raw: JSON.parse(repaired), parser_mode: 'extracted' };
     } catch {
-      return { raw: null, parser_mode: 'invalid' };
+      return { raw: null, parser_mode: endsAbruptly ? 'truncated' : 'invalid' };
     }
   }
 }
@@ -168,7 +169,7 @@ function buildFallbackPrompt(todayDate, priors = []) {
   const priorSection = Array.isArray(priors) && priors.length
     ? `\nKnown household purchase priors:\n- ${priors.join('\n- ')}\nUse these only to disambiguate uncertain line items or merchant abbreviations. Do not invent unseen items.`
     : '';
-  return `Today's date: ${todayDate}. Extract the merchant, final total, date, and any obvious line items from this grocery receipt. If item details are messy, still prioritize merchant and final total.${priorSection}`;
+  return `Today's date: ${todayDate}. Extract the merchant, final total, date, and up to 30 obvious line items from this grocery receipt. If more than 30 items are visible or item details are messy, still prioritize merchant, final total, and valid JSON over exhaustive extraction.${priorSection}`;
 }
 
 async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
@@ -214,7 +215,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
   const primaryParsed = raw ? cleanParsedReceipt(raw, todayDate) : null;
   if (primaryParsed) return { parsed: primaryParsed, failureReason: null, raw, diagnostics };
 
-  let primaryFailureReason = 'invalid_model_json';
+  let primaryFailureReason = parser_mode === 'truncated' ? 'truncated_model_output' : 'invalid_model_json';
   if (raw) {
     const amount = Number(raw?.amount);
     const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
@@ -262,7 +263,12 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
   if (!fallbackRaw) {
     return {
       parsed: null,
-      failureReason: primaryFailureReason === 'invalid_model_json' ? 'invalid_model_json' : primaryFailureReason,
+      failureReason:
+        primaryFailureReason === 'truncated_model_output' || fallbackParserMode === 'truncated'
+          ? 'truncated_model_output'
+          : primaryFailureReason === 'invalid_model_json'
+            ? 'invalid_model_json'
+            : primaryFailureReason,
       raw,
       diagnostics: fallbackDiagnostics,
     };
