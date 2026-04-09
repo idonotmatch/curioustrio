@@ -35,6 +35,23 @@ function buildAliasSummary(rows = []) {
 
 async function listMerchantAliasPriors(householdId, merchantHint, limit = 6) {
   if (!householdId || !merchantHint) return [];
+  const explicitResult = await db.query(
+    `SELECT
+       raw_label,
+       corrected_label AS canonical_name,
+       merchant,
+       occurrence_count,
+       updated_at AS last_seen_at
+     FROM receipt_line_corrections
+     WHERE household_id = $1
+       AND LOWER(merchant) = LOWER($2)
+     ORDER BY occurrence_count DESC, last_seen_at DESC
+     LIMIT $3`,
+    [householdId, merchantHint, limit]
+  );
+  const explicitAliases = buildAliasSummary(explicitResult.rows);
+  if (explicitAliases.length >= limit) return explicitAliases.slice(0, limit);
+
   const result = await db.query(
     `SELECT
        ei.description AS raw_label,
@@ -54,9 +71,10 @@ async function listMerchantAliasPriors(householdId, merchantHint, limit = 6) {
      GROUP BY ei.description, p.name, e.merchant
      ORDER BY occurrence_count DESC, last_seen_at DESC
      LIMIT $3`,
-    [householdId, merchantHint, limit]
+    [householdId, merchantHint, Math.max(limit - explicitAliases.length, 1)]
   );
-  return buildAliasSummary(result.rows);
+  const inferredAliases = buildAliasSummary(result.rows);
+  return [...explicitAliases, ...inferredAliases.filter((item) => !explicitAliases.includes(item))].slice(0, limit);
 }
 
 async function listRecentMerchantItemPriors(householdId, merchantHint, limit = 8) {

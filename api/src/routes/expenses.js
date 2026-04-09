@@ -10,6 +10,7 @@ const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
+const ReceiptLineCorrection = require('../models/receiptLineCorrection');
 const { getSenderImportQuality, recommendReviewMode } = require('../services/gmailImportQualityService');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
 const { parseExpenseDetailed } = require('../services/nlParser');
@@ -148,6 +149,27 @@ async function enrichItemWithResolution(item, merchant) {
     product_match_confidence: resolution?.confidence || null,
     product_match_reason: resolution?.reason || null,
   };
+}
+
+async function captureReceiptLineCorrections({ householdId, merchant, originalItems = [], resolvedItems = [] }) {
+  if (!householdId || !merchant) return;
+  const sourceItems = Array.isArray(originalItems) ? originalItems : [];
+  const nextItems = Array.isArray(resolvedItems) ? resolvedItems : [];
+  const pairCount = Math.min(sourceItems.length, nextItems.length);
+
+  for (let i = 0; i < pairCount; i += 1) {
+    const rawLabel = `${sourceItems[i]?.description || ''}`.trim();
+    const correctedLabel = `${nextItems[i]?.description || ''}`.trim();
+    if (!rawLabel || !correctedLabel) continue;
+    if (rawLabel.toLowerCase() === correctedLabel.toLowerCase()) continue;
+    await ReceiptLineCorrection.upsert({
+      householdId,
+      merchant,
+      rawLabel,
+      correctedLabel,
+      productId: nextItems[i]?.product_id || null,
+    });
+  }
 }
 
 function deriveEmailFieldEvidence(expense, log) {
@@ -640,6 +662,7 @@ router.post('/confirm', async (req, res, next) => {
             place_name, address,
             mapkit_stable_id, linked_expense_id,
             payment_method, card_last4, card_label, is_private, items } = req.body;
+    const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
 
     if (!amount || !date || !source) {
       return res.status(400).json({ error: 'amount, date, source required' });
@@ -679,6 +702,14 @@ router.post('/confirm', async (req, res, next) => {
         items.map((item) => enrichItemWithResolution(item, merchant))
       );
       await ExpenseItem.createBulk(expense.id, resolvedItems);
+      if (source === 'camera') {
+        await captureReceiptLineCorrections({
+          householdId: user?.household_id,
+          merchant,
+          originalItems: originalParsedItems,
+          resolvedItems,
+        });
+      }
     }
 
     // Update merchant memory

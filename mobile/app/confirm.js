@@ -242,6 +242,12 @@ export default function ConfirmScreen() {
         card_last4: cardLast4 || null,
         card_label: cardLabel || null,
         is_private: isPrivate,
+        original_parsed_items: parsed?.source === 'camera' && Array.isArray(parsed?.items)
+          ? parsed.items.map((it) => ({
+              description: it?.description || '',
+              amount: it?.amount ?? null,
+            }))
+          : undefined,
         items: items.length > 0
           ? items
               .filter(it => it.description.trim())
