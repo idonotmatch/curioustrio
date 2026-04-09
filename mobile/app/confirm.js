@@ -10,6 +10,7 @@ import { saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { LocationPicker } from '../components/LocationPicker';
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
+import { toLocalDateString } from '../services/date';
 
 function parseConfirmData(value) {
   try {
@@ -208,7 +209,7 @@ export default function ConfirmScreen() {
       setShowDatePicker(false);
     }
     if (selectedDate) {
-      updateExpenseDate(selectedDate.toISOString().slice(0, 10));
+      updateExpenseDate(toLocalDateString(selectedDate));
     }
   }
 
@@ -288,7 +289,7 @@ export default function ConfirmScreen() {
         }
       }
 
-      const expenseMonth = (expense.date || new Date().toISOString().slice(0, 10)).slice(0, 7);
+      const expenseMonth = (expense.date || toLocalDateString()).slice(0, 7);
       const result = await api.post('/expenses/confirm', {
         merchant: merchant.trim() || null,
         description: description.trim() || null,

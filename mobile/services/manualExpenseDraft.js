@@ -1,5 +1,7 @@
+import { toLocalDateString } from './date';
+
 export function createManualExpenseDraft(overrides = {}) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateString();
   return {
     merchant: '',
     description: '',

@@ -8,6 +8,7 @@ import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 import { useEffect, useRef, useState } from 'react';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
+import { toLocalDateString } from '../../services/date';
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
@@ -32,7 +33,7 @@ export default function AddScreen() {
   async function handleSubmit(input) {
     try {
       setLoading(true);
-      const today = new Date().toISOString().split('T')[0];
+      const today = toLocalDateString();
       const parsed = await api.post('/expenses/parse', { input, today });
       router.push({ pathname: '/confirm', params: { data: JSON.stringify({ ...parsed, source: 'manual' }) } });
     } catch (err) {
@@ -91,7 +92,7 @@ export default function AddScreen() {
         imageBase64 = resized.base64;
       } catch { /* native module unavailable — use original */ }
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = toLocalDateString();
       const parsed = await api.post('/expenses/scan', { image_base64: imageBase64, today });
       router.push({
         pathname: '/confirm',

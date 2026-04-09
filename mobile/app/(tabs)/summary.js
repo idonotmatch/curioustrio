@@ -14,6 +14,7 @@ import { useInsights } from '../../hooks/useInsights';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
+import { toLocalDateString } from '../../services/date';
 import { getInsightActionDescriptor } from '../../services/insightPresentation';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -411,7 +412,7 @@ export default function SummaryScreen() {
     if (!input.trim()) return;
     try {
       setLoading(true);
-      const today = new Date().toISOString().split('T')[0];
+      const today = toLocalDateString();
       const parsed = await api.post('/expenses/parse', { input: input.trim(), today });
       setInput('');
       router.push({ pathname: '/confirm', params: { data: JSON.stringify({ ...parsed, source: 'manual' }) } });

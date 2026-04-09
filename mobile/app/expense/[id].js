@@ -12,6 +12,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { LocationPicker } from '../../components/LocationPicker';
 import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
+import { toLocalDateString } from '../../services/date';
 
 function formatLikelyFields(fields = []) {
   if (!Array.isArray(fields) || !fields.length) return '';
@@ -628,7 +629,7 @@ export default function ExpenseDetailScreen() {
                 display={Platform.OS === 'ios' ? 'compact' : 'default'}
                 maximumDate={new Date()}
                 onChange={(_, selected) => {
-                  if (selected) setDate(selected.toISOString().slice(0, 10));
+                  if (selected) setDate(toLocalDateString(selected));
                 }}
                 themeVariant="dark"
                 style={styles.datePicker}

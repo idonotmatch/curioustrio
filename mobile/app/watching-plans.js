@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
+import { toLocalDateString } from '../services/date';
 
 function formatCurrency(value) {
   const amount = Number(value);
@@ -274,7 +275,7 @@ export default function WatchingPlansScreen() {
                                     merchant: plan.label,
                                     description: plan.label,
                                     amount: Number(plan.amount),
-                                    date: new Date().toISOString().slice(0, 10),
+                                    date: toLocalDateString(),
                                     source: 'manual',
                                     scenario_memory_id: plan.id,
                                   }),
