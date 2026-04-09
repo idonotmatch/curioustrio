@@ -81,9 +81,62 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
       params
     );
 
+    let merchants = [];
+    if (!source || source === 'receipt') {
+      const merchantParams = source ? params : [userId, safeDays, 'receipt'];
+      const receiptSourceClause = source ? sourceClause : `AND source = $3`;
+      const merchantsResult = await db.query(
+        `WITH attempts AS (
+           SELECT
+             COALESCE(
+               NULLIF(metadata->>'context_merchant_hint', ''),
+               NULLIF((regexp_match(COALESCE(metadata->>'raw_text_preview', ''), '"merchant"\\s*:\\s*"([^"]+)"'))[1], '')
+             ) AS merchant,
+             status,
+             failure_reason,
+             COALESCE((metadata->>'did_status_improve')::boolean, false) AS did_status_improve,
+             COALESCE((metadata->>'fallback_attempted')::boolean, false) AS fallback_attempted,
+             COALESCE((metadata->>'fallback_succeeded')::boolean, false) AS fallback_succeeded,
+             COALESCE((metadata->>'context_retry_attempted')::boolean, false) AS context_retry_attempted,
+             COALESCE((metadata->>'context_retry_used')::boolean, false) AS context_retry_used,
+             COALESCE((metadata->>'retry_was_unnecessary')::boolean, false) AS retry_was_unnecessary,
+             NULLIF((metadata->>'total_scan_duration_ms')::numeric, 0) AS total_scan_duration_ms,
+             NULLIF((metadata->>'initial_parse_duration_ms')::numeric, 0) AS initial_parse_duration_ms,
+             NULLIF((metadata->>'context_retry_duration_ms')::numeric, 0) AS context_retry_duration_ms
+           FROM ingest_attempt_log
+           WHERE user_id = $1
+             AND created_at >= NOW() - ($2::text || ' days')::interval
+             ${receiptSourceClause}
+         )
+         SELECT
+           COALESCE(merchant, 'Unknown merchant') AS merchant,
+           COUNT(*)::int AS attempts,
+           COUNT(*) FILTER (WHERE status = 'parsed')::int AS parsed,
+           COUNT(*) FILTER (WHERE status = 'partial')::int AS partial,
+           COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+           COUNT(*) FILTER (WHERE failure_reason = 'truncated_model_output')::int AS truncated,
+           COUNT(*) FILTER (WHERE fallback_attempted)::int AS fallback_attempted,
+           COUNT(*) FILTER (WHERE fallback_succeeded)::int AS fallback_succeeded,
+           COUNT(*) FILTER (WHERE context_retry_attempted)::int AS context_retry_attempted,
+           COUNT(*) FILTER (WHERE context_retry_used)::int AS context_retry_used,
+           COUNT(*) FILTER (WHERE did_status_improve)::int AS status_improved,
+           COUNT(*) FILTER (WHERE retry_was_unnecessary)::int AS retry_unnecessary,
+           ROUND(AVG(total_scan_duration_ms))::int AS avg_total_scan_duration_ms,
+           ROUND(AVG(initial_parse_duration_ms))::int AS avg_initial_parse_duration_ms,
+           ROUND(AVG(context_retry_duration_ms))::int AS avg_context_retry_duration_ms
+         FROM attempts
+         GROUP BY COALESCE(merchant, 'Unknown merchant')
+         ORDER BY attempts DESC, merchant ASC
+         LIMIT 12`,
+        merchantParams
+      );
+      merchants = merchantsResult.rows;
+    }
+
     return {
       counts: countsResult.rows[0] || {},
       reasons: reasonsResult.rows,
+      merchants,
     };
   } catch (err) {
     if (!isMissingTableError(err)) throw err;
