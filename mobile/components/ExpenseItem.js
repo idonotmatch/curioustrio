@@ -220,15 +220,17 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : color }]} />
           <View style={styles.left}>
             <View style={styles.headerRow}>
-              <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
+              <View style={styles.titleWrap}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
+                  <Text style={styles.dateInline} numberOfLines={1}>{dateLabel}</Text>
+                </View>
+              </View>
               <View style={styles.rightCol}>
                 <Text style={[styles.amount, isRefund && styles.amountRefund]}>
                   {isRefund ? '−' : ''}${Math.abs(Number(localExpense.amount)).toFixed(2)}
                 </Text>
               </View>
-            </View>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>{dateLabel}</Text>
             </View>
             <View style={styles.detailChipRow}>
               <TouchableOpacity
@@ -356,31 +358,40 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
   },
-  merchant: {
+  titleWrap: {
     flex: 1,
     minWidth: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  merchant: {
     fontSize: 15,
     color: '#f5f5f5',
     fontWeight: '500',
     letterSpacing: -0.2,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  dateInline: {
+    flexShrink: 0,
+    fontSize: 12,
+    color: '#7c7c7c',
   },
   rightCol: {
     alignItems: 'flex-end',
     minWidth: 84,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 5,
-    marginTop: 4,
   },
   detailChipRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 8,
+    marginTop: 6,
   },
   ownerRow: {
     flexDirection: 'row',
