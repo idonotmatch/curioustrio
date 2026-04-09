@@ -45,6 +45,7 @@ export default function ConfirmScreen() {
   const [cardLabel, setCardLabel] = useState(parsed.card_label || '');
   const [savedCards, setSavedCards] = useState([]);
   const [selectedSavedCardKey, setSelectedSavedCardKey] = useState(null);
+  const [savedCardMatchNote, setSavedCardMatchNote] = useState(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [catSearch, setCatSearch] = useState('');
@@ -95,17 +96,36 @@ export default function ConfirmScreen() {
   }, []);
 
   useEffect(() => {
-    const matchingCard = savedCards.find((card) => {
-      if (!paymentMethod || paymentMethod === 'unknown') return false;
-      if (card.payment_method !== paymentMethod) return false;
-      if (cardLast4 && card.card_last4 === cardLast4) return true;
-      if (cardLabel && card.card_label && card.card_label.toLowerCase() === cardLabel.toLowerCase()) return true;
-      return false;
-    });
-    if (!matchingCard) return;
-    setSelectedSavedCardKey(savedCardKey(matchingCard));
-    if (!cardLast4 && matchingCard.card_last4) setCardLast4(matchingCard.card_last4);
-    if (!cardLabel && matchingCard.card_label) setCardLabel(matchingCard.card_label);
+    if (!paymentMethod || paymentMethod === 'unknown') {
+      setSavedCardMatchNote(null);
+      return;
+    }
+
+    const exactMatch = savedCards.find((card) =>
+      card.payment_method === paymentMethod
+      && cardLast4
+      && card.card_last4 === cardLast4
+    );
+    if (exactMatch) {
+      setSelectedSavedCardKey(savedCardKey(exactMatch));
+      if (!cardLabel && exactMatch.card_label) setCardLabel(exactMatch.card_label);
+      setSavedCardMatchNote('Matched a saved card from the last 4 digits.');
+      return;
+    }
+
+    const labelMatch = savedCards.find((card) =>
+      card.payment_method === paymentMethod
+      && cardLabel
+      && card.card_label
+      && card.card_label.toLowerCase() === cardLabel.toLowerCase()
+    );
+    if (labelMatch) {
+      if (!cardLast4 && labelMatch.card_last4) setCardLast4(labelMatch.card_last4);
+      setSavedCardMatchNote('Prefilled from a saved card label. Double-check before saving.');
+      return;
+    }
+
+    setSavedCardMatchNote(null);
   }, [savedCards, paymentMethod, cardLast4, cardLabel]);
 
   useEffect(() => {
@@ -121,6 +141,9 @@ export default function ConfirmScreen() {
   useEffect(() => {
     if (selectedSavedCard && selectedSavedCard.payment_method !== paymentMethod) {
       setSelectedSavedCardKey(null);
+    }
+    if (paymentMethod === 'unknown') {
+      setSavedCardMatchNote(null);
     }
   }, [paymentMethod, selectedSavedCard, selectedSavedCardKey]);
 
@@ -669,6 +692,9 @@ export default function ConfirmScreen() {
             {cardsForMethod.length > 0 ? (
               <Text style={styles.savedCardsHint}>Long-press a saved card to remove it.</Text>
             ) : null}
+            {savedCardMatchNote ? (
+              <Text style={styles.savedCardsMatchNote}>{savedCardMatchNote}</Text>
+            ) : null}
             <View style={styles.cardRow}>
               <TextInput
                 style={[styles.cardInput, { flex: 1 }]}
@@ -847,6 +873,7 @@ const styles = StyleSheet.create({
   savedCardChipText: { fontSize: 14, color: '#999' },
   savedCardChipTextActive: { color: '#000', fontWeight: '600' },
   savedCardsHint: { color: '#666', fontSize: 11, marginTop: 8 },
+  savedCardsMatchNote: { color: '#8ab4ff', fontSize: 11, marginTop: 6, lineHeight: 16 },
   savedCardUpdateBtn: { marginTop: 10, alignSelf: 'flex-end' },
   savedCardUpdateText: { color: '#8ab4ff', fontSize: 13, fontWeight: '600' },
   cardRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
