@@ -8,7 +8,7 @@ Return ONLY a JSON object with these fields:
 - notes (string or null)
 - store_address (string or null): the physical store address if clearly visible on the receipt
 - store_number (string or null): the store/location number if clearly visible on the receipt
-- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (tax, tip, service charge, etc.) as separate named items so that the items sum to the total amount. Omit subtotal lines (they are redundant). For fee/tax/tip lines set upc/sku/brand/product_size/pack_size/unit to null. Set to null if line items are not clearly visible.
+- items (array or null): individual line items from the receipt, each as { "description": string, "amount": number or null }. Include the most legible product and fee lines you can read. Omit subtotal lines. If item details are too dense or cut off, prefer a shorter partial items array over malformed JSON. Set to null if line items are not clearly visible.
 
 If you cannot extract the data, return null.
 Do not include any text outside the JSON object.`;
@@ -185,6 +185,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     system: SYSTEM_PROMPT,
     imageBase64,
     text: `Today's date: ${todayDate}. Extract expense data from this receipt.`,
+    maxTokens: 1400,
   });
 
   if (!text) {
@@ -229,6 +230,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     system: FALLBACK_SYSTEM_PROMPT,
     imageBase64,
     text: buildFallbackPrompt(todayDate, priors),
+    maxTokens: 1200,
   });
 
   if (!fallbackText) {

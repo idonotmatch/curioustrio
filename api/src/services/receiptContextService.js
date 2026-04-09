@@ -18,6 +18,47 @@ function buildPriorSummary(rows = []) {
     });
 }
 
+function buildAliasSummary(rows = []) {
+  return rows
+    .filter(Boolean)
+    .map((row) => {
+      const rawLabel = `${row.raw_label || ''}`.trim();
+      const canonicalName = `${row.canonical_name || ''}`.trim();
+      if (!rawLabel || !canonicalName) return null;
+      const pieces = [`"${rawLabel}" usually means "${canonicalName}"`];
+      if (row.merchant) pieces.push(`at ${row.merchant}`);
+      if (row.occurrence_count) pieces.push(`${row.occurrence_count}x`);
+      return pieces.join(' · ');
+    })
+    .filter(Boolean);
+}
+
+async function listMerchantAliasPriors(householdId, merchantHint, limit = 6) {
+  if (!householdId || !merchantHint) return [];
+  const result = await db.query(
+    `SELECT
+       ei.description AS raw_label,
+       p.name AS canonical_name,
+       e.merchant,
+       COUNT(*)::int AS occurrence_count,
+       MAX(e.date) AS last_seen_at
+     FROM expense_items ei
+     JOIN expenses e ON e.id = ei.expense_id
+     JOIN products p ON p.id = ei.product_id
+     WHERE e.household_id = $1
+       AND e.status = 'confirmed'
+       AND e.date >= CURRENT_DATE - INTERVAL '180 days'
+       AND COALESCE(ei.item_type, 'product') = 'product'
+       AND LOWER(e.merchant) = LOWER($2)
+       AND LOWER(TRIM(COALESCE(ei.description, ''))) <> LOWER(TRIM(COALESCE(p.name, '')))
+     GROUP BY ei.description, p.name, e.merchant
+     ORDER BY occurrence_count DESC, last_seen_at DESC
+     LIMIT $3`,
+    [householdId, merchantHint, limit]
+  );
+  return buildAliasSummary(result.rows);
+}
+
 async function listRecentMerchantItemPriors(householdId, merchantHint, limit = 8) {
   if (!householdId || !merchantHint) return [];
   const result = await db.query(
@@ -70,11 +111,19 @@ async function listHouseholdStaplePriors(householdId, limit = 8) {
 }
 
 async function buildReceiptParsingContext({ householdId, merchantHint = null } = {}) {
+  const merchantAliases = await listMerchantAliasPriors(householdId, merchantHint, 6);
   const merchantItems = await listRecentMerchantItemPriors(householdId, merchantHint, 8);
   const stapleItems = await listHouseholdStaplePriors(householdId, merchantItems.length ? 6 : 10);
-  const combined = [...merchantItems, ...stapleItems.filter((item) => !merchantItems.includes(item))].slice(0, 12);
+  const combined = [
+    ...merchantAliases,
+    ...merchantItems.filter((item) => !merchantAliases.includes(item)),
+    ...stapleItems.filter((item) => !merchantAliases.includes(item) && !merchantItems.includes(item)),
+  ].slice(0, 12);
   return {
     merchant_hint: merchantHint || null,
+    merchant_alias_count: merchantAliases.length,
+    merchant_item_count: merchantItems.length,
+    staple_item_count: stapleItems.length,
     prior_count: combined.length,
     priors: combined,
   };
