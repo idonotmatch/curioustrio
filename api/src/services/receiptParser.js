@@ -159,12 +159,20 @@ function cleanParsedReceipt(parsed, todayDate) {
   };
 }
 
-async function parseReceipt(imageBase64, todayDate) {
-  const result = await parseReceiptDetailed(imageBase64, todayDate);
+async function parseReceipt(imageBase64, todayDate, options = {}) {
+  const result = await parseReceiptDetailed(imageBase64, todayDate, options);
   return result.parsed;
 }
 
-async function parseReceiptDetailed(imageBase64, todayDate) {
+function buildFallbackPrompt(todayDate, priors = []) {
+  const priorSection = Array.isArray(priors) && priors.length
+    ? `\nKnown household purchase priors:\n- ${priors.join('\n- ')}\nUse these only to disambiguate uncertain line items or merchant abbreviations. Do not invent unseen items.`
+    : '';
+  return `Today's date: ${todayDate}. Extract the merchant, final total, date, and any obvious line items from this grocery receipt. If item details are messy, still prioritize merchant and final total.${priorSection}`;
+}
+
+async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
+  const priors = Array.isArray(options?.priors) ? options.priors.filter(Boolean) : [];
   if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
     throw new Error('imageBase64 must be a non-empty string');
   }
@@ -199,6 +207,7 @@ async function parseReceiptDetailed(imageBase64, todayDate) {
     parser_mode,
     fallback_attempted: false,
     fallback_succeeded: false,
+    context_prior_count: priors.length,
   });
 
   const primaryParsed = raw ? cleanParsedReceipt(raw, todayDate) : null;
@@ -219,7 +228,7 @@ async function parseReceiptDetailed(imageBase64, todayDate) {
   const fallbackText = await completeWithImage({
     system: FALLBACK_SYSTEM_PROMPT,
     imageBase64,
-    text: `Today's date: ${todayDate}. Extract the merchant, final total, date, and any obvious line items from this grocery receipt. If item details are messy, still prioritize merchant and final total.`,
+    text: buildFallbackPrompt(todayDate, priors),
   });
 
   if (!fallbackText) {

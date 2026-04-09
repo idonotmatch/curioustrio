@@ -18,6 +18,7 @@ const { assignCategory } = require('../services/categoryAssigner');
 const detectDuplicates = require('../services/duplicateDetector');
 const { resolveProductMatch } = require('../services/productResolver');
 const { searchPlace } = require('../services/mapkitService');
+const { buildReceiptParsingContext } = require('../services/receiptContextService');
 const db = require('../db');
 
 router.use(authenticate);
@@ -358,6 +359,51 @@ function buildIngestFailure(source, failureReason) {
   };
 }
 
+function shouldRetryReceiptWithContext(parsedResult) {
+  if (!parsedResult) return true;
+  if (!parsedResult.parsed) return true;
+  const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
+  return parsedResult.parsed.parse_status === 'partial'
+    && reviewFields.some((field) => ['merchant', 'items', 'amount'].includes(field));
+}
+
+function summarizeReceiptOutcome(parsedResult) {
+  const parsed = parsedResult?.parsed || null;
+  const reviewFields = Array.isArray(parsed?.review_fields) ? parsed.review_fields : [];
+  return {
+    parsed: Boolean(parsed),
+    parse_status: parsed?.parse_status || 'failed',
+    review_field_count: reviewFields.length,
+    review_fields: reviewFields,
+    failure_reason: parsedResult?.failureReason || null,
+  };
+}
+
+function compareReceiptOutcomes(firstOutcome, finalOutcome) {
+  const statusRank = { failed: 0, partial: 1, complete: 2 };
+  const firstRank = statusRank[firstOutcome?.parse_status] ?? 0;
+  const finalRank = statusRank[finalOutcome?.parse_status] ?? 0;
+  const didStatusImprove = finalRank > firstRank;
+  const didReviewCountImprove = finalOutcome?.parsed
+    && firstOutcome?.parsed
+    && Number.isFinite(firstOutcome.review_field_count)
+    && Number.isFinite(finalOutcome.review_field_count)
+    ? finalOutcome.review_field_count < firstOutcome.review_field_count
+    : false;
+
+  return {
+    first_pass_status: firstOutcome?.parse_status || 'failed',
+    first_pass_review_field_count: firstOutcome?.review_field_count ?? null,
+    final_status: finalOutcome?.parse_status || 'failed',
+    final_review_field_count: finalOutcome?.review_field_count ?? null,
+    did_status_improve: didStatusImprove,
+    did_review_count_improve: didReviewCountImprove,
+    retry_was_unnecessary:
+      finalOutcome?.parse_status === firstOutcome?.parse_status
+      && (finalOutcome?.review_field_count ?? null) === (firstOutcome?.review_field_count ?? null),
+  };
+}
+
 // Parse NL input → structured expense (does NOT save to DB)
 router.post('/parse', aiEndpoints, async (req, res, next) => {
   try {
@@ -452,6 +498,58 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       });
       return res.status(503).json(buildIngestFailure('receipt', 'ai_unavailable'));
     }
+    const firstPassOutcome = summarizeReceiptOutcome(parsedResult);
+    let contextRetryAttempted = false;
+
+    if (user?.household_id && shouldRetryReceiptWithContext(parsedResult)) {
+      const merchantHint = parsedResult?.parsed?.merchant || parsedResult?.raw?.merchant || null;
+      const context = await buildReceiptParsingContext({
+        householdId: user.household_id,
+        merchantHint,
+      });
+
+      if (context.prior_count > 0) {
+        contextRetryAttempted = true;
+        try {
+          const contextualResult = await parseReceiptDetailed(image_base64, todayDate, { priors: context.priors });
+          const contextualParsed = contextualResult?.parsed || null;
+          const currentParsed = parsedResult?.parsed || null;
+          const currentReviewCount = Array.isArray(currentParsed?.review_fields) ? currentParsed.review_fields.length : 99;
+          const contextualReviewCount = Array.isArray(contextualParsed?.review_fields) ? contextualParsed.review_fields.length : 99;
+          const isBetter = contextualParsed && (!currentParsed || contextualReviewCount <= currentReviewCount);
+
+          if (isBetter) {
+            parsedResult = {
+              ...contextualResult,
+              diagnostics: {
+                ...(contextualResult.diagnostics || {}),
+                context_retry_used: true,
+                context_prior_count: context.prior_count,
+                context_merchant_hint: context.merchant_hint,
+              },
+            };
+          } else if (parsedResult?.diagnostics) {
+            parsedResult.diagnostics = {
+              ...parsedResult.diagnostics,
+              context_retry_used: false,
+              context_prior_count: context.prior_count,
+              context_merchant_hint: context.merchant_hint,
+            };
+          }
+        } catch {
+          if (parsedResult?.diagnostics) {
+            parsedResult.diagnostics = {
+              ...parsedResult.diagnostics,
+              context_retry_used: false,
+              context_prior_count: context.prior_count,
+              context_merchant_hint: context.merchant_hint,
+            };
+          }
+        }
+      }
+    }
+    const finalOutcome = summarizeReceiptOutcome(parsedResult);
+    const outcomeComparison = compareReceiptOutcomes(firstPassOutcome, finalOutcome);
 
     const parsed = parsedResult?.parsed || null;
     if (!parsed) {
@@ -461,7 +559,11 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
         source: 'receipt',
         status: 'failed',
         failureReason: failure.reason_code,
-        metadata: parsedResult?.diagnostics || { image_size: image_base64.length, raw_present: Boolean(parsedResult?.raw) },
+        metadata: {
+          ...(parsedResult?.diagnostics || { image_size: image_base64.length, raw_present: Boolean(parsedResult?.raw) }),
+          ...outcomeComparison,
+          context_retry_attempted: contextRetryAttempted,
+        },
       });
       return res.status(422).json(failure);
     }
@@ -497,6 +599,8 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       reviewFields: parsed.review_fields,
       metadata: {
         ...(parsedResult?.diagnostics || {}),
+        ...outcomeComparison,
+        context_retry_attempted: contextRetryAttempted,
         category_id,
         category_source: source,
         category_confidence: confidence,

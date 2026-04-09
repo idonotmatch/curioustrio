@@ -120,11 +120,14 @@ describe('parseReceipt', () => {
         }]
       });
 
-    const result = await parseReceiptDetailed('fakebase64data', '2026-03-21');
+    const result = await parseReceiptDetailed('fakebase64data', '2026-03-21', {
+      priors: ['Bananas · at Kroger · 6x · $1.99'],
+    });
     expect(result.parsed.merchant).toBe('Kroger');
     expect(result.parsed.amount).toBe(73.44);
     expect(result.diagnostics.fallback_attempted).toBe(true);
     expect(result.diagnostics.fallback_succeeded).toBe(true);
+    expect(result.diagnostics.context_prior_count).toBe(1);
   });
 
   it('keeps the original failure classification when fallback also fails', async () => {
