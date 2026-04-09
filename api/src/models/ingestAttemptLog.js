@@ -39,6 +39,44 @@ async function create({
   }
 }
 
+async function appendPaymentFeedback(attemptId, userId, {
+  originalPaymentMethod = null,
+  originalCardLabel = null,
+  originalCardLast4 = null,
+  finalPaymentMethod = null,
+  finalCardLabel = null,
+  finalCardLast4 = null,
+} = {}) {
+  if (!attemptId || !userId) return null;
+  const changedFields = [];
+  if (`${originalPaymentMethod || ''}` !== `${finalPaymentMethod || ''}`) changedFields.push('payment_method');
+  if (`${originalCardLabel || ''}` !== `${finalCardLabel || ''}`) changedFields.push('card_label');
+  if (`${originalCardLast4 || ''}` !== `${finalCardLast4 || ''}`) changedFields.push('card_last4');
+
+  const result = await db.query(
+    `UPDATE ingest_attempt_log
+     SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [
+      attemptId,
+      userId,
+      JSON.stringify({
+        payment_feedback_recorded: true,
+        payment_feedback_changed_fields: changedFields,
+        original_payment_method: originalPaymentMethod,
+        original_card_label: originalCardLabel,
+        original_card_last4: originalCardLast4,
+        final_payment_method: finalPaymentMethod,
+        final_card_label: finalCardLabel,
+        final_card_last4: finalCardLast4,
+      }),
+    ]
+  );
+  return result.rows[0] || null;
+}
+
 async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
   if (!userId) return null;
   const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
@@ -144,4 +182,4 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
   }
 }
 
-module.exports = { create, summarizeByUser };
+module.exports = { create, appendPaymentFeedback, summarizeByUser };

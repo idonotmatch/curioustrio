@@ -342,6 +342,12 @@ export default function ConfirmScreen() {
         card_last4: cardLast4 || null,
         card_label: cardLabel || null,
         is_private: isPrivate,
+        ingest_attempt_id: parsed?.ingest_attempt_id || null,
+        parsed_payment_snapshot: parsed?.parsed_payment_snapshot || {
+          payment_method: parsed?.payment_method || null,
+          card_label: parsed?.card_label || null,
+          card_last4: parsed?.card_last4 || null,
+        },
         original_parsed_items: parsed?.source === 'camera' && Array.isArray(parsed?.items)
           ? parsed.items.map((it) => ({
               description: it?.description || '',

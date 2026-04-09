@@ -381,6 +381,14 @@ function buildIngestFailure(source, failureReason) {
   };
 }
 
+function buildParsedPaymentSnapshot(parsed = {}) {
+  return {
+    payment_method: parsed?.payment_method || null,
+    card_label: parsed?.card_label || null,
+    card_last4: parsed?.card_last4 || null,
+  };
+}
+
 function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
   if (!parsedResult) return false;
   if (!parsedResult.parsed) {
@@ -491,22 +499,30 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
     });
     const matchedCat = categories.find(c => c.id === category_id);
 
-    await IngestAttemptLog.create({
-      userId: user?.id || null,
-      source: 'nl',
-      status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
+      const attempt = await IngestAttemptLog.create({
+        userId: user?.id || null,
+        source: 'nl',
+        status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
       inputPreview: truncateInputPreview(input),
       parseStatus: parsed.parse_status,
       reviewFields: parsed.review_fields,
       metadata: {
         ...(parsedResult?.diagnostics || {}),
         category_id,
-        category_source: source,
-        category_confidence: confidence,
-      },
-    });
+          category_source: source,
+          category_confidence: confidence,
+        },
+      });
 
-    res.json({ ...parsed, category_id, category_name: matchedCat?.name || null, category_source: source, category_confidence: confidence });
+    res.json({
+      ...parsed,
+      ingest_attempt_id: attempt?.id || null,
+      parsed_payment_snapshot: buildParsedPaymentSnapshot(parsed),
+      category_id,
+      category_name: matchedCat?.name || null,
+      category_source: source,
+      category_confidence: confidence,
+    });
   } catch (err) { next(err); }
 });
 
@@ -654,7 +670,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
       }
     }
 
-    await IngestAttemptLog.create({
+    const attempt = await IngestAttemptLog.create({
       userId: user?.id || null,
       source: 'receipt',
       status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
@@ -677,6 +693,8 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 
     res.json({
       ...parsed,
+      ingest_attempt_id: attempt?.id || null,
+      parsed_payment_snapshot: buildParsedPaymentSnapshot(parsed),
       source: 'camera',
       category_id,
       category_name: matchedCat?.name || null,
@@ -695,7 +713,8 @@ router.post('/confirm', async (req, res, next) => {
     const { merchant, description, amount, date, category_id, source, notes,
             place_name, address,
             mapkit_stable_id, linked_expense_id,
-            payment_method, card_last4, card_label, is_private, items } = req.body;
+            payment_method, card_last4, card_label, is_private, items,
+            ingest_attempt_id, parsed_payment_snapshot } = req.body;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
 
     if (!amount || !date || !source) {
@@ -744,6 +763,17 @@ router.post('/confirm', async (req, res, next) => {
           resolvedItems,
         });
       }
+    }
+
+    if ((source === 'manual' || source === 'camera') && ingest_attempt_id) {
+      await IngestAttemptLog.appendPaymentFeedback(ingest_attempt_id, user.id, {
+        originalPaymentMethod: parsed_payment_snapshot?.payment_method || null,
+        originalCardLabel: parsed_payment_snapshot?.card_label || null,
+        originalCardLast4: parsed_payment_snapshot?.card_last4 || null,
+        finalPaymentMethod: payment_method || null,
+        finalCardLabel: card_label || null,
+        finalCardLast4: card_last4 || null,
+      });
     }
 
     // Update merchant memory
