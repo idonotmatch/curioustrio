@@ -381,12 +381,15 @@ function buildIngestFailure(source, failureReason) {
   };
 }
 
-function shouldRetryReceiptWithContext(parsedResult) {
-  if (!parsedResult) return true;
-  if (!parsedResult.parsed) return true;
+function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
+  if (!parsedResult) return false;
+  if (!parsedResult.parsed) {
+    return Boolean(merchantHint)
+      && !['invalid_model_json', 'truncated_model_output', 'empty_model_response'].includes(parsedResult.failureReason);
+  }
   const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
   return parsedResult.parsed.parse_status === 'partial'
-    && reviewFields.some((field) => ['merchant', 'items', 'amount'].includes(field));
+    && reviewFields.some((field) => ['merchant', 'items'].includes(field));
 }
 
 function summarizeReceiptOutcome(parsedResult) {
@@ -516,9 +519,13 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 
     const user = await getUser(req);
     const todayDate = today || new Date().toISOString().split('T')[0];
+    const scanStartedAt = Date.now();
     let parsedResult;
+    let initialParseDurationMs = 0;
     try {
+      const initialParseStartedAt = Date.now();
       parsedResult = await parseReceiptDetailed(image_base64, todayDate);
+      initialParseDurationMs = Date.now() - initialParseStartedAt;
     } catch (err) {
       await IngestAttemptLog.create({
         userId: user?.id || null,
@@ -534,18 +541,27 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
     }
     const firstPassOutcome = summarizeReceiptOutcome(parsedResult);
     let contextRetryAttempted = false;
+    let contextLookupDurationMs = 0;
+    let contextRetryDurationMs = 0;
+    let contextRetrySkippedReason = null;
+    const merchantHint = parsedResult?.parsed?.merchant || parsedResult?.raw?.merchant || null;
 
-    if (user?.household_id && shouldRetryReceiptWithContext(parsedResult)) {
-      const merchantHint = parsedResult?.parsed?.merchant || parsedResult?.raw?.merchant || null;
+    if (user?.household_id && shouldRetryReceiptWithContext(parsedResult, merchantHint)) {
+      const contextLookupStartedAt = Date.now();
       const context = await buildReceiptParsingContext({
         householdId: user.household_id,
         merchantHint,
       });
+      contextLookupDurationMs = Date.now() - contextLookupStartedAt;
 
-      if (context.prior_count > 0) {
+      const hasMerchantSpecificPriors = context.merchant_alias_count > 0 || context.merchant_item_count > 0;
+      const hasUsefulFallbackPriors = Boolean(merchantHint) || firstPassOutcome.parse_status === 'partial';
+      if (context.prior_count > 0 && (hasMerchantSpecificPriors || hasUsefulFallbackPriors)) {
         contextRetryAttempted = true;
         try {
+          const contextRetryStartedAt = Date.now();
           const contextualResult = await parseReceiptDetailed(image_base64, todayDate, { priors: context.priors });
+          contextRetryDurationMs = Date.now() - contextRetryStartedAt;
           const contextualParsed = contextualResult?.parsed || null;
           const currentParsed = parsedResult?.parsed || null;
           const currentReviewCount = Array.isArray(currentParsed?.review_fields) ? currentParsed.review_fields.length : 99;
@@ -571,6 +587,7 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
             };
           }
         } catch {
+          contextRetryDurationMs = 0;
           if (parsedResult?.diagnostics) {
             parsedResult.diagnostics = {
               ...parsedResult.diagnostics,
@@ -580,10 +597,17 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
             };
           }
         }
+      } else {
+        contextRetrySkippedReason = context.prior_count <= 0
+          ? 'no_priors'
+          : 'low_value_priors';
       }
+    } else {
+      contextRetrySkippedReason = merchantHint ? 'not_eligible' : 'no_merchant_hint';
     }
     const finalOutcome = summarizeReceiptOutcome(parsedResult);
     const outcomeComparison = compareReceiptOutcomes(firstPassOutcome, finalOutcome);
+    const totalScanDurationMs = Date.now() - scanStartedAt;
 
     const parsed = parsedResult?.parsed || null;
     if (!parsed) {
@@ -597,6 +621,11 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
           ...(parsedResult?.diagnostics || { image_size: image_base64.length, raw_present: Boolean(parsedResult?.raw) }),
           ...outcomeComparison,
           context_retry_attempted: contextRetryAttempted,
+          context_lookup_duration_ms: contextLookupDurationMs,
+          context_retry_duration_ms: contextRetryDurationMs,
+          initial_parse_duration_ms: initialParseDurationMs,
+          total_scan_duration_ms: totalScanDurationMs,
+          context_retry_skipped_reason: contextRetrySkippedReason,
         },
       });
       return res.status(422).json(failure);
@@ -635,6 +664,11 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
         ...(parsedResult?.diagnostics || {}),
         ...outcomeComparison,
         context_retry_attempted: contextRetryAttempted,
+        context_lookup_duration_ms: contextLookupDurationMs,
+        context_retry_duration_ms: contextRetryDurationMs,
+        initial_parse_duration_ms: initialParseDurationMs,
+        total_scan_duration_ms: totalScanDurationMs,
+        context_retry_skipped_reason: contextRetrySkippedReason,
         category_id,
         category_source: source,
         category_confidence: confidence,

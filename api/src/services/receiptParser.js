@@ -173,6 +173,7 @@ function buildFallbackPrompt(todayDate, priors = []) {
 }
 
 async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
+  const startedAt = Date.now();
   const priors = Array.isArray(options?.priors) ? options.priors.filter(Boolean) : [];
   if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
     throw new Error('imageBase64 must be a non-empty string');
@@ -182,12 +183,14 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     throw new Error('todayDate must be a valid ISO date string (YYYY-MM-DD)');
   }
 
+  const primaryStartedAt = Date.now();
   const text = await completeWithImage({
     system: SYSTEM_PROMPT,
     imageBase64,
     text: `Today's date: ${todayDate}. Extract expense data from this receipt.`,
     maxTokens: 1400,
   });
+  const primaryDurationMs = Date.now() - primaryStartedAt;
 
   if (!text) {
     return {
@@ -198,6 +201,9 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
         response_length: 0,
         raw_text_preview: null,
         parser_mode: 'empty',
+        primary_duration_ms: primaryDurationMs,
+        fallback_duration_ms: 0,
+        total_parse_duration_ms: Date.now() - startedAt,
       }),
     };
   }
@@ -210,10 +216,22 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     fallback_attempted: false,
     fallback_succeeded: false,
     context_prior_count: priors.length,
+    primary_duration_ms: primaryDurationMs,
+    fallback_duration_ms: 0,
   });
 
   const primaryParsed = raw ? cleanParsedReceipt(raw, todayDate) : null;
-  if (primaryParsed) return { parsed: primaryParsed, failureReason: null, raw, diagnostics };
+  if (primaryParsed) {
+    return {
+      parsed: primaryParsed,
+      failureReason: null,
+      raw,
+      diagnostics: {
+        ...diagnostics,
+        total_parse_duration_ms: Date.now() - startedAt,
+      },
+    };
+  }
 
   let primaryFailureReason = parser_mode === 'truncated' ? 'truncated_model_output' : 'invalid_model_json';
   if (raw) {
@@ -227,12 +245,14 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     }
   }
 
+  const fallbackStartedAt = Date.now();
   const fallbackText = await completeWithImage({
     system: FALLBACK_SYSTEM_PROMPT,
     imageBase64,
     text: buildFallbackPrompt(todayDate, priors),
     maxTokens: 1200,
   });
+  const fallbackDurationMs = Date.now() - fallbackStartedAt;
 
   if (!fallbackText) {
     return {
@@ -246,6 +266,8 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
         fallback_response_length: 0,
         fallback_raw_text_preview: null,
         fallback_parser_mode: 'empty',
+        fallback_duration_ms: fallbackDurationMs,
+        total_parse_duration_ms: Date.now() - startedAt,
       },
     };
   }
@@ -258,6 +280,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     fallback_response_length: `${fallbackText}`.length,
     fallback_raw_text_preview: clipTextPreview(fallbackText),
     fallback_parser_mode: fallbackParserMode,
+    fallback_duration_ms: fallbackDurationMs,
   });
 
   if (!fallbackRaw) {
@@ -284,6 +307,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
         ...fallbackDiagnostics,
         fallback_succeeded: true,
         parser_mode: diagnostics.parser_mode,
+        total_parse_duration_ms: Date.now() - startedAt,
       },
     };
   }
@@ -301,7 +325,10 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     parsed: null,
     failureReason: fallbackFailureReason,
     raw: fallbackRaw,
-    diagnostics: fallbackDiagnostics,
+    diagnostics: {
+      ...fallbackDiagnostics,
+      total_parse_duration_ms: Date.now() - startedAt,
+    },
   };
 }
 
