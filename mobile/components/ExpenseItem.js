@@ -222,15 +222,6 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
             <View style={styles.headerRow}>
               <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
               <View style={styles.rightCol}>
-                <View style={styles.categoryChipTop}>
-                  <View style={[styles.dot, { backgroundColor: color }]} />
-                  <Text style={styles.categoryChipText} numberOfLines={1}>{categoryLabel}</Text>
-                  {isOwn && !pending ? (
-                    categorySavingId ? (
-                      <ActivityIndicator size="small" color="#777" style={styles.categorySpinner} />
-                    ) : null
-                  ) : null}
-                </View>
                 <Text style={[styles.amount, isRefund && styles.amountRefund]}>
                   {isRefund ? '−' : ''}${Math.abs(Number(localExpense.amount)).toFixed(2)}
                 </Text>
@@ -238,38 +229,41 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.metaText}>{dateLabel}</Text>
-              {locationLabel ? (
-                <>
-                  <Text style={styles.metaDivider}>·</Text>
-                  <Text style={styles.metaText} numberOfLines={1}>{locationLabel}</Text>
-                </>
+            </View>
+            <View style={styles.detailChipRow}>
+              <TouchableOpacity
+                style={[styles.categoryChipInline, categoryPickerOpen && styles.categoryChipInlineActive, (!isOwn || pending) && styles.categoryChipInlineStatic]}
+                onPress={isOwn && !pending && categoryOptions.length > 0 ? () => setCategoryPickerOpen(open => !open) : undefined}
+                activeOpacity={isOwn && !pending && categoryOptions.length > 0 ? 0.7 : 1}
+              >
+                <View style={[styles.dot, { backgroundColor: color }]} />
+                <Text style={styles.categoryChipText} numberOfLines={1}>{categoryLabel}</Text>
+                {isOwn && !pending && categoryOptions.length > 0 ? (
+                  categorySavingId ? (
+                    <ActivityIndicator size="small" color="#777" style={styles.categorySpinner} />
+                  ) : (
+                    <Ionicons
+                      name={categoryPickerOpen ? 'chevron-up' : 'chevron-down'}
+                      size={11}
+                      color="#777"
+                      style={styles.categoryChevron}
+                    />
+                  )
+                ) : null}
+              </TouchableOpacity>
+              {(showUser || localExpense.is_private) ? (
+                <View style={styles.ownerRow}>
+                  {showUser ? (
+                    <View style={[styles.ownerChip, isOwn && styles.ownerChipOwn]}>
+                      <Text style={[styles.ownerChipText, isOwn && styles.ownerChipTextOwn]}>{ownerLabel}</Text>
+                    </View>
+                  ) : null}
+                  {showUser && localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
+                </View>
               ) : null}
             </View>
-            {isOwn && !pending && categoryOptions.length > 0 ? (
-              <TouchableOpacity
-                style={[styles.inlineCategoryToggle, categoryPickerOpen && styles.inlineCategoryToggleActive]}
-                onPress={() => setCategoryPickerOpen(open => !open)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.inlineCategoryToggleText}>
-                  {categoryPickerOpen ? 'Hide category options' : 'Change category'}
-                </Text>
-                <Ionicons
-                  name={categoryPickerOpen ? 'chevron-up' : 'chevron-down'}
-                  size={12}
-                  color="#777"
-                />
-              </TouchableOpacity>
-            ) : null}
-            {(showUser || localExpense.is_private) ? (
-              <View style={styles.ownerRow}>
-                {showUser ? (
-                  <View style={[styles.ownerChip, isOwn && styles.ownerChipOwn]}>
-                    <Text style={[styles.ownerChipText, isOwn && styles.ownerChipTextOwn]}>{ownerLabel}</Text>
-                  </View>
-                ) : null}
-                {showUser && localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
-              </View>
+            {locationLabel ? (
+              <Text style={styles.locationMetaText} numberOfLines={1}>{locationLabel}</Text>
             ) : null}
           </View>
         </TouchableOpacity>
@@ -372,8 +366,7 @@ const styles = StyleSheet.create({
   },
   rightCol: {
     alignItems: 'flex-end',
-    minWidth: 108,
-    gap: 6,
+    minWidth: 84,
   },
   metaRow: {
     flexDirection: 'row',
@@ -382,12 +375,18 @@ const styles = StyleSheet.create({
     gap: 5,
     marginTop: 4,
   },
+  detailChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
   ownerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 7,
   },
   dot: {
     width: 5,
@@ -395,10 +394,11 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     marginRight: 6,
   },
-  categoryChipTop: {
+  categoryChipInline: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: 120,
+    alignSelf: 'flex-start',
+    maxWidth: '72%',
     backgroundColor: '#161616',
     borderWidth: 1,
     borderColor: '#222',
@@ -406,33 +406,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
+  categoryChipInlineActive: {
+    borderColor: '#333',
+  },
+  categoryChipInlineStatic: {
+    paddingRight: 10,
+  },
   categoryChipText: {
     color: '#d7d7d7',
     fontSize: 12,
     fontWeight: '500',
     flexShrink: 1,
   },
+  categoryChevron: {
+    marginLeft: 4,
+  },
   categorySpinner: {
     marginLeft: 6,
-  },
-  inlineCategoryToggle: {
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-  },
-  inlineCategoryToggleActive: {
-    opacity: 0.9,
-  },
-  inlineCategoryToggleText: {
-    fontSize: 11,
-    color: '#777',
-    fontWeight: '500',
   },
   metaText: {
     fontSize: 12,
     color: '#7c7c7c',
+  },
+  locationMetaText: {
+    fontSize: 12,
+    color: '#7c7c7c',
+    marginTop: 4,
   },
   metaDivider: {
     fontSize: 12,
