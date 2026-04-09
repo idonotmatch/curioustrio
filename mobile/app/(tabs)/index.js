@@ -18,6 +18,56 @@ import { removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expen
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const SORT_OPTIONS = [
+  { key: 'newest', label: 'Newest' },
+  { key: 'amount', label: 'Amount' },
+  { key: 'category', label: 'Category' },
+  { key: 'user', label: 'User' },
+  { key: 'merchant', label: 'Merchant' },
+];
+
+function compareText(a, b) {
+  return `${a || ''}`.localeCompare(`${b || ''}`, undefined, { sensitivity: 'base' });
+}
+
+function compareNewest(a, b) {
+  const dateCompare = `${b?.date || ''}`.localeCompare(`${a?.date || ''}`);
+  if (dateCompare !== 0) return dateCompare;
+  return `${b?.created_at || ''}`.localeCompare(`${a?.created_at || ''}`);
+}
+
+function sortExpenses(expenses = [], sortKey = 'newest') {
+  const list = [...expenses];
+  switch (sortKey) {
+    case 'amount':
+      return list.sort((a, b) => {
+        const diff = Math.abs(Number(b?.amount || 0)) - Math.abs(Number(a?.amount || 0));
+        if (diff !== 0) return diff;
+        return compareNewest(a, b);
+      });
+    case 'category':
+      return list.sort((a, b) => {
+        const diff = compareText(a?.category_parent_name || a?.category_name || 'Uncategorized', b?.category_parent_name || b?.category_name || 'Uncategorized');
+        if (diff !== 0) return diff;
+        return compareNewest(a, b);
+      });
+    case 'user':
+      return list.sort((a, b) => {
+        const diff = compareText(a?.user_name || 'You', b?.user_name || 'You');
+        if (diff !== 0) return diff;
+        return compareNewest(a, b);
+      });
+    case 'merchant':
+      return list.sort((a, b) => {
+        const diff = compareText(a?.merchant || a?.description || '', b?.merchant || b?.description || '');
+        if (diff !== 0) return diff;
+        return compareNewest(a, b);
+      });
+    case 'newest':
+    default:
+      return list.sort(compareNewest);
+  }
+}
 
 function getPastMonths() {
   const months = [];
@@ -122,6 +172,7 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
+  const [sortKey, setSortKey] = useState('newest');
   const { startDay } = useMonth();
   const { household, memberCount, refresh: refreshHousehold } = useHousehold();
   const householdStartDay = household?.budget_start_day || 1;
@@ -129,6 +180,7 @@ export default function FeedScreen() {
   const transactionStartDay = isMultiMember ? householdStartDay : startDay;
   const [selectedMonth, setSelectedMonth] = useState(() => currentPeriod(transactionStartDay));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showSortPicker, setShowSortPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
   const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
@@ -143,9 +195,10 @@ export default function FeedScreen() {
 
   const expenses = mode === 'mine' ? myExpenses : householdExpenses;
   const loading = mode === 'mine' ? myLoading : householdLoading;
+  const currentSortLabel = SORT_OPTIONS.find((option) => option.key === sortKey)?.label || 'Newest';
 
   const [displayExpenses, setDisplayExpenses] = useState([]);
-  useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
+  useEffect(() => { setDisplayExpenses(sortExpenses(expenses, sortKey)); }, [expenses, sortKey]);
 
   const refresh = useCallback(() => {
     refreshMine();
@@ -275,7 +328,8 @@ export default function FeedScreen() {
       />
 
       {/* Mine / Household toggle — filters the expense list only */}
-      {isMultiMember && (
+      <View style={styles.controlsRow}>
+      {isMultiMember ? (
         <View style={styles.toggleRow}>
           <TouchableOpacity
             style={[styles.toggleChip, mode === 'mine' && styles.toggleChipActive]}
@@ -290,7 +344,12 @@ export default function FeedScreen() {
             <Text style={[styles.toggleText, mode === 'household' && styles.toggleTextActive]}>Household</Text>
           </TouchableOpacity>
         </View>
-      )}
+      ) : <View />}
+        <TouchableOpacity style={styles.sortChip} onPress={() => setShowSortPicker(true)}>
+          <Ionicons name="swap-vertical-outline" size={13} color="#888" />
+          <Text style={styles.sortChipText}>Sort: {currentSortLabel}</Text>
+        </TouchableOpacity>
+      </View>
 
       <FlatList
         data={listData}
@@ -334,6 +393,31 @@ export default function FeedScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showSortPicker} transparent animationType="slide" onRequestClose={() => setShowSortPicker(false)}>
+        <View style={styles.monthPickerOverlay}>
+          <View style={styles.monthPickerSheet}>
+            <Text style={styles.monthPickerTitle}>Sort transactions</Text>
+            {SORT_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.monthOption, option.key === sortKey && styles.monthOptionActive]}
+                onPress={() => {
+                  setSortKey(option.key);
+                  setShowSortPicker(false);
+                }}
+              >
+                <Text style={[styles.monthOptionText, option.key === sortKey && styles.monthOptionTextActive]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.monthPickerClose} onPress={() => setShowSortPicker(false)}>
+              <Text style={styles.monthPickerCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -341,11 +425,32 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
 
-  toggleRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
+    gap: 12,
+  },
+  toggleRow: { flexDirection: 'row', gap: 8 },
   toggleChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#111', borderWidth: 1, borderColor: '#222' },
   toggleChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
   toggleText: { fontSize: 14, color: '#999', fontWeight: '500' },
   toggleTextActive: { color: '#000' },
+  sortChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  sortChipText: { fontSize: 13, color: '#999', fontWeight: '500' },
 
   spendHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: '#111' },
   globalHeader: { marginBottom: 10 },
