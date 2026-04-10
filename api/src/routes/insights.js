@@ -101,11 +101,14 @@ router.post('/:id/dismiss', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const metadata = req.body?.metadata && typeof req.body.metadata === 'object'
+      ? req.body.metadata
+      : null;
     await InsightState.dismiss(user.id, req.params.id);
     await InsightEvent.createBatch(user.id, [{
       insight_id: req.params.id,
       event_type: 'dismissed',
-      metadata: null,
+      metadata,
     }]);
     res.status(204).send();
   } catch (err) {

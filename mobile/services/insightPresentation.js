@@ -40,6 +40,24 @@ export function getInsightActionDescriptor(insight, context = {}) {
   }
 
   switch (type) {
+    case 'early_budget_pace':
+      return { label: 'Review early read', reason: metadata?.confidence === 'descriptive' ? 'Early signal' : 'More detail' };
+    case 'early_top_category':
+      return { label: 'See category activity', reason: 'Early signal' };
+    case 'early_repeated_merchant':
+      return { label: 'Review merchant pattern', reason: 'Early signal' };
+    case 'early_spend_concentration':
+      return { label: 'Review purchase impact', reason: 'Early signal' };
+    case 'early_cleanup':
+      return { label: 'Clean up categories', reason: 'Sharpen guidance' };
+    case 'early_logging_momentum':
+      return { label: 'See what is forming', reason: 'Learning' };
+    case 'developing_weekly_spend_change':
+      return { label: 'Review weekly shift', reason: 'Developing' };
+    case 'developing_category_shift':
+      return { label: 'See category activity', reason: 'Developing' };
+    case 'developing_repeated_merchant':
+      return { label: 'Review merchant pattern', reason: 'Developing' };
     case 'usage_start_logging':
       return { label: "Don't forget to log", reason: metadata?.usage_context === 'quiet_period' ? 'Quiet month' : 'Getting started' };
     case 'usage_set_budget':
@@ -96,6 +114,30 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
   const descriptor = getInsightActionDescriptor({ type: insightType, metadata: { scope, month, category_key: categoryKey } }, { trend, insightType, categoryKey });
 
   switch (`${insightType || ''}`) {
+    case 'early_budget_pace':
+    case 'early_top_category':
+    case 'early_repeated_merchant':
+    case 'early_spend_concentration':
+    case 'early_logging_momentum':
+    case 'developing_weekly_spend_change':
+    case 'developing_category_shift':
+    case 'developing_repeated_merchant':
+      return {
+        title: 'Treat this as an early read',
+        body: 'This signal is useful for orientation now and should become more specific as more expenses are logged.',
+        cta: null,
+        route: null,
+      };
+    case 'early_cleanup':
+      return {
+        title: 'Clean up the inputs first',
+        body: 'Categorizing these expenses will help future insight cards become more specific.',
+        cta: 'Open categories',
+        route: {
+          pathname: '/categories',
+          params: {},
+        },
+      };
     case 'projected_month_end_over_budget':
     case 'projected_month_end_under_budget':
     case 'budget_too_low':

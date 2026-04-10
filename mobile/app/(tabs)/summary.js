@@ -74,8 +74,25 @@ function insightActionReason(insight) {
   return getInsightActionDescriptor(insight).reason;
 }
 
+function insightEventMetadata(insight, surface = 'summary') {
+  return {
+    surface,
+    type: insight?.type || null,
+    insight_type: insight?.type || null,
+    maturity: insight?.metadata?.maturity || null,
+    confidence: insight?.metadata?.confidence || null,
+    scope: insight?.metadata?.scope || null,
+    entity_type: insight?.entity_type || null,
+    entity_id: insight?.entity_id || null,
+    category_key: insight?.metadata?.category_key || null,
+    merchant_key: insight?.metadata?.merchant_key || null,
+  };
+}
+
 function insightRoleLabel(insight) {
   const type = `${insight?.type || ''}`;
+  if (type.startsWith('early_')) return type === 'early_cleanup' ? 'Setup' : 'Learning';
+  if (type.startsWith('developing_')) return 'Explain';
   if (type === 'usage_set_budget') return 'Setup';
   if (type === 'usage_start_logging' || type === 'usage_building_history') return 'Learning';
   if (type === 'one_offs_driving_variance' || type === 'one_off_expense_skewing_projection' || type === 'top_category_driver' || type === 'projected_category_surge' || type === 'recurring_cost_pressure') {
@@ -287,19 +304,21 @@ export default function SummaryScreen() {
       .filter((id) => id && !loggedShownInsightIds.current.has(id));
     if (!idsToLog.length) return;
     idsToLog.forEach((id) => loggedShownInsightIds.current.add(id));
-    logEvents(idsToLog.map((id) => ({
-      insight_id: id,
+    logEvents(displayInsights
+      .filter((insight) => idsToLog.includes(insight.id))
+      .map((insight) => ({
+      insight_id: insight.id,
       event_type: 'shown',
-      metadata: { surface: 'summary' },
+      metadata: insightEventMetadata(insight),
     })));
   }, [displayInsights, insights.length, logEvents]);
 
-  function handleDismissInsight(id) {
+  function handleDismissInsight(insight) {
     if (__DEV__ && insights.length === 0) {
-      setDismissedMockInsightIds((current) => [...current, id]);
+      setDismissedMockInsightIds((current) => [...current, insight.id]);
       return;
     }
-    dismissInsight(id);
+    dismissInsight(insight.id, insightEventMetadata(insight));
   }
 
   async function handlePressInsight(insight) {
@@ -309,7 +328,7 @@ export default function SummaryScreen() {
       await logEvents([{
         insight_id: insight.id,
         event_type: 'tapped',
-        metadata: { surface: 'summary', type: insight.type },
+        metadata: insightEventMetadata(insight),
       }]);
     }
 
@@ -378,6 +397,35 @@ export default function SummaryScreen() {
           title: insight.title,
           insight_id: insight.id,
           mock: isMockInsight ? '1' : '',
+        },
+      });
+      return;
+    }
+
+    const earlyDevelopingInsightTypes = new Set([
+      'early_budget_pace',
+      'early_top_category',
+      'early_repeated_merchant',
+      'early_spend_concentration',
+      'early_cleanup',
+      'early_logging_momentum',
+      'developing_weekly_spend_change',
+      'developing_category_shift',
+      'developing_repeated_merchant',
+    ]);
+
+    if (earlyDevelopingInsightTypes.has(insight?.type)) {
+      router.push({
+        pathname: '/insight-detail',
+        params: {
+          insight_id: insight.id,
+          insight_type: insight.type,
+          title: insight.title,
+          body: insight.body,
+          severity: insight.severity || 'low',
+          entity_type: insight.entity_type || '',
+          entity_id: insight.entity_id || '',
+          metadata: JSON.stringify(insight.metadata || {}),
         },
       });
       return;
@@ -713,7 +761,7 @@ export default function SummaryScreen() {
                         <TouchableOpacity
                           onPress={(event) => {
                             event?.stopPropagation?.();
-                            handleDismissInsight(insight.id);
+                            handleDismissInsight(insight);
                           }}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           accessibilityRole="button"

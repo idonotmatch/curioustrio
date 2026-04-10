@@ -30,9 +30,9 @@ export function useInsights(limit = 5) {
     } catch {}
   }, [cacheKey]);
 
-  const dismiss = useCallback(async (id) => {
+  const dismiss = useCallback(async (id, metadata = null) => {
     if (!id) return;
-    await api.post(`/insights/${encodeURIComponent(id)}/dismiss`, {});
+    await api.post(`/insights/${encodeURIComponent(id)}/dismiss`, metadata ? { metadata } : {});
     await invalidateCacheByPrefix('cache:insights:');
     setInsights((current) => current.filter((insight) => insight.id !== id));
   }, []);

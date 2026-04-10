@@ -208,6 +208,7 @@ function AppNavigator() {
       <Stack.Screen name="scenario-check" options={{ title: 'Scenario Check', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="watching-plans" options={{ title: 'Watching', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="trend-detail" options={{ title: 'Trend detail', headerBackTitle: 'Summary' }} />
+      <Stack.Screen name="insight-detail" options={{ title: 'Insight detail', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="join" options={{ title: 'Join Household', headerBackTitle: 'Back' }} />
     </Stack>
   );

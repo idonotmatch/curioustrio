@@ -266,7 +266,15 @@ describe('GET /insights', () => {
     expect(first.body.length).toBeGreaterThanOrEqual(1);
 
     for (const insight of first.body) {
-      const dismissRes = await request(app).post(`/insights/${encodeURIComponent(insight.id)}/dismiss`);
+      const dismissRes = await request(app)
+        .post(`/insights/${encodeURIComponent(insight.id)}/dismiss`)
+        .send({
+          metadata: {
+            surface: 'summary',
+            insight_type: insight.type,
+            maturity: insight.metadata?.maturity || null,
+          },
+        });
       expect(dismissRes.status).toBe(204);
     }
 
@@ -281,6 +289,19 @@ describe('GET /insights', () => {
       [userId]
     );
     expect(dismissEvents.rows[0].count).toBe(first.body.length);
+
+    const dismissMetadata = await db.query(
+      `SELECT metadata
+       FROM insight_events
+       WHERE user_id = $1 AND event_type = 'dismissed'
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [userId]
+    );
+    expect(dismissMetadata.rows[0].metadata).toMatchObject({
+      surface: 'summary',
+      insight_type: first.body[0].type,
+    });
   });
 
   it('returns pace and budget-fit trend insights', async () => {
