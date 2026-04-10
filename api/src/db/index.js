@@ -52,10 +52,9 @@ async function seedDefaultCategories() {
   }
 }
 
-// Run in background — don't block server startup
-seedDefaultCategories();
-
 module.exports = {
   query: (text, params) => pool.query(text, params),
   pool,
+  DEFAULT_CATEGORIES,
+  seedDefaultCategories,
 };

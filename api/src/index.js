@@ -22,6 +22,7 @@ const pushRouter = require('./routes/push');
 const placesRouter = require('./routes/places');
 const priceObservationsRouter = require('./routes/priceObservations');
 const cronRouter = require('./routes/cron');
+const { seedDefaultCategories } = require('./db');
 
 const app = express();
 
@@ -81,6 +82,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 if (require.main === module) {
+  seedDefaultCategories();
   // Bind explicitly to 0.0.0.0 (IPv4 wildcard) so the server is reachable from
   // the iOS Simulator and physical devices on the local network. Without an
   // explicit hostname, Node.js on some systems binds to :: (IPv6 only) which
