@@ -265,6 +265,9 @@ function buildTrendInsights(trend, scope) {
         delta_amount: Number(trend?.pace?.delta_amount || 0),
         delta_percent: deltaPercent,
         projected_period_total: Number(trend?.pace?.projected_period_total || 0),
+        maturity: 'mature',
+        confidence: 'comparative',
+        continuity_key: `budget_pace:${scopeLabel}:${trend.month}`,
       },
       actions: [],
     });
@@ -289,6 +292,9 @@ function buildTrendInsights(trend, scope) {
         scope: scopeLabel,
         month: trend.month,
         direction: driverDirection,
+        maturity: 'mature',
+        confidence: 'comparative',
+        continuity_key: `category:${scopeLabel}:${topDriver.category_key}`,
         ...topDriver,
       },
       actions: [],
@@ -358,6 +364,8 @@ function buildTrendInsights(trend, scope) {
         under_budget_periods_last_6: Number(trend?.budget_adherence?.under_budget_periods_last_6 || 0),
         historical_period_count: budgetHistoryCount,
         budget_fit: budgetFit,
+        maturity: 'mature',
+        confidence: 'comparative',
       },
       actions: [],
     });
@@ -404,6 +412,8 @@ function buildProjectionInsights(projection, scope) {
         projected_budget_delta: projectedBudgetDelta,
         confidence: overall.confidence,
         historical_period_count: historicalPeriodCount,
+        maturity: 'mature',
+        continuity_key: `budget_pace:${scopeLabel}:${projection.month}`,
       },
       actions: [],
     });
@@ -434,6 +444,8 @@ function buildProjectionInsights(projection, scope) {
         projected_headroom_amount: Math.abs(projectedBudgetDelta),
         confidence: overall.confidence,
         historical_period_count: historicalPeriodCount,
+        maturity: 'mature',
+        continuity_key: `budget_pace:${scopeLabel}:${projection.month}`,
       },
       actions: [],
     });
@@ -515,6 +527,8 @@ function buildProjectionInsights(projection, scope) {
         delta_percent: Number(topCategoryProjection.delta_percent || 0),
         confidence: topCategoryProjection.confidence,
         historical_period_count: Number(topCategoryProjection.historical_period_count || 0),
+        maturity: 'mature',
+        continuity_key: `category:${scopeLabel}:${topCategoryProjection.category_key}`,
       },
       actions: [],
     });
@@ -567,6 +581,8 @@ function buildProjectionInsights(projection, scope) {
         delta_percent: Number(lowestCategoryProjection.delta_percent || 0),
         confidence: lowestCategoryProjection.confidence,
         historical_period_count: Number(lowestCategoryProjection.historical_period_count || 0),
+        maturity: 'mature',
+        continuity_key: `category:${scopeLabel}:${lowestCategoryProjection.category_key}`,
       },
       actions: [],
     });
@@ -634,6 +650,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
         budget_used_percent: budgetUsedPercent,
         expected_used_percent: expectedUsedPercent,
         days_remaining: daysRemaining,
+        continuity_key: `budget_pace:${scopeLabel}:${projection.month}`,
       }),
       actions: [],
     });
@@ -657,6 +674,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
         category_spend: Number(topCategory.spend || 0),
         category_count: Number(topCategory.count || 0),
         share_of_spend: share,
+        continuity_key: `category:${scopeLabel}:${topCategory.category_key}`,
       }),
       actions: [],
     });
@@ -678,6 +696,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
         merchant_name: topMerchant.merchant_name,
         merchant_spend: Number(topMerchant.spend || 0),
         merchant_count: Number(topMerchant.count || 0),
+        continuity_key: `merchant:${scopeLabel}:${topMerchant.merchant_key}`,
       }),
       actions: [],
     });
@@ -741,6 +760,54 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
   }
 
   return insights.slice(0, 4);
+}
+
+function maturityRankForInsight(insight) {
+  const maturity = `${insight?.metadata?.maturity || ''}`.trim();
+  if (maturity === 'mature') return 3;
+  if (maturity === 'developing') return 2;
+  if (maturity === 'early') return 1;
+  return 0;
+}
+
+function insightContinuityKey(insight) {
+  if (insight?.metadata?.continuity_key) return insight.metadata.continuity_key;
+
+  const type = `${insight?.type || ''}`.trim();
+  const scope = insight?.metadata?.scope || 'global';
+  const month = insight?.metadata?.month || 'current';
+
+  if (
+    type === 'early_top_category'
+    || type === 'developing_category_shift'
+    || type === 'top_category_driver'
+    || type === 'projected_category_surge'
+    || type === 'projected_category_under_baseline'
+  ) {
+    const categoryKey = insight?.metadata?.category_key || insight?.entity_id;
+    return categoryKey ? `category:${scope}:${categoryKey}` : null;
+  }
+
+  if (
+    type === 'early_repeated_merchant'
+    || type === 'developing_repeated_merchant'
+  ) {
+    const merchantKey = insight?.metadata?.merchant_key || insight?.entity_id;
+    return merchantKey ? `merchant:${scope}:${merchantKey}` : null;
+  }
+
+  if (
+    type === 'early_budget_pace'
+    || type === 'developing_weekly_spend_change'
+    || type === 'spend_pace_ahead'
+    || type === 'spend_pace_behind'
+    || type === 'projected_month_end_over_budget'
+    || type === 'projected_month_end_under_budget'
+  ) {
+    return `budget_pace:${scope}:${month}`;
+  }
+
+  return null;
 }
 
 function summarizeExpenseRows(rows = []) {
@@ -921,12 +988,13 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
         created_at: createdAt,
         expires_at: expiresAt,
         metadata: developingInsightMetadata(rollingActivity, scopeLabel, {
-          current_spend: currentSpend,
-          previous_spend: previousSpend,
-          delta_amount: deltaAmount,
-          delta_percent: deltaPercent,
-        }),
-        actions: [],
+        current_spend: currentSpend,
+        previous_spend: previousSpend,
+        delta_amount: deltaAmount,
+        delta_percent: deltaPercent,
+        continuity_key: `budget_pace:${scopeLabel}:${projection?.month || 'current'}`,
+      }),
+      actions: [],
       });
     }
   }
@@ -957,6 +1025,7 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
           previous_spend: priorSpend,
           delta_amount: deltaAmount,
           share_of_spend: share,
+          continuity_key: `category:${scopeLabel}:${topCategory.category_key}`,
         }),
         actions: [],
       });
@@ -984,6 +1053,7 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
         current_spend: Number(repeatedMerchant.spend || 0),
         previous_spend: Number(previousMerchant?.spend || 0),
         merchant_count: Number(repeatedMerchant.count || 0),
+        continuity_key: `merchant:${scopeLabel}:${repeatedMerchant.merchant_key}`,
       }),
       actions: [],
     });
@@ -1422,6 +1492,40 @@ function resolveOpportunityCompetition(insights) {
   return insights.filter((insight) => !removals.has(insight.id) && byType.has(insight.id));
 }
 
+function resolveMaturityCompetition(insights) {
+  const grouped = new Map();
+  const passthrough = [];
+
+  for (const insight of insights || []) {
+    const key = insightContinuityKey(insight);
+    const rank = maturityRankForInsight(insight);
+    if (!key || rank <= 0) {
+      passthrough.push(insight);
+      continue;
+    }
+
+    const group = grouped.get(key) || [];
+    group.push(insight);
+    grouped.set(key, group);
+  }
+
+  const resolved = [];
+  for (const group of grouped.values()) {
+    const maxRank = group.reduce((max, insight) => Math.max(max, maturityRankForInsight(insight)), 0);
+    const winners = group
+      .filter((insight) => maturityRankForInsight(insight) === maxRank)
+      .sort((a, b) =>
+        severityRank(b.severity) - severityRank(a.severity)
+        || insightDestinationAdjustment(b) - insightDestinationAdjustment(a)
+        || new Date(b.created_at) - new Date(a.created_at)
+      );
+
+    resolved.push(winners[0]);
+  }
+
+  return [...passthrough, ...resolved];
+}
+
 function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scope = 'personal', context = 'default' }) {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1722,7 +1826,7 @@ async function buildInsights({ user, limit = 10 }) {
     });
   }
 
-  return resolveOpportunityCompetition(deduped)
+  return resolveMaturityCompetition(resolveOpportunityCompetition(deduped))
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }
@@ -1775,7 +1879,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       context: 'quiet_period',
     });
 
-    supplementedRanked = dedupeInsights([...ranked, ...fallbackInsights]).sort((a, b) => {
+    supplementedRanked = resolveMaturityCompetition(dedupeInsights([...ranked, ...fallbackInsights])).sort((a, b) => {
       const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
       if (scoreDiff !== 0) return scoreDiff;
       return new Date(b.created_at) - new Date(a.created_at);
@@ -1791,6 +1895,8 @@ module.exports = {
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
   summarizeExpenseRows,
+  insightContinuityKey,
+  resolveMaturityCompetition,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,

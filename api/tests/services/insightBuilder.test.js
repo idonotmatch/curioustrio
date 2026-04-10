@@ -6,6 +6,8 @@ const {
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
   summarizeExpenseRows,
+  insightContinuityKey,
+  resolveMaturityCompetition,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
@@ -350,6 +352,53 @@ describe('insightBuilder orchestration', () => {
     ]));
     expect(insights.every((insight) => insight.metadata.maturity === 'developing')).toBe(true);
     expect(insights.every((insight) => insight.metadata.confidence === 'directional')).toBe(true);
+  });
+
+  it('uses continuity keys to connect early, developing, and mature category cards', () => {
+    expect(insightContinuityKey(buildInsight({
+      type: 'early_top_category',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'early', category_key: 'shopping' },
+    }))).toBe('category:personal:shopping');
+
+    expect(insightContinuityKey(buildInsight({
+      type: 'projected_category_surge',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'mature', category_key: 'shopping' },
+    }))).toBe('category:personal:shopping');
+  });
+
+  it('graduates a story by keeping the most mature insight for a continuity key', () => {
+    const early = buildInsight({
+      id: 'early-shopping',
+      type: 'early_top_category',
+      severity: 'medium',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'early', category_key: 'shopping' },
+    });
+    const developing = buildInsight({
+      id: 'developing-shopping',
+      type: 'developing_category_shift',
+      severity: 'low',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'developing', category_key: 'shopping' },
+    });
+    const mature = buildInsight({
+      id: 'mature-shopping',
+      type: 'projected_category_surge',
+      severity: 'low',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'mature', category_key: 'shopping' },
+    });
+
+    const resolved = resolveMaturityCompetition([early, developing, mature]);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].id).toBe('mature-shopping');
   });
 
   it('does not build developing insights once mature history exists', () => {
