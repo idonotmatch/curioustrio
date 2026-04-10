@@ -6,6 +6,8 @@ const {
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
   summarizeExpenseRows,
+  summarizeInsightList,
+  tierGateSummary,
   insightContinuityKey,
   resolveMaturityCompetition,
   buildUsageFallbackInsights,
@@ -303,6 +305,57 @@ describe('insightBuilder orchestration', () => {
       total_spend: 72,
     });
     expect(summary.top_merchants[0]).toMatchObject({ merchant_key: 'amazon', count: 2, spend: 60 });
+  });
+
+  it('summarizes insight lists for debug output', () => {
+    const summary = summarizeInsightList([
+      buildInsight({ id: 'early-1', type: 'early_top_category', severity: 'low', metadata: { maturity: 'early' } }),
+      buildInsight({ id: 'developing-1', type: 'developing_category_shift', severity: 'medium', metadata: { maturity: 'developing' } }),
+      buildInsight({ id: 'mature-1', type: 'projected_category_surge', severity: 'high', metadata: { maturity: 'mature' } }),
+    ]);
+
+    expect(summary.count).toBe(3);
+    expect(summary.by_maturity).toMatchObject({ early: 1, developing: 1, mature: 1 });
+    expect(summary.by_type.projected_category_surge).toBe(1);
+    expect(summary.ids).toEqual(['early-1', 'developing-1', 'mature-1']);
+  });
+
+  it('explains tier gates for early, developing, and mature insight readiness', () => {
+    const gates = tierGateSummary({
+      projection: {
+        overall: {
+          history_stage: 'none',
+          historical_period_count: 0,
+          current_spend_to_date: 150,
+        },
+        current_activity: {
+          expense_count: 6,
+          active_day_count: 4,
+          total_spend: 150,
+          top_categories: [{ category_key: 'shopping', category_name: 'Shopping', spend: 80, count: 3 }],
+          top_merchants: [{ merchant_key: 'amazon', merchant_name: 'Amazon', spend: 60, count: 2 }],
+          uncategorized_count: 1,
+        },
+      },
+      rollingActivity: {
+        days: 7,
+        current_window: {
+          expense_count: 6,
+          active_day_count: 4,
+          total_spend: 150,
+        },
+        previous_window: {
+          total_spend: 90,
+        },
+      },
+      budgetLimit: 500,
+    });
+
+    expect(gates.budget_set).toBe(true);
+    expect(gates.gates.early.eligible).toBe(true);
+    expect(gates.gates.developing.eligible).toBe(true);
+    expect(gates.gates.mature.eligible).toBe(false);
+    expect(gates.gates.mature.blocked_by).toEqual(['historical_period_count_lt_3']);
   });
 
   it('builds directional developing insights from rolling windows', () => {

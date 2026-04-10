@@ -1526,6 +1526,167 @@ function resolveMaturityCompetition(insights) {
   return [...passthrough, ...resolved];
 }
 
+function summarizeInsightList(insights = []) {
+  const byType = {};
+  const byMaturity = {};
+  const bySeverity = {};
+
+  for (const insight of insights || []) {
+    const type = insight?.type || 'unknown';
+    const maturity = insight?.metadata?.maturity || 'unspecified';
+    const severity = insight?.severity || 'low';
+    byType[type] = (byType[type] || 0) + 1;
+    byMaturity[maturity] = (byMaturity[maturity] || 0) + 1;
+    bySeverity[severity] = (bySeverity[severity] || 0) + 1;
+  }
+
+  return {
+    count: insights.length,
+    by_type: byType,
+    by_maturity: byMaturity,
+    by_severity: bySeverity,
+    ids: insights.map((insight) => insight.id).filter(Boolean),
+  };
+}
+
+function insightDebugRows(insights = []) {
+  return (insights || []).map((insight) => ({
+    id: insight.id,
+    type: insight.type,
+    title: insight.title,
+    severity: insight.severity,
+    entity_type: insight.entity_type,
+    entity_id: insight.entity_id,
+    maturity: insight.metadata?.maturity || null,
+    confidence: insight.metadata?.confidence || null,
+    continuity_key: insightContinuityKey(insight),
+    state: insight.state?.status || null,
+  }));
+}
+
+function tierGateSummary({ projection, rollingActivity, budgetLimit = null }) {
+  const overall = projection?.overall || {};
+  const currentActivity = projection?.current_activity || {};
+  const historicalPeriodCount = Number(overall.historical_period_count || 0);
+  const expenseCount = Number(currentActivity.expense_count || 0);
+  const totalSpend = Number(currentActivity.total_spend || overall.current_spend_to_date || 0);
+  const rollingCurrent = rollingActivity?.current_window || {};
+  const rollingExpenseCount = Number(rollingCurrent.expense_count || 0);
+  const rollingActiveDays = Number(rollingCurrent.active_day_count || 0);
+
+  return {
+    history_stage: overall.history_stage || 'none',
+    historical_period_count: historicalPeriodCount,
+    budget_set: Number(budgetLimit || 0) > 0,
+    current_activity: {
+      expense_count: expenseCount,
+      active_day_count: Number(currentActivity.active_day_count || 0),
+      total_spend: totalSpend,
+      top_category: currentActivity.top_categories?.[0] || null,
+      top_merchant: currentActivity.top_merchants?.[0] || null,
+      uncategorized_count: Number(currentActivity.uncategorized_count || 0),
+    },
+    rolling_activity: {
+      window_days: Number(rollingActivity?.days || 7),
+      current_expense_count: rollingExpenseCount,
+      current_active_day_count: rollingActiveDays,
+      current_total_spend: Number(rollingCurrent.total_spend || 0),
+      previous_total_spend: Number(rollingActivity?.previous_window?.total_spend || 0),
+    },
+    gates: {
+      early: {
+        eligible: historicalPeriodCount < 3 && expenseCount > 0 && totalSpend > 0,
+        blocked_by: [
+          historicalPeriodCount >= 3 ? 'mature_history_available' : null,
+          expenseCount <= 0 ? 'no_current_expenses' : null,
+          totalSpend <= 0 ? 'no_current_spend' : null,
+        ].filter(Boolean),
+      },
+      developing: {
+        eligible: historicalPeriodCount < 3 && rollingExpenseCount >= 4 && rollingActiveDays >= 2 && Number(rollingCurrent.total_spend || 0) > 0,
+        blocked_by: [
+          historicalPeriodCount >= 3 ? 'mature_history_available' : null,
+          rollingExpenseCount < 4 ? 'rolling_expense_count_lt_4' : null,
+          rollingActiveDays < 2 ? 'rolling_active_day_count_lt_2' : null,
+          Number(rollingCurrent.total_spend || 0) <= 0 ? 'no_rolling_spend' : null,
+        ].filter(Boolean),
+      },
+      mature: {
+        eligible: historicalPeriodCount >= 3,
+        blocked_by: historicalPeriodCount >= 3 ? [] : ['historical_period_count_lt_3'],
+      },
+    },
+  };
+}
+
+async function buildInsightDebugForUser({ user, limit = 10 }) {
+  const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
+  const hasMultipleHouseholdMembers = householdMembers.length > 1;
+  const scopes = ['personal'];
+  if (user?.household_id && hasMultipleHouseholdMembers) scopes.push('household');
+
+  const scopeReports = [];
+  for (const scope of scopes) {
+    const [trend, projection, budgetSettings, rollingActivity] = await Promise.all([
+      analyzeSpendingTrend({ user, scope }),
+      analyzeSpendProjection({ user, scope }),
+      scope === 'household' && user.household_id
+        ? BudgetSetting.findByHousehold(user.household_id)
+        : BudgetSetting.findByUser(user.id),
+      analyzeRollingActivity({ user, scope }),
+    ]);
+    const budgetLimit = budgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    const early = buildEarlyUsageInsights({ projection, budgetLimit, scope });
+    const developing = buildDevelopingUsageInsights({ rollingActivity, projection, scope });
+    const mature = [
+      ...buildTrendInsights(trend, scope),
+      ...buildProjectionInsights(projection, scope),
+    ];
+    const merged = resolveMaturityCompetition(dedupeInsights([...early, ...developing, ...mature]));
+
+    scopeReports.push({
+      scope,
+      gates: tierGateSummary({ projection, rollingActivity, budgetLimit }),
+      tiers: {
+        early: summarizeInsightList(early),
+        developing: summarizeInsightList(developing),
+        mature: summarizeInsightList(mature),
+        after_maturity_competition: summarizeInsightList(merged),
+      },
+      generated: {
+        early: insightDebugRows(early),
+        developing: insightDebugRows(developing),
+        mature: insightDebugRows(mature),
+        after_maturity_competition: insightDebugRows(merged),
+      },
+    });
+  }
+
+  const [rawInsights, finalInsights, recentEvents] = await Promise.all([
+    buildInsights({ user, limit: 50 }),
+    buildInsightsForUser({ user, limit }),
+    InsightEvent.getRecentByUser(user.id, 500),
+  ]);
+  const stateMap = await InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id));
+  const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
+  const feedbackSummary = summarizeFeedbackEvents([...recentEvents, ...inferredEvents]);
+
+  return {
+    user_id: user.id,
+    limit,
+    scopes: scopeReports,
+    raw: summarizeInsightList(rawInsights),
+    final: summarizeInsightList(finalInsights),
+    final_insights: insightDebugRows(finalInsights),
+    feedback: {
+      event_count: recentEvents.length + inferredEvents.length,
+      inferred_event_count: inferredEvents.length,
+      suppressed_raw_count: rawInsights.filter((insight) => shouldSuppressInsight(insight, feedbackSummary)).length,
+      dismissed_raw_count: rawInsights.filter((insight) => stateMap.get(insight.id)?.status === 'dismissed').length,
+    },
+  };
+}
+
 function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scope = 'personal', context = 'default' }) {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1892,9 +2053,12 @@ async function buildInsightsForUser({ user, limit = 10 }) {
 module.exports = {
   buildInsights,
   buildInsightsForUser,
+  buildInsightDebugForUser,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
   summarizeExpenseRows,
+  summarizeInsightList,
+  tierGateSummary,
   insightContinuityKey,
   resolveMaturityCompetition,
   buildUsageFallbackInsights,
