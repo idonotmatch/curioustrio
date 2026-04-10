@@ -1,5 +1,58 @@
 const db = require('../db');
 
+const USAGE_INSIGHT_THRESHOLDS = {
+  earlyTopCategory: {
+    minSpend: 15,
+    minShareOfSpend: 0.3,
+    minExpenseCount: 2,
+    mediumSharePercent: 55,
+  },
+  earlyRepeatedMerchant: {
+    minSpend: 15,
+    minCount: 2,
+    mediumCount: 3,
+  },
+  earlySpendConcentration: {
+    minExpenseCount: 2,
+    minShareOfSpend: 0.3,
+    minAmount: 20,
+    mediumSharePercent: 50,
+  },
+  earlyCleanup: {
+    minUncategorizedCount: 2,
+  },
+  earlyLoggingMomentum: {
+    minActiveDayCount: 2,
+    minExpenseCount: 3,
+  },
+  earlyBudgetPace: {
+    tightPaceDeltaPercent: 10,
+    minBudgetUsedShare: 0.1,
+  },
+  developing: {
+    minExpenseCount: 3,
+    minActiveDayCount: 2,
+  },
+  developingWeeklySpendChange: {
+    minDeltaAmount: 25,
+    minDeltaPercent: 25,
+    mediumDeltaPercent: 60,
+  },
+  developingCategoryShift: {
+    minSpend: 25,
+    minCount: 2,
+    minNewCategorySharePercent: 30,
+    minDeltaAmount: 20,
+    minDeltaRatio: 0.5,
+    mediumSharePercent: 55,
+  },
+  developingRepeatedMerchant: {
+    minCount: 2,
+    minSpend: 20,
+    mediumCount: 3,
+  },
+};
+
 function pad(n) {
   return String(n).padStart(2, '0');
 }
@@ -48,13 +101,17 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
   const periodShare = daysInPeriod && dayIndex ? dayIndex / daysInPeriod : null;
   const activeDayCount = Number(activity.active_day_count || 0);
   const topCategory = activity.top_categories?.[0];
-  const topMerchant = activity.top_merchants?.find((merchant) => Number(merchant.count || 0) >= 2);
+  const topMerchant = activity.top_merchants?.find((merchant) =>
+    Number(merchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.minCount
+  );
   const largestExpense = activity.largest_expense;
 
   if (Number(budgetLimit) > 0) {
     const budgetUsedPercent = Number(((totalSpend / Number(budgetLimit)) * 100).toFixed(1));
     const expectedUsedPercent = periodShare == null ? null : Number((periodShare * 100).toFixed(1));
-    const paceIsTight = expectedUsedPercent != null && budgetUsedPercent >= expectedUsedPercent + 15 && totalSpend >= Number(budgetLimit) * 0.2;
+    const paceIsTight = expectedUsedPercent != null
+      && budgetUsedPercent >= expectedUsedPercent + USAGE_INSIGHT_THRESHOLDS.earlyBudgetPace.tightPaceDeltaPercent
+      && totalSpend >= Number(budgetLimit) * USAGE_INSIGHT_THRESHOLDS.earlyBudgetPace.minBudgetUsedShare;
     insights.push({
       id: `early_budget_pace:${scopeLabel}:${projection.month}:${Math.round(totalSpend)}:${Math.round(Number(budgetLimit))}`,
       type: 'early_budget_pace',
@@ -79,14 +136,21 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     });
   }
 
-  if (topCategory && Number(topCategory.spend || 0) >= Math.max(20, totalSpend * 0.35) && expenseCount >= 3) {
+  if (
+    topCategory
+    && Number(topCategory.spend || 0) >= Math.max(
+      USAGE_INSIGHT_THRESHOLDS.earlyTopCategory.minSpend,
+      totalSpend * USAGE_INSIGHT_THRESHOLDS.earlyTopCategory.minShareOfSpend
+    )
+    && expenseCount >= USAGE_INSIGHT_THRESHOLDS.earlyTopCategory.minExpenseCount
+  ) {
     const share = Number(((Number(topCategory.spend || 0) / totalSpend) * 100).toFixed(1));
     insights.push({
       id: `early_top_category:${scopeLabel}:${projection.month}:${topCategory.category_key}:${Math.round(Number(topCategory.spend || 0))}`,
       type: 'early_top_category',
       title: `${topCategory.category_name} is leading so far`,
       body: `${topCategory.category_name} accounts for ${share}% of your ${scopeLabel} spending in this period so far.`,
-      severity: share >= 55 ? 'medium' : 'low',
+      severity: share >= USAGE_INSIGHT_THRESHOLDS.earlyTopCategory.mediumSharePercent ? 'medium' : 'low',
       entity_type: 'category',
       entity_id: topCategory.category_key,
       created_at: createdAt,
@@ -103,13 +167,13 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     });
   }
 
-  if (topMerchant && Number(topMerchant.spend || 0) >= 15) {
+  if (topMerchant && Number(topMerchant.spend || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.minSpend) {
     insights.push({
       id: `early_repeated_merchant:${scopeLabel}:${projection.month}:${topMerchant.merchant_key}:${topMerchant.count}`,
       type: 'early_repeated_merchant',
       title: `${topMerchant.merchant_name} is showing up repeatedly`,
       body: `${topMerchant.merchant_name} has appeared ${topMerchant.count} times in your ${scopeLabel} spending this period.`,
-      severity: Number(topMerchant.count || 0) >= 3 ? 'medium' : 'low',
+      severity: Number(topMerchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.mediumCount ? 'medium' : 'low',
       entity_type: 'merchant',
       entity_id: topMerchant.merchant_key,
       created_at: createdAt,
@@ -125,14 +189,19 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     });
   }
 
-  if (largestExpense && expenseCount >= 3 && Number(largestExpense.share_of_spend || 0) >= 0.35 && Math.abs(Number(largestExpense.amount || 0)) >= 25) {
+  if (
+    largestExpense
+    && expenseCount >= USAGE_INSIGHT_THRESHOLDS.earlySpendConcentration.minExpenseCount
+    && Number(largestExpense.share_of_spend || 0) >= USAGE_INSIGHT_THRESHOLDS.earlySpendConcentration.minShareOfSpend
+    && Math.abs(Number(largestExpense.amount || 0)) >= USAGE_INSIGHT_THRESHOLDS.earlySpendConcentration.minAmount
+  ) {
     const share = Number((Number(largestExpense.share_of_spend || 0) * 100).toFixed(1));
     insights.push({
       id: `early_spend_concentration:${scopeLabel}:${projection.month}:${largestExpense.id || largestExpense.merchant}:${Math.round(Number(largestExpense.amount || 0))}`,
       type: 'early_spend_concentration',
       title: 'One purchase is shaping the early read',
       body: `${largestExpense.merchant} accounts for ${share}% of your ${scopeLabel} spending so far this period.`,
-      severity: share >= 50 ? 'medium' : 'low',
+      severity: share >= USAGE_INSIGHT_THRESHOLDS.earlySpendConcentration.mediumSharePercent ? 'medium' : 'low',
       entity_type: 'expense',
       entity_id: largestExpense.id || `${scopeLabel}:${projection.month}:${largestExpense.merchant}`,
       created_at: createdAt,
@@ -145,7 +214,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     });
   }
 
-  if (Number(activity.uncategorized_count || 0) >= 2) {
+  if (Number(activity.uncategorized_count || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyCleanup.minUncategorizedCount) {
     insights.push({
       id: `early_cleanup:${scopeLabel}:${projection.month}:uncategorized:${activity.uncategorized_count}`,
       type: 'early_cleanup',
@@ -163,7 +232,10 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     });
   }
 
-  if (activeDayCount >= 3 && expenseCount >= 5) {
+  if (
+    activeDayCount >= USAGE_INSIGHT_THRESHOLDS.earlyLoggingMomentum.minActiveDayCount
+    && expenseCount >= USAGE_INSIGHT_THRESHOLDS.earlyLoggingMomentum.minExpenseCount
+  ) {
     insights.push({
       id: `early_logging_momentum:${scopeLabel}:${projection.month}:${activeDayCount}:${expenseCount}`,
       type: 'early_logging_momentum',
@@ -342,14 +414,22 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
 
-  if (historicalPeriodCount >= 3 || expenseCount < 4 || activeDayCount < 2 || currentSpend <= 0) {
+  if (
+    historicalPeriodCount >= 3
+    || expenseCount < USAGE_INSIGHT_THRESHOLDS.developing.minExpenseCount
+    || activeDayCount < USAGE_INSIGHT_THRESHOLDS.developing.minActiveDayCount
+    || currentSpend <= 0
+  ) {
     return insights;
   }
 
   if (previousSpend > 0) {
     const deltaAmount = Number((currentSpend - previousSpend).toFixed(2));
     const deltaPercent = Number(((deltaAmount / previousSpend) * 100).toFixed(1));
-    if (Math.abs(deltaAmount) >= 35 && Math.abs(deltaPercent) >= 30) {
+    if (
+      Math.abs(deltaAmount) >= USAGE_INSIGHT_THRESHOLDS.developingWeeklySpendChange.minDeltaAmount
+      && Math.abs(deltaPercent) >= USAGE_INSIGHT_THRESHOLDS.developingWeeklySpendChange.minDeltaPercent
+    ) {
       const increased = deltaAmount > 0;
       insights.push({
         id: `developing_weekly_spend_change:${scopeLabel}:${current.from}:${Math.round(currentSpend)}:${Math.round(previousSpend)}`,
@@ -358,7 +438,7 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
         body: increased
           ? `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} higher than the prior ${rollingActivity.days} days.`
           : `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} lower than the prior ${rollingActivity.days} days.`,
-        severity: increased && Math.abs(deltaPercent) >= 60 ? 'medium' : 'low',
+        severity: increased && Math.abs(deltaPercent) >= USAGE_INSIGHT_THRESHOLDS.developingWeeklySpendChange.mediumDeltaPercent ? 'medium' : 'low',
         entity_type: 'budget_period',
         entity_id: `${scopeLabel}:rolling:${current.from}`,
         created_at: createdAt,
@@ -379,17 +459,27 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
   const previousCategory = topCategory
     ? previous.top_categories?.find((category) => category.category_key === topCategory.category_key)
     : null;
-  if (topCategory && Number(topCategory.spend || 0) >= 35 && Number(topCategory.count || 0) >= 2) {
+  if (
+    topCategory
+    && Number(topCategory.spend || 0) >= USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.minSpend
+    && Number(topCategory.count || 0) >= USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.minCount
+  ) {
     const priorSpend = Number(previousCategory?.spend || 0);
     const deltaAmount = Number((Number(topCategory.spend || 0) - priorSpend).toFixed(2));
     const share = Number(((Number(topCategory.spend || 0) / currentSpend) * 100).toFixed(1));
-    if ((priorSpend === 0 && share >= 35) || (deltaAmount >= 25 && deltaAmount >= priorSpend * 0.5)) {
+    if (
+      (priorSpend === 0 && share >= USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.minNewCategorySharePercent)
+      || (
+        deltaAmount >= USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.minDeltaAmount
+        && deltaAmount >= priorSpend * USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.minDeltaRatio
+      )
+    ) {
       insights.push({
         id: `developing_category_shift:${scopeLabel}:${current.from}:${topCategory.category_key}:${Math.round(Number(topCategory.spend || 0))}`,
         type: 'developing_category_shift',
         title: `${topCategory.category_name} is becoming the week’s center`,
         body: `${topCategory.category_name} is ${share}% of your ${scopeLabel} spending over the last ${rollingActivity.days} days.`,
-        severity: share >= 55 ? 'medium' : 'low',
+        severity: share >= USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.mediumSharePercent ? 'medium' : 'low',
         entity_type: 'category',
         entity_id: topCategory.category_key,
         created_at: createdAt,
@@ -409,7 +499,8 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
   }
 
   const repeatedMerchant = current.top_merchants?.find((merchant) =>
-    Number(merchant.count || 0) >= 2 && Number(merchant.spend || 0) >= 25
+    Number(merchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.minCount
+    && Number(merchant.spend || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.minSpend
   );
   if (repeatedMerchant) {
     const previousMerchant = previous.top_merchants?.find((merchant) => merchant.merchant_key === repeatedMerchant.merchant_key);
@@ -418,7 +509,7 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
       type: 'developing_repeated_merchant',
       title: `${repeatedMerchant.merchant_name} is forming a short-term pattern`,
       body: `${repeatedMerchant.merchant_name} has appeared ${repeatedMerchant.count} times in the last ${rollingActivity.days} days.`,
-      severity: Number(repeatedMerchant.count || 0) >= 3 ? 'medium' : 'low',
+      severity: Number(repeatedMerchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.mediumCount ? 'medium' : 'low',
       entity_type: 'merchant',
       entity_id: repeatedMerchant.merchant_key,
       created_at: createdAt,
@@ -477,11 +568,18 @@ function tierGateSummary({ projection, rollingActivity, budgetLimit = null }) {
         ].filter(Boolean),
       },
       developing: {
-        eligible: historicalPeriodCount < 3 && rollingExpenseCount >= 4 && rollingActiveDays >= 2 && Number(rollingCurrent.total_spend || 0) > 0,
+        eligible: historicalPeriodCount < 3
+          && rollingExpenseCount >= USAGE_INSIGHT_THRESHOLDS.developing.minExpenseCount
+          && rollingActiveDays >= USAGE_INSIGHT_THRESHOLDS.developing.minActiveDayCount
+          && Number(rollingCurrent.total_spend || 0) > 0,
         blocked_by: [
           historicalPeriodCount >= 3 ? 'mature_history_available' : null,
-          rollingExpenseCount < 4 ? 'rolling_expense_count_lt_4' : null,
-          rollingActiveDays < 2 ? 'rolling_active_day_count_lt_2' : null,
+          rollingExpenseCount < USAGE_INSIGHT_THRESHOLDS.developing.minExpenseCount
+            ? `rolling_expense_count_lt_${USAGE_INSIGHT_THRESHOLDS.developing.minExpenseCount}`
+            : null,
+          rollingActiveDays < USAGE_INSIGHT_THRESHOLDS.developing.minActiveDayCount
+            ? `rolling_active_day_count_lt_${USAGE_INSIGHT_THRESHOLDS.developing.minActiveDayCount}`
+            : null,
           Number(rollingCurrent.total_spend || 0) <= 0 ? 'no_rolling_spend' : null,
         ].filter(Boolean),
       },
@@ -494,6 +592,7 @@ function tierGateSummary({ projection, rollingActivity, budgetLimit = null }) {
 }
 
 module.exports = {
+  USAGE_INSIGHT_THRESHOLDS,
   buildEarlyUsageInsights,
   summarizeExpenseRows,
   analyzeRollingActivity,

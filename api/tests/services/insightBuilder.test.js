@@ -5,6 +5,7 @@ const {
   narrativeTheme,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
+  USAGE_INSIGHT_THRESHOLDS,
   summarizeExpenseRows,
   summarizeInsightList,
   tierGateSummary,
@@ -272,6 +273,51 @@ describe('insightBuilder orchestration', () => {
     expect(insights.every((insight) => insight.metadata.confidence === 'descriptive')).toBe(true);
   });
 
+  it('builds lightweight early insights from sparse first-week activity', () => {
+    const insights = buildEarlyUsageInsights({
+      projection: {
+        month: '2026-04',
+        period: { day_index: 3, days_in_period: 30 },
+        overall: {
+          current_spend_to_date: 50,
+          historical_period_count: 0,
+          history_stage: 'none',
+        },
+        current_activity: {
+          expense_count: 2,
+          active_day_count: 2,
+          total_spend: 50,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 32, count: 2 },
+          ],
+          top_merchants: [
+            { merchant_key: 'amazon', merchant_name: 'Amazon', spend: 32, count: 2 },
+          ],
+          largest_expense: {
+            id: 'expense-1',
+            merchant: 'Amazon',
+            amount: 22,
+            date: '2026-04-02',
+            category_key: 'shopping',
+            category_name: 'Shopping',
+            share_of_spend: 0.44,
+          },
+          uncategorized_count: 0,
+        },
+      },
+      budgetLimit: 500,
+      scope: 'personal',
+    });
+
+    expect(USAGE_INSIGHT_THRESHOLDS.earlyTopCategory.minExpenseCount).toBe(2);
+    expect(insights.map((insight) => insight.type)).toEqual(expect.arrayContaining([
+      'early_budget_pace',
+      'early_top_category',
+      'early_repeated_merchant',
+      'early_spend_concentration',
+    ]));
+  });
+
   it('does not build early insights once mature history exists', () => {
     const insights = buildEarlyUsageInsights({
       projection: {
@@ -407,6 +453,38 @@ describe('insightBuilder orchestration', () => {
     ]));
     expect(insights.every((insight) => insight.metadata.maturity === 'developing')).toBe(true);
     expect(insights.every((insight) => insight.metadata.confidence === 'directional')).toBe(true);
+  });
+
+  it('opens developing insights with three rolling expenses across two days', () => {
+    const gates = tierGateSummary({
+      projection: {
+        overall: {
+          history_stage: 'none',
+          historical_period_count: 0,
+          current_spend_to_date: 80,
+        },
+        current_activity: {
+          expense_count: 3,
+          active_day_count: 2,
+          total_spend: 80,
+        },
+      },
+      rollingActivity: {
+        days: 7,
+        current_window: {
+          expense_count: 3,
+          active_day_count: 2,
+          total_spend: 80,
+        },
+        previous_window: {
+          total_spend: 45,
+        },
+      },
+      budgetLimit: 500,
+    });
+
+    expect(USAGE_INSIGHT_THRESHOLDS.developing.minExpenseCount).toBe(3);
+    expect(gates.gates.developing.eligible).toBe(true);
   });
 
   it('uses continuity keys to connect early, developing, and mature category cards', () => {

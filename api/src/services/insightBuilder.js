@@ -9,6 +9,7 @@ const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
 const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight } = require('./insightFeedbackSummary');
 const {
+  USAGE_INSIGHT_THRESHOLDS,
   buildEarlyUsageInsights,
   summarizeExpenseRows,
   analyzeRollingActivity,
@@ -1421,6 +1422,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
 }
 
 module.exports = {
+  USAGE_INSIGHT_THRESHOLDS,
   buildInsights,
   buildInsightsForUser,
   buildInsightDebugForUser,
