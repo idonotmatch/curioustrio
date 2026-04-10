@@ -2,12 +2,27 @@ const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
+const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const { inferOutcomeEventsForUser } = require('./insightOutcomeInference');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
 const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight } = require('./insightFeedbackSummary');
+
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+function dateOnly(value) {
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
 
 function severityForSignal(signal, deltaPercent) {
   const pct = Math.abs(Number(deltaPercent || 0));
@@ -728,6 +743,255 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
   return insights.slice(0, 4);
 }
 
+function summarizeExpenseRows(rows = []) {
+  const byCategory = new Map();
+  const byMerchant = new Map();
+  const dates = new Set();
+  let totalSpend = 0;
+
+  for (const row of rows || []) {
+    const amount = Number(row.amount || row.spend || 0);
+    totalSpend += amount;
+    if (row.date) dates.add(`${row.date}`.slice(0, 10));
+
+    const categoryKey = row.category_key || 'uncategorized';
+    const category = byCategory.get(categoryKey) || {
+      category_key: categoryKey,
+      category_name: row.category_name || 'Uncategorized',
+      spend: 0,
+      count: 0,
+    };
+    category.spend += amount;
+    category.count += 1;
+    byCategory.set(categoryKey, category);
+
+    const merchantKey = `${row.merchant_key || row.merchant || 'unknown'}`.trim().toLowerCase() || 'unknown';
+    const merchant = byMerchant.get(merchantKey) || {
+      merchant_key: merchantKey,
+      merchant_name: row.merchant_name || row.merchant || 'Unknown',
+      spend: 0,
+      count: 0,
+    };
+    merchant.spend += amount;
+    merchant.count += 1;
+    byMerchant.set(merchantKey, merchant);
+  }
+
+  const sortBySpend = (a, b) => Number(b.spend || 0) - Number(a.spend || 0) || Number(b.count || 0) - Number(a.count || 0);
+
+  return {
+    expense_count: rows.length,
+    active_day_count: dates.size,
+    total_spend: Number(totalSpend.toFixed(2)),
+    top_categories: [...byCategory.values()]
+      .map((entry) => ({ ...entry, spend: Number(entry.spend.toFixed(2)) }))
+      .sort(sortBySpend)
+      .slice(0, 5),
+    top_merchants: [...byMerchant.values()]
+      .map((entry) => ({ ...entry, spend: Number(entry.spend.toFixed(2)) }))
+      .sort(sortBySpend)
+      .slice(0, 5),
+  };
+}
+
+async function listRollingExpenses({ user, scope = 'personal', from, toExclusive }) {
+  const effectiveScope = scope === 'household' && user?.household_id ? 'household' : 'personal';
+  if (effectiveScope === 'household') {
+    const result = await db.query(
+      `SELECT
+         e.merchant,
+         COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
+         COALESCE(NULLIF(TRIM(e.merchant), ''), 'Unknown') AS merchant_name,
+         e.amount,
+         e.date,
+         COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+         COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
+       FROM expenses e
+       LEFT JOIN categories c ON e.category_id = c.id
+       LEFT JOIN categories pc ON c.parent_id = pc.id
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.date >= $2
+         AND e.date < $3`,
+      [user.household_id, from, toExclusive]
+    );
+    return result.rows;
+  }
+
+  const result = await db.query(
+    `SELECT
+       e.merchant,
+       COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
+       COALESCE(NULLIF(TRIM(e.merchant), ''), 'Unknown') AS merchant_name,
+       e.amount,
+       e.date,
+       COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+       COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN categories pc ON c.parent_id = pc.id
+     WHERE e.user_id = $1
+       AND e.status = 'confirmed'
+       AND e.date >= $2
+       AND e.date < $3`,
+    [user.id, from, toExclusive]
+  );
+  return result.rows;
+}
+
+async function analyzeRollingActivity({ user, scope = 'personal', days = 7 }) {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const currentTo = dateOnly(addDays(today, 1));
+  const currentFrom = dateOnly(addDays(today, -Math.max(Number(days) || 7, 1) + 1));
+  const previousTo = currentFrom;
+  const previousFrom = dateOnly(addDays(today, -Math.max(Number(days) || 7, 1) * 2 + 1));
+
+  const [currentRows, previousRows] = await Promise.all([
+    listRollingExpenses({ user, scope, from: currentFrom, toExclusive: currentTo }),
+    listRollingExpenses({ user, scope, from: previousFrom, toExclusive: previousTo }),
+  ]);
+
+  return {
+    scope: scope === 'household' && user?.household_id ? 'household' : 'personal',
+    days: Math.max(Number(days) || 7, 1),
+    current_window: {
+      from: currentFrom,
+      to: currentTo,
+      ...summarizeExpenseRows(currentRows),
+    },
+    previous_window: {
+      from: previousFrom,
+      to: previousTo,
+      ...summarizeExpenseRows(previousRows),
+    },
+  };
+}
+
+function developingInsightMetadata(rollingActivity, scopeLabel, extra = {}) {
+  return {
+    scope: scopeLabel,
+    maturity: 'developing',
+    confidence: 'directional',
+    window_days: Number(rollingActivity?.days || 7),
+    current_window: {
+      from: rollingActivity?.current_window?.from || null,
+      to: rollingActivity?.current_window?.to || null,
+    },
+    previous_window: {
+      from: rollingActivity?.previous_window?.from || null,
+      to: rollingActivity?.previous_window?.to || null,
+    },
+    ...extra,
+  };
+}
+
+function buildDevelopingUsageInsights({ rollingActivity, projection = null, scope = 'personal' }) {
+  const insights = [];
+  const current = rollingActivity?.current_window || {};
+  const previous = rollingActivity?.previous_window || {};
+  const scopeLabel = scope === 'household' ? 'household' : 'personal';
+  const currentSpend = Number(current.total_spend || 0);
+  const previousSpend = Number(previous.total_spend || 0);
+  const expenseCount = Number(current.expense_count || 0);
+  const activeDayCount = Number(current.active_day_count || 0);
+  const historicalPeriodCount = Number(projection?.overall?.historical_period_count || 0);
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
+
+  if (historicalPeriodCount >= 3 || expenseCount < 4 || activeDayCount < 2 || currentSpend <= 0) {
+    return insights;
+  }
+
+  if (previousSpend > 0) {
+    const deltaAmount = Number((currentSpend - previousSpend).toFixed(2));
+    const deltaPercent = Number(((deltaAmount / previousSpend) * 100).toFixed(1));
+    if (Math.abs(deltaAmount) >= 35 && Math.abs(deltaPercent) >= 30) {
+      const increased = deltaAmount > 0;
+      insights.push({
+        id: `developing_weekly_spend_change:${scopeLabel}:${current.from}:${Math.round(currentSpend)}:${Math.round(previousSpend)}`,
+        type: 'developing_weekly_spend_change',
+        title: increased ? 'This week is starting heavier' : 'This week is starting lighter',
+        body: increased
+          ? `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} higher than the prior ${rollingActivity.days} days.`
+          : `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} lower than the prior ${rollingActivity.days} days.`,
+        severity: increased && Math.abs(deltaPercent) >= 60 ? 'medium' : 'low',
+        entity_type: 'budget_period',
+        entity_id: `${scopeLabel}:rolling:${current.from}`,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: developingInsightMetadata(rollingActivity, scopeLabel, {
+          current_spend: currentSpend,
+          previous_spend: previousSpend,
+          delta_amount: deltaAmount,
+          delta_percent: deltaPercent,
+        }),
+        actions: [],
+      });
+    }
+  }
+
+  const topCategory = current.top_categories?.[0];
+  const previousCategory = topCategory
+    ? previous.top_categories?.find((category) => category.category_key === topCategory.category_key)
+    : null;
+  if (topCategory && Number(topCategory.spend || 0) >= 35 && Number(topCategory.count || 0) >= 2) {
+    const priorSpend = Number(previousCategory?.spend || 0);
+    const deltaAmount = Number((Number(topCategory.spend || 0) - priorSpend).toFixed(2));
+    const share = Number(((Number(topCategory.spend || 0) / currentSpend) * 100).toFixed(1));
+    if ((priorSpend === 0 && share >= 35) || (deltaAmount >= 25 && deltaAmount >= priorSpend * 0.5)) {
+      insights.push({
+        id: `developing_category_shift:${scopeLabel}:${current.from}:${topCategory.category_key}:${Math.round(Number(topCategory.spend || 0))}`,
+        type: 'developing_category_shift',
+        title: `${topCategory.category_name} is becoming the week’s center`,
+        body: `${topCategory.category_name} is ${share}% of your ${scopeLabel} spending over the last ${rollingActivity.days} days.`,
+        severity: share >= 55 ? 'medium' : 'low',
+        entity_type: 'category',
+        entity_id: topCategory.category_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: developingInsightMetadata(rollingActivity, scopeLabel, {
+          category_key: topCategory.category_key,
+          category_name: topCategory.category_name,
+          current_spend: Number(topCategory.spend || 0),
+          previous_spend: priorSpend,
+          delta_amount: deltaAmount,
+          share_of_spend: share,
+        }),
+        actions: [],
+      });
+    }
+  }
+
+  const repeatedMerchant = current.top_merchants?.find((merchant) =>
+    Number(merchant.count || 0) >= 2 && Number(merchant.spend || 0) >= 25
+  );
+  if (repeatedMerchant) {
+    const previousMerchant = previous.top_merchants?.find((merchant) => merchant.merchant_key === repeatedMerchant.merchant_key);
+    insights.push({
+      id: `developing_repeated_merchant:${scopeLabel}:${current.from}:${repeatedMerchant.merchant_key}:${repeatedMerchant.count}`,
+      type: 'developing_repeated_merchant',
+      title: `${repeatedMerchant.merchant_name} is forming a short-term pattern`,
+      body: `${repeatedMerchant.merchant_name} has appeared ${repeatedMerchant.count} times in the last ${rollingActivity.days} days.`,
+      severity: Number(repeatedMerchant.count || 0) >= 3 ? 'medium' : 'low',
+      entity_type: 'merchant',
+      entity_id: repeatedMerchant.merchant_key,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: developingInsightMetadata(rollingActivity, scopeLabel, {
+        merchant_key: repeatedMerchant.merchant_key,
+        merchant_name: repeatedMerchant.merchant_name,
+        current_spend: Number(repeatedMerchant.spend || 0),
+        previous_spend: Number(previousMerchant?.spend || 0),
+        merchant_count: Number(repeatedMerchant.count || 0),
+      }),
+      actions: [],
+    });
+  }
+
+  return insights.slice(0, 3);
+}
+
 function severityRank(severity) {
   if (severity === 'high') return 3;
   if (severity === 'medium') return 2;
@@ -751,6 +1015,9 @@ function insightDestinationAdjustment(insight) {
     type === 'top_category_driver'
     || type === 'projected_category_surge'
     || type === 'projected_category_under_baseline'
+    || type === 'developing_category_shift'
+    || type === 'developing_repeated_merchant'
+    || type === 'developing_weekly_spend_change'
   ) return 4;
 
   if (
@@ -804,6 +1071,9 @@ function portfolioRole(insight) {
     || type === 'spend_pace_ahead'
     || type === 'spend_pace_behind'
     || type === 'budget_too_high'
+    || type === 'developing_category_shift'
+    || type === 'developing_repeated_merchant'
+    || type === 'developing_weekly_spend_change'
   ) return 'explain';
 
   return 'other';
@@ -826,6 +1096,9 @@ function portfolioFamily(insight) {
     type === 'top_category_driver'
     || type === 'one_offs_driving_variance'
     || type === 'one_off_expense_skewing_projection'
+    || type === 'developing_category_shift'
+    || type === 'developing_repeated_merchant'
+    || type === 'developing_weekly_spend_change'
   ) return 'explanation';
 
   if (
@@ -854,6 +1127,9 @@ function narrativeClusterKey(insight) {
     || type === 'spend_pace_behind'
     || type === 'top_category_driver'
     || type === 'one_offs_driving_variance'
+    || type === 'developing_category_shift'
+    || type === 'developing_repeated_merchant'
+    || type === 'developing_weekly_spend_change'
   ) {
     return `trend:${scope}:${month}`;
   }
@@ -1391,9 +1667,15 @@ async function buildInsights({ user, limit = 10 }) {
     const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
     const personalBudgetSettings = await BudgetSetting.findByUser(user.id);
     const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    const personalRollingActivity = await analyzeRollingActivity({ user, scope: 'personal' });
     insightSets.push(buildEarlyUsageInsights({
       projection: personalProjection,
       budgetLimit: personalBudgetLimit,
+      scope: 'personal',
+    }));
+    insightSets.push(buildDevelopingUsageInsights({
+      rollingActivity: personalRollingActivity,
+      projection: personalProjection,
       scope: 'personal',
     }));
     insightSets.push(buildProjectionInsights(personalProjection, 'personal'));
@@ -1405,9 +1687,15 @@ async function buildInsights({ user, limit = 10 }) {
     const householdProjection = await analyzeSpendProjection({ user, scope: 'household' });
     const householdBudgetSettings = await BudgetSetting.findByHousehold(user.household_id);
     const householdBudgetLimit = householdBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    const householdRollingActivity = await analyzeRollingActivity({ user, scope: 'household' });
     insightSets.push(buildEarlyUsageInsights({
       projection: householdProjection,
       budgetLimit: householdBudgetLimit,
+      scope: 'household',
+    }));
+    insightSets.push(buildDevelopingUsageInsights({
+      rollingActivity: householdRollingActivity,
+      projection: householdProjection,
       scope: 'household',
     }));
     insightSets.push(buildProjectionInsights(householdProjection, 'household'));
@@ -1501,6 +1789,8 @@ module.exports = {
   buildInsights,
   buildInsightsForUser,
   buildEarlyUsageInsights,
+  buildDevelopingUsageInsights,
+  summarizeExpenseRows,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,

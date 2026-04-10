@@ -4,6 +4,8 @@ const {
   narrativeClusterKey,
   narrativeTheme,
   buildEarlyUsageInsights,
+  buildDevelopingUsageInsights,
+  summarizeExpenseRows,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
@@ -280,6 +282,105 @@ describe('insightBuilder orchestration', () => {
         },
       },
       budgetLimit: 500,
+      scope: 'personal',
+    });
+
+    expect(insights).toEqual([]);
+  });
+
+  it('summarizes expense rows for rolling developing insights', () => {
+    const summary = summarizeExpenseRows([
+      { merchant: 'Amazon', amount: 40, date: '2026-04-02', category_key: 'shopping', category_name: 'Shopping' },
+      { merchant: 'Amazon', amount: 20, date: '2026-04-03', category_key: 'shopping', category_name: 'Shopping' },
+      { merchant: 'Cafe', amount: 12, date: '2026-04-03', category_key: 'dining', category_name: 'Dining' },
+    ]);
+
+    expect(summary).toMatchObject({
+      expense_count: 3,
+      active_day_count: 2,
+      total_spend: 72,
+    });
+    expect(summary.top_merchants[0]).toMatchObject({ merchant_key: 'amazon', count: 2, spend: 60 });
+  });
+
+  it('builds directional developing insights from rolling windows', () => {
+    const insights = buildDevelopingUsageInsights({
+      rollingActivity: {
+        scope: 'personal',
+        days: 7,
+        current_window: {
+          from: '2026-04-04',
+          to: '2026-04-11',
+          expense_count: 6,
+          active_day_count: 4,
+          total_spend: 185,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 110, count: 3 },
+          ],
+          top_merchants: [
+            { merchant_key: 'amazon', merchant_name: 'Amazon', spend: 80, count: 2 },
+          ],
+        },
+        previous_window: {
+          from: '2026-03-28',
+          to: '2026-04-04',
+          expense_count: 4,
+          active_day_count: 3,
+          total_spend: 90,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 25, count: 1 },
+          ],
+          top_merchants: [
+            { merchant_key: 'cafe', merchant_name: 'Cafe', spend: 30, count: 2 },
+          ],
+        },
+      },
+      projection: {
+        overall: {
+          historical_period_count: 0,
+        },
+      },
+      scope: 'personal',
+    });
+
+    expect(insights.map((insight) => insight.type)).toEqual(expect.arrayContaining([
+      'developing_weekly_spend_change',
+      'developing_category_shift',
+      'developing_repeated_merchant',
+    ]));
+    expect(insights.every((insight) => insight.metadata.maturity === 'developing')).toBe(true);
+    expect(insights.every((insight) => insight.metadata.confidence === 'directional')).toBe(true);
+  });
+
+  it('does not build developing insights once mature history exists', () => {
+    const insights = buildDevelopingUsageInsights({
+      rollingActivity: {
+        scope: 'personal',
+        days: 7,
+        current_window: {
+          from: '2026-04-04',
+          to: '2026-04-11',
+          expense_count: 6,
+          active_day_count: 4,
+          total_spend: 185,
+          top_categories: [{ category_key: 'shopping', category_name: 'Shopping', spend: 110, count: 3 }],
+          top_merchants: [{ merchant_key: 'amazon', merchant_name: 'Amazon', spend: 80, count: 2 }],
+        },
+        previous_window: {
+          from: '2026-03-28',
+          to: '2026-04-04',
+          expense_count: 4,
+          active_day_count: 3,
+          total_spend: 90,
+          top_categories: [],
+          top_merchants: [],
+        },
+      },
+      projection: {
+        overall: {
+          historical_period_count: 3,
+        },
+      },
       scope: 'personal',
     });
 
