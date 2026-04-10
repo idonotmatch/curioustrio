@@ -778,9 +778,11 @@ export default function SummaryScreen() {
                           <Ionicons name="close" size={16} color="#666" />
                         </TouchableOpacity>
                       </View>
-                      <Text style={styles.insightTitle}>{insight.title}</Text>
+                      <Text style={styles.insightTitle} numberOfLines={2}>{insight.title}</Text>
                     </View>
-                    <Text style={styles.insightBody}>{insight.body}</Text>
+                    <View style={styles.insightContent}>
+                      <Text style={styles.insightBody} numberOfLines={3}>{insight.body}</Text>
+                    </View>
                     <View style={styles.insightFooter}>
                       <Text style={styles.insightActionReason}>{insightActionReason(insight)}</Text>
                       <Text style={styles.insightActionLabel}>{insightActionLabel(insight)}</Text>
@@ -899,14 +901,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#1a1a1a',
-    minHeight: 132,
+    minHeight: 174,
+    justifyContent: 'space-between',
   },
   insightCardWarn: { backgroundColor: '#141111', borderColor: '#2d1d1d' },
   insightCardPlan: { backgroundColor: '#101317', borderColor: '#1b2a38' },
   insightCardSetup: { backgroundColor: '#12120f', borderColor: '#2b2818' },
   insightCardLearning: { backgroundColor: '#101512', borderColor: '#1d3424' },
   insightCardExplain: { backgroundColor: '#111214', borderColor: '#20252b' },
-  insightHeader: { marginBottom: 8, gap: 10 },
+  insightHeader: { gap: 10 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   insightMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   insightScopeChip: {
@@ -938,9 +941,10 @@ const styles = StyleSheet.create({
   insightRoleTextLearning: { color: '#a9e0b3' },
   insightRoleTextExplain: { color: '#b6c1cc' },
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
+  insightContent: { flex: 1, justifyContent: 'flex-start', marginTop: 8 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
   insightFooter: {
-    marginTop: 12,
+    marginTop: 14,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#1f1f1f',
@@ -949,8 +953,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  insightActionReason: { fontSize: 11, color: '#7e8791', textTransform: 'uppercase', letterSpacing: 0.8 },
-  insightActionLabel: { fontSize: 12, color: '#dce8f5', fontWeight: '700' },
+  insightActionReason: { fontSize: 11, color: '#7e8791', textTransform: 'uppercase', letterSpacing: 0.8, flexShrink: 1 },
+  insightActionLabel: { fontSize: 12, color: '#dce8f5', fontWeight: '700', textAlign: 'right', flexShrink: 0 },
 
   quickAdd: { marginTop: 18, marginBottom: 32 },
   watchingCard: {
