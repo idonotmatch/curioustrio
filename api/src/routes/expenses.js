@@ -803,7 +803,7 @@ router.post('/confirm', async (req, res, next) => {
     }
 
     // Update merchant memory
-    if (category_id && user?.household_id) {
+    if (category_id && user?.household_id && `${merchant || ''}`.trim()) {
       await MerchantMapping.upsert({
         householdId: user.household_id,
         merchantName: merchant,
