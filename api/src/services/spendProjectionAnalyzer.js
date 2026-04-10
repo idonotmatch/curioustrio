@@ -371,6 +371,67 @@ function getTopProjectedCategoryPressures({
     .slice(0, limit);
 }
 
+function summarizeCurrentActivity(currentExpenses = []) {
+  const normalized = (currentExpenses || []).map(normalizeExpenseRow);
+  const totalSpend = normalized.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const activeDays = new Set(normalized.map((expense) => expense.date).filter(Boolean));
+  const byCategory = new Map();
+  const byMerchant = new Map();
+
+  for (const expense of normalized) {
+    const categoryKey = expense.category_key || 'uncategorized';
+    const category = byCategory.get(categoryKey) || {
+      category_key: categoryKey,
+      category_name: expense.category_name || 'Uncategorized',
+      spend: 0,
+      count: 0,
+    };
+    category.spend += Number(expense.amount || 0);
+    category.count += 1;
+    byCategory.set(categoryKey, category);
+
+    const merchantKey = `${expense.merchant || 'Unknown'}`.trim().toLowerCase() || 'unknown';
+    const merchant = byMerchant.get(merchantKey) || {
+      merchant_key: merchantKey,
+      merchant_name: expense.merchant || 'Unknown',
+      spend: 0,
+      count: 0,
+    };
+    merchant.spend += Number(expense.amount || 0);
+    merchant.count += 1;
+    byMerchant.set(merchantKey, merchant);
+  }
+
+  const sortBySpend = (a, b) => Number(b.spend || 0) - Number(a.spend || 0) || Number(b.count || 0) - Number(a.count || 0);
+  const largestExpense = normalized
+    .slice()
+    .sort((a, b) => Math.abs(Number(b.amount || 0)) - Math.abs(Number(a.amount || 0)))[0] || null;
+
+  return {
+    expense_count: normalized.length,
+    active_day_count: activeDays.size,
+    total_spend: Number(totalSpend.toFixed(2)),
+    top_categories: [...byCategory.values()]
+      .map((entry) => ({ ...entry, spend: Number(entry.spend.toFixed(2)) }))
+      .sort(sortBySpend)
+      .slice(0, 5),
+    top_merchants: [...byMerchant.values()]
+      .map((entry) => ({ ...entry, spend: Number(entry.spend.toFixed(2)) }))
+      .sort(sortBySpend)
+      .slice(0, 5),
+    largest_expense: largestExpense ? {
+      id: largestExpense.id || null,
+      merchant: largestExpense.merchant,
+      amount: Number(largestExpense.amount || 0),
+      date: largestExpense.date,
+      category_key: largestExpense.category_key,
+      category_name: largestExpense.category_name,
+      share_of_spend: totalSpend > 0 ? Number((Math.abs(Number(largestExpense.amount || 0)) / Math.max(Math.abs(totalSpend), 1)).toFixed(4)) : null,
+    } : null,
+    uncategorized_count: normalized.filter((expense) => expense.category_key === 'uncategorized').length,
+  };
+}
+
 function projectionConfidence({ historicalPeriodCount, unusualSpendShare, expectedShare, dayIndex, totalDays }) {
   if (historicalPeriodCount <= 0 || !expectedShare || expectedShare < 0.05) return null;
   if (historicalPeriodCount < 3 || expectedShare < 0.12) return 'very_low';
@@ -757,6 +818,24 @@ function projectOverallSpend({
   const historicalExpenses = historicalPeriods.flatMap((period) => period.expenses || []);
   const split = splitNormalVsUnusualSpend(currentExpenses, { historicalExpenses });
 
+  if (historicalPeriods.length < 3) {
+    return {
+      current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+      normal_spend_to_date: split.normal_spend_to_date,
+      unusual_spend_to_date: split.unusual_spend_to_date,
+      unusual_spend_share: split.unusual_spend_share,
+      historical_expected_share_by_day: expectedShare,
+      baseline_projected_total: null,
+      adjusted_projected_total: null,
+      projection_excluding_unusuals: null,
+      projected_budget_delta: null,
+      confidence: null,
+      historical_period_count: historicalPeriods.length,
+      history_stage: historyStage(historicalPeriods.length),
+      top_unusual_expenses: split.top_unusual_expenses,
+    };
+  }
+
   if (!expectedShare || expectedShare < 0.05) {
     return {
       current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
@@ -1002,6 +1081,7 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
       dayIndex,
       budgetLimit,
     }),
+    current_activity: summarizeCurrentActivity(currentExpenses),
     categories: getTopProjectedCategoryPressures({
       currentExpenses,
       historicalPeriods: hydratedHistoricalPeriods,
@@ -1118,6 +1198,7 @@ module.exports = {
   evaluateScenarioAffordability,
   projectOverallSpend,
   projectCategorySpend,
+  summarizeCurrentActivity,
   splitNormalVsUnusualSpend,
   periodBounds,
 };

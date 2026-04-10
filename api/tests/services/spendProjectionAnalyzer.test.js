@@ -11,6 +11,7 @@ const {
   periodBounds,
   projectCategorySpend,
   projectOverallSpend,
+  summarizeCurrentActivity,
   splitNormalVsUnusualSpend,
 } = require('../../src/services/spendProjectionAnalyzer');
 
@@ -291,6 +292,22 @@ describe('spendProjectionAnalyzer', () => {
     expect(categories).toHaveLength(2);
     expect(categories[0].category_key).toBe('groceries');
     expect(categories[1].category_key).toBe('dining');
+  });
+
+  it('summarizes current activity for early insights', () => {
+    const summary = summarizeCurrentActivity([
+      { id: '1', merchant: 'Amazon', amount: 42, date: '2026-04-01', category_key: 'shopping', category_name: 'Shopping' },
+      { id: '2', merchant: 'Amazon', amount: 18, date: '2026-04-03', category_key: 'shopping', category_name: 'Shopping' },
+      { id: '3', merchant: 'Cafe', amount: 12, date: '2026-04-03', category_key: 'dining', category_name: 'Dining' },
+      { id: '4', merchant: 'Mystery', amount: 9, date: '2026-04-04', category_key: 'uncategorized', category_name: 'Uncategorized' },
+    ]);
+
+    expect(summary.expense_count).toBe(4);
+    expect(summary.active_day_count).toBe(3);
+    expect(summary.top_categories[0]).toMatchObject({ category_key: 'shopping', spend: 60, count: 2 });
+    expect(summary.top_merchants[0]).toMatchObject({ merchant_key: 'amazon', spend: 60, count: 2 });
+    expect(summary.largest_expense).toMatchObject({ merchant: 'Amazon', amount: 42 });
+    expect(summary.uncategorized_count).toBe(1);
   });
 
   it('estimates remaining recurring pressure before period end', () => {

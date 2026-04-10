@@ -3,6 +3,7 @@ const {
   orchestrateInsightPortfolio,
   narrativeClusterKey,
   narrativeTheme,
+  buildEarlyUsageInsights,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
@@ -214,6 +215,75 @@ describe('insightBuilder orchestration', () => {
     expect(insights[0].type).toBe('usage_ready_to_plan');
     expect(insights[0].title).toBe('Quiet month, good time to plan ahead');
     expect(insights[0].metadata.usage_context).toBe('quiet_period');
+  });
+
+  it('builds descriptive early insights before mature history exists', () => {
+    const insights = buildEarlyUsageInsights({
+      projection: {
+        month: '2026-04',
+        period: { day_index: 7, days_in_period: 30 },
+        overall: {
+          current_spend_to_date: 170,
+          historical_period_count: 0,
+          history_stage: 'none',
+        },
+        current_activity: {
+          expense_count: 6,
+          active_day_count: 4,
+          total_spend: 170,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 95, count: 3 },
+            { category_key: 'dining', category_name: 'Dining', spend: 45, count: 2 },
+          ],
+          top_merchants: [
+            { merchant_key: 'amazon', merchant_name: 'Amazon', spend: 70, count: 2 },
+          ],
+          largest_expense: {
+            id: 'expense-1',
+            merchant: 'Amazon',
+            amount: 70,
+            date: '2026-04-04',
+            category_key: 'shopping',
+            category_name: 'Shopping',
+            share_of_spend: 0.4118,
+          },
+          uncategorized_count: 2,
+        },
+      },
+      budgetLimit: 500,
+      scope: 'personal',
+    });
+
+    expect(insights.map((insight) => insight.type)).toEqual(expect.arrayContaining([
+      'early_budget_pace',
+      'early_top_category',
+      'early_repeated_merchant',
+      'early_spend_concentration',
+    ]));
+    expect(insights.every((insight) => insight.metadata.maturity === 'early')).toBe(true);
+    expect(insights.every((insight) => insight.metadata.confidence === 'descriptive')).toBe(true);
+  });
+
+  it('does not build early insights once mature history exists', () => {
+    const insights = buildEarlyUsageInsights({
+      projection: {
+        month: '2026-04',
+        overall: {
+          current_spend_to_date: 170,
+          historical_period_count: 3,
+          history_stage: 'developing',
+        },
+        current_activity: {
+          expense_count: 6,
+          active_day_count: 4,
+          total_spend: 170,
+        },
+      },
+      budgetLimit: 500,
+      scope: 'personal',
+    });
+
+    expect(insights).toEqual([]);
   });
 
   it('supplements low-signal explanatory rails with a usage fallback candidate', () => {

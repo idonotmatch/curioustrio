@@ -560,6 +560,174 @@ function buildProjectionInsights(projection, scope) {
   return insights;
 }
 
+function earlyInsightMetadata(projection, scopeLabel, extra = {}) {
+  return {
+    scope: scopeLabel,
+    month: projection?.month || null,
+    maturity: 'early',
+    confidence: 'descriptive',
+    history_stage: projection?.overall?.history_stage || 'none',
+    historical_period_count: Number(projection?.overall?.historical_period_count || 0),
+    ...extra,
+  };
+}
+
+function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'personal' }) {
+  const insights = [];
+  const activity = projection?.current_activity || {};
+  const overall = projection?.overall || {};
+  const historicalPeriodCount = Number(overall.historical_period_count || 0);
+  const expenseCount = Number(activity.expense_count || 0);
+  const totalSpend = Number(activity.total_spend || overall.current_spend_to_date || 0);
+  const scopeLabel = scope === 'household' ? 'household' : 'personal';
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
+
+  if (historicalPeriodCount >= 3 || expenseCount <= 0 || totalSpend <= 0) {
+    return insights;
+  }
+
+  const period = projection?.period || {};
+  const dayIndex = Number(period.day_index || 0);
+  const daysInPeriod = Number(period.days_in_period || 0);
+  const daysRemaining = daysInPeriod && dayIndex ? Math.max(daysInPeriod - dayIndex, 0) : null;
+  const periodShare = daysInPeriod && dayIndex ? dayIndex / daysInPeriod : null;
+  const activeDayCount = Number(activity.active_day_count || 0);
+  const topCategory = activity.top_categories?.[0];
+  const topMerchant = activity.top_merchants?.find((merchant) => Number(merchant.count || 0) >= 2);
+  const largestExpense = activity.largest_expense;
+
+  if (Number(budgetLimit) > 0) {
+    const budgetUsedPercent = Number(((totalSpend / Number(budgetLimit)) * 100).toFixed(1));
+    const expectedUsedPercent = periodShare == null ? null : Number((periodShare * 100).toFixed(1));
+    const paceIsTight = expectedUsedPercent != null && budgetUsedPercent >= expectedUsedPercent + 15 && totalSpend >= Number(budgetLimit) * 0.2;
+    insights.push({
+      id: `early_budget_pace:${scopeLabel}:${projection.month}:${Math.round(totalSpend)}:${Math.round(Number(budgetLimit))}`,
+      type: 'early_budget_pace',
+      title: `Early ${scopeLabel} budget read`,
+      body: daysRemaining == null
+        ? `You have used ${budgetUsedPercent}% of your ${scopeLabel} budget so far.`
+        : `You have used ${budgetUsedPercent}% of your ${scopeLabel} budget with ${daysRemaining} days left in this period.`,
+      severity: paceIsTight ? 'medium' : 'low',
+      entity_type: 'budget',
+      entity_id: `${scopeLabel}:total`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: earlyInsightMetadata(projection, scopeLabel, {
+        budget_limit: Number(budgetLimit),
+        current_spend_to_date: totalSpend,
+        budget_used_percent: budgetUsedPercent,
+        expected_used_percent: expectedUsedPercent,
+        days_remaining: daysRemaining,
+      }),
+      actions: [],
+    });
+  }
+
+  if (topCategory && Number(topCategory.spend || 0) >= Math.max(20, totalSpend * 0.35) && expenseCount >= 3) {
+    const share = Number(((Number(topCategory.spend || 0) / totalSpend) * 100).toFixed(1));
+    insights.push({
+      id: `early_top_category:${scopeLabel}:${projection.month}:${topCategory.category_key}:${Math.round(Number(topCategory.spend || 0))}`,
+      type: 'early_top_category',
+      title: `${topCategory.category_name} is leading so far`,
+      body: `${topCategory.category_name} accounts for ${share}% of your ${scopeLabel} spending in this period so far.`,
+      severity: share >= 55 ? 'medium' : 'low',
+      entity_type: 'category',
+      entity_id: topCategory.category_key,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: earlyInsightMetadata(projection, scopeLabel, {
+        category_key: topCategory.category_key,
+        category_name: topCategory.category_name,
+        category_spend: Number(topCategory.spend || 0),
+        category_count: Number(topCategory.count || 0),
+        share_of_spend: share,
+      }),
+      actions: [],
+    });
+  }
+
+  if (topMerchant && Number(topMerchant.spend || 0) >= 15) {
+    insights.push({
+      id: `early_repeated_merchant:${scopeLabel}:${projection.month}:${topMerchant.merchant_key}:${topMerchant.count}`,
+      type: 'early_repeated_merchant',
+      title: `${topMerchant.merchant_name} is showing up repeatedly`,
+      body: `${topMerchant.merchant_name} has appeared ${topMerchant.count} times in your ${scopeLabel} spending this period.`,
+      severity: Number(topMerchant.count || 0) >= 3 ? 'medium' : 'low',
+      entity_type: 'merchant',
+      entity_id: topMerchant.merchant_key,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: earlyInsightMetadata(projection, scopeLabel, {
+        merchant_key: topMerchant.merchant_key,
+        merchant_name: topMerchant.merchant_name,
+        merchant_spend: Number(topMerchant.spend || 0),
+        merchant_count: Number(topMerchant.count || 0),
+      }),
+      actions: [],
+    });
+  }
+
+  if (largestExpense && expenseCount >= 3 && Number(largestExpense.share_of_spend || 0) >= 0.35 && Math.abs(Number(largestExpense.amount || 0)) >= 25) {
+    const share = Number((Number(largestExpense.share_of_spend || 0) * 100).toFixed(1));
+    insights.push({
+      id: `early_spend_concentration:${scopeLabel}:${projection.month}:${largestExpense.id || largestExpense.merchant}:${Math.round(Number(largestExpense.amount || 0))}`,
+      type: 'early_spend_concentration',
+      title: 'One purchase is shaping the early read',
+      body: `${largestExpense.merchant} accounts for ${share}% of your ${scopeLabel} spending so far this period.`,
+      severity: share >= 50 ? 'medium' : 'low',
+      entity_type: 'expense',
+      entity_id: largestExpense.id || `${scopeLabel}:${projection.month}:${largestExpense.merchant}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: earlyInsightMetadata(projection, scopeLabel, {
+        largest_expense: largestExpense,
+        share_of_spend: share,
+      }),
+      actions: [],
+    });
+  }
+
+  if (Number(activity.uncategorized_count || 0) >= 2) {
+    insights.push({
+      id: `early_cleanup:${scopeLabel}:${projection.month}:uncategorized:${activity.uncategorized_count}`,
+      type: 'early_cleanup',
+      title: 'A little cleanup will sharpen guidance',
+      body: `${activity.uncategorized_count} expenses are uncategorized, which makes early guidance less specific.`,
+      severity: 'low',
+      entity_type: 'category',
+      entity_id: 'uncategorized',
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: earlyInsightMetadata(projection, scopeLabel, {
+        uncategorized_count: Number(activity.uncategorized_count || 0),
+      }),
+      actions: [],
+    });
+  }
+
+  if (activeDayCount >= 3 && expenseCount >= 5) {
+    insights.push({
+      id: `early_logging_momentum:${scopeLabel}:${projection.month}:${activeDayCount}:${expenseCount}`,
+      type: 'early_logging_momentum',
+      title: 'Your baseline is starting to form',
+      body: `You have logged ${expenseCount} expenses across ${activeDayCount} days this period. The next insights can get more tailored from here.`,
+      severity: 'low',
+      entity_type: 'budget_period',
+      entity_id: `${scopeLabel}:${projection.month}`,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      metadata: earlyInsightMetadata(projection, scopeLabel, {
+        expense_count: expenseCount,
+        active_day_count: activeDayCount,
+      }),
+      actions: [],
+    });
+  }
+
+  return insights.slice(0, 4);
+}
+
 function severityRank(severity) {
   if (severity === 'high') return 3;
   if (severity === 'medium') return 2;
@@ -1221,6 +1389,13 @@ async function buildInsights({ user, limit = 10 }) {
     const personalTrend = await analyzeSpendingTrend({ user, scope: 'personal' });
     insightSets.push(buildTrendInsights(personalTrend, 'personal'));
     const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
+    const personalBudgetSettings = await BudgetSetting.findByUser(user.id);
+    const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    insightSets.push(buildEarlyUsageInsights({
+      projection: personalProjection,
+      budgetLimit: personalBudgetLimit,
+      scope: 'personal',
+    }));
     insightSets.push(buildProjectionInsights(personalProjection, 'personal'));
   }
 
@@ -1228,6 +1403,13 @@ async function buildInsights({ user, limit = 10 }) {
     const householdTrend = await analyzeSpendingTrend({ user, scope: 'household' });
     insightSets.push(buildTrendInsights(householdTrend, 'household'));
     const householdProjection = await analyzeSpendProjection({ user, scope: 'household' });
+    const householdBudgetSettings = await BudgetSetting.findByHousehold(user.household_id);
+    const householdBudgetLimit = householdBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
+    insightSets.push(buildEarlyUsageInsights({
+      projection: householdProjection,
+      budgetLimit: householdBudgetLimit,
+      scope: 'household',
+    }));
     insightSets.push(buildProjectionInsights(householdProjection, 'household'));
     insightSets.push(buildRestockWindowInsights({ projection: householdProjection, watchCandidates: householdWatchCandidates }));
   }
@@ -1318,6 +1500,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
 module.exports = {
   buildInsights,
   buildInsightsForUser,
+  buildEarlyUsageInsights,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
