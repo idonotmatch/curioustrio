@@ -24,6 +24,75 @@ If the input cannot be parsed as an expense or refund, return null.
 Today's date is provided in the user message. If no date is mentioned, use today's date.
 Do not include any text outside the JSON object.`;
 
+function clipTextPreview(text, max = 600) {
+  const value = `${text || ''}`.trim();
+  if (!value) return null;
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function extractJSONObjectCandidate(text) {
+  const source = `${text || ''}`;
+  const start = source.indexOf('{');
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i += 1) {
+    const char = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+
+  return source.slice(start).trim() || null;
+}
+
+function repairJsonCandidate(text) {
+  let candidate = `${text || ''}`.trim();
+  if (!candidate) return null;
+  candidate = candidate.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+  return candidate;
+}
+
+function parseJsonWithRecovery(text) {
+  const cleaned = repairJsonCandidate(text);
+  if (!cleaned || cleaned === 'null') {
+    return { raw: null, parser_mode: 'empty' };
+  }
+
+  try {
+    return { raw: JSON.parse(cleaned), parser_mode: 'direct' };
+  } catch {
+    const extracted = extractJSONObjectCandidate(cleaned);
+    if (!extracted) return { raw: null, parser_mode: 'invalid' };
+    const repaired = repairJsonCandidate(extracted);
+    try {
+      return { raw: JSON.parse(repaired), parser_mode: 'extracted' };
+    } catch {
+      return { raw: null, parser_mode: 'invalid' };
+    }
+  }
+}
+
 function buildNlDiagnostics(input, raw = null) {
   const text = `${input || ''}`.trim();
   const normalized = text.toLowerCase();
@@ -118,36 +187,46 @@ async function parseExpenseDetailed(input, todayDate) {
     messages: [{ role: 'user', content: `Today's date: ${todayDate}\nExpense input: ${input}` }],
   });
 
-  if (!text) return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildNlDiagnostics(input) };
-
-  // Strip markdown code fences if present
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-
-  if (!cleaned || cleaned === 'null') {
-    return { parsed: null, failureReason: 'empty_model_response', raw: null, diagnostics: buildNlDiagnostics(input) };
+  if (!text) {
+    return {
+      parsed: null,
+      failureReason: 'empty_model_response',
+      raw: null,
+      diagnostics: buildNlDiagnostics(input),
+    };
   }
 
-  try {
-    const raw = JSON.parse(cleaned);
-    const parsed = cleanParsedExpense(raw, todayDate);
-    const diagnostics = buildNlDiagnostics(input, raw);
-    if (parsed) return { parsed, failureReason: null, raw, diagnostics };
-
-    const amount = Number(raw?.amount);
-    const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
-    const description = typeof raw?.description === 'string' ? raw.description.trim() : '';
-
-    let failureReason = 'missing_required_fields';
-    if (!Number.isFinite(amount) || amount === 0) {
-      failureReason = (!merchant && !description) ? 'missing_required_fields' : 'missing_amount';
-    } else if (!merchant && !description) {
-      failureReason = 'missing_merchant_or_description';
-    }
-
-    return { parsed: null, failureReason, raw, diagnostics };
-  } catch {
-    return { parsed: null, failureReason: 'invalid_model_json', raw: null, diagnostics: buildNlDiagnostics(input) };
+  const { raw, parser_mode } = parseJsonWithRecovery(text);
+  const baseDiagnostics = {
+    raw_text_preview: clipTextPreview(text),
+    response_length: text.length,
+    parser_mode,
+  };
+  if (!raw) {
+    return {
+      parsed: null,
+      failureReason: parser_mode === 'empty' ? 'empty_model_response' : 'invalid_model_json',
+      raw: null,
+      diagnostics: { ...buildNlDiagnostics(input), ...baseDiagnostics },
+    };
   }
+
+  const parsed = cleanParsedExpense(raw, todayDate);
+  const diagnostics = { ...buildNlDiagnostics(input, raw), ...baseDiagnostics };
+  if (parsed) return { parsed, failureReason: null, raw, diagnostics };
+
+  const amount = Number(raw?.amount);
+  const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
+  const description = typeof raw?.description === 'string' ? raw.description.trim() : '';
+
+  let failureReason = 'missing_required_fields';
+  if (!Number.isFinite(amount) || amount === 0) {
+    failureReason = (!merchant && !description) ? 'missing_required_fields' : 'missing_amount';
+  } else if (!merchant && !description) {
+    failureReason = 'missing_merchant_or_description';
+  }
+
+  return { parsed: null, failureReason, raw, diagnostics };
 }
 
-module.exports = { parseExpense, parseExpenseDetailed, cleanParsedExpense };
+module.exports = { parseExpense, parseExpenseDetailed, cleanParsedExpense, parseJsonWithRecovery };

@@ -37,6 +37,14 @@ function mockCreate() {
   return mockCreateContainer.fn;
 }
 
+beforeEach(() => {
+  MerchantMapping.findByMerchant.mockReset();
+  mockCreate().mockReset();
+  mockCreate().mockResolvedValue({
+    content: [{ text: JSON.stringify({ category_id: 'cat-grocery-id', confidence: 'high' }) }]
+  });
+});
+
 describe('assignCategory', () => {
   it('returns category from MerchantMapping when available', async () => {
     MerchantMapping.findByMerchant.mockResolvedValueOnce({
@@ -68,6 +76,28 @@ describe('assignCategory', () => {
     expect(result.category_id).toBe('cat-grocery-id');
     expect(result.source).toBe('claude');
     expect(result.confidence).toBe(1); // Claude fallback → 1 dot
+  });
+
+  it('uses local category heuristics before the Claude fallback', async () => {
+    MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
+    const callsBefore = mockCreate().mock.calls.length;
+
+    const result = await assignCategory({
+      merchant: null,
+      description: 'lunch',
+      householdId: 'hh-1',
+      categories: [
+        ...mockCategories,
+        { id: 'cat-dining-id', name: 'Dining Out' },
+      ],
+    });
+
+    expect(result).toEqual({
+      category_id: 'cat-dining-id',
+      source: 'heuristic',
+      confidence: 2,
+    });
+    expect(mockCreate().mock.calls.length).toBe(callsBefore);
   });
 
   it('returns null category when Claude cannot determine', async () => {

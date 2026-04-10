@@ -53,28 +53,87 @@ async function appendPaymentFeedback(attemptId, userId, {
   if (`${originalCardLabel || ''}` !== `${finalCardLabel || ''}`) changedFields.push('card_label');
   if (`${originalCardLast4 || ''}` !== `${finalCardLast4 || ''}`) changedFields.push('card_last4');
 
-  const result = await db.query(
-    `UPDATE ingest_attempt_log
-     SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
-     WHERE id = $1
-       AND user_id = $2
-     RETURNING *`,
-    [
-      attemptId,
-      userId,
-      JSON.stringify({
-        payment_feedback_recorded: true,
-        payment_feedback_changed_fields: changedFields,
-        original_payment_method: originalPaymentMethod,
-        original_card_label: originalCardLabel,
-        original_card_last4: originalCardLast4,
-        final_payment_method: finalPaymentMethod,
-        final_card_label: finalCardLabel,
-        final_card_last4: finalCardLast4,
-      }),
-    ]
-  );
-  return result.rows[0] || null;
+  try {
+    const result = await db.query(
+      `UPDATE ingest_attempt_log
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+       WHERE id = $1
+         AND user_id = $2
+       RETURNING *`,
+      [
+        attemptId,
+        userId,
+        JSON.stringify({
+          payment_feedback_recorded: true,
+          payment_feedback_changed_fields: changedFields,
+          original_payment_method: originalPaymentMethod,
+          original_card_label: originalCardLabel,
+          original_card_last4: originalCardLast4,
+          final_payment_method: finalPaymentMethod,
+          final_card_label: finalCardLabel,
+          final_card_last4: finalCardLast4,
+        }),
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingTableError(err)) throw err;
+    return null;
+  }
+}
+
+async function markConfirmed(attemptId, userId, { expenseId = null } = {}) {
+  if (!attemptId || !userId) return null;
+  try {
+    const result = await db.query(
+      `UPDATE ingest_attempt_log
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+       WHERE id = $1
+         AND user_id = $2
+       RETURNING *`,
+      [
+        attemptId,
+        userId,
+        JSON.stringify({
+          confirm_status: 'confirmed',
+          confirmed_expense_id: expenseId,
+          confirmed_at: new Date().toISOString(),
+        }),
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingTableError(err)) throw err;
+    return null;
+  }
+}
+
+async function markConfirmFailed(attemptId, userId, { reason = 'confirm_failed', error = null } = {}) {
+  if (!attemptId || !userId) return null;
+  try {
+    const result = await db.query(
+      `UPDATE ingest_attempt_log
+       SET status = 'failed',
+           metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+       WHERE id = $1
+         AND user_id = $2
+       RETURNING *`,
+      [
+        attemptId,
+        userId,
+        JSON.stringify({
+          confirm_status: 'failed',
+          confirm_failure_reason: reason,
+          confirm_error: error,
+          confirm_failed_at: new Date().toISOString(),
+        }),
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingTableError(err)) throw err;
+    return null;
+  }
 }
 
 async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
@@ -182,4 +241,4 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
   }
 }
 
-module.exports = { create, appendPaymentFeedback, summarizeByUser };
+module.exports = { create, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser };

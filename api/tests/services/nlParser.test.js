@@ -1,4 +1,4 @@
-const { parseExpense, cleanParsedExpense } = require('../../src/services/nlParser');
+const { parseExpense, cleanParsedExpense, parseJsonWithRecovery } = require('../../src/services/nlParser');
 
 // Mock Claude SDK - singleton instance shared across all constructor calls
 jest.mock('@anthropic-ai/sdk', () => {
@@ -91,6 +91,31 @@ describe('parseExpense', () => {
     expect(result.card_label).toBe('amex platinum');
     expect(result.items).toHaveLength(1);
     expect(result.items[0].description).toBe('Nike running shoes');
+  });
+
+  it('recovers valid JSON when the model wraps it in prose', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: `Here is the parsed expense:\n{\n  "merchant": "Chipotle",\n  "description": "lunch",\n  "amount": 14.5,\n  "date": "2026-03-29",\n  "notes": null,\n  "payment_method": null,\n  "card_label": null,\n  "items": null\n}`,
+      }],
+    });
+
+    const result = await parseExpense('lunch chipotle 14.50', '2026-03-29');
+    expect(result.merchant).toBe('Chipotle');
+    expect(result.amount).toBe(14.5);
+  });
+
+  it('repairs trailing commas in model JSON', () => {
+    const result = parseJsonWithRecovery(`\`\`\`json
+{
+  "merchant": "Trader Joe's",
+  "amount": 50,
+}
+\`\`\``);
+    expect(result.parser_mode).toBe('direct');
+    expect(result.raw.merchant).toBe("Trader Joe's");
   });
 
   it('defaults missing date to today and marks parse as partial', () => {

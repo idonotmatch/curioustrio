@@ -456,12 +456,13 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
     if (!input) return res.status(400).json({ error: 'input required' });
     if (input.length > 500) return res.status(400).json({ error: 'input too long (max 500 characters)' });
 
-    const user = await getUser(req);
     const todayDate = today || new Date().toISOString().split('T')[0];
+    const userPromise = getUser(req);
     let parsedResult;
     try {
       parsedResult = await parseExpenseDetailed(input, todayDate);
     } catch (err) {
+      const user = await userPromise.catch(() => null);
       await IngestAttemptLog.create({
         userId: user?.id || null,
         source: 'nl',
@@ -475,6 +476,7 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
       });
       return res.status(503).json(buildIngestFailure('nl', 'ai_unavailable'));
     }
+    const user = await userPromise;
 
     const parsed = parsedResult?.parsed || null;
     if (!parsed) {
@@ -709,6 +711,19 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
 
 // Confirm expense → save to DB + update merchant mapping + run dedup
 router.post('/confirm', async (req, res, next) => {
+  let confirmUser = null;
+  let confirmAttemptId = null;
+  let confirmSource = null;
+  async function markConfirmFailure(reason, error = null) {
+    if (!confirmAttemptId || !confirmUser?.id) return;
+    if (confirmSource && !['manual', 'camera', 'refund'].includes(confirmSource)) return;
+    try {
+      await IngestAttemptLog.markConfirmFailed(confirmAttemptId, confirmUser.id, { reason, error });
+    } catch (logErr) {
+      console.error('Confirm ingest log failure (non-fatal):', logErr.message);
+    }
+  }
+
   try {
     const { merchant, description, amount, date, category_id, source, notes,
             place_name, address,
@@ -716,19 +731,25 @@ router.post('/confirm', async (req, res, next) => {
             payment_method, card_last4, card_label, is_private, items,
             ingest_attempt_id, parsed_payment_snapshot } = req.body;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
+    confirmAttemptId = ingest_attempt_id || null;
+    confirmSource = source || null;
+
+    const user = await getUser(req);
+    confirmUser = user;
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
 
     if (!amount || !date || !source) {
+      await markConfirmFailure('missing_required_fields');
       return res.status(400).json({ error: 'amount, date, source required' });
     }
 
     if (Array.isArray(items) && items.some(it => !it.description || typeof it.description !== 'string' || it.description.trim() === '')) {
+      await markConfirmFailure('invalid_items');
       return res.status(400).json({ error: 'Each item must have a non-empty description' });
     }
 
-    const user = await getUser(req);
-    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
+      await markConfirmFailure('invalid_category_id');
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
 
@@ -765,15 +786,20 @@ router.post('/confirm', async (req, res, next) => {
       }
     }
 
-    if ((source === 'manual' || source === 'camera') && ingest_attempt_id) {
-      await IngestAttemptLog.appendPaymentFeedback(ingest_attempt_id, user.id, {
-        originalPaymentMethod: parsed_payment_snapshot?.payment_method || null,
-        originalCardLabel: parsed_payment_snapshot?.card_label || null,
-        originalCardLast4: parsed_payment_snapshot?.card_last4 || null,
-        finalPaymentMethod: payment_method || null,
-        finalCardLabel: card_label || null,
-        finalCardLast4: card_last4 || null,
-      });
+    if (['manual', 'camera', 'refund'].includes(source) && ingest_attempt_id) {
+      try {
+        await IngestAttemptLog.appendPaymentFeedback(ingest_attempt_id, user.id, {
+          originalPaymentMethod: parsed_payment_snapshot?.payment_method || null,
+          originalCardLabel: parsed_payment_snapshot?.card_label || null,
+          originalCardLast4: parsed_payment_snapshot?.card_last4 || null,
+          finalPaymentMethod: payment_method || null,
+          finalCardLabel: card_label || null,
+          finalCardLast4: card_last4 || null,
+        });
+        await IngestAttemptLog.markConfirmed(ingest_attempt_id, user.id, { expenseId: expense.id });
+      } catch (logErr) {
+        console.error('Confirm ingest log update failed (non-fatal):', logErr.message);
+      }
     }
 
     // Update merchant memory
@@ -804,7 +830,10 @@ router.post('/confirm', async (req, res, next) => {
     }
 
     res.status(201).json({ expense, duplicate_flags });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await markConfirmFailure('server_error', err.message);
+    next(err);
+  }
 });
 
 // List confirmed expenses for the authenticated user
