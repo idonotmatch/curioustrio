@@ -21,7 +21,15 @@ describe('emailParser', () => {
   it('returns parsed expense from receipt email', async () => {
     complete.mockResolvedValue('{"merchant":"Amazon","amount":29.99,"date":"2026-03-21","notes":"Order #123"}');
     const result = await parseEmailExpense('Your order total: $29.99', 'Order Confirmation', 'orders@amazon.com', '2026-03-21');
-    expect(result).toEqual({ merchant: 'Amazon', amount: 29.99, date: '2026-03-21', notes: 'Order #123' });
+    expect(result).toEqual({
+      merchant: 'Amazon',
+      amount: 29.99,
+      date: '2026-03-21',
+      notes: 'Order #123',
+      payment_method: null,
+      card_label: null,
+      card_last4: null,
+    });
   });
 
   it('returns null for non-receipt emails', async () => {

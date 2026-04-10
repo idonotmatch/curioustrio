@@ -135,7 +135,7 @@ describe('parseReceipt', () => {
     const instance = new Anthropic();
     instance.messages.create
       .mockResolvedValueOnce({
-        content: [{ text: 'not valid json {{{' }]
+        content: [{ text: 'not valid json' }]
       })
       .mockResolvedValueOnce({
         content: [{ text: 'still not json' }]
