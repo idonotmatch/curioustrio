@@ -9,7 +9,9 @@ const {
   summarizeInsightList,
   tierGateSummary,
   insightContinuityKey,
+  scopeAgnosticContinuityKey,
   resolveMaturityCompetition,
+  resolveScopeOverlapCompetition,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
@@ -423,6 +425,22 @@ describe('insightBuilder orchestration', () => {
     }))).toBe('category:personal:shopping');
   });
 
+  it('uses scope-agnostic continuity keys to spot personal and household overlap', () => {
+    expect(scopeAgnosticContinuityKey(buildInsight({
+      type: 'early_top_category',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'early', category_key: 'shopping' },
+    }))).toBe('category:shared:shopping');
+
+    expect(scopeAgnosticContinuityKey(buildInsight({
+      type: 'developing_category_shift',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'household', maturity: 'developing', category_key: 'shopping' },
+    }))).toBe('category:shared:shopping');
+  });
+
   it('graduates a story by keeping the most mature insight for a continuity key', () => {
     const early = buildInsight({
       id: 'early-shopping',
@@ -452,6 +470,57 @@ describe('insightBuilder orchestration', () => {
     const resolved = resolveMaturityCompetition([early, developing, mature]);
     expect(resolved).toHaveLength(1);
     expect(resolved[0].id).toBe('mature-shopping');
+  });
+
+  it('consolidates overlapping personal and household driver cards', () => {
+    const personal = buildInsight({
+      id: 'personal-shopping',
+      type: 'developing_category_shift',
+      title: 'Shopping is becoming your week center',
+      body: 'Shopping is 48% of your personal spending over the last 7 days.',
+      severity: 'medium',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'personal', maturity: 'developing', category_key: 'shopping', category_name: 'Shopping' },
+    });
+    const household = buildInsight({
+      id: 'household-shopping',
+      type: 'developing_category_shift',
+      title: 'Shopping is becoming the household week center',
+      body: 'Shopping is 45% of your household spending over the last 7 days.',
+      severity: 'medium',
+      entity_type: 'category',
+      entity_id: 'shopping',
+      metadata: { scope: 'household', maturity: 'developing', category_key: 'shopping', category_name: 'Shopping' },
+    });
+
+    const resolved = resolveScopeOverlapCompetition([personal, household]);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].metadata.scope).toBe('household');
+    expect(resolved[0].metadata.scope_relationship).toBe('personal_household_overlap');
+    expect(resolved[0].metadata.consolidated_scopes).toEqual(['household', 'personal']);
+    expect(resolved[0].metadata.related_insight_ids).toEqual(['personal-shopping']);
+  });
+
+  it('does not consolidate unrelated personal and household cards', () => {
+    const resolved = resolveScopeOverlapCompetition([
+      buildInsight({
+        id: 'personal-shopping',
+        type: 'developing_category_shift',
+        entity_type: 'category',
+        entity_id: 'shopping',
+        metadata: { scope: 'personal', maturity: 'developing', category_key: 'shopping' },
+      }),
+      buildInsight({
+        id: 'household-dining',
+        type: 'developing_category_shift',
+        entity_type: 'category',
+        entity_id: 'dining',
+        metadata: { scope: 'household', maturity: 'developing', category_key: 'dining' },
+      }),
+    ]);
+
+    expect(resolved).toHaveLength(2);
   });
 
   it('does not build developing insights once mature history exists', () => {

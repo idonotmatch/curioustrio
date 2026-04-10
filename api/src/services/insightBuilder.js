@@ -810,6 +810,115 @@ function insightContinuityKey(insight) {
   return null;
 }
 
+function scopeAgnosticContinuityKey(insight) {
+  const key = insightContinuityKey(insight);
+  if (!key) return null;
+  return key.replace(/:(personal|household):/, ':shared:');
+}
+
+function isScopeConsolidatableInsight(insight) {
+  const type = `${insight?.type || ''}`.trim();
+  return [
+    'early_budget_pace',
+    'early_top_category',
+    'early_repeated_merchant',
+    'developing_weekly_spend_change',
+    'developing_category_shift',
+    'developing_repeated_merchant',
+    'spend_pace_ahead',
+    'spend_pace_behind',
+    'top_category_driver',
+    'projected_category_surge',
+    'projected_category_under_baseline',
+    'projected_month_end_over_budget',
+    'projected_month_end_under_budget',
+  ].includes(type);
+}
+
+function consolidateScopedInsightGroup(group = []) {
+  if (group.length < 2) return group[0] || null;
+
+  const sorted = [...group].sort((a, b) => {
+    const scopeRank = (insight) => (insight?.metadata?.scope === 'household' ? 1 : 0);
+    return scopeRank(b) - scopeRank(a)
+      || maturityRankForInsight(b) - maturityRankForInsight(a)
+      || severityRank(b.severity) - severityRank(a.severity)
+      || insightDestinationAdjustment(b) - insightDestinationAdjustment(a)
+      || new Date(b.created_at) - new Date(a.created_at);
+  });
+  const primary = sorted[0];
+  const companions = sorted.slice(1);
+  const companionScopes = companions.map((insight) => insight.metadata?.scope).filter(Boolean);
+  const hasPersonal = [primary, ...companions].some((insight) => insight.metadata?.scope === 'personal');
+  const hasHousehold = [primary, ...companions].some((insight) => insight.metadata?.scope === 'household');
+  const entityName = primary.metadata?.category_name || primary.metadata?.merchant_name;
+
+  let title = primary.title;
+  let body = primary.body;
+  if (hasPersonal && hasHousehold) {
+    if (primary.entity_type === 'category' && entityName) {
+      title = `${entityName} is showing up for you and the household`;
+      body = `${primary.body} Your personal and household cards were similar, so this rolls them into one shared read.`;
+    } else if (primary.entity_type === 'merchant' && entityName) {
+      title = `${entityName} is repeating across the picture`;
+      body = `${primary.body} Your personal and household merchant signals are similar enough to review together.`;
+    } else {
+      title = primary.metadata?.scope === 'household'
+        ? `${primary.title} for the household and you`
+        : primary.title;
+      body = `${primary.body} A similar ${primary.metadata?.scope === 'household' ? 'personal' : 'household'} card was folded into this one.`;
+    }
+  }
+
+  return {
+    ...primary,
+    id: `${primary.id}:consolidated`,
+    title,
+    body,
+    metadata: {
+      ...primary.metadata,
+      consolidated_scopes: [...new Set([primary.metadata?.scope, ...companionScopes].filter(Boolean))],
+      consolidated_from: [primary, ...companions].map((insight) => ({
+        id: insight.id,
+        type: insight.type,
+        scope: insight.metadata?.scope || null,
+        maturity: insight.metadata?.maturity || null,
+        severity: insight.severity || null,
+      })),
+      related_insight_ids: companions.map((insight) => insight.id),
+      scope_relationship: hasPersonal && hasHousehold ? 'personal_household_overlap' : 'same_scope_overlap',
+    },
+  };
+}
+
+function resolveScopeOverlapCompetition(insights = []) {
+  const grouped = new Map();
+  const passthrough = [];
+
+  for (const insight of insights || []) {
+    const key = scopeAgnosticContinuityKey(insight);
+    if (!key || !isScopeConsolidatableInsight(insight)) {
+      passthrough.push(insight);
+      continue;
+    }
+    const group = grouped.get(key) || [];
+    group.push(insight);
+    grouped.set(key, group);
+  }
+
+  const resolved = [];
+  for (const group of grouped.values()) {
+    const scopes = new Set(group.map((insight) => insight.metadata?.scope).filter(Boolean));
+    if (group.length < 2 || !scopes.has('personal') || !scopes.has('household')) {
+      resolved.push(...group);
+      continue;
+    }
+    resolved.push(consolidateScopedInsightGroup(group));
+  }
+
+  return [...passthrough, ...resolved].filter(Boolean);
+}
+
 function summarizeExpenseRows(rows = []) {
   const byCategory = new Map();
   const byMerchant = new Map();
@@ -1085,6 +1194,10 @@ function insightDestinationAdjustment(insight) {
     type === 'top_category_driver'
     || type === 'projected_category_surge'
     || type === 'projected_category_under_baseline'
+    || type === 'early_top_category'
+    || type === 'early_repeated_merchant'
+    || type === 'early_spend_concentration'
+    || type === 'early_logging_momentum'
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
@@ -1101,9 +1214,11 @@ function insightDestinationAdjustment(insight) {
   if (
     type === 'spend_pace_ahead'
     || type === 'spend_pace_behind'
+    || type === 'early_budget_pace'
     || type === 'usage_set_budget'
     || type === 'usage_start_logging'
     || type === 'usage_building_history'
+    || type === 'early_cleanup'
   ) return 1;
 
   return 0;
@@ -1116,6 +1231,7 @@ function portfolioRole(insight) {
     type === 'usage_start_logging'
     || type === 'usage_set_budget'
     || type === 'usage_building_history'
+    || type === 'early_cleanup'
   ) return 'setup';
 
   if (
@@ -1141,6 +1257,11 @@ function portfolioRole(insight) {
     || type === 'spend_pace_ahead'
     || type === 'spend_pace_behind'
     || type === 'budget_too_high'
+    || type === 'early_budget_pace'
+    || type === 'early_top_category'
+    || type === 'early_repeated_merchant'
+    || type === 'early_spend_concentration'
+    || type === 'early_logging_momentum'
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
@@ -1155,6 +1276,7 @@ function portfolioFamily(insight) {
 
   if (
     type === 'spend_pace_ahead'
+    || type === 'early_budget_pace'
     || type === 'budget_too_low'
     || type === 'projected_month_end_over_budget'
     || type === 'projected_category_surge'
@@ -1166,6 +1288,10 @@ function portfolioFamily(insight) {
     type === 'top_category_driver'
     || type === 'one_offs_driving_variance'
     || type === 'one_off_expense_skewing_projection'
+    || type === 'early_top_category'
+    || type === 'early_repeated_merchant'
+    || type === 'early_spend_concentration'
+    || type === 'early_logging_momentum'
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
@@ -1182,6 +1308,7 @@ function portfolioFamily(insight) {
     type === 'recurring_repurchase_due'
     || type === 'spend_pace_behind'
     || type === 'budget_too_high'
+    || type === 'early_cleanup'
   ) return 'reminder';
 
   return 'other';
@@ -1197,6 +1324,12 @@ function narrativeClusterKey(insight) {
     || type === 'spend_pace_behind'
     || type === 'top_category_driver'
     || type === 'one_offs_driving_variance'
+    || type === 'early_budget_pace'
+    || type === 'early_top_category'
+    || type === 'early_repeated_merchant'
+    || type === 'early_spend_concentration'
+    || type === 'early_cleanup'
+    || type === 'early_logging_momentum'
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
@@ -1526,6 +1659,10 @@ function resolveMaturityCompetition(insights) {
   return [...passthrough, ...resolved];
 }
 
+function resolveInsightCompetition(insights) {
+  return resolveScopeOverlapCompetition(resolveMaturityCompetition(resolveOpportunityCompetition(insights)));
+}
+
 function summarizeInsightList(insights = []) {
   const byType = {};
   const byMaturity = {};
@@ -1642,7 +1779,7 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
       ...buildTrendInsights(trend, scope),
       ...buildProjectionInsights(projection, scope),
     ];
-    const merged = resolveMaturityCompetition(dedupeInsights([...early, ...developing, ...mature]));
+    const merged = resolveInsightCompetition(dedupeInsights([...early, ...developing, ...mature]));
 
     scopeReports.push({
       scope,
@@ -1987,7 +2124,7 @@ async function buildInsights({ user, limit = 10 }) {
     });
   }
 
-  return resolveMaturityCompetition(resolveOpportunityCompetition(deduped))
+  return resolveInsightCompetition(deduped)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }
@@ -2040,7 +2177,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       context: 'quiet_period',
     });
 
-    supplementedRanked = resolveMaturityCompetition(dedupeInsights([...ranked, ...fallbackInsights])).sort((a, b) => {
+    supplementedRanked = resolveInsightCompetition(dedupeInsights([...ranked, ...fallbackInsights])).sort((a, b) => {
       const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
       if (scoreDiff !== 0) return scoreDiff;
       return new Date(b.created_at) - new Date(a.created_at);
@@ -2060,7 +2197,10 @@ module.exports = {
   summarizeInsightList,
   tierGateSummary,
   insightContinuityKey,
+  scopeAgnosticContinuityKey,
   resolveMaturityCompetition,
+  resolveScopeOverlapCompetition,
+  resolveInsightCompetition,
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,

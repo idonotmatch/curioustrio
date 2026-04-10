@@ -24,6 +24,13 @@ function isPositiveOpportunityType(insightType) {
   return POSITIVE_OPPORTUNITY_TYPES.has(insightType);
 }
 
+function inferredMaturityForInsightType(insightType) {
+  const type = `${insightType || ''}`.trim();
+  if (type.startsWith('early_')) return 'early';
+  if (type.startsWith('developing_')) return 'developing';
+  return null;
+}
+
 function normalizeOutcomeType(event = {}) {
   const raw = event?.metadata?.outcome_type
     || event?.metadata?.action_type
@@ -114,7 +121,13 @@ function suppressionWindowDays(insightType, stats = {}) {
   const dismissedCount = stats.dismissed || 0;
   const notHelpfulCount = stats.not_helpful || 0;
   const positiveOpportunity = isPositiveOpportunityType(insightType);
+  const maturity = inferredMaturityForInsightType(insightType);
 
+  if (maturity === 'early' || maturity === 'developing') {
+    if (wrongTimingCount >= 1) return maturity === 'early' ? 4 : 6;
+    if (notAccurateCount >= 2 || notRelevantCount >= 2 || notHelpfulCount >= 3) return maturity === 'early' ? 10 : 14;
+    if (dismissedCount >= 2 || notHelpfulCount >= 2) return maturity === 'early' ? 7 : 10;
+  }
   if (positiveOpportunity && (alreadyKnewCount >= 1 || notRelevantCount >= 1) && (dismissedCount >= 1 || notHelpfulCount >= 1)) return 30;
   if (notAccurateCount >= 2 || notRelevantCount >= 2 || notHelpfulCount >= 3) return 21;
   if (wrongTimingCount >= 1) return 7;
@@ -177,6 +190,27 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
     }
     if (stats.shown >= 4 && stats.acted === 0 && stats.helpful === 0) {
       score -= 2;
+    }
+  }
+
+  const maturity = `${insight?.metadata?.maturity || inferredMaturityForInsightType(insight.type) || ''}`.trim();
+  if (maturity === 'early' || maturity === 'developing') {
+    const wrongTiming = stats.reasons.wrong_timing || 0;
+    const alreadyKnew = stats.reasons.already_knew || 0;
+    const notRelevant = stats.reasons.not_relevant || 0;
+    const notAccurate = stats.reasons.not_accurate || 0;
+    const usefulRate = stats.shown > 0 ? (stats.helpful + stats.acted + stats.tapped * 0.4) / stats.shown : 0;
+
+    score += stats.helpful * (maturity === 'early' ? 1.5 : 1);
+    score += stats.acted * 1.5;
+    score -= wrongTiming * (maturity === 'early' ? 4 : 3);
+    score -= alreadyKnew * (maturity === 'early' ? 3 : 2);
+    score -= notRelevant * 2;
+    score -= notAccurate * 3;
+
+    if (stats.shown >= 3 && usefulRate >= 0.35) score += maturity === 'early' ? 3 : 2;
+    if (stats.shown >= 3 && stats.tapped === 0 && stats.helpful === 0 && stats.acted === 0) {
+      score -= maturity === 'early' ? 4 : 3;
     }
   }
 
@@ -295,6 +329,7 @@ function buildFeedbackDebugSummary(events = []) {
 
 module.exports = {
   isPositiveOpportunityType,
+  inferredMaturityForInsightType,
   normalizeInsightType,
   normalizeOutcomeType,
   summarizeFeedbackEvents,

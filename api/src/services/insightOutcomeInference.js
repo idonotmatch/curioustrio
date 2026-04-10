@@ -5,6 +5,9 @@ const INFERABLE_OUTCOME_TYPES = new Map([
   ['buy_soon_better_price', { outcomeType: 'bought_price_watched_item', windowDays: 10 }],
   ['projected_category_under_baseline', { outcomeType: 'used_category_headroom', windowDays: 10, minAmount: 12 }],
   ['projected_month_end_under_budget', { outcomeType: 'used_budget_headroom', windowDays: 10, minAmount: 30 }],
+  ['early_cleanup', { outcomeType: 'categorized_expenses', windowDays: 3 }],
+  ['early_budget_pace', { outcomeType: 'set_budget_after_early_read', windowDays: 7 }],
+  ['developing_weekly_spend_change', { outcomeType: 'set_budget_after_developing_read', windowDays: 7 }],
 ]);
 
 function inferableOutcomeConfig(insightType) {
@@ -186,6 +189,69 @@ async function findMeaningfulSpendAfterShown({ user, shownAt, windowDays, scope,
   return result.rows[0] || null;
 }
 
+async function findCategorizedExpenseAfterShown({ user, shownAt, windowDays, scope }) {
+  if (!user?.id || !shownAt || !windowDays) return null;
+
+  const params = [shownAt, windowDays];
+  let scopeClause = '';
+
+  if (scope === 'household' && user.household_id) {
+    params.push(user.household_id, user.id);
+    scopeClause = `
+      AND (
+        (e.household_id = $${params.length - 1}
+         OR e.user_id IN (SELECT id FROM users WHERE household_id = $${params.length - 1}))
+        AND (e.is_private = FALSE OR e.user_id = $${params.length})
+      )`;
+  } else {
+    params.push(user.id);
+    scopeClause = `AND e.user_id = $${params.length}`;
+  }
+
+  const result = await db.query(
+    `SELECT e.id AS expense_id, e.created_at, e.merchant, e.category_id
+     FROM expenses e
+     WHERE e.status = 'confirmed'
+       AND e.category_id IS NOT NULL
+       AND e.created_at >= $1::timestamptz
+       AND e.created_at <= ($1::timestamptz + ($2::text || ' days')::interval)
+       ${scopeClause}
+     ORDER BY e.created_at ASC
+     LIMIT 1`,
+    params
+  );
+
+  return result.rows[0] || null;
+}
+
+async function findBudgetSettingAfterShown({ user, shownAt, windowDays, scope }) {
+  if (!user?.id || !shownAt || !windowDays) return null;
+
+  const params = [shownAt, windowDays];
+  let scopeClause = '';
+
+  if (scope === 'household' && user.household_id) {
+    params.push(user.household_id);
+    scopeClause = `AND bs.household_id = $${params.length}`;
+  } else {
+    params.push(user.id);
+    scopeClause = `AND bs.user_id = $${params.length}`;
+  }
+
+  const result = await db.query(
+    `SELECT bs.category_id, bs.monthly_limit, bs.updated_at
+     FROM budget_settings bs
+     WHERE bs.updated_at >= $1::timestamptz
+       AND bs.updated_at <= ($1::timestamptz + ($2::text || ' days')::interval)
+       ${scopeClause}
+     ORDER BY bs.updated_at ASC
+     LIMIT 1`,
+    params
+  );
+
+  return result.rows[0] || null;
+}
+
 async function inferOutcomeEventsForUser({ user, events = [] }) {
   if (!user?.id || !Array.isArray(events) || !events.length) return [];
 
@@ -310,6 +376,59 @@ async function inferOutcomeEventsForUser({ user, events = [] }) {
       };
     }
 
+    if (insightType === 'early_cleanup') {
+      const scope = shownOrTapped?.metadata?.scope === 'household' ? 'household' : 'personal';
+      const matchingExpense = await findCategorizedExpenseAfterShown({
+        user,
+        shownAt: shownOrTapped.created_at,
+        windowDays: config.windowDays,
+        scope,
+      });
+      if (!matchingExpense) continue;
+
+      inferredEvent = {
+        insight_id: insightId,
+        event_type: 'acted',
+        metadata: {
+          insight_type: insightType,
+          outcome_type: config.outcomeType,
+          inferred: true,
+          source_event_type: shownOrTapped.event_type,
+          scope,
+          matched_expense_id: matchingExpense.expense_id,
+          matched_merchant: matchingExpense.merchant || null,
+          matched_category_id: matchingExpense.category_id || null,
+        },
+        created_at: matchingExpense.created_at,
+      };
+    }
+
+    if (insightType === 'early_budget_pace' || insightType === 'developing_weekly_spend_change') {
+      const scope = shownOrTapped?.metadata?.scope === 'household' ? 'household' : 'personal';
+      const matchingBudget = await findBudgetSettingAfterShown({
+        user,
+        shownAt: shownOrTapped.created_at,
+        windowDays: config.windowDays,
+        scope,
+      });
+      if (!matchingBudget) continue;
+
+      inferredEvent = {
+        insight_id: insightId,
+        event_type: 'acted',
+        metadata: {
+          insight_type: insightType,
+          outcome_type: config.outcomeType,
+          inferred: true,
+          source_event_type: shownOrTapped.event_type,
+          scope,
+          category_id: matchingBudget.category_id || null,
+          monthly_limit: Number(matchingBudget.monthly_limit || 0),
+        },
+        created_at: matchingBudget.updated_at,
+      };
+    }
+
     if (inferredEvent) {
       inferred.push(inferredEvent);
     }
@@ -322,5 +441,7 @@ module.exports = {
   inferableOutcomeConfig,
   parseGroupKeyFromInsight,
   parseProjectionContextFromInsight,
+  findCategorizedExpenseAfterShown,
+  findBudgetSettingAfterShown,
   inferOutcomeEventsForUser,
 };

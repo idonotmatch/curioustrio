@@ -15,6 +15,12 @@ describe('inferableOutcomeConfig', () => {
     expect(inferableOutcomeConfig('recurring_restock_window')).toEqual(
       expect.objectContaining({ outcomeType: 'restocked_item', windowDays: 10 })
     );
+    expect(inferableOutcomeConfig('early_cleanup')).toEqual(
+      expect.objectContaining({ outcomeType: 'categorized_expenses', windowDays: 3 })
+    );
+    expect(inferableOutcomeConfig('early_budget_pace')).toEqual(
+      expect.objectContaining({ outcomeType: 'set_budget_after_early_read', windowDays: 7 })
+    );
     expect(inferableOutcomeConfig('spend_pace_ahead')).toBeNull();
   });
 });
@@ -197,6 +203,71 @@ describe('inferOutcomeEventsForUser', () => {
           outcome_type: 'used_budget_headroom',
           matched_expense_id: 'expense-3',
           matched_amount: 52,
+        }),
+      }),
+    ]);
+  });
+
+  it('infers cleanup outcomes when categorized expenses appear after an early cleanup card', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        expense_id: 'expense-4',
+        created_at: '2026-04-06T12:00:00Z',
+        merchant: 'Cafe',
+        category_id: 'category-1',
+      }],
+    });
+
+    const inferred = await inferOutcomeEventsForUser({
+      user,
+      events: [{
+        insight_id: 'early_cleanup:personal:2026-04:uncategorized:3',
+        event_type: 'shown',
+        metadata: { insight_type: 'early_cleanup', maturity: 'early', scope: 'personal' },
+        created_at: '2026-04-05T10:00:00Z',
+      }],
+    });
+
+    expect(inferred).toEqual([
+      expect.objectContaining({
+        insight_id: 'early_cleanup:personal:2026-04:uncategorized:3',
+        event_type: 'acted',
+        metadata: expect.objectContaining({
+          insight_type: 'early_cleanup',
+          outcome_type: 'categorized_expenses',
+          matched_expense_id: 'expense-4',
+        }),
+      }),
+    ]);
+  });
+
+  it('infers budget outcomes when a budget is updated after an early pace card', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        category_id: null,
+        monthly_limit: 500,
+        updated_at: '2026-04-06T12:00:00Z',
+      }],
+    });
+
+    const inferred = await inferOutcomeEventsForUser({
+      user,
+      events: [{
+        insight_id: 'early_budget_pace:personal:2026-04:100:0',
+        event_type: 'tapped',
+        metadata: { insight_type: 'early_budget_pace', maturity: 'early', scope: 'personal' },
+        created_at: '2026-04-05T10:00:00Z',
+      }],
+    });
+
+    expect(inferred).toEqual([
+      expect.objectContaining({
+        insight_id: 'early_budget_pace:personal:2026-04:100:0',
+        event_type: 'acted',
+        metadata: expect.objectContaining({
+          insight_type: 'early_budget_pace',
+          outcome_type: 'set_budget_after_early_read',
+          monthly_limit: 500,
         }),
       }),
     ]);

@@ -1,5 +1,6 @@
 const {
   isPositiveOpportunityType,
+  inferredMaturityForInsightType,
   normalizeInsightType,
   normalizeOutcomeType,
   summarizeFeedbackEvents,
@@ -35,6 +36,14 @@ describe('isPositiveOpportunityType', () => {
     expect(isPositiveOpportunityType('projected_category_under_baseline')).toBe(true);
     expect(isPositiveOpportunityType('recurring_restock_window')).toBe(true);
     expect(isPositiveOpportunityType('spend_pace_ahead')).toBe(false);
+  });
+});
+
+describe('inferredMaturityForInsightType', () => {
+  it('infers maturity from early and developing insight prefixes', () => {
+    expect(inferredMaturityForInsightType('early_budget_pace')).toBe('early');
+    expect(inferredMaturityForInsightType('developing_category_shift')).toBe('developing');
+    expect(inferredMaturityForInsightType('projected_category_surge')).toBeNull();
   });
 });
 
@@ -404,6 +413,25 @@ describe('suppressionForInsightType', () => {
     );
   });
 
+  it('uses maturity-aware cooldowns for early timing feedback', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'early_budget_pace:personal:2026-04:100:500',
+        event_type: 'not_helpful',
+        metadata: { insight_type: 'early_budget_pace', reason: 'wrong_timing', maturity: 'early' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    expect(suppressionForInsightType('early_budget_pace', summary)).toEqual(
+      expect.objectContaining({
+        suppressed: true,
+        cooldown_days: 4,
+        reason: 'wrong_timing',
+      })
+    );
+  });
+
   it('suppresses positive opportunity insights longer after irrelevant/already knew feedback', () => {
     const summary = summarizeFeedbackEvents([
       {
@@ -484,5 +512,25 @@ describe('insightRankScore', () => {
     const dueScore = insightRankScore({ type: 'recurring_repurchase_due', severity: 'medium' }, summary);
     const dealScore = insightRankScore({ type: 'buy_soon_better_price', severity: 'medium' }, summary);
     expect(dueScore).toBeGreaterThan(dealScore);
+  });
+
+  it('penalizes early cards more when users say the timing is wrong', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'early_budget_pace:personal:2026-04:100:500',
+        event_type: 'shown',
+        metadata: { insight_type: 'early_budget_pace', maturity: 'early' },
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'early_budget_pace:personal:2026-04:100:500',
+        event_type: 'not_helpful',
+        metadata: { insight_type: 'early_budget_pace', maturity: 'early', reason: 'wrong_timing' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    const earlyScore = insightRankScore({ type: 'early_budget_pace', severity: 'low', metadata: { maturity: 'early' } }, summary);
+    expect(earlyScore).toBeLessThan(100);
   });
 });
