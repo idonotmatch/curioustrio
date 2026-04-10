@@ -13,8 +13,15 @@ const GMAIL_SEARCH_QUERY = [
   '"total charged"',
   'OR',
   '"payment received"',
+  'OR',
+  'from:(amazon.com)',
+  'OR',
+  'from:(orders@amazon.com)',
+  'OR',
+  'from:(auto-confirm@amazon.com)',
+  'OR',
+  'from:(shipment-tracking@amazon.com)',
   ')',
-  '-category:promotions',
 ].join(' ');
 
 function createOAuth2Client() {
