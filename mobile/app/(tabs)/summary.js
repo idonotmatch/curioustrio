@@ -19,6 +19,9 @@ import { getInsightActionDescriptor } from '../../services/insightPresentation';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const INSIGHT_CARD_MIN_HEIGHT = 174;
+const INSIGHT_SUMMARY_TITLE_LINES = 2;
+const INSIGHT_SUMMARY_BODY_LINES = 3;
 
 function getPastMonths() {
   const months = [];
@@ -223,6 +226,14 @@ function buildMockInsights(month) {
       body: 'A larger-than-usual Costco stock-up is skewing the all-in projection above your baseline month.',
       entity_type: 'budget',
       metadata: { scope: 'personal', month },
+    },
+    {
+      id: 'mock:long-early-card',
+      type: 'early_spend_concentration',
+      title: 'A longer early read should keep its action row pinned in place',
+      body: 'This intentionally wordy card checks that the summary preview can absorb longer insight copy without pulling the footer away from the bottom of the card rail.',
+      entity_type: 'expense',
+      metadata: { scope: 'personal', month, maturity: 'early', confidence: 'descriptive' },
     },
   ];
 }
@@ -778,10 +789,10 @@ export default function SummaryScreen() {
                           <Ionicons name="close" size={16} color="#666" />
                         </TouchableOpacity>
                       </View>
-                      <Text style={styles.insightTitle} numberOfLines={2}>{insight.title}</Text>
+                      <Text style={styles.insightTitle} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{insight.title}</Text>
                     </View>
                     <View style={styles.insightContent}>
-                      <Text style={styles.insightBody} numberOfLines={3}>{insight.body}</Text>
+                      <Text style={styles.insightBody} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{insight.body}</Text>
                     </View>
                     <View style={styles.insightFooter}>
                       <Text style={styles.insightActionReason}>{insightActionReason(insight)}</Text>
@@ -901,7 +912,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#1a1a1a',
-    minHeight: 174,
+    minHeight: INSIGHT_CARD_MIN_HEIGHT,
     justifyContent: 'space-between',
   },
   insightCardWarn: { backgroundColor: '#141111', borderColor: '#2d1d1d' },
