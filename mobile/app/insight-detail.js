@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
@@ -30,6 +30,28 @@ function formatValue(value) {
     return `${Number(value).toFixed(1)}`;
   }
   return `${value}`;
+}
+
+function formatCurrency(value) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function formatShortDate(value) {
+  if (!value) return '';
+  const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return `${value}`.slice(0, 10);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function normalizeMerchant(value) {
+  return `${value || ''}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function expenseMatchesMerchant(expense, metadata = {}) {
+  const merchantKey = normalizeMerchant(metadata.merchant_key || metadata.merchant_name);
+  if (!merchantKey) return false;
+  return normalizeMerchant(expense?.merchant).includes(merchantKey) || merchantKey.includes(normalizeMerchant(expense?.merchant));
 }
 
 function metadataHighlights(metadata = {}) {
@@ -87,6 +109,23 @@ function consolidatedRows(metadata = {}) {
     .slice(0, 4);
 }
 
+function evidenceModeForInsight(insightType, metadata = {}) {
+  const type = `${insightType || ''}`;
+  if (type === 'early_cleanup') return 'cleanup';
+  if (metadata.category_key) return 'category';
+  if (metadata.merchant_key || metadata.merchant_name) return 'merchant';
+  if (metadata.largest_expense) return 'largest_expense';
+  return null;
+}
+
+function evidenceTitle(mode, metadata = {}) {
+  if (mode === 'cleanup') return 'Expenses to clean up';
+  if (mode === 'category') return `${metadata.category_name || 'Category'} activity`;
+  if (mode === 'merchant') return `${metadata.merchant_name || 'Merchant'} activity`;
+  if (mode === 'largest_expense') return 'Purchase behind the read';
+  return 'Recent evidence';
+}
+
 export default function InsightDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -102,6 +141,8 @@ export default function InsightDetailScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
+  const [evidenceRows, setEvidenceRows] = useState([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   const metadata = useMemo(() => {
     if (!metadataParam) return {};
@@ -134,6 +175,50 @@ export default function InsightDetailScreen() {
   const highlights = metadataHighlights(metadata);
   const consolidationNote = consolidatedCopy(metadata);
   const consolidationRows = consolidatedRows(metadata);
+  const evidenceMode = evidenceModeForInsight(insightType, metadata);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEvidence() {
+      if (!evidenceMode || evidenceMode === 'largest_expense') {
+        const largest = metadata.largest_expense;
+        setEvidenceRows(largest ? [largest] : []);
+        setEvidenceLoading(false);
+        return;
+      }
+      if (!metadata.month) {
+        setEvidenceRows([]);
+        setEvidenceLoading(false);
+        return;
+      }
+
+      try {
+        setEvidenceLoading(true);
+        const endpoint = metadata.scope === 'household' ? '/expenses/household' : '/expenses';
+        const params = new URLSearchParams({ month: `${metadata.month}` });
+        if (evidenceMode === 'category' && metadata.category_key) {
+          params.set('category_id', `${metadata.category_key}`);
+        }
+        if (evidenceMode === 'cleanup') {
+          params.set('category_id', 'uncategorized');
+        }
+        const rows = await api.get(`${endpoint}?${params.toString()}`);
+        const cleanRows = Array.isArray(rows) ? rows : [];
+        const filtered = evidenceMode === 'merchant'
+          ? cleanRows.filter((row) => expenseMatchesMerchant(row, metadata))
+          : cleanRows;
+        if (!cancelled) setEvidenceRows(filtered.slice(0, 5));
+      } catch {
+        if (!cancelled) setEvidenceRows([]);
+      } finally {
+        if (!cancelled) setEvidenceLoading(false);
+      }
+    }
+
+    loadEvidence();
+    return () => { cancelled = true; };
+  }, [evidenceMode, metadata]);
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;
@@ -262,6 +347,34 @@ export default function InsightDetailScreen() {
                 <Text style={styles.metricValue}>{row.value}</Text>
               </View>
             ))}
+          </View>
+        ) : null}
+
+        {evidenceMode ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
+            {evidenceLoading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#d4d4d4" size="small" />
+                <Text style={styles.loadingText}>Loading recent activity...</Text>
+              </View>
+            ) : evidenceRows.length > 0 ? (
+              <View style={styles.expenseList}>
+                {evidenceRows.map((expense, index) => (
+                  <View key={expense.id || `${expense.merchant || 'expense'}:${index}`} style={styles.expenseRow}>
+                    <View style={styles.expenseText}>
+                      <Text style={styles.expenseMerchant}>{expense.merchant || 'Unknown merchant'}</Text>
+                      <Text style={styles.expenseMeta}>
+                        {[formatShortDate(expense.date), expense.category_name, expense.user_name].filter(Boolean).join(' / ')}
+                      </Text>
+                    </View>
+                    <Text style={styles.expenseAmount}>{formatCurrency(expense.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.cardCopy}>No matching recent expenses are available for this card yet.</Text>
+            )}
           </View>
         ) : null}
 
@@ -409,6 +522,22 @@ const styles = StyleSheet.create({
   foldedScope: { color: '#f5f5f5', fontSize: 13, fontWeight: '700' },
   foldedType: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
   foldedMeta: { color: '#b8b8b8', fontSize: 12, textAlign: 'right', flexShrink: 0 },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  loadingText: { color: '#b8b8b8', fontSize: 13 },
+  expenseList: { gap: 8 },
+  expenseRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#242424',
+    paddingTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  expenseText: { flex: 1 },
+  expenseMerchant: { color: '#f5f5f5', fontSize: 14, fontWeight: '700' },
+  expenseMeta: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
+  expenseAmount: { color: '#f5f5f5', fontSize: 14, fontWeight: '800' },
   primaryButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#f5f5f5',
