@@ -60,6 +60,10 @@ function formatRelativeTime(value) {
 }
 
 function insightScopeLabel(insight) {
+  const scopes = Array.isArray(insight?.metadata?.consolidated_scopes)
+    ? insight.metadata.consolidated_scopes
+    : [];
+  if (scopes.includes('personal') && scopes.includes('household')) return 'You + Household';
   if (insight?.metadata?.scope === 'personal') return 'You';
   if (insight?.metadata?.scope === 'household') return 'Household';
   return insight?.entity_type === 'item' ? 'Household' : 'You';
@@ -70,6 +74,7 @@ function insightActionLabel(insight) {
 }
 
 function insightActionReason(insight) {
+  if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 'Combined signal';
   if (insight?.metadata?.scope === 'household') return 'Shared context';
   return getInsightActionDescriptor(insight).reason;
 }
@@ -86,6 +91,9 @@ function insightEventMetadata(insight, surface = 'summary') {
     entity_id: insight?.entity_id || null,
     category_key: insight?.metadata?.category_key || null,
     merchant_key: insight?.metadata?.merchant_key || null,
+    scope_relationship: insight?.metadata?.scope_relationship || null,
+    consolidated_scopes: insight?.metadata?.consolidated_scopes || null,
+    related_insight_ids: insight?.metadata?.related_insight_ids || null,
   };
 }
 

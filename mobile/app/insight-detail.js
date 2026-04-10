@@ -46,6 +46,7 @@ function metadataHighlights(metadata = {}) {
     ['Expense count', metadata.expense_count],
     ['Active days', metadata.active_day_count],
     ['Uncategorized', metadata.uncategorized_count],
+    ['Combined scopes', Array.isArray(metadata.consolidated_scopes) ? metadata.consolidated_scopes.map(formatLabel).join(' + ') : null],
   ];
 
   return rows
@@ -62,6 +63,28 @@ function contextCopy(type) {
     return 'This is a developing read from short-term activity. It should get more tailored as the pattern either repeats or fades.';
   }
   return 'This card is based on the current insight signal and your recent activity.';
+}
+
+function consolidatedCopy(metadata = {}) {
+  if (metadata.scope_relationship !== 'personal_household_overlap') return null;
+  const foldedCount = Array.isArray(metadata.related_insight_ids) ? metadata.related_insight_ids.length : 0;
+  if (foldedCount > 0) {
+    return 'A similar personal or household card was folded into this one, so you can review the shared story once.';
+  }
+  return 'This card combines personal and household signals that were pointing at the same story.';
+}
+
+function consolidatedRows(metadata = {}) {
+  const rows = Array.isArray(metadata.consolidated_from) ? metadata.consolidated_from : [];
+  return rows
+    .map((row) => ({
+      id: row.id || `${row.scope || 'scope'}:${row.type || 'insight'}`,
+      scope: row.scope ? formatLabel(row.scope) : 'Unknown',
+      type: row.type ? formatLabel(row.type) : 'Insight',
+      maturity: row.maturity ? formatLabel(row.maturity) : null,
+      severity: row.severity ? formatLabel(row.severity) : null,
+    }))
+    .slice(0, 4);
 }
 
 export default function InsightDetailScreen() {
@@ -109,6 +132,8 @@ export default function InsightDetailScreen() {
     trend: null,
   });
   const highlights = metadataHighlights(metadata);
+  const consolidationNote = consolidatedCopy(metadata);
+  const consolidationRows = consolidatedRows(metadata);
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;
@@ -128,6 +153,9 @@ export default function InsightDetailScreen() {
             entity_id: `${entityId}` || null,
             category_key: metadata.category_key || null,
             merchant_key: metadata.merchant_key || null,
+            scope_relationship: metadata.scope_relationship || null,
+            consolidated_scopes: metadata.consolidated_scopes || null,
+            related_insight_ids: metadata.related_insight_ids || null,
           },
         }],
       });
@@ -155,6 +183,9 @@ export default function InsightDetailScreen() {
             entity_id: `${entityId}` || null,
             category_key: metadata.category_key || null,
             merchant_key: metadata.merchant_key || null,
+            scope_relationship: metadata.scope_relationship || null,
+            consolidated_scopes: metadata.consolidated_scopes || null,
+            related_insight_ids: metadata.related_insight_ids || null,
             reason: feedbackReason,
             note: feedbackNote.trim() || null,
           },
@@ -181,11 +212,36 @@ export default function InsightDetailScreen() {
           <View style={styles.chipRow}>
             <Text style={styles.scopeChip}>{metadata.scope === 'household' ? 'Household' : 'You'}</Text>
             <Text style={styles.tierChip}>{formatLabel(metadata.maturity || 'Insight')}</Text>
+            {metadata.scope_relationship === 'personal_household_overlap' ? (
+              <Text style={styles.combinedChip}>Combined</Text>
+            ) : null}
           </View>
           <Text style={styles.heroTitle}>{title}</Text>
           <Text style={styles.heroCopy}>{body}</Text>
           <Text style={styles.heroContext}>{contextCopy(insightType)}</Text>
         </View>
+
+        {consolidationNote ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Combined read</Text>
+            <Text style={styles.cardCopy}>{consolidationNote}</Text>
+            {consolidationRows.length > 0 ? (
+              <View style={styles.foldedList}>
+                {consolidationRows.map((row) => (
+                  <View key={row.id} style={styles.foldedRow}>
+                    <View style={styles.foldedText}>
+                      <Text style={styles.foldedScope}>{row.scope}</Text>
+                      <Text style={styles.foldedType}>{row.type}</Text>
+                    </View>
+                    <Text style={styles.foldedMeta}>
+                      {[row.maturity, row.severity].filter(Boolean).join(' / ')}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{primaryAction?.title || descriptor.label}</Text>
@@ -316,6 +372,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     overflow: 'hidden',
   },
+  combinedChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#dbeafe',
+    color: '#1e3a8a',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 12,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
   heroTitle: { color: '#f5f5f5', fontSize: 24, fontWeight: '800', lineHeight: 30 },
   heroCopy: { color: '#d4d4d4', fontSize: 15, lineHeight: 22 },
   heroContext: { color: '#9d9d9d', fontSize: 13, lineHeight: 19 },
@@ -329,6 +396,19 @@ const styles = StyleSheet.create({
   },
   cardTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '700' },
   cardCopy: { color: '#b8b8b8', fontSize: 13, lineHeight: 19 },
+  foldedList: { gap: 8 },
+  foldedRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#242424',
+    paddingTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  foldedText: { flex: 1 },
+  foldedScope: { color: '#f5f5f5', fontSize: 13, fontWeight: '700' },
+  foldedType: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
+  foldedMeta: { color: '#b8b8b8', fontSize: 12, textAlign: 'right', flexShrink: 0 },
   primaryButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#f5f5f5',
