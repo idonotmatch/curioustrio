@@ -39,6 +39,60 @@ function normalizeOutcomeType(event = {}) {
   return `${raw || ''}`.trim();
 }
 
+function normalizeLineageKey(source = {}) {
+  const hierarchyLevel = `${source?.metadata?.hierarchy_level || source?.hierarchy_level || ''}`.trim();
+  if (hierarchyLevel) return hierarchyLevel;
+
+  const scopeOrigin = `${source?.metadata?.scope_origin || source?.scope_origin || ''}`.trim();
+  const rollsUp = source?.metadata?.rolls_up_from_personal ?? source?.rolls_up_from_personal;
+  if (scopeOrigin === 'household') return 'household_rollup';
+  if (scopeOrigin === 'personal' && rollsUp) return 'personal_with_household_context';
+  if (scopeOrigin === 'personal') return 'personal';
+  return 'default';
+}
+
+function createEmptyStats() {
+  return {
+    helpful: 0,
+    not_helpful: 0,
+    tapped: 0,
+    dismissed: 0,
+    acted: 0,
+    shown: 0,
+    reasons: {},
+    outcomes: {},
+    reviews: {},
+    last_negative_at: null,
+    last_helpful_at: null,
+    last_acted_at: null,
+  };
+}
+
+function mergeStatCounts(base = {}, extra = {}) {
+  const mergeBuckets = (left = {}, right = {}) => {
+    const merged = { ...(left || {}) };
+    for (const [key, value] of Object.entries(right || {})) {
+      merged[key] = Number(merged[key] || 0) + Number(value || 0);
+    }
+    return merged;
+  };
+
+  return {
+    helpful: Number(base.helpful || 0) + Number(extra.helpful || 0),
+    not_helpful: Number(base.not_helpful || 0) + Number(extra.not_helpful || 0),
+    tapped: Number(base.tapped || 0) + Number(extra.tapped || 0),
+    dismissed: Number(base.dismissed || 0) + Number(extra.dismissed || 0),
+    acted: Number(base.acted || 0) + Number(extra.acted || 0),
+    shown: Number(base.shown || 0) + Number(extra.shown || 0),
+    reasons: mergeBuckets(base.reasons, extra.reasons),
+    outcomes: mergeBuckets(base.outcomes, extra.outcomes),
+    reviews: mergeBuckets(base.reviews, extra.reviews),
+    last_negative_at: extra.last_negative_at || base.last_negative_at || null,
+    last_helpful_at: extra.last_helpful_at || base.last_helpful_at || null,
+    last_acted_at: extra.last_acted_at || base.last_acted_at || null,
+  };
+}
+
 function summarizeFeedbackEvents(events = []) {
   const summary = new Map();
 
@@ -47,59 +101,62 @@ function summarizeFeedbackEvents(events = []) {
     if (!insightType) continue;
 
     const current = summary.get(insightType) || {
-      helpful: 0,
-      not_helpful: 0,
-      tapped: 0,
-      dismissed: 0,
-      acted: 0,
-      shown: 0,
-      reasons: {},
-      outcomes: {},
-      reviews: {},
-      last_negative_at: null,
-      last_helpful_at: null,
-      last_acted_at: null,
+      ...createEmptyStats(),
+      lineage: {},
     };
+    const lineageKey = normalizeLineageKey(event);
+    const lineageStats = current.lineage[lineageKey] || createEmptyStats();
 
     current[event.event_type] = (current[event.event_type] || 0) + 1;
+    lineageStats[event.event_type] = (lineageStats[event.event_type] || 0) + 1;
 
     if (event.event_type === 'not_helpful') {
       const reason = `${event?.metadata?.reason || ''}`.trim();
       if (reason) {
         current.reasons[reason] = (current.reasons[reason] || 0) + 1;
+        lineageStats.reasons[reason] = (lineageStats.reasons[reason] || 0) + 1;
       }
       current.last_negative_at = event.created_at || current.last_negative_at;
+      lineageStats.last_negative_at = event.created_at || lineageStats.last_negative_at;
     }
 
     if (event.event_type === 'dismissed') {
       current.last_negative_at = event.created_at || current.last_negative_at;
+      lineageStats.last_negative_at = event.created_at || lineageStats.last_negative_at;
     }
 
     if (event.event_type === 'helpful') {
       current.last_helpful_at = event.created_at || current.last_helpful_at;
+      lineageStats.last_helpful_at = event.created_at || lineageStats.last_helpful_at;
     }
 
     if (event.event_type === 'acted') {
       const outcomeType = normalizeOutcomeType(event);
       if (outcomeType) {
         current.outcomes[outcomeType] = (current.outcomes[outcomeType] || 0) + 1;
+        lineageStats.outcomes[outcomeType] = (lineageStats.outcomes[outcomeType] || 0) + 1;
       }
       const reviewType = `${event?.metadata?.review_type || ''}`.trim();
       const unusualReview = `${event?.metadata?.unusual_review || ''}`.trim();
       if (reviewType === 'unusual_purchase_review' && unusualReview) {
         current.reviews[unusualReview] = (current.reviews[unusualReview] || 0) + 1;
+        lineageStats.reviews[unusualReview] = (lineageStats.reviews[unusualReview] || 0) + 1;
       }
       const categoryReview = `${event?.metadata?.category_review || ''}`.trim();
       if (reviewType === 'category_shift_review' && categoryReview) {
         current.reviews[categoryReview] = (current.reviews[categoryReview] || 0) + 1;
+        lineageStats.reviews[categoryReview] = (lineageStats.reviews[categoryReview] || 0) + 1;
       }
       const recurringReview = `${event?.metadata?.recurring_review || ''}`.trim();
       if (reviewType === 'recurring_pressure_review' && recurringReview) {
         current.reviews[recurringReview] = (current.reviews[recurringReview] || 0) + 1;
+        lineageStats.reviews[recurringReview] = (lineageStats.reviews[recurringReview] || 0) + 1;
       }
       current.last_acted_at = event.created_at || current.last_acted_at;
+      lineageStats.last_acted_at = event.created_at || lineageStats.last_acted_at;
     }
 
+    current.lineage[lineageKey] = lineageStats;
     summary.set(insightType, current);
   }
 
@@ -169,8 +226,11 @@ function shouldSuppressInsight(insight, feedbackSummary = new Map()) {
 }
 
 function feedbackAdjustmentForInsight(insight, feedbackSummary) {
-  const stats = feedbackSummary.get(insight.type);
-  if (!stats) return 0;
+  const baseStats = feedbackSummary.get(insight.type);
+  if (!baseStats) return 0;
+  const lineageKey = normalizeLineageKey(insight);
+  const lineageStats = baseStats.lineage?.[lineageKey];
+  const stats = lineageStats ? mergeStatCounts(baseStats, lineageStats) : baseStats;
   const actionRate = stats.shown > 0 ? stats.acted / stats.shown : 0;
 
   let score = 0;
@@ -276,6 +336,7 @@ function toSerializableSummary(feedbackSummary) {
       reasons: stats.reasons || {},
       outcomes: stats.outcomes || {},
       reviews: stats.reviews || {},
+      lineage: stats.lineage || {},
       last_negative_at: stats.last_negative_at || null,
       last_helpful_at: stats.last_helpful_at || null,
       last_acted_at: stats.last_acted_at || null,
@@ -332,6 +393,7 @@ module.exports = {
   inferredMaturityForInsightType,
   normalizeInsightType,
   normalizeOutcomeType,
+  normalizeLineageKey,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
   suppressionForInsightType,

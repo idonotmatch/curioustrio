@@ -3,6 +3,7 @@ const {
   inferredMaturityForInsightType,
   normalizeInsightType,
   normalizeOutcomeType,
+  normalizeLineageKey,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
   suppressionForInsightType,
@@ -56,6 +57,23 @@ describe('normalizeOutcomeType', () => {
     expect(normalizeOutcomeType({
       metadata: { action_type: 'used_headroom' },
     })).toBe('used_headroom');
+  });
+});
+
+describe('normalizeLineageKey', () => {
+  it('prefers explicit hierarchy level when present', () => {
+    expect(normalizeLineageKey({
+      metadata: { hierarchy_level: 'personal_with_household_context' },
+    })).toBe('personal_with_household_context');
+  });
+
+  it('falls back to scope origin and rollup flags', () => {
+    expect(normalizeLineageKey({
+      metadata: { scope_origin: 'personal', rolls_up_from_personal: false },
+    })).toBe('personal');
+    expect(normalizeLineageKey({
+      metadata: { scope_origin: 'household', rolls_up_from_personal: true },
+    })).toBe('household_rollup');
   });
 });
 
@@ -166,6 +184,38 @@ describe('summarizeFeedbackEvents', () => {
       reviews: expect.objectContaining({ expected_cost: 1 }),
     }));
   });
+
+  it('tracks lineage-specific feedback buckets alongside type totals', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'top_driver:personal:2026-04:groceries',
+        event_type: 'helpful',
+        metadata: {
+          type: 'top_category_driver',
+          hierarchy_level: 'personal',
+        },
+        created_at: '2026-04-04T12:00:00Z',
+      },
+      {
+        insight_id: 'top_driver:household:2026-04:groceries',
+        event_type: 'not_helpful',
+        metadata: {
+          type: 'top_category_driver',
+          hierarchy_level: 'household_rollup',
+          reason: 'not_relevant',
+        },
+        created_at: '2026-04-05T12:00:00Z',
+      },
+    ]);
+
+    expect(summary.get('top_category_driver').lineage.personal).toEqual(expect.objectContaining({
+      helpful: 1,
+    }));
+    expect(summary.get('top_category_driver').lineage.household_rollup).toEqual(expect.objectContaining({
+      not_helpful: 1,
+      reasons: expect.objectContaining({ not_relevant: 1 }),
+    }));
+  });
 });
 
 describe('feedbackAdjustmentForInsight', () => {
@@ -205,6 +255,34 @@ describe('feedbackAdjustmentForInsight', () => {
     ]);
 
     expect(feedbackAdjustmentForInsight({ type: 'recurring_repurchase_due' }, summary)).toBeGreaterThan(0);
+  });
+
+  it('uses lineage-aware stats when available for the current insight', () => {
+    const summary = summarizeFeedbackEvents([
+      {
+        insight_id: 'top_driver:personal:2026-04:groceries',
+        event_type: 'helpful',
+        metadata: { type: 'top_category_driver', hierarchy_level: 'personal' },
+        created_at: new Date().toISOString(),
+      },
+      {
+        insight_id: 'top_driver:household:2026-04:groceries',
+        event_type: 'not_helpful',
+        metadata: { type: 'top_category_driver', hierarchy_level: 'household_rollup', reason: 'not_relevant' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    const personalScore = feedbackAdjustmentForInsight({
+      type: 'top_category_driver',
+      metadata: { hierarchy_level: 'personal', scope_origin: 'personal' },
+    }, summary);
+    const householdScore = feedbackAdjustmentForInsight({
+      type: 'top_category_driver',
+      metadata: { hierarchy_level: 'household_rollup', scope_origin: 'household', rolls_up_from_personal: true },
+    }, summary);
+
+    expect(personalScore).toBeGreaterThan(householdScore);
   });
 
   it('demotes positive opportunity insights more when users already knew about them', () => {

@@ -722,7 +722,7 @@ describe('POST /insights/events', () => {
       .post('/insights/events')
       .send({
         events: [
-          { insight_id: 'demo-insight-1', event_type: 'helpful', metadata: { surface: 'trend_detail' } },
+          { insight_id: 'demo-insight-1', event_type: 'helpful', metadata: { surface: 'trend_detail', hierarchy_level: 'personal', scope_origin: 'personal' } },
           { insight_id: 'demo-insight-2', event_type: 'not_helpful', metadata: { surface: 'recurring_item_detail' } },
         ],
       });
@@ -743,6 +743,40 @@ describe('POST /insights/events', () => {
         expect.objectContaining({ insight_id: 'demo-insight-2', event_type: 'not_helpful' }),
       ])
     );
+  });
+
+  it('persists lineage metadata on insight events', async () => {
+    const res = await request(app)
+      .post('/insights/events')
+      .send({
+        events: [
+          {
+            insight_id: 'demo-insight-3',
+            event_type: 'helpful',
+            metadata: {
+              surface: 'insight_detail',
+              hierarchy_level: 'personal_with_household_context',
+              scope_origin: 'personal',
+              rolls_up_from_personal: true,
+            },
+          },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    const events = await db.query(
+      `SELECT metadata
+       FROM insight_events
+       WHERE user_id = $1 AND insight_id = 'demo-insight-3'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+    expect(events.rows[0].metadata).toEqual(expect.objectContaining({
+      hierarchy_level: 'personal_with_household_context',
+      scope_origin: 'personal',
+      rolls_up_from_personal: true,
+    }));
   });
 
   it('accepts acted outcome events for future outcome-aware ranking', async () => {
