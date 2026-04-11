@@ -401,6 +401,7 @@ export default function ExpenseDetailScreen() {
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
+  const importMetaBits = [gmailReviewHint?.from_address, importedAtLabel].filter(Boolean);
   const priorityReviewFields = isPendingEmailReview
     ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
     : [];
@@ -480,23 +481,8 @@ export default function ExpenseDetailScreen() {
                   : 'Confirm the core details before approving this expense.')
               : 'This import was surfaced for review before it is counted in your confirmed expenses.'}
           </Text>
-        </View>
-      ) : null}
-
-      {expense.source === 'email' && (gmailReviewHint?.from_address || importedAtLabel) ? (
-        <View style={styles.emailContextCard}>
-          <Text style={styles.emailContextTitle}>Import details</Text>
-          {gmailReviewHint?.from_address ? (
-            <View style={styles.emailContextRow}>
-              <Text style={styles.emailContextLabel}>From</Text>
-              <Text style={styles.emailContextValue}>{gmailReviewHint.from_address}</Text>
-            </View>
-          ) : null}
-          {importedAtLabel ? (
-            <View style={styles.emailContextRow}>
-              <Text style={styles.emailContextLabel}>Imported</Text>
-              <Text style={styles.emailContextValue}>{importedAtLabel}</Text>
-            </View>
+          {importMetaBits.length ? (
+            <Text style={styles.reviewBannerMeta}>{importMetaBits.join('  ·  ')}</Text>
           ) : null}
         </View>
       ) : null}
@@ -1023,21 +1009,7 @@ const styles = StyleSheet.create({
   reviewBannerEyebrow: { color: '#cbb37c', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginBottom: 4 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
-  emailContextCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: -4,
-    backgroundColor: '#101010',
-    borderWidth: 1,
-    borderColor: '#1f1f1f',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  emailContextTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
-  emailContextRow: { marginBottom: 8 },
-  emailContextLabel: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
-  emailContextValue: { color: '#d4d4d4', fontSize: 12, lineHeight: 18 },
+  reviewBannerMeta: { color: '#7f7766', fontSize: 11, lineHeight: 16, marginTop: 8 },
   priorityFieldsCard: {
     marginHorizontal: 20,
     marginTop: 12,
