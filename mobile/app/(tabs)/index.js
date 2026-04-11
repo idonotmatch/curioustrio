@@ -277,7 +277,7 @@ export default function FeedScreen() {
   const householdTotal = householdExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   const listData = [
-    ...(mode === 'mine' && pending?.length > 0 ? [{ _type: 'pending_section', items: pending }] : []),
+    ...(pending?.length > 0 ? [{ _type: 'pending_section', items: pending }] : []),
     ...displayExpenses.map(e => ({ _type: 'expense', ...e })),
   ];
 
