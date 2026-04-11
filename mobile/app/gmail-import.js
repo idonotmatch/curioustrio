@@ -15,7 +15,7 @@ import { api } from '../services/api';
 import { buildMockGmailImportState } from '../fixtures/mockGmailImport';
 
 const SUMMARY_WINDOW_DAYS = 90;
-const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = true;
+const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
 
 function reviewModeCountChips(summary = {}) {
   const breakdown = summary?.review_mode_breakdown || {};
@@ -38,7 +38,7 @@ export default function GmailImportScreen() {
   const [gmailSyncing, setGmailSyncing] = useState(false);
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
   const shouldForceMockPreview = FORCE_MOCK_GMAIL_IMPORT_PREVIEW && __DEV__;
-  const isUsingMockData = shouldForceMockPreview || (__DEV__ && !gmailStatus?.connected);
+  const isUsingMockData = shouldForceMockPreview;
   const displayGmailStatus = isUsingMockData
     ? MOCK_GMAIL_IMPORT_STATE.gmailStatus
     : gmailStatus;

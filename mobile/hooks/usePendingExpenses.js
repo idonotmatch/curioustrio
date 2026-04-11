@@ -4,7 +4,7 @@ import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
 import { buildMockPendingExpenses } from '../fixtures/mockGmailImport';
 
-const FORCE_MOCK_PENDING_PREVIEW = true;
+const FORCE_MOCK_PENDING_PREVIEW = false;
 let mockPendingExpensesState = buildMockPendingExpenses();
 
 export function usePendingExpenses() {
