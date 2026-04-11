@@ -228,11 +228,17 @@ export default function PendingScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
-          displayExpenses.length > 0 ? (
-            <Text style={styles.hint}>
-              {isUsingMockData ? 'Dev preview queue' : '← Approve · Dismiss →'}
+          <View style={styles.header}>
+            <Text style={styles.title}>Your review queue</Text>
+            <Text style={styles.subtitle}>
+              Confirm your Gmail imports before they are counted.
             </Text>
-          ) : null
+            {displayExpenses.length > 0 ? (
+              <Text style={styles.hint}>
+                {isUsingMockData ? 'Dev preview queue' : '← Approve · Dismiss →'}
+              </Text>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           !loading && <Text style={styles.empty}>Nothing in your review queue. You're all caught up!</Text>
@@ -245,7 +251,10 @@ export default function PendingScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   list: { padding: 16 },
-  hint: { fontSize: 12, color: '#444', textAlign: 'center', marginBottom: 12, letterSpacing: 0.3 },
+  header: { marginBottom: 14 },
+  title: { fontSize: 24, color: '#f5f5f5', fontWeight: '700', marginBottom: 4 },
+  subtitle: { fontSize: 13, color: '#8a8a8a', marginBottom: 10 },
+  hint: { fontSize: 12, color: '#444', textAlign: 'center', letterSpacing: 0.3 },
   empty: { color: '#555', textAlign: 'center', marginTop: 40 },
 
   row: {
