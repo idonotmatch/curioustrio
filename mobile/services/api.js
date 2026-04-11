@@ -16,14 +16,22 @@ async function request(path, options = {}, tokenOverride) {
   // sign-in: the session is in memory but may not yet be flushed to storage,
   // so supabase.auth.getSession() can return null and produce a spurious 401.
   const token = tokenOverride !== undefined ? tokenOverride : await getToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (err) {
+    const enriched = new Error(`Could not reach the API at ${BASE_URL}. Make sure the local server is running.`);
+    enriched.code = 'network_error';
+    enriched.cause = err;
+    throw enriched;
+  }
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));

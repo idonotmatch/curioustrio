@@ -17,9 +17,11 @@ import { InsightCard } from '../../components/InsightCard';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 import { toLocalDateString } from '../../services/date';
 import { buildMockInsights } from '../../fixtures/mockInsights';
+import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MOCK_GMAIL_IMPORT_SUMMARY = buildMockGmailImportState().importSummary;
 
 function getPastMonths() {
   const months = [];
@@ -144,6 +146,7 @@ export default function SummaryScreen() {
   const displayInsights = __DEV__ && insights.length === 0
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
+  const displayGmailImportSummary = gmailImportSummary || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
   const hasMultipleInsights = displayInsights.length > 1;
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
@@ -661,7 +664,7 @@ export default function SummaryScreen() {
             <Text style={styles.sectionLabelCompact}>Recent</Text>
             <Text style={styles.recentMeta}>
               {`${pendingExpenses.length} pending`}
-              {gmailImportSummary?.last_synced_at ? ` · Gmail synced ${formatRelativeTime(gmailImportSummary.last_synced_at)}` : ''}
+              {displayGmailImportSummary?.last_imported_at ? ` · Gmail synced ${formatRelativeTime(displayGmailImportSummary.last_imported_at)}` : ''}
             </Text>
           </View>
           <TouchableOpacity onPress={() => router.navigate('/')}>
