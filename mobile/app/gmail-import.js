@@ -15,6 +15,15 @@ import { api } from '../services/api';
 
 const SUMMARY_WINDOW_DAYS = 90;
 
+function reviewModeCountChips(summary = {}) {
+  const breakdown = summary?.review_mode_breakdown || {};
+  return [
+    { key: 'quick_check', label: 'Quick check', count: breakdown.quick_check || 0 },
+    { key: 'items_first', label: 'Items first', count: breakdown.items_first || 0 },
+    { key: 'full_review', label: 'Full review', count: breakdown.full_review || 0 },
+  ].filter((entry) => entry.count > 0);
+}
+
 export default function GmailImportScreen() {
   const [gmailStatus, setGmailStatus] = useState(null);
   const [importLog, setImportLog] = useState([]);
@@ -175,6 +184,7 @@ function rankSenderCard(sender = {}) {
 }
 
   const reasonChips = summarizeReasonChips(importSummary?.reasons || []);
+  const reviewPathChips = reviewModeCountChips(importSummary);
   const senderQuality = Array.isArray(importSummary?.quality?.sender_quality)
     ? importSummary.quality.sender_quality
     : [];
@@ -345,6 +355,29 @@ function rankSenderCard(sender = {}) {
                     <Text style={styles.summaryValue}>{importSummary.failed}</Text>
                     <Text style={styles.summaryLabel}>Failed</Text>
                   </View>
+                </View>
+                <View style={styles.senderTrustSection}>
+                  <View style={styles.senderTrustHeader}>
+                    <Text style={styles.senderTrustTitle}>Review queue mix</Text>
+                    <Text style={styles.senderTrustSub}>
+                      How the latest Gmail imports were routed into review.
+                    </Text>
+                  </View>
+                  {reviewPathChips.length > 0 ? (
+                    <View style={styles.reasonWrap}>
+                      {reviewPathChips.map((item) => (
+                        <View key={item.key} style={styles.reasonChip}>
+                          <Text style={styles.reasonChipText}>
+                            {item.label} · {item.count}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.sectionEmptyText}>
+                      No recent queued Gmail imports yet.
+                    </Text>
+                  )}
                 </View>
                 <View style={styles.senderTrustSection}>
                   <View style={styles.senderTrustHeader}>

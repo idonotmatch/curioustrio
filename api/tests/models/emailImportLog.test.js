@@ -202,8 +202,8 @@ describe('EmailImportLog.listByUser', () => {
 describe('EmailImportLog.summarizeByUser', () => {
   it('returns aggregate counts and reason breakdowns', async () => {
     const expenseResult = await db.query(
-      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_source)
-       VALUES ($1, 'Summary Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'gmail')
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_mode, review_source)
+       VALUES ($1, 'Summary Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'quick_check', 'gmail')
        RETURNING id`,
       [testUserId]
     );
@@ -232,6 +232,12 @@ describe('EmailImportLog.summarizeByUser', () => {
     const summary = await EmailImportLog.summarizeByUser(testUserId, 30);
     expect(summary.imported).toBeGreaterThanOrEqual(1);
     expect(summary.imported_pending_review).toBeGreaterThanOrEqual(1);
+    expect(summary.review_mode_breakdown).toEqual(expect.objectContaining({
+      quick_check: expect.any(Number),
+      items_first: expect.any(Number),
+      full_review: expect.any(Number),
+    }));
+    expect(summary.review_mode_breakdown.quick_check).toBeGreaterThanOrEqual(1);
     expect(summary.skipped).toBeGreaterThanOrEqual(1);
     expect(summary.failed).toBeGreaterThanOrEqual(1);
     expect(summary.reviewed_approved).toBeGreaterThanOrEqual(0);
