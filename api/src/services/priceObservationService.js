@@ -107,8 +107,12 @@ async function findBestObservationForCandidate(candidate, { freshnessHours = 72 
   return comparisons[0] || null;
 }
 
-async function findObservationOpportunities(householdId, { windowDays = 5, freshnessHours = 72 } = {}) {
-  const candidates = await detectRecurringWatchCandidates(householdId, { windowDays });
+async function findObservationOpportunities(ownerId, {
+  scope = 'household',
+  windowDays = 5,
+  freshnessHours = 72,
+} = {}) {
+  const candidates = await detectRecurringWatchCandidates(ownerId, { scope, windowDays });
   const activeCandidates = candidates.filter((candidate) =>
     candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue'
   );

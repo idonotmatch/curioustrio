@@ -14,7 +14,13 @@ function classifyFrequency(medianGap) {
   return 'yearly';
 }
 
-async function loadRecurringItemOccurrences(householdId) {
+function recurringExpenseScopeClause(scope = 'household', paramIndex = 1) {
+  if (scope === 'personal') return `e.user_id = $${paramIndex}`;
+  return `e.household_id = $${paramIndex}`;
+}
+
+async function loadRecurringItemOccurrences(ownerId, options = {}) {
+  const scope = options.scope === 'personal' ? 'personal' : 'household';
   const result = await db.query(
     `SELECT
        ei.product_id,
@@ -31,13 +37,13 @@ async function loadRecurringItemOccurrences(householdId) {
      FROM expense_items ei
      JOIN expenses e ON e.id = ei.expense_id
      LEFT JOIN products p ON p.id = ei.product_id
-     WHERE e.household_id = $1
+     WHERE ${recurringExpenseScopeClause(scope, 1)}
        AND e.status = 'confirmed'
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      ORDER BY e.date ASC`,
-    [householdId]
+    [ownerId]
   );
 
   const groups = new Map();
@@ -120,8 +126,8 @@ async function detectRecurring(householdId) {
   return candidates;
 }
 
-async function detectRecurringItems(householdId) {
-  const groups = await loadRecurringItemOccurrences(householdId);
+async function detectRecurringItems(ownerId, options = {}) {
+  const groups = await loadRecurringItemOccurrences(ownerId, options);
 
   const candidates = [];
   for (const [groupKey, occurrences] of groups.entries()) {
@@ -181,8 +187,8 @@ async function detectRecurringItems(householdId) {
   return candidates.sort((a, b) => b.occurrence_count - a.occurrence_count || a.item_name.localeCompare(b.item_name));
 }
 
-async function getRecurringItemHistory(householdId, groupKey) {
-  const groups = await loadRecurringItemOccurrences(householdId);
+async function getRecurringItemHistory(ownerId, groupKey, options = {}) {
+  const groups = await loadRecurringItemOccurrences(ownerId, options);
   const history = groups.get(groupKey);
   if (!history || !history.length) return null;
 
@@ -262,10 +268,11 @@ function diffDays(from, to) {
   return Math.round((to - from) / (1000 * 60 * 60 * 24));
 }
 
-async function detectRecurringWatchCandidates(householdId, options = {}) {
+async function detectRecurringWatchCandidates(ownerId, options = {}) {
+  const scope = options.scope === 'personal' ? 'personal' : 'household';
   const windowDays = Number.isFinite(options.windowDays) ? options.windowDays : 5;
   const maxOverdueDays = Number.isFinite(options.maxOverdueDays) ? options.maxOverdueDays : 7;
-  const recurringItems = await detectRecurringItems(householdId);
+  const recurringItems = await detectRecurringItems(ownerId, { scope });
   const today = parseDateOnly(startOfToday().toISOString().split('T')[0]);
   const automaticCandidates = recurringItems
     .filter((item) => item.product_id || item.comparable_key)
@@ -305,7 +312,9 @@ async function detectRecurringWatchCandidates(householdId, options = {}) {
     })
     .filter((item) => item.days_until_due <= windowDays && item.days_until_due >= -maxOverdueDays);
 
-  const preferences = await RecurringPreference.findByHousehold(householdId);
+  const preferences = scope === 'household'
+    ? await RecurringPreference.findByHousehold(ownerId)
+    : [];
   const automaticByKey = new Map(
     automaticCandidates.map((candidate) => [candidate.product_id ? `product:${candidate.product_id}` : candidate.group_key, candidate])
   );
@@ -384,8 +393,8 @@ async function detectRecurringWatchCandidates(householdId, options = {}) {
     .sort((a, b) => a.days_until_due - b.days_until_due || b.occurrence_count - a.occurrence_count);
 }
 
-async function detectRecurringItemSignals(householdId) {
-  const groups = await loadRecurringItemOccurrences(householdId);
+async function detectRecurringItemSignals(ownerId, options = {}) {
+  const groups = await loadRecurringItemOccurrences(ownerId, options);
   const signals = [];
   for (const [groupKey, history] of groups.entries()) {
     if (history.length < 3) continue;

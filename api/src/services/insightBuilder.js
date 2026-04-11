@@ -62,7 +62,7 @@ function bodyForSignal(signal, insight) {
   }
 }
 
-function toInsight(signal) {
+function toInsight(signal, scope = 'household') {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   return {
@@ -75,12 +75,15 @@ function toInsight(signal) {
     entity_id: signal.group_key,
     created_at: createdAt,
     expires_at: expiresAt,
-    metadata: signal,
+    metadata: {
+      ...signal,
+      scope,
+    },
     actions: [],
   };
 }
 
-function toRepurchaseDueInsight(candidate) {
+function toRepurchaseDueInsight(candidate, scope = 'household') {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = candidate.item_name || 'A recurring purchase';
@@ -107,13 +110,13 @@ function toRepurchaseDueInsight(candidate) {
     expires_at: expiresAt,
     metadata: {
       ...candidate,
-      scope: 'household',
+      scope,
     },
     actions: [],
   };
 }
 
-function toBuySoonBetterPriceInsight(opportunity) {
+function toBuySoonBetterPriceInsight(opportunity, scope = 'household') {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = opportunity.item_name || 'A recurring item';
@@ -132,7 +135,7 @@ function toBuySoonBetterPriceInsight(opportunity) {
     expires_at: expiresAt,
     metadata: {
       ...opportunity,
-      scope: 'household',
+      scope,
     },
     actions: [],
   };
@@ -170,7 +173,7 @@ function shouldSurfacePositiveOpportunity(projection, {
   return true;
 }
 
-function buildRestockWindowInsights({ projection, watchCandidates = [] }) {
+function buildRestockWindowInsights({ projection, watchCandidates = [], scope = 'household' }) {
   const insights = [];
   const overall = projection?.overall;
   const projectedBudgetDelta = Number(overall?.projected_budget_delta || 0);
@@ -199,12 +202,15 @@ function buildRestockWindowInsights({ projection, watchCandidates = [] }) {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = candidate.item_name || 'A recurring item';
+  const scopeLabel = scope === 'household' ? 'household' : 'personal';
 
   insights.push({
-    id: `recurring_restock_window:${candidate.group_key}:${projection.month}`,
+    id: `recurring_restock_window:${scopeLabel}:${candidate.group_key}:${projection.month}`,
     type: 'recurring_restock_window',
     title: `${itemName} could fit this month`,
-    body: `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`,
+    body: scope === 'household'
+      ? `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`
+      : `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget personally, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`,
     severity: projectedHeadroomAmount >= Number(candidate.median_amount || 0) * 2 ? 'medium' : 'low',
     entity_type: 'item',
     entity_id: candidate.group_key,
@@ -212,7 +218,7 @@ function buildRestockWindowInsights({ projection, watchCandidates = [] }) {
     expires_at: expiresAt,
     metadata: {
       ...candidate,
-      scope: 'household',
+      scope,
       month: projection.month,
       projected_headroom_amount: projectedHeadroomAmount,
       projected_budget_delta: projectedBudgetDelta,
@@ -1262,21 +1268,21 @@ async function buildInsights({ user, limit = 10 }) {
 
   if (user?.household_id) {
     recurringSignals = await detectRecurringItemSignals(user.household_id);
-    insightSets.push(recurringSignals.map(toInsight));
+    insightSets.push(recurringSignals.map((signal) => toInsight(signal, 'household')));
     const watchCandidates = await detectRecurringWatchCandidates(user.household_id);
     householdWatchCandidates = watchCandidates;
     insightSets.push(
       watchCandidates
         .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
         .slice(0, 3)
-        .map(toRepurchaseDueInsight)
+        .map((candidate) => toRepurchaseDueInsight(candidate, 'household'))
     );
 
     const watchOpportunities = await findObservationOpportunities(user.household_id);
     insightSets.push(
       watchOpportunities
         .slice(0, 3)
-        .map(toBuySoonBetterPriceInsight)
+        .map((opportunity) => toBuySoonBetterPriceInsight(opportunity, 'household'))
     );
 
     const spikeSignals = recurringSignals.filter((signal) => signal.signal === 'price_spike');
@@ -1331,6 +1337,72 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   if (user?.id) {
+    const personalRecurringSignals = await detectRecurringItemSignals(user.id, { scope: 'personal' });
+    insightSets.push(personalRecurringSignals.map((signal) => toInsight(signal, 'personal')));
+    const personalWatchCandidates = await detectRecurringWatchCandidates(user.id, { scope: 'personal' });
+    insightSets.push(
+      personalWatchCandidates
+        .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
+        .slice(0, 3)
+        .map((candidate) => toRepurchaseDueInsight(candidate, 'personal'))
+    );
+    const personalWatchOpportunities = await findObservationOpportunities(user.id, { scope: 'personal' });
+    insightSets.push(
+      personalWatchOpportunities
+        .slice(0, 3)
+        .map((opportunity) => toBuySoonBetterPriceInsight(opportunity, 'personal'))
+    );
+
+    const personalSpikeSignals = personalRecurringSignals.filter((signal) => signal.signal === 'price_spike');
+    const personalTotalRecurringDelta = personalSpikeSignals.reduce((sum, signal) => sum + Math.max(Number(signal.delta_amount || 0), 0), 0);
+    const personalMaxRecurringDeltaPercent = personalSpikeSignals.reduce(
+      (max, signal) => Math.max(max, Math.abs(Number(signal.delta_percent || 0))),
+      0
+    );
+    if (personalSpikeSignals.length >= 2 || personalTotalRecurringDelta >= 2 || personalMaxRecurringDeltaPercent >= 15) {
+      const topItems = personalSpikeSignals
+        .slice()
+        .sort((a, b) => Math.abs(Number(b.delta_amount || 0)) - Math.abs(Number(a.delta_amount || 0)))
+        .slice(0, 2)
+        .map((signal) => signal.item_name);
+      const topSpikeSignals = personalSpikeSignals
+        .slice()
+        .sort((a, b) => Math.abs(Number(b.delta_amount || 0)) - Math.abs(Number(a.delta_amount || 0)))
+        .slice(0, 4)
+        .map((signal) => ({
+          group_key: signal.group_key,
+          item_name: signal.item_name,
+          latest_merchant: signal.latest_merchant,
+          latest_date: signal.latest_date,
+          comparison_type: signal.comparison_type,
+          latest_value: Number(signal.latest_value || 0),
+          baseline_value: Number(signal.baseline_value || 0),
+          delta_amount: Number(signal.delta_amount || 0),
+          delta_percent: Number(signal.delta_percent || 0),
+        }));
+      insightSets.push([{
+        id: `recurring_cost_pressure:${user.id}:${personalSpikeSignals.map((signal) => signal.group_key).join('|')}`,
+        type: 'recurring_cost_pressure',
+        title: 'Recurring items are getting more expensive',
+        body: topItems.length
+          ? `${topItems.join(' and ')} are above their usual price, adding about $${Number(personalTotalRecurringDelta.toFixed(2))} of extra spend versus your recent baseline.`
+          : `Several recurring items are above their usual price, adding about $${Number(personalTotalRecurringDelta.toFixed(2))} of extra spend versus your recent baseline.`,
+        severity: personalTotalRecurringDelta >= 10 || personalSpikeSignals.length >= 3 ? 'high' : 'medium',
+        entity_type: 'user',
+        entity_id: user.id,
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        metadata: {
+          scope: 'personal',
+          spike_count: personalSpikeSignals.length,
+          total_delta_amount: Number(personalTotalRecurringDelta.toFixed(2)),
+          items: topItems,
+          recurring_spike_signals: topSpikeSignals,
+        },
+        actions: [],
+      }]);
+    }
+
     const personalTrend = await analyzeSpendingTrend({ user, scope: 'personal' });
     insightSets.push(buildTrendInsights(personalTrend, 'personal'));
     const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
@@ -1348,6 +1420,7 @@ async function buildInsights({ user, limit = 10 }) {
       scope: 'personal',
     }));
     insightSets.push(buildProjectionInsights(personalProjection, 'personal'));
+    insightSets.push(buildRestockWindowInsights({ projection: personalProjection, watchCandidates: personalWatchCandidates, scope: 'personal' }));
   }
 
   if (user?.household_id && hasMultipleHouseholdMembers) {
@@ -1368,7 +1441,7 @@ async function buildInsights({ user, limit = 10 }) {
       scope: 'household',
     }));
     insightSets.push(buildProjectionInsights(householdProjection, 'household'));
-    insightSets.push(buildRestockWindowInsights({ projection: householdProjection, watchCandidates: householdWatchCandidates }));
+    insightSets.push(buildRestockWindowInsights({ projection: householdProjection, watchCandidates: householdWatchCandidates, scope: 'household' }));
   }
 
   let deduped = dedupeInsights(

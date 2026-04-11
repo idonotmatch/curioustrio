@@ -11,6 +11,7 @@ const Product = require('../../src/models/product');
 
 let testHouseholdId;
 let testUserId;
+let otherUserId;
 
 beforeAll(async () => {
   const hResult = await db.query(
@@ -26,12 +27,23 @@ beforeAll(async () => {
     [testHouseholdId]
   );
   testUserId = uResult.rows[0].id;
+
+  const otherResult = await db.query(
+    `INSERT INTO users (provider_uid, name, email, household_id)
+     VALUES ('auth0|detector-test-other-user', 'Detector Test Other User', 'detectorother@test.com', $1)
+     ON CONFLICT (provider_uid) DO UPDATE SET household_id = $1
+     RETURNING id`,
+    [testHouseholdId]
+  );
+  otherUserId = otherResult.rows[0].id;
 });
 
 afterAll(async () => {
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [testHouseholdId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE id = $1`, [testUserId]);
+  await db.query(`UPDATE users SET household_id = NULL WHERE id = $1`, [otherUserId]);
   await db.query(`DELETE FROM users WHERE id = $1`, [testUserId]);
+  await db.query(`DELETE FROM users WHERE id = $1`, [otherUserId]);
   await db.query(`DELETE FROM households WHERE id = $1`, [testHouseholdId]);
   await db.pool.end();
 });
@@ -46,12 +58,12 @@ afterEach(async () => {
   await db.query(`DELETE FROM products WHERE merchant IN ('Target') OR name IN ('Pampers Pure')`);
 });
 
-async function insertExpense(merchant, amount, date) {
+async function insertExpense(merchant, amount, date, userId = testUserId) {
   const result = await db.query(
     `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
      VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed')
      RETURNING id`,
-    [testUserId, testHouseholdId, merchant, amount, date]
+    [userId, testHouseholdId, merchant, amount, date]
   );
   return result.rows[0].id;
 }
@@ -230,6 +242,31 @@ describe('detectRecurringItemSignals', () => {
     const cheaperElsewhere = signals.find(s => s.signal === 'cheaper_elsewhere' && s.item_name === 'Greek Yogurt');
     expect(cheaperElsewhere).toBeTruthy();
     expect(cheaperElsewhere.cheaper_merchant).toBe('Trader Joes');
+  });
+
+  it('supports personal-scope item signals without mixing in other household members', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const mine1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0], testUserId);
+    const mine2 = await insertExpense('Whole Foods', 7.09, d2.toISOString().split('T')[0], testUserId);
+    const mine3 = await insertExpense('Whole Foods', 9.49, d3.toISOString().split('T')[0], testUserId);
+    const other1 = await insertExpense('Costco', 11.99, d1.toISOString().split('T')[0], otherUserId);
+    const other2 = await insertExpense('Costco', 12.19, d2.toISOString().split('T')[0], otherUserId);
+    const other3 = await insertExpense('Costco', 12.29, d3.toISOString().split('T')[0], otherUserId);
+
+    await ExpenseItem.createBulk(mine1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(mine2, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(mine3, [{ description: 'Greek Yogurt', amount: 9.49, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(other1, [{ description: 'Protein Bars', amount: 11.99, brand: 'Kirkland', pack_size: '20', unit: 'count' }]);
+    await ExpenseItem.createBulk(other2, [{ description: 'Protein Bars', amount: 12.19, brand: 'Kirkland', pack_size: '20', unit: 'count' }]);
+    await ExpenseItem.createBulk(other3, [{ description: 'Protein Bars', amount: 12.29, brand: 'Kirkland', pack_size: '20', unit: 'count' }]);
+
+    const signals = await detectRecurringItemSignals(testUserId, { scope: 'personal' });
+    expect(signals.some((signal) => signal.item_name === 'Greek Yogurt' && signal.signal === 'price_spike')).toBe(true);
+    expect(signals.some((signal) => signal.item_name === 'Protein Bars')).toBe(false);
   });
 });
 
