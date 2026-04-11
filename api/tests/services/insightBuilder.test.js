@@ -18,6 +18,7 @@ const {
   determineUsageFallbackScope,
   insightDestinationAdjustment,
   portfolioRole,
+  scopeHierarchyAdjustment,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -119,6 +120,33 @@ describe('insightBuilder orchestration', () => {
     expect(insightDestinationAdjustment(insights[1])).toBeGreaterThan(insightDestinationAdjustment(insights[0]));
     const selected = orchestrateInsightPortfolio(insights, new Map(), 1);
     expect(selected[0].id).toBe('category-1');
+  });
+
+  it('gives personal insights a stronger hierarchy boost than household insights', () => {
+    expect(scopeHierarchyAdjustment(buildInsight({
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBeGreaterThan(scopeHierarchyAdjustment(buildInsight({
+      metadata: { scope: 'household', month: '2026-04' },
+    })));
+  });
+
+  it('prefers a personal insight over an equally strong household insight', () => {
+    const selected = orchestrateInsightPortfolio([
+      buildInsight({
+        id: 'household-explain',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: { scope: 'household', month: '2026-04', category_key: 'groceries' },
+      }),
+      buildInsight({
+        id: 'personal-explain',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: { scope: 'personal', month: '2026-04', category_key: 'dining' },
+      }),
+    ], new Map(), 1);
+
+    expect(selected[0].id).toBe('personal-explain');
   });
 
   it('keeps explanation cards from crowding out setup/action cards too early', () => {
@@ -706,7 +734,7 @@ describe('insightBuilder orchestration', () => {
     expect(scope).toBe('personal');
   });
 
-  it('chooses household fallback scope when thin-rail signals are mostly shared', () => {
+  it('keeps fallback scope personal when any personal signal exists', () => {
     const scope = determineUsageFallbackScope([
       buildInsight({
         id: 'explain-1',
@@ -725,6 +753,25 @@ describe('insightBuilder orchestration', () => {
         type: 'spend_pace_behind',
         severity: 'low',
         metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ], { id: 'user-1', household_id: 'household-1' });
+
+    expect(scope).toBe('personal');
+  });
+
+  it('uses household fallback scope only when there are no personal signals at all', () => {
+    const scope = determineUsageFallbackScope([
+      buildInsight({
+        id: 'explain-1',
+        type: 'spend_pace_behind',
+        severity: 'low',
+        metadata: { scope: 'household', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'explain-2',
+        type: 'budget_too_high',
+        severity: 'low',
+        metadata: { scope: 'household', month: '2026-04' },
       }),
     ], { id: 'user-1', household_id: 'household-1' });
 

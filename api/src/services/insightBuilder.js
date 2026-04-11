@@ -597,6 +597,13 @@ function insightRankScore(insight, feedbackSummary = new Map()) {
   return severityRank(insight.severity) * 100 + feedbackAdjustmentForInsight(insight, feedbackSummary);
 }
 
+function scopeHierarchyAdjustment(insight) {
+  const scope = insight?.metadata?.scope;
+  if (scope === 'personal') return 18;
+  if (scope === 'household') return 4;
+  return 0;
+}
+
 function portfolioRole(insight) {
   const type = `${insight?.type || ''}`.trim();
 
@@ -873,6 +880,7 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
       const score = insightRankScore(insight, feedbackSummary)
         + portfolioOutcomeAdjustment(insight, portfolioFeedback)
         + insightDestinationAdjustment(insight)
+        + scopeHierarchyAdjustment(insight)
         + orchestrationRoleMixAdjustment(insight, selected)
         - orchestrationPenalty(insight, selected);
       if (score > bestScore) {
@@ -1213,11 +1221,10 @@ function determineUsageFallbackScope(insights = [], user = null) {
     if (insight.metadata?.scope === 'personal') personalCount += 1;
   }
 
-  if (householdCount > personalCount) return 'household';
-  if (personalCount > householdCount) return 'personal';
+  if (personalCount > 0) return 'personal';
+  if (householdCount > 0) return 'household';
 
-  const firstScoped = scopedInsights[0]?.metadata?.scope;
-  return firstScoped === 'household' ? 'household' : 'personal';
+  return 'personal';
 }
 
 async function buildInsights({ user, limit = 10 }) {
@@ -1440,6 +1447,7 @@ module.exports = {
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
   insightRankScore,
+  scopeHierarchyAdjustment,
   insightDestinationAdjustment,
   portfolioRole,
   portfolioFamily,
