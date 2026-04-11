@@ -19,6 +19,7 @@ const {
 const {
   severityRank,
   insightDestinationAdjustment,
+  annotateInsightScopeLineage,
   insightContinuityKey,
   scopeAgnosticContinuityKey,
   resolveMaturityCompetition,
@@ -1074,9 +1075,10 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
   const currentSpendToDate = Number(projectionOverall.current_spend_to_date || 0);
   const scopeLabel = scope === 'household' ? 'household' : 'personal';
   const isQuietPeriod = context === 'quiet_period';
+  const withLineage = (insights) => insights.map(annotateInsightScopeLineage);
 
   if (currentSpendToDate <= 0) {
-    return [{
+    return withLineage([{
       id: `usage_start_logging:${scopeLabel}:${projection?.month || 'current'}`,
       type: 'usage_start_logging',
       title: scope === 'household' ? 'Start logging shared spending' : 'Start logging spending',
@@ -1095,11 +1097,11 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         usage_context: context,
       },
       actions: [],
-    }];
+    }]);
   }
 
   if (!(Number(budgetLimit) > 0)) {
-    return [{
+    return withLineage([{
       id: `usage_set_budget:${scopeLabel}:${projection?.month || 'current'}`,
       type: 'usage_set_budget',
       title: isQuietPeriod
@@ -1124,11 +1126,11 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         usage_context: context,
       },
       actions: [],
-    }];
+    }]);
   }
 
   if (historicalPeriodCount < 3) {
-    return [{
+    return withLineage([{
       id: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
       type: 'usage_building_history',
       title: isQuietPeriod
@@ -1154,10 +1156,10 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         usage_context: context,
       },
       actions: [],
-    }];
+    }]);
   }
 
-  return [{
+  return withLineage([{
     id: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}`,
     type: 'usage_ready_to_plan',
     title: isQuietPeriod
@@ -1183,7 +1185,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
       usage_context: context,
     },
     actions: [],
-  }];
+  }]);
 }
 
 function shouldSupplementWithUsageFallback(insights = []) {
@@ -1366,6 +1368,7 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   return resolveInsightCompetition(deduped)
+    .map(annotateInsightScopeLineage)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }
@@ -1418,7 +1421,9 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       context: 'quiet_period',
     });
 
-    supplementedRanked = resolveInsightCompetition(dedupeInsights([...ranked, ...fallbackInsights])).sort((a, b) => {
+    supplementedRanked = resolveInsightCompetition(dedupeInsights([...ranked, ...fallbackInsights]))
+      .map(annotateInsightScopeLineage)
+      .sort((a, b) => {
       const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
       if (scoreDiff !== 0) return scoreDiff;
       return new Date(b.created_at) - new Date(a.created_at);

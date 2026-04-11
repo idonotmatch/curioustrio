@@ -149,6 +149,22 @@ describe('insightBuilder orchestration', () => {
     expect(selected[0].id).toBe('personal-explain');
   });
 
+  it('annotates household-only insights as rollups from personal activity', () => {
+    const resolved = resolveScopeOverlapCompetition([
+      buildInsight({
+        id: 'household-only',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: { scope: 'household', month: '2026-04', category_key: 'groceries' },
+      }),
+    ]);
+
+    expect(resolved[0].metadata.scope_origin).toBe('household');
+    expect(resolved[0].metadata.rolls_up_from_personal).toBe(true);
+    expect(resolved[0].metadata.household_context_included).toBe(true);
+    expect(resolved[0].metadata.hierarchy_level).toBe('household_rollup');
+  });
+
   it('keeps explanation cards from crowding out setup/action cards too early', () => {
     const insights = [
       buildInsight({
@@ -213,6 +229,8 @@ describe('insightBuilder orchestration', () => {
 
     expect(insights).toHaveLength(1);
     expect(insights[0].type).toBe('usage_set_budget');
+    expect(insights[0].metadata.scope_origin).toBe('personal');
+    expect(insights[0].metadata.rolls_up_from_personal).toBe(false);
   });
 
   it('builds a planning readiness usage fallback once enough history exists', () => {
@@ -606,6 +624,12 @@ describe('insightBuilder orchestration', () => {
     expect(resolved[0].metadata.scope_relationship).toBe('personal_household_overlap');
     expect(resolved[0].metadata.consolidated_scopes).toEqual(['personal', 'household']);
     expect(resolved[0].metadata.related_insight_ids).toEqual(['household-shopping']);
+    expect(resolved[0].metadata.scope_origin).toBe('personal');
+    expect(resolved[0].metadata.rolls_up_from_personal).toBe(true);
+    expect(resolved[0].metadata.household_context_included).toBe(true);
+    expect(resolved[0].metadata.hierarchy_level).toBe('personal_with_household_context');
+    expect(resolved[0].metadata.consolidated_from[0].scope_origin).toBe('personal');
+    expect(resolved[0].metadata.consolidated_from[1].scope_origin).toBe('household');
     expect(resolved[0].title).toBe('Shopping is showing up in your spending and rolling into the household');
     expect(resolved[0].body).toContain('starts with your pattern');
   });

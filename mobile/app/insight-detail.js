@@ -59,6 +59,8 @@ function metadataHighlights(metadata = {}) {
     ['Maturity', metadata.maturity],
     ['Confidence', metadata.confidence],
     ['Scope', metadata.scope],
+    ['Hierarchy', metadata.hierarchy_level],
+    ['Scope origin', metadata.scope_origin],
     ['Month', metadata.month],
     ['Category', metadata.category_name],
     ['Merchant', metadata.merchant_name],

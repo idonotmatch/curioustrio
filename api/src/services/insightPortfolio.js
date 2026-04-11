@@ -120,6 +120,51 @@ function isScopeConsolidatableInsight(insight) {
   ].includes(type);
 }
 
+function buildScopeLineageMetadata(metadata = {}) {
+  const scope = metadata?.scope === 'household' ? 'household' : 'personal';
+  const consolidatedScopes = Array.isArray(metadata?.consolidated_scopes)
+    ? metadata.consolidated_scopes
+    : [];
+  const includesPersonal = consolidatedScopes.includes('personal') || scope === 'personal';
+  const includesHousehold = consolidatedScopes.includes('household') || scope === 'household';
+
+  if (includesPersonal && includesHousehold) {
+    return {
+      scope_origin: 'personal',
+      rolls_up_from_personal: true,
+      household_context_included: true,
+      hierarchy_level: 'personal_with_household_context',
+    };
+  }
+
+  if (scope === 'household') {
+    return {
+      scope_origin: 'household',
+      rolls_up_from_personal: true,
+      household_context_included: true,
+      hierarchy_level: 'household_rollup',
+    };
+  }
+
+  return {
+    scope_origin: 'personal',
+    rolls_up_from_personal: false,
+    household_context_included: false,
+    hierarchy_level: 'personal',
+  };
+}
+
+function annotateInsightScopeLineage(insight) {
+  if (!insight) return insight;
+  return {
+    ...insight,
+    metadata: {
+      ...(insight.metadata || {}),
+      ...buildScopeLineageMetadata(insight.metadata || {}),
+    },
+  };
+}
+
 function consolidateScopedInsightGroup(group = []) {
   if (group.length < 2) return group[0] || null;
 
@@ -158,7 +203,7 @@ function consolidateScopedInsightGroup(group = []) {
   if (hasHousehold) consolidatedScopes.push('household');
   const relatedInsightIds = companions.map((insight) => insight.id);
 
-  return {
+  return annotateInsightScopeLineage({
     ...primary,
     id: `${primary.id}:consolidated`,
     title,
@@ -170,13 +215,15 @@ function consolidateScopedInsightGroup(group = []) {
         id: insight.id,
         type: insight.type,
         scope: insight.metadata?.scope || null,
+        scope_origin: insight.metadata?.scope_origin || (insight.metadata?.scope === 'household' ? 'household' : 'personal'),
+        rolls_up_from_personal: insight.metadata?.scope === 'household',
         maturity: insight.metadata?.maturity || null,
         severity: insight.severity || null,
       })),
       related_insight_ids: relatedInsightIds,
       scope_relationship: hasPersonal && hasHousehold ? 'personal_household_overlap' : 'same_scope_overlap',
     },
-  };
+  });
 }
 
 function resolveScopeOverlapCompetition(insights = []) {
@@ -204,7 +251,7 @@ function resolveScopeOverlapCompetition(insights = []) {
     resolved.push(consolidateScopedInsightGroup(group));
   }
 
-  return [...passthrough, ...resolved].filter(Boolean);
+  return [...passthrough, ...resolved].filter(Boolean).map(annotateInsightScopeLineage);
 }
 
 function resolveOpportunityCompetition(insights) {
@@ -295,6 +342,8 @@ module.exports = {
   severityRank,
   insightDestinationAdjustment,
   maturityRankForInsight,
+  buildScopeLineageMetadata,
+  annotateInsightScopeLineage,
   insightContinuityKey,
   scopeAgnosticContinuityKey,
   isScopeConsolidatableInsight,
