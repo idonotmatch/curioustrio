@@ -405,7 +405,7 @@ describe('POST /gmail/import', () => {
     expect(res.body.outcomes.skipped_reasons.low_sender_quality).toBeUndefined();
   });
 
-  it('reduces unnecessary review notes for trusted senders', async () => {
+  it('keeps parser-requested review notes pending for trusted senders', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
        VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
@@ -467,15 +467,16 @@ describe('POST /gmail/import', () => {
     const res = await request(app).post('/gmail/import');
     expect(res.status).toBe(200);
     expect(res.body.imported).toBe(1);
-    expect(res.body.outcomes.imported_parsed).toBe(1);
-    expect(res.body.outcomes.imported_pending_review).toBe(0);
+    expect(res.body.outcomes.imported_parsed).toBe(0);
+    expect(res.body.outcomes.imported_pending_review).toBe(1);
 
     const expense = await db.query(
-      `SELECT notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      `SELECT status, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [userId]
     );
+    expect(expense.rows[0].status).toBe('pending');
     expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
-    expect(expense.rows[0].notes).not.toMatch(/needs review/i);
+    expect(expense.rows[0].notes).toMatch(/needs review/i);
   });
 
   it('auto-confirms high-trust fast-lane Gmail imports', async () => {

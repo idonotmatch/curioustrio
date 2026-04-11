@@ -218,14 +218,6 @@ async function importForUser(user) {
           reason: importedAsPendingReview ? 'needs review' : 'imported from gmail',
         });
       }
-      if (senderQuality.level === 'trusted' && !importedAsPendingReview && /needs review/i.test(parsed.notes || '')) {
-        parsed.notes = buildReviewNotes({
-          subject,
-          snippet,
-          body,
-          reason: 'imported from gmail',
-        });
-      }
       if (senderQuality.level === 'noisy' && !/needs review/i.test(parsed.notes || '')) {
         parsed.notes = buildReviewNotes({
           subject,
