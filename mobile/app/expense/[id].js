@@ -15,28 +15,6 @@ import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrol
 import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 
-function formatLikelyFields(fields = []) {
-  if (!Array.isArray(fields) || !fields.length) return '';
-  return fields.slice(0, 3).map((field) => `${field}`.replace(/_/g, ' ')).join(', ');
-}
-
-function cleanImportedEmailSummary(notes = '', subject = '') {
-  const raw = `${notes || ''}`.trim();
-  if (!raw) return null;
-
-  let summary = raw
-    .replace(/\(\s*needs review\s*\)/ig, '')
-    .replace(/\(\s*imported from gmail\s*\)/ig, '')
-    .trim();
-
-  if (subject) {
-    const escapedSubject = subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    summary = summary.replace(new RegExp(`^${escapedSubject}\\s*[—-]\\s*`, 'i'), '').trim();
-  }
-
-  return summary || null;
-}
-
 function formatImportedAt(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -423,7 +401,6 @@ export default function ExpenseDetailScreen() {
   const reviewState = expense.status === 'pending' && expense.source === 'email';
   const gmailReviewHint = expense.gmail_review_hint || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
-  const emailSummary = cleanImportedEmailSummary(expense.notes || '', gmailReviewHint?.message_subject || '');
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
@@ -494,54 +471,24 @@ export default function ExpenseDetailScreen() {
           </Text>
           <Text style={styles.reviewBannerTitle}>
             {isPendingEmailReview
-              ? (gmailReviewHint?.review_title || 'Check this Gmail import before it is counted')
+              ? 'Review this Gmail import before confirming'
               : 'Check this Gmail import before it is counted'}
           </Text>
           <Text style={styles.reviewBannerText}>
             {isPendingEmailReview
-              ? (gmailReviewHint?.review_message || 'Use the email context below to confirm the merchant, amount, and date before approving.')
+              ? (isItemsFirstReview
+                ? 'Start with the extracted items, then confirm the total.'
+                : isQuickCheckReview
+                  ? 'A quick check of merchant, amount, and date is usually enough.'
+                  : 'Confirm the core details before approving this expense.')
               : 'This import was surfaced for review before it is counted in your confirmed expenses.'}
           </Text>
         </View>
       ) : null}
 
-      {gmailReviewHint ? (
-        <View style={[
-          styles.gmailHintCard,
-          gmailReviewHint.tone === 'positive' && styles.gmailHintCardPositive,
-          gmailReviewHint.tone === 'warning' && styles.gmailHintCardWarning,
-          gmailReviewHint.tone === 'caution' && styles.gmailHintCardCaution,
-        ]}>
-          <Text style={styles.gmailHintTitle}>{gmailReviewHint.headline}</Text>
-          <Text style={styles.gmailHintBody}>{gmailReviewHint.message}</Text>
-          {gmailReviewHint.sender_domain ? (
-            <Text style={styles.gmailHintMeta}>Sender: {gmailReviewHint.sender_domain}</Text>
-          ) : null}
-          {gmailReviewHint.item_reliability_message ? (
-            <Text style={styles.gmailHintMeta}>{gmailReviewHint.item_reliability_message}</Text>
-          ) : null}
-          {gmailReviewHint.likely_changed_fields?.length ? (
-            <Text style={styles.gmailHintMeta}>
-              Most often corrected: {formatLikelyFields(gmailReviewHint.likely_changed_fields)}
-            </Text>
-          ) : null}
-          {gmailReviewHint.message_subject ? (
-            <Text style={styles.gmailHintMeta} numberOfLines={2}>
-              Subject: {gmailReviewHint.message_subject}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {expense.source === 'email' && (gmailReviewHint?.message_subject || gmailReviewHint?.from_address || importedAtLabel || emailSummary) ? (
+      {expense.source === 'email' && (gmailReviewHint?.from_address || importedAtLabel) ? (
         <View style={styles.emailContextCard}>
-          <Text style={styles.emailContextTitle}>What Adlo saw in the email</Text>
-          {gmailReviewHint?.message_subject ? (
-            <View style={styles.emailContextRow}>
-              <Text style={styles.emailContextLabel}>Subject</Text>
-              <Text style={styles.emailContextValue}>{gmailReviewHint.message_subject}</Text>
-            </View>
-          ) : null}
+          <Text style={styles.emailContextTitle}>Import details</Text>
           {gmailReviewHint?.from_address ? (
             <View style={styles.emailContextRow}>
               <Text style={styles.emailContextLabel}>From</Text>
@@ -554,35 +501,6 @@ export default function ExpenseDetailScreen() {
               <Text style={styles.emailContextValue}>{importedAtLabel}</Text>
             </View>
           ) : null}
-          {emailSummary ? (
-            <View style={styles.emailContextSummary}>
-              <Text style={styles.emailContextSummaryLabel}>Email summary</Text>
-              <Text style={styles.emailContextSummaryText}>{emailSummary}</Text>
-            </View>
-          ) : null}
-          {gmailReviewHint?.amount_evidence || gmailReviewHint?.date_evidence || gmailReviewHint?.merchant_evidence ? (
-            <View style={styles.emailEvidenceSection}>
-              <Text style={styles.emailContextSummaryLabel}>Why these fields were chosen</Text>
-              {gmailReviewHint?.amount_evidence ? (
-                <Text style={styles.emailEvidenceText}>Amount: {gmailReviewHint.amount_evidence}</Text>
-              ) : null}
-              {gmailReviewHint?.date_evidence ? (
-                <Text style={styles.emailEvidenceText}>Date: {gmailReviewHint.date_evidence}</Text>
-              ) : null}
-              {gmailReviewHint?.merchant_evidence ? (
-                <Text style={styles.emailEvidenceText}>Merchant: {gmailReviewHint.merchant_evidence}</Text>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {isPendingEmailReview ? (
-        <View style={styles.reviewChecklistCard}>
-          <Text style={styles.reviewChecklistTitle}>What to verify</Text>
-          {(gmailReviewHint?.review_checklist || []).map((item) => (
-            <Text key={item} style={styles.reviewChecklistItem}>{item}</Text>
-          ))}
         </View>
       ) : null}
 
@@ -1116,23 +1034,6 @@ const styles = StyleSheet.create({
   reviewBannerEyebrow: { color: '#cbb37c', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginBottom: 4 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
-  gmailHintCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: -4,
-    backgroundColor: '#10141b',
-    borderWidth: 1,
-    borderColor: '#1f2937',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  gmailHintCardPositive: { backgroundColor: '#0f1712', borderColor: '#1f3b2b' },
-  gmailHintCardWarning: { backgroundColor: '#1a1010', borderColor: '#3b1f1f' },
-  gmailHintCardCaution: { backgroundColor: '#18130a', borderColor: '#3c2e11' },
-  gmailHintTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  gmailHintBody: { color: '#cfcfcf', fontSize: 12, lineHeight: 18 },
-  gmailHintMeta: { color: '#8d8d8d', fontSize: 11, lineHeight: 16, marginTop: 4 },
   emailContextCard: {
     marginHorizontal: 20,
     marginTop: 12,
@@ -1148,24 +1049,6 @@ const styles = StyleSheet.create({
   emailContextRow: { marginBottom: 8 },
   emailContextLabel: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
   emailContextValue: { color: '#d4d4d4', fontSize: 12, lineHeight: 18 },
-  emailContextSummary: { borderTopWidth: 1, borderTopColor: '#1c1c1c', paddingTop: 10, marginTop: 2 },
-  emailContextSummaryLabel: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  emailContextSummaryText: { color: '#b8b8b8', fontSize: 12, lineHeight: 18 },
-  emailEvidenceSection: { borderTopWidth: 1, borderTopColor: '#1c1c1c', paddingTop: 10, marginTop: 10 },
-  emailEvidenceText: { color: '#c7c7c7', fontSize: 12, lineHeight: 18, marginTop: 4 },
-  reviewChecklistCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: -4,
-    backgroundColor: '#101216',
-    borderWidth: 1,
-    borderColor: '#1c2431',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  reviewChecklistTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
-  reviewChecklistItem: { color: '#b9c2ce', fontSize: 12, lineHeight: 18, marginTop: 4 },
   priorityFieldsCard: {
     marginHorizontal: 20,
     marginTop: 12,

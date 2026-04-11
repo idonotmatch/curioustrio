@@ -24,29 +24,12 @@ function formatDate(dateStr) {
   return `${MONTH_SHORT[date.getMonth()]} ${date.getDate()}`;
 }
 
-function formatFieldList(fields = []) {
-  if (!Array.isArray(fields) || !fields.length) return '';
-  return fields
-    .slice(0, 3)
-    .map((field) => `${field}`.replace(/_/g, ' '))
-    .join(', ');
-}
-
-function reviewToneStyle(tone) {
-  switch (tone) {
-    case 'positive': return { chip: styles.hintChipPositive, text: styles.hintChipTextPositive };
-    case 'warning': return { chip: styles.hintChipWarning, text: styles.hintChipTextWarning };
-    case 'caution': return { chip: styles.hintChipCaution, text: styles.hintChipTextCaution };
-    default: return { chip: styles.hintChipInfo, text: styles.hintChipTextInfo };
-  }
-}
-
 function reviewModePresentation(hint = {}) {
   const mode = hint?.review_mode || 'full_review';
   if (mode === 'quick_check') {
     return {
       chipLabel: 'Quick check',
-      detail: 'Usually a fast confirm of merchant, amount, and date.',
+      guidance: 'Check merchant, amount, and date.',
       approveLabel: 'Quick approve',
       accent: styles.modeChipQuick,
       accentText: styles.modeChipTextQuick,
@@ -55,15 +38,15 @@ function reviewModePresentation(hint = {}) {
   if (mode === 'items_first') {
     return {
       chipLabel: 'Items first',
-      detail: hint?.item_reliability_message || 'Line items are the most likely thing to need cleanup.',
+      guidance: 'Review extracted items before approving.',
       approveLabel: 'Check items',
       accent: styles.modeChipItems,
       accentText: styles.modeChipTextItems,
     };
   }
   return {
-    chipLabel: 'Full review',
-    detail: hint?.message || 'Review the core details before approving.',
+    chipLabel: 'Review',
+    guidance: 'Check merchant, date, and category.',
     approveLabel: 'Approve',
     accent: styles.modeChipFull,
     accentText: styles.modeChipTextFull,
@@ -199,45 +182,13 @@ export default function PendingScreen() {
                       return (
                     <View style={styles.hintWrap}>
                       <View style={styles.hintChipRow}>
-                        <View style={[styles.hintChip, reviewToneStyle(item.gmail_review_hint.tone).chip]}>
-                        <Text style={[styles.hintChipText, reviewToneStyle(item.gmail_review_hint.tone).text]}>
-                          {item.gmail_review_hint.headline}
-                        </Text>
-                        </View>
                         <View style={[styles.modeChip, mode.accent]}>
                           <Text style={[styles.modeChipText, mode.accentText]}>{mode.chipLabel}</Text>
                         </View>
                       </View>
-                      {item.gmail_review_hint.likely_changed_fields?.length ? (
-                        <Text style={styles.hintDetail} numberOfLines={1}>
-                          Usually worth checking {formatFieldList(item.gmail_review_hint.likely_changed_fields)}.
-                        </Text>
-                      ) : item.gmail_review_hint.review_mode ? (
-                        <Text style={styles.hintDetail} numberOfLines={1}>
-                          {mode.detail}
-                        </Text>
-                      ) : item.gmail_review_hint.item_reliability_message ? (
-                        <Text style={styles.hintDetail} numberOfLines={1}>
-                          {item.gmail_review_hint.item_reliability_message}
-                        </Text>
-                      ) : (
-                        <Text style={styles.hintDetail} numberOfLines={1}>
-                          {item.gmail_review_hint.message}
-                        </Text>
-                      )}
-                      {item.gmail_review_hint.review_mode === 'quick_check' ? (
-                        <TouchableOpacity
-                          style={styles.inlineApproveButton}
-                          onPress={(event) => {
-                            event.stopPropagation?.();
-                            approve(item.id);
-                          }}
-                          activeOpacity={0.82}
-                        >
-                          <Ionicons name="checkmark-circle" size={14} color="#bbf7d0" />
-                          <Text style={styles.inlineApproveText}>Approve now</Text>
-                        </TouchableOpacity>
-                      ) : null}
+                      <Text style={styles.hintDetail} numberOfLines={1}>
+                        {mode.guidance}
+                      </Text>
                     </View>
                       );
                     })()
@@ -300,16 +251,6 @@ const styles = StyleSheet.create({
   sourceChipTextEmail: { color: '#93c5fd' },
   hintWrap: { marginTop: 6, gap: 4 },
   hintChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
-  hintChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  hintChipText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
-  hintChipPositive: { backgroundColor: 'rgba(34,197,94,0.14)' },
-  hintChipTextPositive: { color: '#86efac' },
-  hintChipWarning: { backgroundColor: 'rgba(248,113,113,0.14)' },
-  hintChipTextWarning: { color: '#fca5a5' },
-  hintChipCaution: { backgroundColor: 'rgba(245,158,11,0.16)' },
-  hintChipTextCaution: { color: '#fcd34d' },
-  hintChipInfo: { backgroundColor: 'rgba(96,165,250,0.14)' },
-  hintChipTextInfo: { color: '#93c5fd' },
   modeChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
   modeChipText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   modeChipQuick: { backgroundColor: 'rgba(134,239,172,0.08)', borderColor: 'rgba(134,239,172,0.35)' },
@@ -319,20 +260,6 @@ const styles = StyleSheet.create({
   modeChipFull: { backgroundColor: 'rgba(147,197,253,0.08)', borderColor: 'rgba(147,197,253,0.28)' },
   modeChipTextFull: { color: '#bfdbfe' },
   hintDetail: { fontSize: 12, color: '#8a8a8a' },
-  inlineApproveButton: {
-    marginTop: 4,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(134,239,172,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(134,239,172,0.3)',
-  },
-  inlineApproveText: { fontSize: 12, fontWeight: '600', color: '#bbf7d0' },
   amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
 
   approveAction: {
