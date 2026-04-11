@@ -464,11 +464,11 @@ export default function ExpenseDetailScreen() {
       {reviewState ? (
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerEyebrow}>
-            {isPendingEmailReview && isQuickCheckReview ? 'Quick check' : 'Review first'}
+            {isItemsFirstReview ? 'Items first' : isQuickCheckReview ? 'Quick check' : 'Gmail import'}
           </Text>
           <Text style={styles.reviewBannerTitle}>
             {isPendingEmailReview
-              ? 'Review this Gmail import before confirming'
+              ? 'Confirm this import before adding it'
               : 'Check this Gmail import before it is counted'}
           </Text>
           <Text style={styles.reviewBannerText}>
@@ -536,8 +536,8 @@ export default function ExpenseDetailScreen() {
 
       {isPendingEmailReview ? (
         <View style={styles.reviewFieldsHeader}>
-          <Text style={styles.reviewFieldsEyebrow}>Editable fields</Text>
-          <Text style={styles.reviewFieldsTitle}>Approve with these expense details</Text>
+          <Text style={styles.reviewFieldsEyebrow}>Expense details</Text>
+          <Text style={styles.reviewFieldsTitle}>These are the details that will be saved</Text>
         </View>
       ) : null}
 
@@ -673,9 +673,9 @@ export default function ExpenseDetailScreen() {
           activeOpacity={0.8}
         >
           <View>
-            <Text style={styles.secondaryDetailsEyebrow}>Secondary details</Text>
+            <Text style={styles.secondaryDetailsEyebrow}>Other details</Text>
             <Text style={styles.secondaryDetailsTitle}>
-              {secondaryDetailsExpanded ? 'Hide lower-priority fields' : 'Show payment, notes, location, and other details'}
+              {secondaryDetailsExpanded ? 'Hide payment, notes, location, and other details' : 'Show payment, notes, location, and other details'}
             </Text>
           </View>
           <Ionicons name={secondaryDetailsExpanded ? 'chevron-up' : 'chevron-forward'} size={16} color="#7d7d7d" />
