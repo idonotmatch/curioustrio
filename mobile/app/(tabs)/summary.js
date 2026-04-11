@@ -239,6 +239,9 @@ export default function SummaryScreen() {
           group_key: insight.metadata.group_key,
           title: insight.metadata.item_name || insight.title,
           insight_id: insight.id,
+          insight_type: insight.type,
+          body: insight.body,
+          metadata: JSON.stringify(insight.metadata || {}),
         },
       });
       return;

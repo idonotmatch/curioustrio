@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams } from 'expo-router';
@@ -16,8 +16,81 @@ function formatCurrency(value) {
   return `$${Number(value).toFixed(2)}`;
 }
 
+function formatPercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return `${Math.abs(Number(value)).toFixed(0)}%`;
+}
+
+function parseMetadata(value) {
+  if (!value || typeof value !== 'string') return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function signalSummary(insightType, metadata = {}, history = null, fallbackBody = '') {
+  const itemName = metadata.item_name || history?.item_name || 'This item';
+  const latestMerchant = metadata.latest_merchant || history?.purchases?.[history.purchases.length - 1]?.merchant || 'your usual merchant';
+  const cheapestMerchant = metadata.cheaper_merchant || history?.merchant_price_history?.[0]?.merchant || null;
+  const deltaPercent = formatPercent(metadata.delta_percent);
+  const medianAmount = history?.median_amount != null ? formatCurrency(history.median_amount) : null;
+  const medianUnitPrice = history?.median_unit_price != null ? formatCurrency(history.median_unit_price) : null;
+
+  switch (`${insightType || ''}`) {
+    case 'recurring_price_spike':
+      return {
+        whatChanged: fallbackBody || `${itemName} came in above your usual price this time.`,
+        whyItMatters: `${latestMerchant} was about ${deltaPercent} above your recent baseline${medianAmount !== '—' ? ` of ${medianAmount}` : ''}.`,
+        nextStep: 'Check whether this was a one-off high price or whether it is worth changing where or when you buy it.',
+      };
+    case 'buy_soon_better_price':
+      return {
+        whatChanged: fallbackBody || `${itemName} is currently available below your usual price.`,
+        whyItMatters: cheapestMerchant
+          ? `${cheapestMerchant} is running about ${deltaPercent} below your usual ${metadata.comparison_type === 'unit_price' ? 'unit price' : 'price'}.`
+          : `A recent observation suggests a better-than-usual price for this item.`,
+        nextStep: 'If you actually need it soon, this is a good time to compare merchants before you buy.',
+      };
+    case 'recurring_repurchase_due':
+      return {
+        whatChanged: fallbackBody || `${itemName} looks close to its usual repurchase window.`,
+        whyItMatters: `You typically buy this every ${metadata.average_gap_days || history?.average_gap_days || '—'} days, so timing is part of keeping this spend predictable.`,
+        nextStep: 'Use the purchase history below to decide whether this still belongs in your normal routine or can wait.',
+      };
+    case 'recurring_restock_window':
+      return {
+        whatChanged: fallbackBody || `${itemName} could fit within the room you still have this period.`,
+        whyItMatters: `You may have roughly ${formatCurrency(metadata.projected_headroom_amount)} of headroom left, and this item often lands around ${medianAmount || 'your usual price'}.`,
+        nextStep: 'If this is a staple, this is a good moment to decide intentionally instead of getting surprised later.',
+      };
+    case 'recurring_cost_pressure':
+      return {
+        whatChanged: fallbackBody || `${itemName} is part of a recurring cost pattern that is getting more expensive.`,
+        whyItMatters: medianUnitPrice !== '—'
+          ? `Your recent median unit price is around ${medianUnitPrice}, which makes small changes add up faster over time.`
+          : `Small repeated price increases can quietly drive a meaningful share of month-to-month pressure.`,
+        nextStep: 'Review which merchant and purchase timing are actually creating the squeeze before changing your routine.',
+      };
+    default:
+      return {
+        whatChanged: fallbackBody || `${itemName} stands out in your recurring purchase history.`,
+        whyItMatters: 'This is one of the few places where a small habit or merchant change can compound over time.',
+        nextStep: 'Use the history below to decide whether the pattern is worth acting on now.',
+      };
+  }
+}
+
 export default function RecurringItemScreen() {
-  const { group_key: groupKey, title, insight_id: insightId = '' } = useLocalSearchParams();
+  const {
+    group_key: groupKey,
+    title,
+    insight_id: insightId = '',
+    insight_type: insightType = '',
+    body = '',
+    metadata: metadataParam = '',
+  } = useLocalSearchParams();
   const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -25,6 +98,13 @@ export default function RecurringItemScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
+  const metadata = useMemo(() => parseMetadata(Array.isArray(metadataParam) ? metadataParam[0] : metadataParam), [metadataParam]);
+  const summary = useMemo(
+    () => signalSummary(Array.isArray(insightType) ? insightType[0] : insightType, metadata, history, Array.isArray(body) ? body[0] : body),
+    [body, history, insightType, metadata]
+  );
+  const merchantPriceHistory = Array.isArray(history?.merchant_price_history) ? history.merchant_price_history : [];
+  const purchaseHistory = Array.isArray(history?.purchases) ? history.purchases : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -121,15 +201,49 @@ export default function RecurringItemScreen() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Timing</Text>
+              <Text style={styles.cardEyebrow}>What changed</Text>
+              <Text style={styles.detailTitle}>{summary.whatChanged}</Text>
+              <Text style={styles.cardCopy}>{summary.whyItMatters}</Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardEyebrow}>Next step</Text>
+              <Text style={styles.cardCopy}>{summary.nextStep}</Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardEyebrow}>Timing</Text>
+              <Text style={styles.cardTitle}>Cadence and coverage</Text>
               <Text style={styles.rowText}>Last purchased: {history.last_purchased_at || '—'}</Text>
               <Text style={styles.rowText}>Next expected: {history.next_expected_date || '—'}</Text>
               <Text style={styles.rowText}>Merchants: {(history.merchants || []).join(', ') || '—'}</Text>
             </View>
 
+            {merchantPriceHistory.length > 0 ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Merchant comparison</Text>
+                <Text style={styles.cardTitle}>Where this item tends to land</Text>
+                {merchantPriceHistory.map((entry) => (
+                  <View key={`${entry.merchant}:${entry.occurrence_count}`} style={styles.purchaseRow}>
+                    <View>
+                      <Text style={styles.purchaseMerchant}>{entry.merchant || 'Unknown merchant'}</Text>
+                      <Text style={styles.purchaseDate}>{entry.occurrence_count} purchases</Text>
+                    </View>
+                    <View style={styles.purchaseRight}>
+                      <Text style={styles.purchaseAmount}>{formatCurrency(entry.median_amount)}</Text>
+                      {entry.median_unit_price != null ? (
+                        <Text style={styles.purchaseUnit}>{formatCurrency(entry.median_unit_price)} / unit</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <View style={styles.card}>
+              <Text style={styles.cardEyebrow}>Supporting activity</Text>
               <Text style={styles.cardTitle}>Recent purchases</Text>
-              {(history.purchases || []).map((purchase) => (
+              {purchaseHistory.map((purchase) => (
                 <View key={`${purchase.date}:${purchase.merchant}:${purchase.item_amount}`} style={styles.purchaseRow}>
                   <View>
                     <Text style={styles.purchaseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
@@ -255,7 +369,10 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
-  cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
+  cardEyebrow: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1 },
+  cardTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '700' },
+  detailTitle: { fontSize: 18, color: '#f5f5f5', fontWeight: '700', lineHeight: 24 },
+  cardCopy: { fontSize: 14, color: '#b5b5b5', lineHeight: 20 },
   rowText: { fontSize: 14, color: '#e5e5e5' },
   purchaseRow: {
     flexDirection: 'row',
