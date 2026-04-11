@@ -195,6 +195,22 @@ function isQuickCheckPending(expense = {}) {
   return likelyChangedFields.length <= 1;
 }
 
+function pendingModeSummary(expenses = []) {
+  const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
+  for (const expense of expenses) {
+    const mode = expense?.gmail_review_hint?.review_mode;
+    if (mode === 'quick_check') counts.quickCheck += 1;
+    else if (mode === 'items_first') counts.itemsFirst += 1;
+    else counts.review += 1;
+  }
+
+  return [
+    counts.quickCheck > 0 ? `${counts.quickCheck} quick check` : null,
+    counts.itemsFirst > 0 ? `${counts.itemsFirst} items first` : null,
+    counts.review > 0 ? `${counts.review} review` : null,
+  ].filter(Boolean).join(' · ');
+}
+
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
@@ -292,9 +308,13 @@ export default function FeedScreen() {
 
   const renderItem = ({ item }) => {
     if (item._type === 'pending_section') {
+      const modeSummary = pendingModeSummary(item.items);
       return (
         <View style={styles.pendingSection}>
           <Text style={styles.pendingLabel}>Needs review · {item.items.length}</Text>
+          {modeSummary ? (
+            <Text style={styles.pendingModeSummary}>{modeSummary}</Text>
+          ) : null}
           {isUsingMockPending ? (
             <Text style={styles.pendingPreviewNote}>Dev preview queue</Text>
           ) : null}
@@ -532,6 +552,7 @@ const styles = StyleSheet.create({
 
   pendingSection: { backgroundColor: '#111', borderRadius: 10, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#1f1f1f' },
   pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 12 },
+  pendingModeSummary: { fontSize: 11, color: '#7f8da4', paddingHorizontal: 12, paddingBottom: 2 },
   pendingPreviewNote: { fontSize: 11, color: '#8ab4ff', paddingHorizontal: 12, paddingBottom: 4 },
   pendingRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingRowMain: { flex: 1, marginRight: 8 },
