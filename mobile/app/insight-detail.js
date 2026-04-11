@@ -56,11 +56,6 @@ function expenseMatchesMerchant(expense, metadata = {}) {
 
 function metadataHighlights(metadata = {}) {
   const rows = [
-    ['Maturity', metadata.maturity],
-    ['Confidence', metadata.confidence],
-    ['Scope', metadata.scope],
-    ['Hierarchy', metadata.hierarchy_level],
-    ['Scope origin', metadata.scope_origin],
     ['Month', metadata.month],
     ['Category', metadata.category_name],
     ['Merchant', metadata.merchant_name],
@@ -77,6 +72,74 @@ function metadataHighlights(metadata = {}) {
     .map(([label, value]) => ({ label, value: formatValue(value) }))
     .filter((row) => row.value != null)
     .slice(0, 8);
+}
+
+function transparencyRows(metadata = {}) {
+  const rows = [
+    ['Maturity', metadata.maturity],
+    ['Confidence', metadata.confidence],
+    ['Scope', metadata.scope],
+    ['Hierarchy', metadata.hierarchy_level],
+    ['Scope origin', metadata.scope_origin],
+    ['Scope relationship', metadata.scope_relationship],
+    ['Household context', metadata.household_context_included ? 'Included' : null],
+    ['Month', metadata.month],
+    ['Combined scopes', Array.isArray(metadata.consolidated_scopes) ? metadata.consolidated_scopes.map(formatLabel).join(' + ') : null],
+  ];
+
+  return rows
+    .map(([label, value]) => ({ label, value: formatValue(value) }))
+    .filter((row) => row.value != null);
+}
+
+function whatChangedCopy(metadata = {}, body = '') {
+  const headline = body || 'This signal stands out in your recent activity.';
+  const facts = [];
+  if (metadata.category_name && metadata.current_spend_to_date != null) {
+    facts.push(`${metadata.category_name} is at ${formatCurrency(metadata.current_spend_to_date)}`);
+  } else if (metadata.merchant_name && metadata.current_spend != null) {
+    facts.push(`${metadata.merchant_name} is at ${formatCurrency(metadata.current_spend)}`);
+  } else if (metadata.current_spend != null) {
+    facts.push(`Current spend is ${formatCurrency(metadata.current_spend)}`);
+  }
+  if (metadata.previous_spend != null) {
+    facts.push(`previously ${formatCurrency(metadata.previous_spend)}`);
+  }
+  if (metadata.expense_count != null) {
+    facts.push(`${metadata.expense_count} ${metadata.expense_count === 1 ? 'expense' : 'expenses'}`);
+  }
+  if (metadata.active_day_count != null) {
+    facts.push(`${metadata.active_day_count} active days`);
+  }
+
+  return {
+    headline,
+    facts: facts.slice(0, 3).join(' • ') || null,
+  };
+}
+
+function whyItMattersCopy(insightType, metadata = {}) {
+  if (`${insightType}`.startsWith('early_')) {
+    return 'This is meant to catch a direction early, while there is still time to adjust before it becomes a bigger pattern.';
+  }
+  if (`${insightType}`.startsWith('developing_')) {
+    return 'This pattern is forming, but it is still early enough to steer with a small change.';
+  }
+  if (metadata.scope_relationship === 'personal_household_overlap') {
+    return 'Your own spending is driving part of the shared household picture, so a personal change can have a visible household effect.';
+  }
+  if (metadata.scope === 'household') {
+    return 'This affects the shared budget, so it is useful for planning together instead of reacting later.';
+  }
+  return 'This is a useful pressure point because it changes how your month is trending right now.';
+}
+
+function nextStepCopy(descriptor, primaryAction) {
+  return {
+    title: primaryAction?.title || descriptor.label,
+    body: primaryAction?.body || descriptor.reason,
+    cta: primaryAction?.cta || null,
+  };
 }
 
 function contextCopy(type) {
@@ -145,6 +208,7 @@ export default function InsightDetailScreen() {
   const [feedbackNote, setFeedbackNote] = useState('');
   const [evidenceRows, setEvidenceRows] = useState([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const metadata = useMemo(() => {
     if (!metadataParam) return {};
@@ -175,9 +239,13 @@ export default function InsightDetailScreen() {
     trend: null,
   });
   const highlights = metadataHighlights(metadata);
+  const technicalRows = transparencyRows(metadata);
   const consolidationNote = consolidatedCopy(metadata);
   const consolidationRows = consolidatedRows(metadata);
   const evidenceMode = evidenceModeForInsight(insightType, metadata);
+  const changed = whatChangedCopy(metadata, body);
+  const whyItMatters = whyItMattersCopy(insightType, metadata);
+  const nextStep = nextStepCopy(descriptor, primaryAction);
 
   useEffect(() => {
     let cancelled = false;
@@ -312,7 +380,8 @@ export default function InsightDetailScreen() {
             ) : null}
           </View>
           <Text style={styles.heroTitle}>{title}</Text>
-          <Text style={styles.heroCopy}>{body}</Text>
+          <Text style={styles.heroCopy}>{changed.headline}</Text>
+          {changed.facts ? <Text style={styles.heroFacts}>{changed.facts}</Text> : null}
           <Text style={styles.heroContext}>{contextCopy(insightType)}</Text>
         </View>
 
@@ -339,18 +408,26 @@ export default function InsightDetailScreen() {
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>{primaryAction?.title || descriptor.label}</Text>
-          <Text style={styles.cardCopy}>{primaryAction?.body || descriptor.reason}</Text>
-          {primaryAction?.route && primaryAction?.cta ? (
+          <Text style={styles.cardEyebrow}>Why it matters</Text>
+          <Text style={styles.cardTitle}>What deserves attention</Text>
+          <Text style={styles.cardCopy}>{whyItMatters}</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardEyebrow}>Next step</Text>
+          <Text style={styles.cardTitle}>{nextStep.title}</Text>
+          <Text style={styles.cardCopy}>{nextStep.body}</Text>
+          {primaryAction?.route && nextStep.cta ? (
             <TouchableOpacity style={styles.primaryButton} onPress={openPrimaryAction}>
-              <Text style={styles.primaryButtonText}>{primaryAction.cta}</Text>
+              <Text style={styles.primaryButtonText}>{nextStep.cta}</Text>
             </TouchableOpacity>
           ) : null}
         </View>
 
         {highlights.length > 0 ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Signal details</Text>
+            <Text style={styles.cardEyebrow}>At a glance</Text>
+            <Text style={styles.cardTitle}>Key facts</Text>
             {highlights.map((row) => (
               <View key={row.label} style={styles.metricRow}>
                 <Text style={styles.metricLabel}>{row.label}</Text>
@@ -360,8 +437,36 @@ export default function InsightDetailScreen() {
           </View>
         ) : null}
 
+        {technicalRows.length > 0 ? (
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.technicalHeader}
+              onPress={() => setShowTechnicalDetails((value) => !value)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.technicalHeaderText}>
+                <Text style={styles.cardEyebrow}>Transparency</Text>
+                <Text style={styles.cardTitle}>Why this showed up</Text>
+              </View>
+              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Hide' : 'Show'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.cardCopy}>Open this if you want the scoring context and hierarchy behind the card.</Text>
+            {showTechnicalDetails ? (
+              <View style={styles.metricList}>
+                {technicalRows.map((row) => (
+                  <View key={row.label} style={styles.metricRow}>
+                    <Text style={styles.metricLabel}>{row.label}</Text>
+                    <Text style={styles.metricValue}>{row.value}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {evidenceMode ? (
           <View style={styles.card}>
+            <Text style={styles.cardEyebrow}>Supporting activity</Text>
             <Text style={styles.cardTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
             {evidenceLoading ? (
               <View style={styles.loadingRow}>
@@ -508,6 +613,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: { color: '#f5f5f5', fontSize: 24, fontWeight: '800', lineHeight: 30 },
   heroCopy: { color: '#d4d4d4', fontSize: 15, lineHeight: 22 },
+  heroFacts: { color: '#f5f5f5', fontSize: 13, lineHeight: 18, fontWeight: '700' },
   heroContext: { color: '#9d9d9d', fontSize: 13, lineHeight: 19 },
   card: {
     backgroundColor: '#111',
@@ -517,6 +623,7 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  cardEyebrow: { color: '#8a8a8a', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   cardTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '700' },
   cardCopy: { color: '#b8b8b8', fontSize: 13, lineHeight: 19 },
   foldedList: { gap: 8 },
@@ -556,6 +663,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   primaryButtonText: { color: '#0a0a0a', fontSize: 13, fontWeight: '800' },
+  technicalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  technicalHeaderText: { flex: 1, gap: 4 },
+  technicalToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
+  metricList: { gap: 0 },
   metricRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -44,6 +44,11 @@ function formatImportedAt(value) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function formatCurrency(value) {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return `$${Number(value).toFixed(2)}`;
+}
+
 function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
   const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
   const likelySet = new Set(likelyFields);
@@ -110,6 +115,38 @@ function parseExpenseParam(value) {
   } catch {
     return null;
   }
+}
+
+function formatItemStructuredMeta(item = {}) {
+  const bits = [item.brand, item.product_size || item.pack_size].filter(Boolean);
+  return bits.length ? bits.join(' • ') : null;
+}
+
+function itemMatchLabel(item = {}) {
+  if (item.product_id) return 'Matched product';
+  if (item.estimated_unit_price != null) return 'Unit priced';
+  if (item.comparable_key) return 'Comparable item';
+  return null;
+}
+
+function itemSubmeta(item = {}) {
+  const parts = [];
+  if (item.estimated_unit_price != null) {
+    parts.push(`${formatCurrency(item.estimated_unit_price)} per ${item.unit || 'unit'}`);
+  }
+  if (item.product_match_reason) {
+    parts.push(`${item.product_match_reason}`.replace(/_/g, ' '));
+  }
+  return parts.length ? parts.join(' • ') : null;
+}
+
+function summarizeItemSignals(items = []) {
+  return items.reduce((summary, item) => {
+    if (item.product_id) summary.matched += 1;
+    if (item.estimated_unit_price != null) summary.unitPriced += 1;
+    if (item.item_type && item.item_type !== 'product') summary.nonProduct += 1;
+    return summary;
+  }, { matched: 0, unitPriced: 0, nonProduct: 0 });
 }
 
 function applyExpenseToState(record, setters) {
@@ -245,6 +282,7 @@ export default function ExpenseDetailScreen() {
   }, [id]);
 
   const canEdit = !!currentUserId && !!expense && String(expense.user_id) === String(currentUserId);
+  const itemSignals = summarizeItemSignals(items);
 
   useEffect(() => {
     if (!canEdit && editing) setEditing(false);
@@ -854,14 +892,49 @@ export default function ExpenseDetailScreen() {
               })()}
             </>
           ) : (
-            items.map((item, i) => (
-              <View key={i} style={styles.itemReadRow}>
-                <Text style={styles.itemReadDesc}>{item.description}</Text>
-                {item.amount != null && (
-                  <Text style={styles.itemReadAmount}>${Number(item.amount).toFixed(2)}</Text>
-                )}
+            <>
+              <View style={styles.itemSummaryRow}>
+                {itemSignals.matched > 0 ? (
+                  <View style={styles.itemSummaryChip}>
+                    <Text style={styles.itemSummaryChipText}>{itemSignals.matched} matched</Text>
+                  </View>
+                ) : null}
+                {itemSignals.unitPriced > 0 ? (
+                  <View style={styles.itemSummaryChip}>
+                    <Text style={styles.itemSummaryChipText}>{itemSignals.unitPriced} unit priced</Text>
+                  </View>
+                ) : null}
+                {itemSignals.nonProduct > 0 ? (
+                  <View style={styles.itemSummaryChipMuted}>
+                    <Text style={styles.itemSummaryChipTextMuted}>{itemSignals.nonProduct} fees or extras</Text>
+                  </View>
+                ) : null}
               </View>
-            ))
+              {items.map((item, i) => {
+                const matchLabel = itemMatchLabel(item);
+                const structuredMeta = formatItemStructuredMeta(item);
+                const submeta = itemSubmeta(item);
+                return (
+                  <View key={i} style={styles.itemReadRow}>
+                    <View style={styles.itemReadText}>
+                      <View style={styles.itemReadTop}>
+                        <Text style={styles.itemReadDesc}>{item.description || 'Untitled item'}</Text>
+                        {matchLabel ? (
+                          <View style={styles.itemMatchChip}>
+                            <Text style={styles.itemMatchChipText}>{matchLabel}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {structuredMeta ? <Text style={styles.itemReadMeta}>{structuredMeta}</Text> : null}
+                      {submeta ? <Text style={styles.itemReadSubmeta}>{submeta}</Text> : null}
+                    </View>
+                    {item.amount != null ? (
+                      <Text style={styles.itemReadAmount}>${Number(item.amount).toFixed(2)}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </>
           )}
         </View>
       )}
@@ -1252,9 +1325,20 @@ const styles = StyleSheet.create({
   itemsHeaderText: { fontSize: 13, color: '#444', fontWeight: '500' },
   itemsHeaderTextActive: { color: '#f5f5f5' },
   itemsList: { marginHorizontal: 20, marginBottom: 4, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f', overflow: 'hidden' },
-  itemReadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  itemReadDesc: { fontSize: 13, color: '#f5f5f5', flex: 1 },
-  itemReadAmount: { fontSize: 13, color: '#888', paddingLeft: 8 },
+  itemSummaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2 },
+  itemSummaryChip: { borderRadius: 8, backgroundColor: '#182418', paddingHorizontal: 10, paddingVertical: 5 },
+  itemSummaryChipMuted: { borderRadius: 8, backgroundColor: '#171717', paddingHorizontal: 10, paddingVertical: 5 },
+  itemSummaryChipText: { color: '#86efac', fontSize: 11, fontWeight: '700' },
+  itemSummaryChipTextMuted: { color: '#8a8a8a', fontSize: 11, fontWeight: '700' },
+  itemReadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', gap: 12 },
+  itemReadText: { flex: 1, minWidth: 0, gap: 4 },
+  itemReadTop: { flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 },
+  itemReadDesc: { fontSize: 13, color: '#f5f5f5', flexShrink: 1, fontWeight: '600' },
+  itemReadMeta: { fontSize: 12, color: '#b8b8b8' },
+  itemReadSubmeta: { fontSize: 11, color: '#777' },
+  itemReadAmount: { fontSize: 13, color: '#888', paddingLeft: 8, paddingTop: 1, fontWeight: '700' },
+  itemMatchChip: { borderRadius: 8, backgroundColor: '#1d2531', paddingHorizontal: 8, paddingVertical: 4 },
+  itemMatchChipText: { color: '#bfdbfe', fontSize: 10, fontWeight: '700' },
   itemEditRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   itemEditDesc: { flex: 1, minWidth: 0, color: '#f5f5f5', fontSize: 13, padding: 4 },
   itemEditAmount: { width: 72, flexShrink: 0, color: '#f5f5f5', fontSize: 13, padding: 4, textAlign: 'right' },
