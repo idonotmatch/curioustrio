@@ -337,6 +337,18 @@ function toSerializableSummary(feedbackSummary) {
       outcomes: stats.outcomes || {},
       reviews: stats.reviews || {},
       lineage: stats.lineage || {},
+      lineage_summary: Object.entries(stats.lineage || {})
+        .map(([lineageKey, lineageStats]) => ({
+          lineage_key: lineageKey,
+          shown: lineageStats.shown || 0,
+          helpful: lineageStats.helpful || 0,
+          not_helpful: lineageStats.not_helpful || 0,
+          dismissed: lineageStats.dismissed || 0,
+          acted: lineageStats.acted || 0,
+          net_signal: (lineageStats.helpful || 0) + (lineageStats.acted || 0) + (lineageStats.tapped || 0)
+            - (lineageStats.not_helpful || 0) - (lineageStats.dismissed || 0),
+        }))
+        .sort((a, b) => b.net_signal - a.net_signal || b.acted - a.acted || b.helpful - a.helpful),
       last_negative_at: stats.last_negative_at || null,
       last_helpful_at: stats.last_helpful_at || null,
       last_acted_at: stats.last_acted_at || null,
@@ -376,10 +388,25 @@ function buildFeedbackDebugSummary(events = []) {
     .filter((row) => row.acted > 0)
     .sort((a, b) => b.acted - a.acted)
     .slice(0, 10);
+  const topLineageTypes = toSerializableSummary(summary)
+    .flatMap((row) => (row.lineage_summary || []).map((lineage) => ({
+      insight_type: row.insight_type,
+      lineage_key: lineage.lineage_key,
+      shown: lineage.shown,
+      helpful: lineage.helpful,
+      not_helpful: lineage.not_helpful,
+      dismissed: lineage.dismissed,
+      acted: lineage.acted,
+      net_signal: lineage.net_signal,
+    })))
+    .filter((row) => row.shown > 0 || row.helpful > 0 || row.not_helpful > 0 || row.dismissed > 0 || row.acted > 0)
+    .sort((a, b) => b.net_signal - a.net_signal || b.acted - a.acted || b.helpful - a.helpful)
+    .slice(0, 15);
 
   return {
     insight_types: toSerializableSummary(summary),
     top_outcome_types: topOutcomeTypes,
+    top_lineage_types: topLineageTypes,
     recent_notes: extractRecentNotes(events),
     totals: events.reduce((acc, event) => {
       acc[event.event_type] = (acc[event.event_type] || 0) + 1;

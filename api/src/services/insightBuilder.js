@@ -1012,6 +1012,12 @@ function insightDebugRows(insights = []) {
     entity_id: insight.entity_id,
     maturity: insight.metadata?.maturity || null,
     confidence: insight.metadata?.confidence || null,
+    scope: insight.metadata?.scope || null,
+    scope_origin: insight.metadata?.scope_origin || null,
+    hierarchy_level: insight.metadata?.hierarchy_level || null,
+    rolls_up_from_personal: insight.metadata?.rolls_up_from_personal ?? null,
+    household_context_included: insight.metadata?.household_context_included ?? null,
+    scope_relationship: insight.metadata?.scope_relationship || null,
     continuity_key: insightContinuityKey(insight),
     state: insight.state?.status || null,
   }));

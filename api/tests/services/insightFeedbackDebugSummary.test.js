@@ -59,25 +59,25 @@ describe('buildFeedbackDebugSummary', () => {
       {
         insight_id: 'spend_pace_ahead:personal:2026-04',
         event_type: 'shown',
-        metadata: { type: 'spend_pace_ahead' },
+        metadata: { type: 'spend_pace_ahead', hierarchy_level: 'personal' },
         created_at: '2026-04-04T09:00:00Z',
       },
       {
         insight_id: 'spend_pace_ahead:personal:2026-04',
         event_type: 'not_helpful',
-        metadata: { type: 'spend_pace_ahead', reason: 'wrong_timing', note: 'This was travel-related.' },
+        metadata: { type: 'spend_pace_ahead', hierarchy_level: 'personal', reason: 'wrong_timing', note: 'This was travel-related.' },
         created_at: '2026-04-04T10:00:00Z',
       },
       {
         insight_id: 'recurring_repurchase_due:product:abc:2026-04-08',
         event_type: 'helpful',
-        metadata: { type: 'recurring_repurchase_due' },
+        metadata: { type: 'recurring_repurchase_due', hierarchy_level: 'household_rollup' },
         created_at: '2026-04-04T11:00:00Z',
       },
       {
         insight_id: 'recurring_restock_window:product:xyz:2026-04',
         event_type: 'acted',
-        metadata: { type: 'recurring_restock_window', outcome_type: 'restocked_item' },
+        metadata: { type: 'recurring_restock_window', hierarchy_level: 'household_rollup', outcome_type: 'restocked_item' },
         created_at: '2026-04-04T12:00:00Z',
       },
     ]);
@@ -102,6 +102,21 @@ describe('buildFeedbackDebugSummary', () => {
         insight_type: 'recurring_restock_window',
         acted: 1,
         outcomes: expect.objectContaining({ restocked_item: 1 }),
+      }),
+    ]));
+    expect(result.insight_types).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        insight_type: 'spend_pace_ahead',
+        lineage_summary: expect.arrayContaining([
+          expect.objectContaining({ lineage_key: 'personal', shown: 1, not_helpful: 1 }),
+        ]),
+      }),
+    ]));
+    expect(result.top_lineage_types).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        insight_type: 'recurring_restock_window',
+        lineage_key: 'household_rollup',
+        acted: 1,
       }),
     ]));
     expect(result.recent_notes).toEqual(expect.arrayContaining([

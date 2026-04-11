@@ -826,6 +826,34 @@ describe('POST /insights/events', () => {
   });
 });
 
+describe('GET /insights/feedback-summary', () => {
+  it('includes lineage debug rows for feedback analysis', async () => {
+    await db.query(
+      `INSERT INTO insight_events (user_id, insight_id, event_type, metadata)
+       VALUES
+         ($1, 'demo-insight-lineage-1', 'helpful', '{"type":"top_category_driver","hierarchy_level":"personal"}'::jsonb),
+         ($1, 'demo-insight-lineage-2', 'not_helpful', '{"type":"top_category_driver","hierarchy_level":"household_rollup","reason":"not_relevant"}'::jsonb)`,
+      [userId]
+    );
+
+    const res = await request(app).get('/insights/feedback-summary');
+    expect(res.status).toBe(200);
+    expect(res.body.insight_types).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        insight_type: 'top_category_driver',
+        lineage_summary: expect.arrayContaining([
+          expect.objectContaining({ lineage_key: 'personal', helpful: 1 }),
+          expect.objectContaining({ lineage_key: 'household_rollup', not_helpful: 1 }),
+        ]),
+      }),
+    ]));
+    expect(res.body.top_lineage_types).toEqual(expect.arrayContaining([
+      expect.objectContaining({ insight_type: 'top_category_driver', lineage_key: 'personal' }),
+      expect.objectContaining({ insight_type: 'top_category_driver', lineage_key: 'household_rollup' }),
+    ]));
+  });
+});
+
 describe('POST /insights/dispatch-push', () => {
   it('sends push notifications for eligible unsent insight types and dedupes them', async () => {
     await db.query(
