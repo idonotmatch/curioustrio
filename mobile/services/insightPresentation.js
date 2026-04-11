@@ -36,7 +36,20 @@ export function getInsightActionDescriptor(insight, context = {}) {
   ));
 
   if (insight?.entity_type === 'item' && metadata?.group_key) {
-    return { label: 'Review recurring details', reason: 'Actionable now' };
+    switch (type) {
+      case 'recurring_price_spike':
+        return { label: 'Compare recent prices', reason: 'Worth checking' };
+      case 'buy_soon_better_price':
+        return { label: 'Check the lower price', reason: 'Actionable now' };
+      case 'recurring_repurchase_due':
+        return { label: 'Review purchase timing', reason: 'Due soon' };
+      case 'recurring_restock_window':
+        return { label: 'Decide whether to restock', reason: 'Room available' };
+      case 'recurring_cost_pressure':
+        return { label: 'Review item pressure', reason: recurringDelta >= 20 ? 'Worth checking' : 'More detail' };
+      default:
+        return { label: 'Review item detail', reason: 'Actionable now' };
+    }
   }
 
   switch (type) {
@@ -179,6 +192,16 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
       return {
         title: 'Review the recurring detail first',
         body: 'See which recurring costs are actually creating the squeeze before deciding whether you need to plan around it.',
+        cta: null,
+        route: null,
+      };
+    case 'recurring_price_spike':
+    case 'buy_soon_better_price':
+    case 'recurring_repurchase_due':
+    case 'recurring_restock_window':
+      return {
+        title: 'Review the item detail first',
+        body: 'Use the item history, merchant comparison, and recent purchases to decide whether this is worth acting on now.',
         cta: null,
         route: null,
       };

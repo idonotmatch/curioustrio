@@ -38,11 +38,11 @@ function severityForSignal(signal, deltaPercent) {
 function titleForSignal(signal, itemName) {
   switch (signal) {
     case 'price_spike':
-      return `${itemName} cost more than usual`;
+      return `${itemName} jumped in price`;
     case 'better_than_usual':
-      return `${itemName} was cheaper than usual`;
+      return `${itemName} came in below your usual price`;
     case 'cheaper_elsewhere':
-      return `${itemName} is usually cheaper elsewhere`;
+      return `${itemName} is cheaper at another merchant`;
     default:
       return itemName;
   }
@@ -52,11 +52,11 @@ function bodyForSignal(signal, insight) {
   const pct = Math.abs(Number(insight.delta_percent || 0));
   switch (signal) {
     case 'price_spike':
-      return `This purchase at ${insight.latest_merchant} was ${pct}% above your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'}.`;
+      return `${insight.latest_merchant} came in ${pct}% above your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'} for this item.`;
     case 'better_than_usual':
-      return `This purchase at ${insight.latest_merchant} came in ${pct}% below your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'}.`;
+      return `${insight.latest_merchant} came in ${pct}% below your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'} for this item.`;
     case 'cheaper_elsewhere':
-      return `${insight.cheaper_merchant} has recently been ${pct}% cheaper than ${insight.latest_merchant} for this item.`;
+      return `${insight.cheaper_merchant} has recently been about ${pct}% cheaper than ${insight.latest_merchant} for this item.`;
     default:
       return '';
   }
@@ -88,14 +88,14 @@ function toRepurchaseDueInsight(candidate, scope = 'household') {
   const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = candidate.item_name || 'A recurring purchase';
   let title = `${itemName} may be due soon`;
-  let body = `You usually buy this about every ${candidate.average_gap_days} days, and it looks like you may need it again in ${candidate.days_until_due} days.`;
+  let body = `You usually buy this about every ${candidate.average_gap_days} days, and you may need it again in ${candidate.days_until_due} days.`;
 
   if (candidate.status === 'due_today') {
     title = `${itemName} may be due today`;
-    body = `You usually buy this about every ${candidate.average_gap_days} days, and today lines up with your usual repurchase timing.`;
+    body = `Today lines up with your usual ${candidate.average_gap_days}-day repurchase timing for this item.`;
   } else if (candidate.status === 'overdue') {
     title = `${itemName} may already be due`;
-    body = `You usually buy this about every ${candidate.average_gap_days} days, and you are about ${Math.abs(candidate.days_until_due)} days past the usual repurchase window.`;
+    body = `You are about ${Math.abs(candidate.days_until_due)} days past your usual repurchase window for this item.`;
   }
 
   return {
@@ -120,8 +120,8 @@ function toBuySoonBetterPriceInsight(opportunity, scope = 'household') {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = opportunity.item_name || 'A recurring item';
-  const title = `${itemName} is cheaper right now`;
-  const body = `${opportunity.merchant} is ${opportunity.discount_percent}% below your usual ${opportunity.comparison_type === 'unit_price' ? 'unit price' : 'price'}, and this item may be due in ${Math.max(opportunity.days_until_due, 0)} days.`;
+  const title = `${itemName} looks cheaper right now`;
+  const body = `${opportunity.merchant} is ${opportunity.discount_percent}% below your usual ${opportunity.comparison_type === 'unit_price' ? 'unit price' : 'price'}, and you may need this in ${Math.max(opportunity.days_until_due, 0)} days.`;
 
   return {
     id: `buy_soon_better_price:${opportunity.group_key}:${opportunity.merchant}:${`${opportunity.observed_at}`.slice(0, 10)}`,
@@ -207,7 +207,7 @@ function buildRestockWindowInsights({ projection, watchCandidates = [], scope = 
   insights.push({
     id: `recurring_restock_window:${scopeLabel}:${candidate.group_key}:${projection.month}`,
     type: 'recurring_restock_window',
-    title: `${itemName} could fit this month`,
+    title: `${itemName} could fit this period`,
     body: scope === 'household'
       ? `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`
       : `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget personally, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`,
