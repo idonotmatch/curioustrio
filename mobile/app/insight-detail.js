@@ -91,9 +91,9 @@ function consolidatedCopy(metadata = {}) {
   if (metadata.scope_relationship !== 'personal_household_overlap') return null;
   const foldedCount = Array.isArray(metadata.related_insight_ids) ? metadata.related_insight_ids.length : 0;
   if (foldedCount > 0) {
-    return 'A similar personal or household card was folded into this one, so you can review the shared story once.';
+    return 'A similar household card was folded into this one, so you can start from your own spending pattern and then see how it carries into the shared picture.';
   }
-  return 'This card combines personal and household signals that were pointing at the same story.';
+  return 'This card starts with your personal signal and layers in the overlapping household impact.';
 }
 
 function consolidatedRows(metadata = {}) {

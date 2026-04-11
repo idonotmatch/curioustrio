@@ -574,10 +574,12 @@ describe('insightBuilder orchestration', () => {
 
     const resolved = resolveScopeOverlapCompetition([personal, household]);
     expect(resolved).toHaveLength(1);
-    expect(resolved[0].metadata.scope).toBe('household');
+    expect(resolved[0].metadata.scope).toBe('personal');
     expect(resolved[0].metadata.scope_relationship).toBe('personal_household_overlap');
-    expect(resolved[0].metadata.consolidated_scopes).toEqual(['household', 'personal']);
-    expect(resolved[0].metadata.related_insight_ids).toEqual(['personal-shopping']);
+    expect(resolved[0].metadata.consolidated_scopes).toEqual(['personal', 'household']);
+    expect(resolved[0].metadata.related_insight_ids).toEqual(['household-shopping']);
+    expect(resolved[0].title).toBe('Shopping is showing up in your spending and rolling into the household');
+    expect(resolved[0].body).toContain('starts with your pattern');
   });
 
   it('does not consolidate unrelated personal and household cards', () => {

@@ -124,7 +124,7 @@ function consolidateScopedInsightGroup(group = []) {
   if (group.length < 2) return group[0] || null;
 
   const sorted = [...group].sort((a, b) => {
-    const scopeRank = (insight) => (insight?.metadata?.scope === 'household' ? 1 : 0);
+    const scopeRank = (insight) => (insight?.metadata?.scope === 'personal' ? 1 : 0);
     return scopeRank(b) - scopeRank(a)
       || maturityRankForInsight(b) - maturityRankForInsight(a)
       || severityRank(b.severity) - severityRank(a.severity)
@@ -142,18 +142,21 @@ function consolidateScopedInsightGroup(group = []) {
   let body = primary.body;
   if (hasPersonal && hasHousehold) {
     if (primary.entity_type === 'category' && entityName) {
-      title = `${entityName} is showing up for you and the household`;
-      body = `${primary.body} Your personal and household cards were similar, so this rolls them into one shared read.`;
+      title = `${entityName} is showing up in your spending and rolling into the household`;
+      body = `${primary.body} A similar household card pointed in the same direction, so this shared read starts with your pattern and shows how it carries into the household.`;
     } else if (primary.entity_type === 'merchant' && entityName) {
-      title = `${entityName} is repeating across the picture`;
-      body = `${primary.body} Your personal and household merchant signals are similar enough to review together.`;
+      title = `${entityName} is repeating in your spending and the household`;
+      body = `${primary.body} A similar household merchant card was folded in so you can see how your pattern overlaps with the broader household picture.`;
     } else {
-      title = primary.metadata?.scope === 'household'
-        ? `${primary.title} for the household and you`
-        : primary.title;
-      body = `${primary.body} A similar ${primary.metadata?.scope === 'household' ? 'personal' : 'household'} card was folded into this one.`;
+      title = primary.title;
+      body = `${primary.body} A similar household card was folded into this one so you can start from your own spending and then see the shared impact.`;
     }
   }
+
+  const consolidatedScopes = [];
+  if (hasPersonal) consolidatedScopes.push('personal');
+  if (hasHousehold) consolidatedScopes.push('household');
+  const relatedInsightIds = companions.map((insight) => insight.id);
 
   return {
     ...primary,
@@ -162,7 +165,7 @@ function consolidateScopedInsightGroup(group = []) {
     body,
     metadata: {
       ...primary.metadata,
-      consolidated_scopes: [...new Set([primary.metadata?.scope, ...companionScopes].filter(Boolean))],
+      consolidated_scopes: consolidatedScopes,
       consolidated_from: [primary, ...companions].map((insight) => ({
         id: insight.id,
         type: insight.type,
@@ -170,7 +173,7 @@ function consolidateScopedInsightGroup(group = []) {
         maturity: insight.metadata?.maturity || null,
         severity: insight.severity || null,
       })),
-      related_insight_ids: companions.map((insight) => insight.id),
+      related_insight_ids: relatedInsightIds,
       scope_relationship: hasPersonal && hasHousehold ? 'personal_household_overlap' : 'same_scope_overlap',
     },
   };

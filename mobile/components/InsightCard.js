@@ -42,7 +42,7 @@ function insightActionLabel(insight) {
 }
 
 function insightActionReason(insight) {
-  if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 'Combined signal';
+  if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 'Your impact';
   if (insight?.metadata?.scope === 'household') return 'Shared context';
   return getInsightActionDescriptor(insight).reason;
 }
