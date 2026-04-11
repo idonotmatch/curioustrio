@@ -186,6 +186,8 @@ describe('parseExpense', () => {
     expect(result.merchant).toBe('Heather');
     expect(result.description).toBe('kids');
     expect(result.notes).toBe('payment to Heather for kids');
+    expect(result.counterparty_type).toBe('person');
+    expect(result.merchant_source).toBe('person_payment_promotion');
   });
 
   it('promotes venmo-style person payments into merchant names', () => {
@@ -197,6 +199,8 @@ describe('parseExpense', () => {
       merchant: 'Sarah',
       description: 'dinner',
       notes: 'venmo sarah for dinner',
+      counterparty_type: 'person',
+      merchant_source: 'person_payment_promotion',
     });
   });
 
@@ -209,6 +213,8 @@ describe('parseExpense', () => {
       merchant: null,
       description: 'lunch',
       notes: null,
+      counterparty_type: null,
+      merchant_source: null,
     });
   });
 });

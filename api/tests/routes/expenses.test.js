@@ -147,6 +147,38 @@ describe('POST /expenses/parse', () => {
     expect(res.body.review_fields).toContain('items');
   });
 
+  it('passes through person-payment counterparty metadata in parse responses', async () => {
+    parseExpenseDetailed.mockResolvedValueOnce({ parsed: {
+      merchant: 'Heather',
+      description: 'kids',
+      amount: 112,
+      date: '2026-04-10',
+      notes: 'payment to Heather for kids',
+      counterparty_type: 'person',
+      merchant_source: 'person_payment_promotion',
+      parse_status: 'complete',
+      review_fields: [],
+      field_confidence: {
+        merchant: 'high',
+        description: 'high',
+        amount: 'high',
+        date: 'high',
+      },
+    }});
+    assignCategory.mockResolvedValueOnce({
+      category_id: null, source: 'heuristic', confidence: 2,
+    });
+
+    const res = await request(app)
+      .post('/expenses/parse')
+      .send({ input: 'payment to Heather for kids 112', today: '2026-04-10' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.merchant).toBe('Heather');
+    expect(res.body.counterparty_type).toBe('person');
+    expect(res.body.merchant_source).toBe('person_payment_promotion');
+  });
+
   it('returns 422 when input cannot be parsed', async () => {
     parseExpenseDetailed.mockResolvedValueOnce({ parsed: null, failureReason: 'missing_amount' });
 

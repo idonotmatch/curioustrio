@@ -151,6 +151,8 @@ function normalizePersonPaymentFields({ merchant, description, notes }) {
       merchant: cleanMerchant || null,
       description: cleanDescription || null,
       notes: cleanNotes || null,
+      counterparty_type: null,
+      merchant_source: cleanMerchant ? 'model' : null,
     };
   }
 
@@ -167,6 +169,8 @@ function normalizePersonPaymentFields({ merchant, description, notes }) {
       merchant: payload.merchant || null,
       description: payload.description || cleanDescription,
       notes: cleanNotes || cleanDescription,
+      counterparty_type: 'person',
+      merchant_source: 'person_payment_promotion',
     };
   }
 
@@ -174,6 +178,8 @@ function normalizePersonPaymentFields({ merchant, description, notes }) {
     merchant: null,
     description: cleanDescription || null,
     notes: cleanNotes || null,
+    counterparty_type: null,
+    merchant_source: null,
   };
 }
 
@@ -201,6 +207,8 @@ function cleanParsedExpense(parsed, todayDate) {
     amount: Number.isFinite(amount) && amount !== 0 ? amount : null,
     date: hasValidDate ? rawDate : todayDate,
     notes: normalizedPartyFields.notes,
+    counterparty_type: normalizedPartyFields.counterparty_type,
+    merchant_source: normalizedPartyFields.merchant_source,
     payment_method: paymentMethod,
     card_label: cardLabel,
     items,
