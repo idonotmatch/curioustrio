@@ -63,14 +63,6 @@ function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'nee
     : `Imported from Gmail (${reason})`;
 }
 
-function shouldAutoConfirmImport({ senderQuality, reviewMode, importedAsPendingReview, notes }) {
-  if (importedAsPendingReview) return false;
-  if (reviewMode !== 'quick_check') return false;
-  if (senderQuality?.level !== 'trusted') return false;
-  if (/needs review/i.test(`${notes || ''}`)) return false;
-  return true;
-}
-
 function shouldSoftenSkipBehavior(senderQuality = {}) {
   const metrics = senderQuality?.metrics || {};
   return (
@@ -259,13 +251,6 @@ async function importForUser(user) {
         from,
         body,
       });
-      const shouldAutoConfirm = shouldAutoConfirmImport({
-        senderQuality,
-        reviewMode,
-        importedAsPendingReview,
-        notes: parsed.notes,
-      });
-
       const expense = await Expense.create({
         userId: user.id,
         householdId: user.household_id,
@@ -274,7 +259,7 @@ async function importForUser(user) {
         date: parsed.date,
         categoryId: category_id,
         source: 'email',
-        status: shouldAutoConfirm ? 'confirmed' : 'pending',
+        status: 'pending',
         notes: parsed.notes,
         placeName: location?.place_name || null,
         address: location?.address || null,
@@ -315,14 +300,7 @@ async function importForUser(user) {
       } else {
         outcomes.imported_full_review++;
       }
-      if (shouldAutoConfirm) {
-        outcomes.imported_auto_confirmed++;
-      }
-      if (!shouldAutoConfirm && (importedAsPendingReview || /needs review/i.test(parsed.notes || ''))) {
-        outcomes.imported_pending_review++;
-      } else {
-        outcomes.imported_parsed++;
-      }
+      outcomes.imported_pending_review++;
     } catch (e) {
       console.error(`[gmail import] user=${user.id} msg=${msg.id}:`, e.message);
       increment(outcomes.failed_reasons, e.code || e.message || 'unknown_error');

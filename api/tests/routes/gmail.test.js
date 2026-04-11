@@ -193,8 +193,8 @@ describe('POST /gmail/import', () => {
     expect(res.body.skipped).toBe(1);
     expect(res.body.failed).toBe(0);
     expect(res.body.outcomes).toMatchObject({
-      imported_parsed: 1,
-      imported_pending_review: 0,
+      imported_parsed: 0,
+      imported_pending_review: 1,
       imported_auto_confirmed: 0,
       imported_fast_lane: 0,
       imported_items_first: 0,
@@ -479,7 +479,7 @@ describe('POST /gmail/import', () => {
     expect(expense.rows[0].notes).toMatch(/needs review/i);
   });
 
-  it('auto-confirms high-trust fast-lane Gmail imports', async () => {
+  it('keeps high-trust fast-lane Gmail imports in pending with quick-check routing', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
        VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
@@ -541,15 +541,15 @@ describe('POST /gmail/import', () => {
     const res = await request(app).post('/gmail/import');
     expect(res.status).toBe(200);
     expect(res.body.imported).toBe(1);
-    expect(res.body.outcomes.imported_auto_confirmed).toBe(1);
+    expect(res.body.outcomes.imported_auto_confirmed).toBe(0);
     expect(res.body.outcomes.imported_fast_lane).toBe(1);
-    expect(res.body.outcomes.imported_pending_review).toBe(0);
+    expect(res.body.outcomes.imported_pending_review).toBe(1);
 
     const expense = await db.query(
       `SELECT status, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [userId]
     );
-    expect(expense.rows[0].status).toBe('confirmed');
+    expect(expense.rows[0].status).toBe('pending');
     expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
   });
 
