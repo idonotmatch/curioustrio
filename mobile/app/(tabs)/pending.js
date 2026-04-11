@@ -70,6 +70,10 @@ function pendingSourcePresentation(item = {}) {
   };
 }
 
+function isQuickCheckPending(item = {}) {
+  return item?.gmail_review_hint?.review_mode === 'quick_check';
+}
+
 export default function PendingScreen() {
   const router = useRouter();
   const { expenses, loading, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
@@ -194,7 +198,21 @@ export default function PendingScreen() {
                     })()
                   ) : null}
                 </View>
-                <Text style={styles.amount}>${Number(item.amount).toFixed(2)}</Text>
+                <View style={styles.rowRight}>
+                  <Text style={styles.amount}>${Number(item.amount).toFixed(2)}</Text>
+                  {isQuickCheckPending(item) ? (
+                    <TouchableOpacity
+                      style={styles.confirmChip}
+                      onPress={(event) => {
+                        event.stopPropagation?.();
+                        approve(item.id);
+                      }}
+                      activeOpacity={0.82}
+                    >
+                      <Text style={styles.confirmChipText}>Confirm</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </TouchableOpacity>
             </Swipeable>
             {item.duplicate_flags?.length > 0 && (
@@ -260,7 +278,17 @@ const styles = StyleSheet.create({
   modeChipFull: { backgroundColor: 'rgba(147,197,253,0.08)', borderColor: 'rgba(147,197,253,0.28)' },
   modeChipTextFull: { color: '#bfdbfe' },
   hintDetail: { fontSize: 12, color: '#8a8a8a' },
+  rowRight: { alignItems: 'flex-end', gap: 6 },
   amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
+  confirmChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.3)',
+    backgroundColor: 'rgba(134,239,172,0.08)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  confirmChipText: { fontSize: 11, fontWeight: '700', color: '#bbf7d0' },
 
   approveAction: {
     backgroundColor: '#22c55e',
