@@ -11,6 +11,39 @@ const { importForUser } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
+function classifyGmailImportError(err) {
+  const message = `${err?.message || ''}`;
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('invalid_grant')
+    || normalized.includes('invalid credentials')
+    || normalized.includes('token has been expired')
+    || normalized.includes('gmail not connected')
+  ) {
+    return {
+      status: 401,
+      message: 'Gmail connection expired. Reconnect Gmail and try again.',
+    };
+  }
+
+  if (
+    normalized.includes('google_client_id')
+    || normalized.includes('google_client_secret')
+    || normalized.includes('google_redirect_uri')
+  ) {
+    return {
+      status: 500,
+      message: 'Gmail sync is not configured correctly.',
+    };
+  }
+
+  return {
+    status: 502,
+    message: 'Gmail sync could not start. Try again in a moment.',
+  };
+}
+
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
   try {
@@ -64,7 +97,15 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
     const result = await importForUser(user);
     await OAuthToken.markSynced(user.id);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) {
+    const classified = classifyGmailImportError(err);
+    console.error('[gmail import] top-level failure:', {
+      user_provider_uid: req.userId,
+      status: classified.status,
+      message: err?.message || null,
+    });
+    res.status(classified.status).json({ error: classified.message });
+  }
 });
 
 // GET /gmail/import-summary — aggregate recent import outcomes for the authenticated user

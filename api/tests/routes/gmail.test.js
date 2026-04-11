@@ -244,6 +244,22 @@ describe('POST /gmail/import', () => {
     expect(res.body.outcomes.failed_reasons['Network error']).toBe(1);
   });
 
+  it('returns a reconnect message when Gmail credentials are expired before sync starts', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockRejectedValue(new Error('invalid_grant'));
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({
+      error: 'Gmail connection expired. Reconnect Gmail and try again.',
+    });
+  });
+
   it('imports uncertain emails into pending when a likely amount can be recovered', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
