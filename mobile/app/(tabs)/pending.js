@@ -70,6 +70,23 @@ function reviewModePresentation(hint = {}) {
   };
 }
 
+function pendingSourcePresentation(item = {}) {
+  if (item?.source === 'email') {
+    return {
+      label: 'Gmail import',
+      icon: 'mail-outline',
+      accent: styles.sourceChipEmail,
+      accentText: styles.sourceChipTextEmail,
+    };
+  }
+  return {
+    label: 'Pending',
+    icon: 'time-outline',
+    accent: styles.sourceChipDefault,
+    accentText: styles.sourceChipTextDefault,
+  };
+}
+
 export default function PendingScreen() {
   const router = useRouter();
   const { expenses, loading, refresh } = usePendingExpenses();
@@ -153,7 +170,19 @@ export default function PendingScreen() {
                   <Text style={styles.merchant} numberOfLines={1}>
                     {item.merchant || item.description || '—'}
                   </Text>
-                  <Text style={styles.date}>{formatDate(item.date)}</Text>
+                  <View style={styles.metaRow}>
+                    <Text style={styles.date}>{formatDate(item.date)}</Text>
+                    <View style={[styles.sourceChip, pendingSourcePresentation(item).accent]}>
+                      <Ionicons
+                        name={pendingSourcePresentation(item).icon}
+                        size={11}
+                        color={pendingSourcePresentation(item).accentText.color}
+                      />
+                      <Text style={[styles.sourceChipText, pendingSourcePresentation(item).accentText]}>
+                        {pendingSourcePresentation(item).label}
+                      </Text>
+                    </View>
+                  </View>
                   {item.gmail_review_hint ? (
                     (() => {
                       const mode = reviewModePresentation(item.gmail_review_hint);
@@ -242,6 +271,21 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, marginRight: 12 },
   merchant: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  sourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  sourceChipDefault: { backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.24)' },
+  sourceChipEmail: { backgroundColor: 'rgba(96,165,250,0.12)', borderColor: 'rgba(96,165,250,0.3)' },
+  sourceChipText: { fontSize: 11, fontWeight: '700' },
+  sourceChipTextDefault: { color: '#cbd5e1' },
+  sourceChipTextEmail: { color: '#93c5fd' },
   hintWrap: { marginTop: 6, gap: 4 },
   hintChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   hintChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },

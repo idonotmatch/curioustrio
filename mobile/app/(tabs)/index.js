@@ -169,6 +169,16 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
   );
 }
 
+function pendingPreviewLabel(expense = {}) {
+  if (expense?.source === 'email') {
+    const mode = expense?.gmail_review_hint?.review_mode;
+    if (mode === 'quick_check') return 'Gmail import · Quick check';
+    if (mode === 'items_first') return 'Gmail import · Items first';
+    return 'Gmail import · Review';
+  }
+  return 'Pending review';
+}
+
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
@@ -292,6 +302,7 @@ export default function FeedScreen() {
               >
                 <View style={styles.pendingRowMain}>
                   <Text style={styles.pendingMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
+                  <Text style={styles.pendingMeta} numberOfLines={1}>{pendingPreviewLabel(e)}</Text>
                 </View>
                 <Text style={styles.pendingAmount}>${Number(e.amount).toFixed(2)}</Text>
               </TouchableOpacity>
@@ -478,6 +489,7 @@ const styles = StyleSheet.create({
   pendingRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingRowMain: { flex: 1, marginRight: 8 },
   pendingMerchant: { fontSize: 14, color: '#f5f5f5' },
+  pendingMeta: { fontSize: 11, color: '#8faed8', marginTop: 3, fontWeight: '600' },
   pendingAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
   pendingMoreButton: {
     flexDirection: 'row',
