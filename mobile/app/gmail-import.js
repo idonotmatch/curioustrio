@@ -36,9 +36,7 @@ export default function GmailImportScreen() {
   const [importLogLoading, setImportLogLoading] = useState(false);
   const [importSummaryLoading, setImportSummaryLoading] = useState(false);
   const [gmailSyncing, setGmailSyncing] = useState(false);
-  const [senderPreferenceSaving, setSenderPreferenceSaving] = useState({});
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
-  const [logFeedbackSaving, setLogFeedbackSaving] = useState({});
   const shouldForceMockPreview = FORCE_MOCK_GMAIL_IMPORT_PREVIEW && __DEV__;
   const isUsingMockData = shouldForceMockPreview || (__DEV__ && !gmailStatus?.connected);
   const displayGmailStatus = isUsingMockData
@@ -124,28 +122,6 @@ export default function GmailImportScreen() {
     return getImportReasonMeta(entry.skip_reason).detail;
   }
 
-  function feedbackLabel(value) {
-    switch (value) {
-      case 'should_have_imported': return 'Marked should have imported';
-      case 'didnt_need_review': return 'Marked did not need review';
-      case 'needed_more_review': return 'Marked needed more review';
-      default: return null;
-    }
-  }
-
-  function feedbackOptionsForEntry(entry) {
-    if (entry.status === 'skipped' || entry.status === 'failed') {
-      return [{ key: 'should_have_imported', label: 'Should have imported' }];
-    }
-    if (entry.status === 'imported') {
-      return [
-        { key: 'didnt_need_review', label: "Didn't need review" },
-        { key: 'needed_more_review', label: 'Needed more review' },
-      ];
-    }
-    return [];
-  }
-
   function formatRelativeTime(value) {
     if (!value) return null;
     const diffMs = Date.now() - new Date(value).getTime();
@@ -187,6 +163,12 @@ function formatSenderReviewPath(sender = {}) {
   if ((reliability.items_first_count || 0) > 0) return 'Often needs item cleanup';
   if ((reliability.full_review_count || 0) > 0) return 'Usually opened for full review';
   return 'Still learning';
+}
+
+function senderPolicyLabel(sender = {}) {
+  if (sender.sender_preference?.force_review) return 'Always kept in review';
+  if (sender.review_path_reliability?.fast_lane_eligible) return 'Eligible for quick review';
+  return 'Review path adapts from recent history';
 }
 
 function rankSenderCard(sender = {}) {
@@ -275,37 +257,6 @@ function rankSenderCard(sender = {}) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
     } finally {
       setGmailSyncing(false);
-    }
-  }
-
-  async function toggleSenderForceReview(senderDomain, forceReview) {
-    setSenderPreferenceSaving(prev => ({ ...prev, [senderDomain]: true }));
-    try {
-      await api.post('/gmail/sender-preferences', {
-        sender_domain: senderDomain,
-        force_review: forceReview,
-      });
-      await loadImportSummary();
-    } catch (e) {
-      Alert.alert('Gmail sender settings', e?.message || 'Could not update this sender preference');
-    } finally {
-      setSenderPreferenceSaving(prev => ({ ...prev, [senderDomain]: false }));
-    }
-  }
-
-  async function submitLogFeedback(logId, feedback) {
-    setLogFeedbackSaving((prev) => ({ ...prev, [logId]: feedback }));
-    try {
-      const updated = await api.post(`/gmail/import-log/${logId}/feedback`, { feedback });
-      setImportLog((current) => current.map((entry) => (
-        entry.id === logId
-          ? { ...entry, user_feedback: updated.user_feedback, user_feedback_at: updated.user_feedback_at }
-          : entry
-      )));
-    } catch (e) {
-      Alert.alert('Import log feedback', e?.message || 'Could not save feedback');
-    } finally {
-      setLogFeedbackSaving((prev) => ({ ...prev, [logId]: null }));
     }
   }
 
@@ -454,22 +405,12 @@ function rankSenderCard(sender = {}) {
                             Usually corrected: {sender.top_changed_fields.map((entry) => entry.field.replace(/_/g, ' ')).join(', ')}
                           </Text>
                         ) : null}
-                        <TouchableOpacity
-                          style={[
-                            styles.senderTrustToggle,
-                            sender.sender_preference?.force_review && styles.senderTrustToggleActive,
-                            senderPreferenceSaving[sender.sender_domain] && styles.actionBtnDisabled,
-                          ]}
-                          onPress={() => toggleSenderForceReview(sender.sender_domain, !sender.sender_preference?.force_review)}
-                          disabled={isUsingMockData || !!senderPreferenceSaving[sender.sender_domain]}
-                          >
-                          <Text style={[
-                            styles.senderTrustToggleText,
-                            sender.sender_preference?.force_review && styles.senderTrustToggleTextActive,
-                          ]}>
-                            {sender.sender_preference?.force_review ? 'Keep reviewing' : 'Allow quick review'}
-                          </Text>
-                        </TouchableOpacity>
+                        <Text style={[
+                          styles.senderTrustPolicy,
+                          sender.sender_preference?.force_review && styles.senderTrustPolicyStrong,
+                        ]}>
+                          {senderPolicyLabel(sender)}
+                        </Text>
                       </View>
                       ))}
                       {senderCards.length > 3 ? (
@@ -537,30 +478,11 @@ function rankSenderCard(sender = {}) {
                           {formatLogDetail(entry)}
                         </Text>
                       ) : null}
-                      {entry.user_feedback ? (
-                        <Text style={styles.logFeedbackSaved}>
-                          {feedbackLabel(entry.user_feedback)}
+                      {entry.review_source === 'gmail' ? (
+                        <Text style={styles.logContext}>
+                          Routed to {formatLogStatus(entry)}
+                          {entry.review_required ? ' before confirmation' : ''}
                         </Text>
-                      ) : null}
-                      {!entry.user_feedback && feedbackOptionsForEntry(entry).length > 0 ? (
-                        <View style={styles.logFeedbackRow}>
-                          {feedbackOptionsForEntry(entry).map((option) => (
-                            <TouchableOpacity
-                              key={option.key}
-                              style={[
-                                styles.logFeedbackChip,
-                                logFeedbackSaving[entry.id] === option.key && styles.actionBtnDisabled,
-                                isUsingMockData && styles.actionBtnDisabled,
-                              ]}
-                              onPress={() => submitLogFeedback(entry.id, option.key)}
-                              disabled={isUsingMockData || !!logFeedbackSaving[entry.id]}
-                            >
-                              <Text style={styles.logFeedbackChipText}>
-                                {logFeedbackSaving[entry.id] === option.key ? 'Saving…' : option.label}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
                       ) : null}
                     </View>
                     <View style={styles.logRowRight}>
@@ -624,22 +546,8 @@ const styles = StyleSheet.create({
   senderTrustChipText: { color: '#f5f5f5', fontSize: 11, fontWeight: '700' },
   senderTrustMeta: { color: '#777', fontSize: 11, marginTop: 6 },
   senderTrustDetail: { color: '#555', fontSize: 11, marginTop: 4, lineHeight: 16 },
-  senderTrustToggle: {
-    marginTop: 10,
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#151515',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  senderTrustToggleActive: {
-    borderColor: '#fcd34d',
-    backgroundColor: 'rgba(245,158,11,0.12)',
-  },
-  senderTrustToggleText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
-  senderTrustToggleTextActive: { color: '#fcd34d' },
+  senderTrustPolicy: { color: '#8ab4ff', fontSize: 11, marginTop: 8, fontWeight: '600' },
+  senderTrustPolicyStrong: { color: '#fcd34d' },
   expandToggle: {
     marginTop: 2,
     flexDirection: 'row',
@@ -660,17 +568,7 @@ const styles = StyleSheet.create({
   logSubject: { color: '#f5f5f5', fontSize: 13 },
   logFrom: { color: '#555', fontSize: 11, marginTop: 2 },
   logDetail: { color: '#555', fontSize: 11, marginTop: 4 },
-  logFeedbackSaved: { color: '#8ab4ff', fontSize: 11, marginTop: 6 },
-  logFeedbackRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  logFeedbackChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#141414',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  logFeedbackChipText: { color: '#cfcfcf', fontSize: 11, fontWeight: '600' },
+  logContext: { color: '#8ab4ff', fontSize: 11, marginTop: 6 },
   logRowRight: { alignItems: 'flex-end' },
   logStatus: { fontSize: 11, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   logStatusImported: { color: '#4ade80' },
