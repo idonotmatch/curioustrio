@@ -71,7 +71,12 @@ function pendingSourcePresentation(item = {}) {
 }
 
 function isQuickCheckPending(item = {}) {
-  return item?.gmail_review_hint?.review_mode === 'quick_check';
+  if (item?.gmail_review_hint?.review_mode !== 'quick_check') return false;
+  if (Array.isArray(item?.duplicate_flags) && item.duplicate_flags.length > 0) return false;
+  const likelyChangedFields = Array.isArray(item?.gmail_review_hint?.likely_changed_fields)
+    ? item.gmail_review_hint.likely_changed_fields.filter(Boolean)
+    : [];
+  return likelyChangedFields.length <= 1;
 }
 
 export default function PendingScreen() {

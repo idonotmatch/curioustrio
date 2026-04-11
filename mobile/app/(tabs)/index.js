@@ -187,7 +187,12 @@ function pendingGuidance(expense = {}) {
 }
 
 function isQuickCheckPending(expense = {}) {
-  return expense?.gmail_review_hint?.review_mode === 'quick_check';
+  if (expense?.gmail_review_hint?.review_mode !== 'quick_check') return false;
+  if (Array.isArray(expense?.duplicate_flags) && expense.duplicate_flags.length > 0) return false;
+  const likelyChangedFields = Array.isArray(expense?.gmail_review_hint?.likely_changed_fields)
+    ? expense.gmail_review_hint.likely_changed_fields.filter(Boolean)
+    : [];
+  return likelyChangedFields.length <= 1;
 }
 
 export default function FeedScreen() {
