@@ -116,6 +116,67 @@ function buildNlDiagnostics(input, raw = null) {
   };
 }
 
+function titleCaseWords(value) {
+  return `${value || ''}`
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function extractPersonPaymentPayload(prefixPattern, description) {
+  const match = `${description || ''}`.trim().match(prefixPattern);
+  if (!match) return null;
+
+  const remainder = `${match[1] || ''}`.trim();
+  if (!remainder) return null;
+
+  const [personSegment, ...tailSegments] = remainder.split(/\s+for\s+/i);
+  const personName = titleCaseWords(personSegment.trim());
+  if (!personName) return null;
+
+  return {
+    merchant: personName,
+    description: tailSegments.join(' for ').trim() || description,
+  };
+}
+
+function normalizePersonPaymentFields({ merchant, description, notes }) {
+  const cleanMerchant = `${merchant || ''}`.trim();
+  const cleanDescription = `${description || ''}`.trim();
+  const cleanNotes = `${notes || ''}`.trim();
+
+  if (cleanMerchant || !cleanDescription) {
+    return {
+      merchant: cleanMerchant || null,
+      description: cleanDescription || null,
+      notes: cleanNotes || null,
+    };
+  }
+
+  const patterns = [
+    /^(?:payment|pay(?:ment)?)\s+to\s+(.+)$/i,
+    /^(?:paid|pay)\s+(.+?)(?:\s+back)?$/i,
+    /^(?:venmo|zelle|paypal)\s+(.+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const payload = extractPersonPaymentPayload(pattern, cleanDescription);
+    if (!payload) continue;
+    return {
+      merchant: payload.merchant || null,
+      description: payload.description || cleanDescription,
+      notes: cleanNotes || cleanDescription,
+    };
+  }
+
+  return {
+    merchant: null,
+    description: cleanDescription || null,
+    notes: cleanNotes || null,
+  };
+}
+
 function cleanParsedExpense(parsed, todayDate) {
   if (!parsed || typeof parsed !== 'object') return null;
 
@@ -127,13 +188,19 @@ function cleanParsedExpense(parsed, todayDate) {
   const items = Array.isArray(parsed.items) ? parsed.items : null;
   const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
   const cardLabel = typeof parsed.card_label === 'string' && parsed.card_label.trim() ? parsed.card_label.trim() : null;
+  const noteText = typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null;
+  const normalizedPartyFields = normalizePersonPaymentFields({
+    merchant,
+    description,
+    notes: noteText,
+  });
 
   const normalized = {
-    merchant: merchant || null,
-    description: description || null,
+    merchant: normalizedPartyFields.merchant,
+    description: normalizedPartyFields.description,
     amount: Number.isFinite(amount) && amount !== 0 ? amount : null,
     date: hasValidDate ? rawDate : todayDate,
-    notes: typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null,
+    notes: normalizedPartyFields.notes,
     payment_method: paymentMethod,
     card_label: cardLabel,
     items,
@@ -229,4 +296,10 @@ async function parseExpenseDetailed(input, todayDate) {
   return { parsed: null, failureReason, raw, diagnostics };
 }
 
-module.exports = { parseExpense, parseExpenseDetailed, cleanParsedExpense, parseJsonWithRecovery };
+module.exports = {
+  parseExpense,
+  parseExpenseDetailed,
+  cleanParsedExpense,
+  parseJsonWithRecovery,
+  normalizePersonPaymentFields,
+};

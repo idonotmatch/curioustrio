@@ -1,4 +1,9 @@
-const { parseExpense, cleanParsedExpense, parseJsonWithRecovery } = require('../../src/services/nlParser');
+const {
+  parseExpense,
+  cleanParsedExpense,
+  parseJsonWithRecovery,
+  normalizePersonPaymentFields,
+} = require('../../src/services/nlParser');
 
 // Mock Claude SDK - singleton instance shared across all constructor calls
 jest.mock('@anthropic-ai/sdk', () => {
@@ -164,5 +169,46 @@ describe('parseExpense', () => {
     }, '2026-03-20');
 
     expect(result).toBeNull();
+  });
+
+  it('promotes person-to-person payment names into merchant when the model leaves merchant null', () => {
+    const result = cleanParsedExpense({
+      merchant: null,
+      description: 'payment to Heather for kids',
+      amount: 112,
+      date: '2026-04-10',
+      notes: 'payment to Heather for kids',
+      payment_method: null,
+      card_label: null,
+      items: null,
+    }, '2026-04-10');
+
+    expect(result.merchant).toBe('Heather');
+    expect(result.description).toBe('kids');
+    expect(result.notes).toBe('payment to Heather for kids');
+  });
+
+  it('promotes venmo-style person payments into merchant names', () => {
+    expect(normalizePersonPaymentFields({
+      merchant: null,
+      description: 'venmo sarah for dinner',
+      notes: null,
+    })).toEqual({
+      merchant: 'Sarah',
+      description: 'dinner',
+      notes: 'venmo sarah for dinner',
+    });
+  });
+
+  it('leaves ordinary description-only expenses alone', () => {
+    expect(normalizePersonPaymentFields({
+      merchant: null,
+      description: 'lunch',
+      notes: null,
+    })).toEqual({
+      merchant: null,
+      description: 'lunch',
+      notes: null,
+    });
   });
 });
