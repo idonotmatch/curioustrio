@@ -50,21 +50,21 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
       key: 'amount',
       label: 'Amount',
       value: `$${Math.abs(Number(expense?.amount || 0)).toFixed(2)}`,
-      reason: gmailReviewHint?.amount_evidence || 'Make sure this reflects the final charged total.',
+      reason: 'Confirm the final charged total.',
       weight: likelySet.has('amount') ? 100 : (isItemsFirst ? 50 : 60),
     },
     {
       key: 'date',
       label: 'Date',
       value: formattedDate,
-      reason: gmailReviewHint?.date_evidence || 'Make sure this is the purchase day you want to track.',
+      reason: 'Confirm the purchase date you want to track.',
       weight: likelySet.has('date') ? 95 : (isItemsFirst ? 40 : 55),
     },
     {
       key: 'merchant',
       label: 'Merchant',
       value: expense?.merchant || '—',
-      reason: gmailReviewHint?.merchant_evidence || 'Make sure the sender and subject match the merchant name.',
+      reason: 'Confirm the merchant name.',
       weight: likelySet.has('merchant') ? 90 : (isItemsFirst ? 35 : 50),
     },
     {
@@ -80,10 +80,7 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
 
   return candidates
     .sort((a, b) => b.weight - a.weight)
-    .map((field, index) => ({
-      ...field,
-      priority: index === 0 ? 'Most worth checking' : index === 1 ? 'Also worth checking' : null,
-    }));
+    .slice(0, 4);
 }
 
 function parseExpenseParam(value) {
@@ -508,18 +505,14 @@ export default function ExpenseDetailScreen() {
         <View style={styles.priorityFieldsCard}>
           <View style={styles.priorityFieldsHeader}>
             <View>
-              <Text style={styles.priorityFieldsEyebrow}>
-                {isQuickCheckReview ? 'Quickest check' : 'Most worth checking'}
-              </Text>
+              <Text style={styles.priorityFieldsEyebrow}>Check these details</Text>
               <Text style={styles.priorityFieldsTitle}>
-                {isQuickCheckReview ? 'A fast confirmation is probably enough' : 'Focus here before approving'}
+                {isItemsFirstReview ? 'Start with the items, then confirm the basics' : 'Confirm the key facts before approving'}
               </Text>
             </View>
             {!editing ? (
               <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
-                <Text style={styles.priorityFieldsAction}>
-                  {isItemsFirstReview ? 'Review items' : isQuickCheckReview ? 'Quick edit' : 'Edit fields'}
-                </Text>
+                <Text style={styles.priorityFieldsAction}>Edit</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -532,11 +525,7 @@ export default function ExpenseDetailScreen() {
             >
               <View style={styles.priorityFieldTop}>
                 <Text style={styles.priorityFieldLabel}>{field.label}</Text>
-                {field.priority ? (
-                  <View style={styles.priorityBadge}>
-                    <Text style={styles.priorityBadgeText}>{field.priority}</Text>
-                  </View>
-                ) : null}
+                <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
               </View>
               <Text style={styles.priorityFieldValue}>{field.value}</Text>
               <Text style={styles.priorityFieldReason}>{field.reason}</Text>
@@ -1068,8 +1057,6 @@ const styles = StyleSheet.create({
   priorityFieldRowActive: { backgroundColor: '#0f141d', marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 8 },
   priorityFieldTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },
   priorityFieldLabel: { color: '#d6d6d6', fontSize: 12, fontWeight: '600', flex: 1, minWidth: 0, paddingTop: 2 },
-  priorityBadge: { backgroundColor: '#1a2432', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, flexShrink: 0 },
-  priorityBadgeText: { color: '#aac7ff', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   priorityFieldValue: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginTop: 5 },
   priorityFieldReason: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
   reviewFieldsHeader: {
