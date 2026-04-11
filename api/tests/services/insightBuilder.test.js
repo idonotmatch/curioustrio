@@ -213,6 +213,77 @@ describe('insightBuilder orchestration', () => {
     expect(selected[0].id).toBe('opp-1');
   });
 
+  it('prefers the lineage variant with stronger portfolio feedback history', () => {
+    const feedbackSummary = new Map([
+      ['top_category_driver', {
+        shown: 2,
+        helpful: 0,
+        not_helpful: 0,
+        dismissed: 0,
+        acted: 0,
+        reasons: {},
+        outcomes: {},
+        reviews: {},
+        lineage: {
+          personal: {
+            shown: 3,
+            helpful: 2,
+            not_helpful: 0,
+            dismissed: 0,
+            acted: 1,
+            reasons: {},
+            outcomes: {},
+            reviews: {},
+          },
+          household_rollup: {
+            shown: 3,
+            helpful: 0,
+            not_helpful: 2,
+            dismissed: 1,
+            acted: 0,
+            reasons: {},
+            outcomes: {},
+            reviews: {},
+          },
+        },
+        last_negative_at: null,
+        last_helpful_at: null,
+        last_acted_at: null,
+      }],
+    ]);
+
+    const selected = orchestrateInsightPortfolio([
+      buildInsight({
+        id: 'household-driver',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: {
+          scope: 'household',
+          month: '2026-04',
+          category_key: 'groceries',
+          hierarchy_level: 'household_rollup',
+          scope_origin: 'household',
+          rolls_up_from_personal: true,
+        },
+      }),
+      buildInsight({
+        id: 'personal-driver',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: {
+          scope: 'personal',
+          month: '2026-04',
+          category_key: 'dining',
+          hierarchy_level: 'personal',
+          scope_origin: 'personal',
+          rolls_up_from_personal: false,
+        },
+      }),
+    ], feedbackSummary, 1);
+
+    expect(selected[0].id).toBe('personal-driver');
+  });
+
   it('builds a budget setup usage fallback when spending exists but no budget is set', () => {
     const insights = buildUsageFallbackInsights({
       user: { id: 'user-1' },

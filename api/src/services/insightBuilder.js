@@ -7,7 +7,7 @@ const { inferOutcomeEventsForUser } = require('./insightOutcomeInference');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
-const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight } = require('./insightFeedbackSummary');
+const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight, normalizeLineageKey } = require('./insightFeedbackSummary');
 const {
   USAGE_INSIGHT_THRESHOLDS,
   buildEarlyUsageInsights,
@@ -754,32 +754,39 @@ function narrativeTheme(insight) {
 function aggregatePortfolioFeedback(feedbackSummary = new Map()) {
   const family = new Map();
   const theme = new Map();
+  const familyLineage = new Map();
+  const themeLineage = new Map();
+
+  const addToBucket = (bucket, key, stats = {}) => {
+    const current = bucket.get(key) || {
+      shown: 0,
+      helpful: 0,
+      not_helpful: 0,
+      dismissed: 0,
+      acted: 0,
+    };
+    current.shown += Number(stats.shown || 0);
+    current.helpful += Number(stats.helpful || 0);
+    current.not_helpful += Number(stats.not_helpful || 0);
+    current.dismissed += Number(stats.dismissed || 0);
+    current.acted += Number(stats.acted || 0);
+    bucket.set(key, current);
+  };
 
   for (const [insightType, stats] of feedbackSummary.entries()) {
     const familyKey = portfolioFamily({ type: insightType });
     const themeKey = narrativeTheme({ type: insightType });
 
-    const addToBucket = (bucket, key) => {
-      const current = bucket.get(key) || {
-        shown: 0,
-        helpful: 0,
-        not_helpful: 0,
-        dismissed: 0,
-        acted: 0,
-      };
-      current.shown += Number(stats.shown || 0);
-      current.helpful += Number(stats.helpful || 0);
-      current.not_helpful += Number(stats.not_helpful || 0);
-      current.dismissed += Number(stats.dismissed || 0);
-      current.acted += Number(stats.acted || 0);
-      bucket.set(key, current);
-    };
+    addToBucket(family, familyKey, stats);
+    addToBucket(theme, themeKey, stats);
 
-    addToBucket(family, familyKey);
-    addToBucket(theme, themeKey);
+    for (const [lineageKey, lineageStats] of Object.entries(stats.lineage || {})) {
+      addToBucket(familyLineage, `${familyKey}:${lineageKey}`, lineageStats);
+      addToBucket(themeLineage, `${themeKey}:${lineageKey}`, lineageStats);
+    }
   }
 
-  return { family, theme };
+  return { family, theme, familyLineage, themeLineage };
 }
 
 function portfolioBucketAdjustment(stats = {}) {
@@ -801,10 +808,21 @@ function portfolioBucketAdjustment(stats = {}) {
   return score;
 }
 
-function portfolioOutcomeAdjustment(insight, portfolioFeedback = { family: new Map(), theme: new Map() }) {
+function portfolioOutcomeAdjustment(insight, portfolioFeedback = {
+  family: new Map(),
+  theme: new Map(),
+  familyLineage: new Map(),
+  themeLineage: new Map(),
+}) {
+  const lineageKey = normalizeLineageKey(insight);
   const familyStats = portfolioFeedback.family.get(portfolioFamily(insight));
   const themeStats = portfolioFeedback.theme.get(narrativeTheme(insight));
-  return portfolioBucketAdjustment(familyStats) + portfolioBucketAdjustment(themeStats) * 0.75;
+  const familyLineageStats = portfolioFeedback.familyLineage.get(`${portfolioFamily(insight)}:${lineageKey}`);
+  const themeLineageStats = portfolioFeedback.themeLineage.get(`${narrativeTheme(insight)}:${lineageKey}`);
+  return portfolioBucketAdjustment(familyStats)
+    + portfolioBucketAdjustment(themeStats) * 0.75
+    + portfolioBucketAdjustment(familyLineageStats) * 0.8
+    + portfolioBucketAdjustment(themeLineageStats) * 0.5;
 }
 
 function orchestrationPenalty(insight, selected = []) {
