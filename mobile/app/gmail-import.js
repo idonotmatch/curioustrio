@@ -107,10 +107,13 @@ export default function GmailImportScreen() {
   }
 
   function formatLogStatus(entry) {
+    if (entry.expense_status === 'confirmed') return 'reviewed';
+    if (entry.expense_status === 'dismissed') return 'dismissed';
     if (entry.review_action === 'approved') return 'reviewed';
     if (entry.review_action === 'edited') return 'edited';
     if (entry.review_action === 'dismissed') return 'dismissed';
     if (entry.status === 'imported' && entry.review_source === 'gmail') {
+      if (entry.review_required === false) return 'handled';
       const mode = entry.review_mode || 'full_review';
       if (mode === 'quick_check') return 'quick check';
       if (mode === 'items_first') return 'items first';
@@ -485,9 +488,15 @@ function rankSenderCard(sender = {}) {
                       ) : null}
                       {entry.review_source === 'gmail' ? (
                         <Text style={styles.logContext}>
-                          {entry.review_action
-                            ? `You ${formatLogStatus(entry)} this import`
-                            : `Added to your review queue as ${formatLogStatus(entry)}`}
+                          {entry.expense_status === 'pending'
+                            ? `Added to your review queue as ${formatLogStatus(entry)}`
+                            : entry.expense_status === 'confirmed'
+                              ? 'You already reviewed this import'
+                              : entry.expense_status === 'dismissed'
+                                ? 'You dismissed this import'
+                                : entry.review_action
+                                  ? `You ${formatLogStatus(entry)} this import`
+                                  : `This import was ${formatLogStatus(entry)}`}
                         </Text>
                       ) : null}
                     </View>
