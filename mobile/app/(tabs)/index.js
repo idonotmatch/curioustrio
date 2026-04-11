@@ -195,7 +195,7 @@ export default function FeedScreen() {
   const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
-  const { expenses: pending, refresh: refreshPending } = usePendingExpenses();
+  const { expenses: pending, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
 
@@ -227,6 +227,10 @@ export default function FeedScreen() {
   }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending, isMultiMember]));
 
   async function dismissPending(id) {
+    if (isUsingMockPending) {
+      resolveMockExpense(id);
+      return;
+    }
     try {
       await api.post(`/expenses/${id}/dismiss`);
       await removeExpenseSnapshot(id);
@@ -237,6 +241,10 @@ export default function FeedScreen() {
   }
 
   async function approvePending(id) {
+    if (isUsingMockPending) {
+      resolveMockExpense(id);
+      return;
+    }
     try {
       const approved = await api.post(`/expenses/${id}/approve`);
       if (approved?.id) await saveExpenseSnapshot(approved);
@@ -271,6 +279,9 @@ export default function FeedScreen() {
       return (
         <View style={styles.pendingSection}>
           <Text style={styles.pendingLabel}>Needs review · {item.items.length}</Text>
+          {isUsingMockPending ? (
+            <Text style={styles.pendingPreviewNote}>Dev preview queue</Text>
+          ) : null}
           {item.items.slice(0, 3).map(e => (
             <Swipeable
               key={e.id}
@@ -486,6 +497,7 @@ const styles = StyleSheet.create({
 
   pendingSection: { backgroundColor: '#111', borderRadius: 10, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#1f1f1f' },
   pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 12 },
+  pendingPreviewNote: { fontSize: 11, color: '#8ab4ff', paddingHorizontal: 12, paddingBottom: 4 },
   pendingRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingRowMain: { flex: 1, marginRight: 8 },
   pendingMerchant: { fontSize: 14, color: '#f5f5f5' },

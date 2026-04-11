@@ -89,7 +89,7 @@ function pendingSourcePresentation(item = {}) {
 
 export default function PendingScreen() {
   const router = useRouter();
-  const { expenses, loading, refresh } = usePendingExpenses();
+  const { expenses, loading, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
@@ -97,6 +97,11 @@ export default function PendingScreen() {
   const remove = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
   async function dismiss(id) {
+    if (isUsingMockData) {
+      resolveMockExpense(id);
+      remove(id);
+      return;
+    }
     try {
       await api.post(`/expenses/${id}/dismiss`);
       await removeExpenseSnapshot(id);
@@ -106,6 +111,11 @@ export default function PendingScreen() {
   }
 
   async function approve(id) {
+    if (isUsingMockData) {
+      resolveMockExpense(id);
+      remove(id);
+      return;
+    }
     try {
       const item = displayExpenses.find((entry) => entry.id === id);
       const reviewContext = item?.gmail_review_hint?.review_mode === 'quick_check'
@@ -245,7 +255,9 @@ export default function PendingScreen() {
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           displayExpenses.length > 0 ? (
-            <Text style={styles.hint}>← Approve · Dismiss →</Text>
+            <Text style={styles.hint}>
+              {isUsingMockData ? 'Dev preview queue' : '← Approve · Dismiss →'}
+            </Text>
           ) : null
         }
         ListEmptyComponent={
