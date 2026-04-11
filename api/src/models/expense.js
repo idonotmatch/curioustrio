@@ -1,5 +1,9 @@
 const db = require('../db');
 
+function isMissingExpenseReviewMetadataError(err) {
+  return err?.code === '42703' && /review_(required|mode|source)/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -23,20 +27,38 @@ async function create({
   reviewMode = null,
   reviewSource = null,
 }) {
-  const result = await db.query(
-    `INSERT INTO expenses (
-       user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
-       place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
-       is_private, review_required, review_mode, review_source
-     )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
-    [
-      userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
-      placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
-      isPrivate, reviewRequired, reviewMode, reviewSource,
-    ]
-  );
-  return result.rows[0];
+  try {
+    const result = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
+         place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
+         is_private, review_required, review_mode, review_source
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+      [
+        userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
+        placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
+        isPrivate, reviewRequired, reviewMode, reviewSource,
+      ]
+    );
+    return result.rows[0];
+  } catch (err) {
+    if (!isMissingExpenseReviewMetadataError(err)) throw err;
+    const fallback = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
+         place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
+         is_private
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+      [
+        userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
+        placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
+        isPrivate,
+      ]
+    );
+    return fallback.rows[0];
+  }
 }
 
 function periodBounds(month, startDay = 1) {
@@ -103,22 +125,31 @@ async function updateReviewMetadata(id, userId, {
   const hasReviewRequired = reviewRequired !== undefined;
   const hasReviewMode = reviewMode !== undefined;
   const hasReviewSource = reviewSource !== undefined;
-  const result = await db.query(
-    `UPDATE expenses SET
-       review_required = CASE WHEN $3 THEN $4 ELSE review_required END,
-       review_mode = CASE WHEN $5 THEN $6 ELSE review_mode END,
-       review_source = CASE WHEN $7 THEN $8 ELSE review_source END
-     WHERE id = $1 AND user_id = $2
-     RETURNING *`,
-    [
-      id,
-      userId,
-      hasReviewRequired, reviewRequired,
-      hasReviewMode, reviewMode,
-      hasReviewSource, reviewSource,
-    ]
-  );
-  return result.rows[0] || null;
+  try {
+    const result = await db.query(
+      `UPDATE expenses SET
+         review_required = CASE WHEN $3 THEN $4 ELSE review_required END,
+         review_mode = CASE WHEN $5 THEN $6 ELSE review_mode END,
+         review_source = CASE WHEN $7 THEN $8 ELSE review_source END
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [
+        id,
+        userId,
+        hasReviewRequired, reviewRequired,
+        hasReviewMode, reviewMode,
+        hasReviewSource, reviewSource,
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingExpenseReviewMetadataError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT * FROM expenses WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+    return fallback.rows[0] || null;
+  }
 }
 
 async function findPotentialDuplicates({ householdId, merchant, amount, date, excludeId }) {

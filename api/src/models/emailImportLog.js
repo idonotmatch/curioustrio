@@ -4,6 +4,10 @@ function isMissingFeedbackTableError(err) {
   return err?.code === '42P01' && `${err?.message || ''}`.includes('email_import_feedback');
 }
 
+function isMissingExpenseReviewMetadataError(err) {
+  return err?.code === '42703' && /review_(required|mode|source)/i.test(`${err?.message || ''}`);
+}
+
 async function create({ userId, messageId, expenseId, status = 'imported', subject, fromAddress, skipReason }) {
   const result = await db.query(
     `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
@@ -112,7 +116,7 @@ async function findByMessageId(userId, messageId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               NULL::timestamptz AS reviewed_at,
@@ -120,9 +124,9 @@ async function findByMessageId(userId, messageId) {
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
               e.notes,
-              e.review_required,
-              e.review_mode,
-              e.review_source
+              FALSE AS review_required,
+              NULL::text AS review_mode,
+              NULL::text AS review_source
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
        WHERE l.user_id = $1 AND l.message_id = $2`,
@@ -152,7 +156,7 @@ async function listByUser(userId, limit = 100) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               l.user_feedback, l.user_feedback_at,
@@ -161,9 +165,9 @@ async function listByUser(userId, limit = 100) {
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
               e.notes,
-              e.review_required,
-              e.review_mode,
-              e.review_source
+              FALSE AS review_required,
+              NULL::text AS review_mode,
+              NULL::text AS review_source
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
        WHERE l.user_id = $1
@@ -249,28 +253,23 @@ async function summarizeByUser(userId, days = 30) {
       [userId, safeDays]
     );
   } catch (err) {
-    if (!isMissingFeedbackTableError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err)) throw err;
     countsResult = await db.query(
       `SELECT
          COUNT(*) FILTER (WHERE l.status = 'imported') AS imported,
          COUNT(*) FILTER (
            WHERE l.status = 'imported'
-             AND e.review_source = 'gmail'
+             AND e.source = 'email'
          ) AS imported_pending_review,
          COUNT(*) FILTER (
-           WHERE l.status = 'imported'
-             AND e.review_source = 'gmail'
-             AND e.review_mode = 'quick_check'
+           WHERE FALSE
          ) AS imported_quick_check,
          COUNT(*) FILTER (
-           WHERE l.status = 'imported'
-             AND e.review_source = 'gmail'
-             AND e.review_mode = 'items_first'
+           WHERE FALSE
          ) AS imported_items_first,
          COUNT(*) FILTER (
            WHERE l.status = 'imported'
-             AND e.review_source = 'gmail'
-             AND COALESCE(e.review_mode, 'full_review') = 'full_review'
+             AND e.source = 'email'
          ) AS imported_full_review,
          COUNT(*) FILTER (WHERE l.status = 'skipped') AS skipped,
          COUNT(*) FILTER (WHERE l.status = 'failed') AS failed,
