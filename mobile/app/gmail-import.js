@@ -12,6 +12,7 @@ import { Stack } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { buildMockGmailImportState } from '../fixtures/mockGmailImport';
 
 const SUMMARY_WINDOW_DAYS = 90;
 
@@ -24,6 +25,8 @@ function reviewModeCountChips(summary = {}) {
   ].filter((entry) => entry.count > 0);
 }
 
+const MOCK_GMAIL_IMPORT_STATE = buildMockGmailImportState();
+
 export default function GmailImportScreen() {
   const [gmailStatus, setGmailStatus] = useState(null);
   const [importLog, setImportLog] = useState([]);
@@ -35,6 +38,16 @@ export default function GmailImportScreen() {
   const [senderPreferenceSaving, setSenderPreferenceSaving] = useState({});
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
   const [logFeedbackSaving, setLogFeedbackSaving] = useState({});
+  const isUsingMockData = __DEV__ && !gmailStatus?.connected;
+  const displayGmailStatus = __DEV__ && !gmailStatus?.connected
+    ? MOCK_GMAIL_IMPORT_STATE.gmailStatus
+    : gmailStatus;
+  const displayImportSummary = __DEV__ && displayGmailStatus?.connected && !importSummary
+    ? MOCK_GMAIL_IMPORT_STATE.importSummary
+    : importSummary;
+  const displayImportLog = __DEV__ && displayGmailStatus?.connected && importLog.length === 0
+    ? MOCK_GMAIL_IMPORT_STATE.importLog
+    : importLog;
 
   const loadGmailStatus = useCallback(async () => {
     try {
@@ -183,13 +196,13 @@ function rankSenderCard(sender = {}) {
   return 5;
 }
 
-  const reasonChips = summarizeReasonChips(importSummary?.reasons || []);
-  const reviewPathChips = reviewModeCountChips(importSummary);
-  const senderQuality = Array.isArray(importSummary?.quality?.sender_quality)
-    ? importSummary.quality.sender_quality
+  const reasonChips = summarizeReasonChips(displayImportSummary?.reasons || []);
+  const reviewPathChips = reviewModeCountChips(displayImportSummary);
+  const senderQuality = Array.isArray(displayImportSummary?.quality?.sender_quality)
+    ? displayImportSummary.quality.sender_quality
     : [];
-  const senderPreferences = Array.isArray(importSummary?.sender_preferences)
-    ? importSummary.sender_preferences
+  const senderPreferences = Array.isArray(displayImportSummary?.sender_preferences)
+    ? displayImportSummary.sender_preferences
     : [];
   const senderCards = (senderQuality.length > 0
     ? senderQuality
@@ -304,20 +317,20 @@ function rankSenderCard(sender = {}) {
             <View style={styles.rowInfo}>
               <Text style={styles.rowTitle}>Gmail import</Text>
               <Text style={styles.rowSub}>
-                {gmailStatus == null
+                {displayGmailStatus == null
                   ? 'Loading…'
-                  : gmailStatus.connected
-                    ? (gmailStatus.email ? gmailStatus.email : 'Connected')
+                  : displayGmailStatus.connected
+                    ? (displayGmailStatus.email ? displayGmailStatus.email : 'Connected')
                     : 'Not connected'}
               </Text>
-              {gmailStatus?.connected && formatRelativeTime(importSummary?.last_synced_at || gmailStatus?.last_synced_at) ? (
+              {displayGmailStatus?.connected && formatRelativeTime(displayImportSummary?.last_synced_at || displayGmailStatus?.last_synced_at) ? (
                 <Text style={styles.rowSub}>
-                  Last refresh {formatRelativeTime(importSummary?.last_synced_at || gmailStatus?.last_synced_at)}
+                  Last refresh {formatRelativeTime(displayImportSummary?.last_synced_at || displayGmailStatus?.last_synced_at)}
                 </Text>
               ) : null}
             </View>
             <View style={styles.btnGroup}>
-              {gmailStatus?.connected && (
+              {displayGmailStatus?.connected && !isUsingMockData && (
                 <TouchableOpacity
                   style={[styles.actionBtn, gmailSyncing && styles.actionBtnDisabled]}
                   onPress={syncGmail}
@@ -326,33 +339,42 @@ function rankSenderCard(sender = {}) {
                   <Text style={styles.actionBtnText}>{gmailSyncing ? 'Syncing…' : 'Sync'}</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.actionBtn} onPress={connectGmail}>
+              <TouchableOpacity
+                style={[styles.actionBtn, isUsingMockData && styles.actionBtnDisabled]}
+                onPress={connectGmail}
+                disabled={isUsingMockData}
+              >
                 <Text style={styles.actionBtnText}>
-                  {gmailStatus?.connected ? 'Reconnect' : 'Connect'}
+                  {displayGmailStatus?.connected ? 'Reconnect' : 'Connect'}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
-          {gmailStatus?.connected && (
+          {isUsingMockData ? (
+            <Text style={styles.devPreviewNote}>
+              Dev preview data is filling this screen until a real Gmail connection is available.
+            </Text>
+          ) : null}
+          {displayGmailStatus?.connected && (
             importSummaryLoading ? (
               <ActivityIndicator color="#555" style={styles.loadingBlock} />
-            ) : importSummary ? (
+            ) : displayImportSummary ? (
               <>
                 <View style={styles.summaryGrid}>
                   <View style={styles.summaryCard}>
-                    <Text style={styles.summaryValue}>{importSummary.imported}</Text>
+                    <Text style={styles.summaryValue}>{displayImportSummary.imported}</Text>
                     <Text style={styles.summaryLabel}>Imported</Text>
                   </View>
                   <View style={styles.summaryCard}>
-                    <Text style={styles.summaryValue}>{importSummary.imported_pending_review}</Text>
+                    <Text style={styles.summaryValue}>{displayImportSummary.imported_pending_review}</Text>
                     <Text style={styles.summaryLabel}>Need review</Text>
                   </View>
                   <View style={styles.summaryCard}>
-                    <Text style={styles.summaryValue}>{importSummary.skipped}</Text>
+                    <Text style={styles.summaryValue}>{displayImportSummary.skipped}</Text>
                     <Text style={styles.summaryLabel}>Skipped</Text>
                   </View>
                   <View style={styles.summaryCard}>
-                    <Text style={styles.summaryValue}>{importSummary.failed}</Text>
+                    <Text style={styles.summaryValue}>{displayImportSummary.failed}</Text>
                     <Text style={styles.summaryLabel}>Failed</Text>
                   </View>
                 </View>
@@ -437,8 +459,8 @@ function rankSenderCard(sender = {}) {
                             senderPreferenceSaving[sender.sender_domain] && styles.actionBtnDisabled,
                           ]}
                           onPress={() => toggleSenderForceReview(sender.sender_domain, !sender.sender_preference?.force_review)}
-                          disabled={!!senderPreferenceSaving[sender.sender_domain]}
-                        >
+                          disabled={isUsingMockData || !!senderPreferenceSaving[sender.sender_domain]}
+                          >
                           <Text style={[
                             styles.senderTrustToggleText,
                             sender.sender_preference?.force_review && styles.senderTrustToggleTextActive,
@@ -473,20 +495,20 @@ function rankSenderCard(sender = {}) {
                     </Text>
                   )}
                 </View>
-                <Text style={styles.summaryWindow}>Last {importSummary.window_days || SUMMARY_WINDOW_DAYS} days</Text>
+                <Text style={styles.summaryWindow}>Last {displayImportSummary.window_days || SUMMARY_WINDOW_DAYS} days</Text>
               </>
             ) : null
           )}
         </View>
 
-        {gmailStatus?.connected && (
+        {displayGmailStatus?.connected && (
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.logToggleRow}
               onPress={() => {
                 const next = !importLogExpanded;
                 setImportLogExpanded(next);
-                if (next && importLog.length === 0) loadImportLog();
+                if (next && importLog.length === 0 && !isUsingMockData) loadImportLog();
               }}
               activeOpacity={0.7}
             >
@@ -496,10 +518,10 @@ function rankSenderCard(sender = {}) {
             {importLogExpanded && (
               importLogLoading ? (
                 <ActivityIndicator color="#555" style={styles.loadingBlock} />
-              ) : importLog.length === 0 ? (
+              ) : displayImportLog.length === 0 ? (
                 <Text style={styles.emptyText}>No import history yet.</Text>
               ) : (
-                importLog.map(entry => (
+                displayImportLog.map(entry => (
                   <View key={entry.id} style={styles.logRow}>
                     <View style={styles.logRowLeft}>
                       <Text style={styles.logSubject} numberOfLines={1}>
@@ -526,9 +548,10 @@ function rankSenderCard(sender = {}) {
                               style={[
                                 styles.logFeedbackChip,
                                 logFeedbackSaving[entry.id] === option.key && styles.actionBtnDisabled,
+                                isUsingMockData && styles.actionBtnDisabled,
                               ]}
                               onPress={() => submitLogFeedback(entry.id, option.key)}
-                              disabled={!!logFeedbackSaving[entry.id]}
+                              disabled={isUsingMockData || !!logFeedbackSaving[entry.id]}
                             >
                               <Text style={styles.logFeedbackChipText}>
                                 {logFeedbackSaving[entry.id] === option.key ? 'Saving…' : option.label}
@@ -570,6 +593,7 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1, marginRight: 12 },
   rowTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '500' },
   rowSub: { color: '#555', fontSize: 12, marginTop: 2 },
+  devPreviewNote: { color: '#8ab4ff', fontSize: 11, marginTop: 10, lineHeight: 16 },
   btnGroup: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
   actionBtnDisabled: { opacity: 0.4 },
