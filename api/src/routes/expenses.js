@@ -220,8 +220,8 @@ function deriveEmailFieldEvidence(expense, log) {
   };
 }
 
-function buildEmailReviewRouting(senderQuality, itemReliability) {
-  const reviewMode = recommendReviewMode({ ...senderQuality, item_reliability: itemReliability });
+function buildEmailReviewRouting(senderQuality, itemReliability, preferredReviewMode = null) {
+  const reviewMode = preferredReviewMode || recommendReviewMode({ ...senderQuality, item_reliability: itemReliability });
 
   if (reviewMode === 'quick_check') {
     return {
@@ -271,7 +271,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     : [];
   const itemReliability = senderQuality?.item_reliability || null;
   const fieldEvidence = deriveEmailFieldEvidence(expense, log);
-  const reviewRouting = buildEmailReviewRouting(senderQuality, itemReliability);
+  const reviewRouting = buildEmailReviewRouting(senderQuality, itemReliability, expense.review_mode || null);
 
   let headline = 'Imported from Gmail';
   let tone = 'info';
@@ -349,10 +349,12 @@ function normalizeApprovedEmailNotes(notes = '') {
 async function attachGmailReviewHint(expense, userId) {
   if (!expense || expense.source !== 'email') return expense;
   const log = await EmailImportLog.findByExpenseId(expense.id);
-  if (!log?.from_address) {
+  if (!log?.from_address && expense.review_source !== 'gmail') {
     return { ...expense, gmail_review_hint: null };
   }
-  const senderQuality = await getSenderImportQuality(userId, log.from_address);
+  const senderQuality = log?.from_address
+    ? await getSenderImportQuality(userId, log.from_address)
+    : { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
   return {
     ...expense,
     gmail_review_hint: buildEmailReviewHint(expense, log, senderQuality),
@@ -985,6 +987,7 @@ router.post('/:id/dismiss', async (req, res, next) => {
     const expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (expense.source === 'email') {
+      await Expense.updateReviewMetadata(expense.id, user.id, { reviewRequired: false }) || expense;
       await EmailImportLog.recordReviewFeedback(expense.id, { action: 'dismissed' });
     }
     res.json(expense);
@@ -1002,6 +1005,7 @@ router.post('/:id/approve', async (req, res, next) => {
       if (normalizedNotes && normalizedNotes !== expense.notes) {
         expense = await Expense.update(req.params.id, user.id, { notes: normalizedNotes }) || expense;
       }
+      expense = await Expense.updateReviewMetadata(expense.id, user.id, { reviewRequired: false }) || expense;
       const reviewContextField = normalizeReviewContext(req.body?.review_context);
       await EmailImportLog.recordReviewFeedback(expense.id, {
         action: 'approved',

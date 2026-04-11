@@ -190,7 +190,7 @@ async function summarizeByUser(userId, days = 30) {
          COUNT(*) FILTER (WHERE l.status = 'imported') AS imported,
          COUNT(*) FILTER (
            WHERE l.status = 'imported'
-             AND e.notes ILIKE '%needs review%'
+             AND e.review_source = 'gmail'
          ) AS imported_pending_review,
          COUNT(*) FILTER (WHERE l.status = 'skipped') AS skipped,
          COUNT(*) FILTER (WHERE l.status = 'failed') AS failed,
@@ -228,7 +228,7 @@ async function summarizeByUser(userId, days = 30) {
          COUNT(*) FILTER (WHERE l.status = 'imported') AS imported,
          COUNT(*) FILTER (
            WHERE l.status = 'imported'
-             AND e.notes ILIKE '%needs review%'
+             AND e.review_source = 'gmail'
          ) AS imported_pending_review,
          COUNT(*) FILTER (WHERE l.status = 'skipped') AS skipped,
          COUNT(*) FILTER (WHERE l.status = 'failed') AS failed,

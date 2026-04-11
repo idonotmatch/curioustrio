@@ -97,8 +97,8 @@ describe('EmailImportLog.findByMessageId', () => {
 describe('EmailImportLog.recordReviewFeedback', () => {
   it('records review actions and changed fields for imported expenses', async () => {
     const expenseResult = await db.query(
-      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes)
-       VALUES ($1, 'Review Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review')
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_source)
+       VALUES ($1, 'Review Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'gmail')
        RETURNING id`,
       [testUserId]
     );
@@ -155,8 +155,8 @@ describe('EmailImportLog.listByUser', () => {
 describe('EmailImportLog.summarizeByUser', () => {
   it('returns aggregate counts and reason breakdowns', async () => {
     const expenseResult = await db.query(
-      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes)
-       VALUES ($1, 'Summary Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review')
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_source)
+       VALUES ($1, 'Summary Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'gmail')
        RETURNING id`,
       [testUserId]
     );
@@ -213,8 +213,8 @@ describe('EmailImportLog without email_import_feedback table', () => {
 
   it('falls back cleanly when review feedback table is missing', async () => {
     const expenseResult = await db.query(
-      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes)
-       VALUES ($1, 'Missing Feedback Merchant', 21.5, '2026-03-22', 'pending', 'email', 'Imported from Gmail — needs review')
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_source)
+       VALUES ($1, 'Missing Feedback Merchant', 21.5, '2026-03-22', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'gmail')
        RETURNING id`,
       [testUserId]
     );

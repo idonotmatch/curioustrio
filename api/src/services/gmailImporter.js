@@ -267,6 +267,9 @@ async function importForUser(user) {
         paymentMethod: parsed.payment_method || 'unknown',
         cardLast4: parsed.card_last4 || null,
         cardLabel: parsed.card_label || null,
+        reviewRequired: true,
+        reviewMode: reviewMode || null,
+        reviewSource: 'gmail',
       });
 
       if (Array.isArray(parsed.items) && parsed.items.length > 0) {

@@ -693,8 +693,8 @@ describe('POST /gmail/import', () => {
 describe('GET /gmail/import-summary', () => {
   it('returns recent aggregate import outcomes', async () => {
     const importedExpense = await db.query(
-      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source, notes)
-       VALUES ($1, $2, 'Example', 12.34, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review')
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, status, source, notes, review_required, review_source)
+       VALUES ($1, $2, 'Example', 12.34, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'gmail')
        RETURNING id`,
       [userId, householdId]
     );
