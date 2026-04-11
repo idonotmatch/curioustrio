@@ -311,7 +311,7 @@ export default function FeedScreen() {
       const modeSummary = pendingModeSummary(item.items);
       return (
         <View style={styles.pendingSection}>
-          <Text style={styles.pendingLabel}>Needs review · {item.items.length}</Text>
+          <Text style={styles.pendingLabel}>Needs your review · {item.items.length}</Text>
           {modeSummary ? (
             <Text style={styles.pendingModeSummary}>{modeSummary}</Text>
           ) : null}

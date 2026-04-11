@@ -235,7 +235,7 @@ export default function PendingScreen() {
           ) : null
         }
         ListEmptyComponent={
-          !loading && <Text style={styles.empty}>No pending expenses. You're all caught up!</Text>
+          !loading && <Text style={styles.empty}>Nothing in your review queue. You're all caught up!</Text>
         }
       />
     </View>

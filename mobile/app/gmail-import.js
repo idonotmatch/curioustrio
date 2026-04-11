@@ -251,7 +251,7 @@ function rankSenderCard(sender = {}) {
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
       Alert.alert(
         'Gmail sync',
-        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} queued for review` : ''}`
+        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} added to your review queue` : ''}`
       );
     } catch (e) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
@@ -320,7 +320,7 @@ function rankSenderCard(sender = {}) {
                   </View>
                   <View style={styles.summaryCard}>
                     <Text style={styles.summaryValue}>{displayImportSummary.imported_pending_review}</Text>
-                    <Text style={styles.summaryLabel}>Need review</Text>
+                    <Text style={styles.summaryLabel}>Need your review</Text>
                   </View>
                   <View style={styles.summaryCard}>
                     <Text style={styles.summaryValue}>{displayImportSummary.skipped}</Text>
@@ -333,9 +333,9 @@ function rankSenderCard(sender = {}) {
                 </View>
                 <View style={styles.senderTrustSection}>
                   <View style={styles.senderTrustHeader}>
-                    <Text style={styles.senderTrustTitle}>Review queue mix</Text>
+                    <Text style={styles.senderTrustTitle}>Your review queue mix</Text>
                     <Text style={styles.senderTrustSub}>
-                      How the latest Gmail imports were routed into review.
+                      How the latest Gmail imports were added to your review queue.
                     </Text>
                   </View>
                   {reviewPathChips.length > 0 ? (
@@ -350,7 +350,7 @@ function rankSenderCard(sender = {}) {
                     </View>
                   ) : (
                     <Text style={styles.sectionEmptyText}>
-                      No recent queued Gmail imports yet.
+                      No recent Gmail imports in your review queue yet.
                     </Text>
                   )}
                 </View>
