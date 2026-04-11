@@ -92,6 +92,29 @@ describe('EmailImportLog.findByMessageId', () => {
 
     expect(found).toBeNull();
   });
+
+  it('returns explicit Gmail review metadata when linked expense exists', async () => {
+    const expenseResult = await db.query(
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_mode, review_source)
+       VALUES ($1, 'Metadata Merchant', 24.5, '2026-03-24', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'items_first', 'gmail')
+       RETURNING id`,
+      [testUserId]
+    );
+
+    await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-003-review-metadata',
+      expenseId: expenseResult.rows[0].id,
+      status: 'imported',
+    });
+
+    const found = await EmailImportLog.findByMessageId(testUserId, 'msg-003-review-metadata');
+
+    expect(found).toBeDefined();
+    expect(found.review_required).toBe(true);
+    expect(found.review_mode).toBe('items_first');
+    expect(found.review_source).toBe('gmail');
+  });
 });
 
 describe('EmailImportLog.recordReviewFeedback', () => {
@@ -149,6 +172,30 @@ describe('EmailImportLog.listByUser', () => {
         new Date(logs[i + 1].imported_at).getTime()
       );
     }
+  });
+
+  it('includes explicit review metadata for Gmail-backed rows', async () => {
+    const expenseResult = await db.query(
+      `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_mode, review_source)
+       VALUES ($1, 'List Metadata Merchant', 31.0, '2026-03-25', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'quick_check', 'gmail')
+       RETURNING id`,
+      [testUserId]
+    );
+
+    await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-004-list-review-metadata',
+      expenseId: expenseResult.rows[0].id,
+      status: 'imported',
+    });
+
+    const logs = await EmailImportLog.listByUser(testUserId);
+    const row = logs.find((entry) => entry.message_id === 'msg-004-list-review-metadata');
+
+    expect(row).toBeTruthy();
+    expect(row.review_required).toBe(true);
+    expect(row.review_mode).toBe('quick_check');
+    expect(row.review_source).toBe('gmail');
   });
 });
 

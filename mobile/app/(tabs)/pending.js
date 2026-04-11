@@ -71,7 +71,7 @@ function reviewModePresentation(hint = {}) {
 }
 
 function pendingSourcePresentation(item = {}) {
-  if (item?.source === 'email') {
+  if (item?.review_source === 'gmail' || item?.source === 'email') {
     return {
       label: 'Gmail import',
       icon: 'mail-outline',

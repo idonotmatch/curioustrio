@@ -84,7 +84,12 @@ export default function GmailImportScreen() {
   }
 
   function formatLogStatus(entry) {
-    if (entry.status === 'imported' && /needs review/i.test(entry.notes || '')) return 'needs review';
+    if (entry.status === 'imported' && entry.review_source === 'gmail') {
+      const mode = entry.review_mode || 'full_review';
+      if (mode === 'quick_check') return 'quick check';
+      if (mode === 'items_first') return 'items first';
+      return 'needs review';
+    }
     if (entry.status === 'skipped') return getImportReasonMeta(entry.skip_reason).label;
     if (entry.status === 'failed') return 'failed';
     return entry.status;
@@ -153,7 +158,7 @@ export default function GmailImportScreen() {
 
 function formatSenderReviewPath(sender = {}) {
   const reliability = sender.review_path_reliability || {};
-  if (reliability.fast_lane_eligible) return 'Fast lane active';
+  if (reliability.fast_lane_eligible) return 'Usually quick to review';
   if ((reliability.quick_check_count || 0) > 0) return `${reliability.quick_check_count} quick approvals`;
   if ((reliability.items_first_count || 0) > 0) return 'Often needs item cleanup';
   if ((reliability.full_review_count || 0) > 0) return 'Usually opened for full review';
@@ -237,10 +242,9 @@ function rankSenderCard(sender = {}) {
       const result = await api.post('/gmail/import', {});
       await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus()]);
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
-      const autoConfirmed = result?.outcomes?.imported_auto_confirmed ?? 0;
       Alert.alert(
         'Gmail sync',
-        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${autoConfirmed ? `, ${autoConfirmed} auto-confirmed` : ''}${pendingReview ? `, ${pendingReview} need review` : ''}`
+        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} queued for review` : ''}`
       );
     } catch (e) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
@@ -369,7 +373,7 @@ function rankSenderCard(sender = {}) {
                   <View style={styles.senderTrustHeader}>
                     <Text style={styles.senderTrustTitle}>Sender trust</Text>
                     <Text style={styles.senderTrustSub}>
-                      Fast-lane senders can skip heavier review.
+                      Reliable senders can move into lighter review paths.
                     </Text>
                   </View>
                   {senderCards.length > 0 ? (
@@ -406,7 +410,7 @@ function rankSenderCard(sender = {}) {
                             styles.senderTrustToggleText,
                             sender.sender_preference?.force_review && styles.senderTrustToggleTextActive,
                           ]}>
-                            {sender.sender_preference?.force_review ? 'Keep reviewing' : 'Allow fast lane'}
+                            {sender.sender_preference?.force_review ? 'Keep reviewing' : 'Allow quick review'}
                           </Text>
                         </TouchableOpacity>
                       </View>

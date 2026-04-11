@@ -170,7 +170,7 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
 }
 
 function pendingPreviewLabel(expense = {}) {
-  if (expense?.source === 'email') {
+  if (expense?.review_source === 'gmail' || expense?.source === 'email') {
     const mode = expense?.gmail_review_hint?.review_mode;
     if (mode === 'quick_check') return 'Gmail import · Quick check';
     if (mode === 'items_first') return 'Gmail import · Items first';

@@ -100,7 +100,10 @@ async function findByMessageId(userId, messageId) {
     const result = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
-              e.notes
+              e.notes,
+              e.review_required,
+              e.review_mode,
+              e.review_source
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
        LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
@@ -116,7 +119,10 @@ async function findByMessageId(userId, messageId) {
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
-              e.notes
+              e.notes,
+              e.review_required,
+              e.review_mode,
+              e.review_source
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
        WHERE l.user_id = $1 AND l.message_id = $2`,
@@ -132,7 +138,10 @@ async function listByUser(userId, limit = 100) {
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
-              e.notes
+              e.notes,
+              e.review_required,
+              e.review_mode,
+              e.review_source
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
        LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
@@ -151,7 +160,10 @@ async function listByUser(userId, limit = 100) {
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
-              e.notes
+              e.notes,
+              e.review_required,
+              e.review_mode,
+              e.review_source
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
        WHERE l.user_id = $1
