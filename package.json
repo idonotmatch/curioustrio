@@ -19,7 +19,10 @@
   "main": "scipt.js",
   "scripts": {
     "dev": "next dev",
-    "start": "next start"
+    "start": "next start",
+    "dev:api": "cd api && npm run dev",
+    "dev:mobile": "cd mobile && npm run start",
+    "ios": "cd mobile && npm run ios"
   },
   "repository": {
     "type": "git",
