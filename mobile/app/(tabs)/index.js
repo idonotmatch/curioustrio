@@ -186,6 +186,10 @@ function pendingGuidance(expense = {}) {
   return 'Check merchant, date, and category.';
 }
 
+function isQuickCheckPending(expense = {}) {
+  return expense?.gmail_review_hint?.review_mode === 'quick_check';
+}
+
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
@@ -325,9 +329,22 @@ export default function FeedScreen() {
                 </View>
                 <View style={styles.pendingRowRight}>
                   <Text style={styles.pendingAmount}>${Number(e.amount).toFixed(2)}</Text>
-                  <View style={styles.pendingReviewChip}>
-                    <Text style={styles.pendingReviewChipText}>Review</Text>
-                  </View>
+                  {isQuickCheckPending(e) ? (
+                    <TouchableOpacity
+                      style={styles.pendingConfirmChip}
+                      onPress={(event) => {
+                        event.stopPropagation?.();
+                        approvePending(e.id);
+                      }}
+                      activeOpacity={0.82}
+                    >
+                      <Text style={styles.pendingConfirmChipText}>Confirm</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.pendingReviewChip}>
+                      <Text style={styles.pendingReviewChipText}>Review</Text>
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             </Swipeable>
@@ -518,6 +535,15 @@ const styles = StyleSheet.create({
   pendingGuidance: { fontSize: 12, color: '#8a8a8a', marginTop: 4 },
   pendingRowRight: { alignItems: 'flex-end', gap: 6 },
   pendingAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
+  pendingConfirmChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.3)',
+    backgroundColor: 'rgba(134,239,172,0.08)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  pendingConfirmChipText: { color: '#bbf7d0', fontSize: 11, fontWeight: '700' },
   pendingReviewChip: {
     borderRadius: 999,
     borderWidth: 1,
