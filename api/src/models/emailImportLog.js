@@ -211,6 +211,11 @@ async function summarizeByUser(userId, days = 30) {
          COUNT(*) FILTER (
            WHERE l.status = 'imported'
              AND e.review_source = 'gmail'
+             AND e.status = 'pending'
+         ) AS current_pending_review,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
              AND e.review_mode = 'quick_check'
          ) AS imported_quick_check,
          COUNT(*) FILTER (
@@ -223,6 +228,24 @@ async function summarizeByUser(userId, days = 30) {
              AND e.review_source = 'gmail'
              AND COALESCE(e.review_mode, 'full_review') = 'full_review'
          ) AS imported_full_review,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.status = 'pending'
+             AND e.review_mode = 'quick_check'
+         ) AS current_quick_check,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.status = 'pending'
+             AND e.review_mode = 'items_first'
+         ) AS current_items_first,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.status = 'pending'
+             AND COALESCE(e.review_mode, 'full_review') = 'full_review'
+         ) AS current_full_review,
          COUNT(*) FILTER (WHERE l.status = 'skipped') AS skipped,
          COUNT(*) FILTER (WHERE l.status = 'failed') AS failed,
          COUNT(*) FILTER (WHERE f.review_action = 'approved') AS reviewed_approved,
@@ -262,6 +285,11 @@ async function summarizeByUser(userId, days = 30) {
              AND e.source = 'email'
          ) AS imported_pending_review,
          COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.source = 'email'
+             AND e.status = 'pending'
+         ) AS current_pending_review,
+         COUNT(*) FILTER (
            WHERE FALSE
          ) AS imported_quick_check,
          COUNT(*) FILTER (
@@ -271,6 +299,17 @@ async function summarizeByUser(userId, days = 30) {
            WHERE l.status = 'imported'
              AND e.source = 'email'
          ) AS imported_full_review,
+         COUNT(*) FILTER (
+           WHERE FALSE
+         ) AS current_quick_check,
+         COUNT(*) FILTER (
+           WHERE FALSE
+         ) AS current_items_first,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.source = 'email'
+             AND e.status = 'pending'
+         ) AS current_full_review,
          COUNT(*) FILTER (WHERE l.status = 'skipped') AS skipped,
          COUNT(*) FILTER (WHERE l.status = 'failed') AS failed,
          0::bigint AS reviewed_approved,
@@ -304,10 +343,16 @@ async function summarizeByUser(userId, days = 30) {
     window_days: safeDays,
     imported: Number(row.imported || 0),
     imported_pending_review: Number(row.imported_pending_review || 0),
+    current_pending_review: Number(row.current_pending_review || 0),
     review_mode_breakdown: {
       quick_check: Number(row.imported_quick_check || 0),
       items_first: Number(row.imported_items_first || 0),
       full_review: Number(row.imported_full_review || 0),
+    },
+    current_review_mode_breakdown: {
+      quick_check: Number(row.current_quick_check || 0),
+      items_first: Number(row.current_items_first || 0),
+      full_review: Number(row.current_full_review || 0),
     },
     skipped: Number(row.skipped || 0),
     failed: Number(row.failed || 0),

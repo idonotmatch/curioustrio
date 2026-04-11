@@ -12,13 +12,14 @@ import { Stack } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { invalidateCache } from '../services/cache';
 import { buildMockGmailImportState } from '../fixtures/mockGmailImport';
 
 const SUMMARY_WINDOW_DAYS = 90;
 const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
 
 function reviewModeCountChips(summary = {}) {
-  const breakdown = summary?.review_mode_breakdown || {};
+  const breakdown = summary?.current_review_mode_breakdown || summary?.review_mode_breakdown || {};
   return [
     { key: 'quick_check', label: 'Quick check', count: breakdown.quick_check || 0 },
     { key: 'items_first', label: 'Items first', count: breakdown.items_first || 0 },
@@ -106,6 +107,9 @@ export default function GmailImportScreen() {
   }
 
   function formatLogStatus(entry) {
+    if (entry.review_action === 'approved') return 'reviewed';
+    if (entry.review_action === 'edited') return 'edited';
+    if (entry.review_action === 'dismissed') return 'dismissed';
     if (entry.status === 'imported' && entry.review_source === 'gmail') {
       const mode = entry.review_mode || 'full_review';
       if (mode === 'quick_check') return 'quick check';
@@ -247,6 +251,7 @@ function rankSenderCard(sender = {}) {
     setGmailSyncing(true);
     try {
       const result = await api.post('/gmail/import', {});
+      await invalidateCache('cache:expenses:pending');
       await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus()]);
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
       Alert.alert(
@@ -319,7 +324,7 @@ function rankSenderCard(sender = {}) {
                     <Text style={styles.summaryLabel}>Imported</Text>
                   </View>
                   <View style={styles.summaryCard}>
-                    <Text style={styles.summaryValue}>{displayImportSummary.imported_pending_review}</Text>
+                    <Text style={styles.summaryValue}>{displayImportSummary.current_pending_review ?? displayImportSummary.imported_pending_review}</Text>
                     <Text style={styles.summaryLabel}>Need your review</Text>
                   </View>
                   <View style={styles.summaryCard}>
@@ -480,8 +485,9 @@ function rankSenderCard(sender = {}) {
                       ) : null}
                       {entry.review_source === 'gmail' ? (
                         <Text style={styles.logContext}>
-                          Routed to {formatLogStatus(entry)}
-                          {entry.review_required ? ' before confirmation' : ''}
+                          {entry.review_action
+                            ? `You ${formatLogStatus(entry)} this import`
+                            : `Added to your review queue as ${formatLogStatus(entry)}`}
                         </Text>
                       ) : null}
                     </View>

@@ -730,6 +730,7 @@ describe('GET /gmail/import-summary', () => {
       window_days: 30,
       imported: 1,
       imported_pending_review: 1,
+      current_pending_review: 1,
       skipped: 1,
       failed: 1,
       reviewed_approved: 0,
@@ -747,6 +748,11 @@ describe('GET /gmail/import-summary', () => {
         edit_rate: 0,
       },
     });
+    expect(res.body.current_review_mode_breakdown).toEqual(expect.objectContaining({
+      quick_check: expect.any(Number),
+      items_first: expect.any(Number),
+      full_review: expect.any(Number),
+    }));
     expect(res.body.last_imported_at).toBeTruthy();
     expect(res.body.last_synced_at).toBeNull();
     expect(res.body.reasons).toEqual(expect.arrayContaining([

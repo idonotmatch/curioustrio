@@ -232,12 +232,19 @@ describe('EmailImportLog.summarizeByUser', () => {
     const summary = await EmailImportLog.summarizeByUser(testUserId, 30);
     expect(summary.imported).toBeGreaterThanOrEqual(1);
     expect(summary.imported_pending_review).toBeGreaterThanOrEqual(1);
+    expect(summary.current_pending_review).toBeGreaterThanOrEqual(1);
     expect(summary.review_mode_breakdown).toEqual(expect.objectContaining({
       quick_check: expect.any(Number),
       items_first: expect.any(Number),
       full_review: expect.any(Number),
     }));
+    expect(summary.current_review_mode_breakdown).toEqual(expect.objectContaining({
+      quick_check: expect.any(Number),
+      items_first: expect.any(Number),
+      full_review: expect.any(Number),
+    }));
     expect(summary.review_mode_breakdown.quick_check).toBeGreaterThanOrEqual(1);
+    expect(summary.current_review_mode_breakdown.quick_check).toBeGreaterThanOrEqual(1);
     expect(summary.skipped).toBeGreaterThanOrEqual(1);
     expect(summary.failed).toBeGreaterThanOrEqual(1);
     expect(summary.reviewed_approved).toBeGreaterThanOrEqual(0);
