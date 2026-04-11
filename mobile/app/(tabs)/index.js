@@ -179,6 +179,13 @@ function pendingPreviewLabel(expense = {}) {
   return 'Pending review';
 }
 
+function pendingGuidance(expense = {}) {
+  const mode = expense?.gmail_review_hint?.review_mode;
+  if (mode === 'quick_check') return 'Check merchant, amount, and date.';
+  if (mode === 'items_first') return 'Review extracted items before approving.';
+  return 'Check merchant, date, and category.';
+}
+
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
@@ -314,8 +321,14 @@ export default function FeedScreen() {
                 <View style={styles.pendingRowMain}>
                   <Text style={styles.pendingMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
                   <Text style={styles.pendingMeta} numberOfLines={1}>{pendingPreviewLabel(e)}</Text>
+                  <Text style={styles.pendingGuidance} numberOfLines={1}>{pendingGuidance(e)}</Text>
                 </View>
-                <Text style={styles.pendingAmount}>${Number(e.amount).toFixed(2)}</Text>
+                <View style={styles.pendingRowRight}>
+                  <Text style={styles.pendingAmount}>${Number(e.amount).toFixed(2)}</Text>
+                  <View style={styles.pendingReviewChip}>
+                    <Text style={styles.pendingReviewChipText}>Review</Text>
+                  </View>
+                </View>
               </TouchableOpacity>
             </Swipeable>
           ))}
@@ -502,7 +515,18 @@ const styles = StyleSheet.create({
   pendingRowMain: { flex: 1, marginRight: 8 },
   pendingMerchant: { fontSize: 14, color: '#f5f5f5' },
   pendingMeta: { fontSize: 11, color: '#8faed8', marginTop: 3, fontWeight: '600' },
+  pendingGuidance: { fontSize: 12, color: '#8a8a8a', marginTop: 4 },
+  pendingRowRight: { alignItems: 'flex-end', gap: 6 },
   pendingAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
+  pendingReviewChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2b3442',
+    backgroundColor: '#141920',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  pendingReviewChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
   pendingMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',
