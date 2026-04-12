@@ -241,10 +241,16 @@ export default function PendingScreen() {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.replace('/(tabs)')}
+              onPress={() => {
+                if (typeof router.canGoBack === 'function' && router.canGoBack()) {
+                  router.back();
+                  return;
+                }
+                router.replace('/(tabs)');
+              }}
               activeOpacity={0.8}
             >
-              <Ionicons name="chevron-back" size={16} color="#cfcfcf" />
+              <Ionicons name="chevron-back" size={20} color="#0A84FF" />
               <Text style={styles.backButtonText}>All transactions</Text>
             </TouchableOpacity>
             <Text style={styles.title}>Your review queue</Text>
@@ -285,10 +291,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 10,
+    gap: 2,
+    marginBottom: 12,
+    marginLeft: -4,
   },
-  backButtonText: { color: '#cfcfcf', fontSize: 13, fontWeight: '600' },
+  backButtonText: { color: '#0A84FF', fontSize: 17, fontWeight: '400' },
   title: { fontSize: 24, color: '#f5f5f5', fontWeight: '700', marginBottom: 4 },
   subtitle: { fontSize: 13, color: '#8a8a8a', marginBottom: 10 },
   hint: { fontSize: 12, color: '#444', textAlign: 'center', letterSpacing: 0.3 },
