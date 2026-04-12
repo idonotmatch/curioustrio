@@ -1137,9 +1137,33 @@ router.get('/:id', async (req, res, next) => {
     const ownedByUser = expense.user_id === user?.id;
     const inHousehold = user?.household_id && expense.household_id === user.household_id;
     if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
-    const duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
-    const items = await ExpenseItem.findByExpenseId(expense.id);
-    res.json(await attachGmailReviewHint({ ...expense, duplicate_flags, items }, user.id));
+    let duplicate_flags = [];
+    let items = [];
+    try {
+      duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
+    } catch (err) {
+      console.error('[expenses/:id] duplicate flag lookup failed:', {
+        expense_id: expense.id,
+        message: err?.message || String(err || 'unknown_error'),
+      });
+    }
+    try {
+      items = await ExpenseItem.findByExpenseId(expense.id);
+    } catch (err) {
+      console.error('[expenses/:id] item lookup failed:', {
+        expense_id: expense.id,
+        message: err?.message || String(err || 'unknown_error'),
+      });
+    }
+    try {
+      res.json(await attachGmailReviewHint({ ...expense, duplicate_flags, items }, user.id));
+    } catch (err) {
+      console.error('[expenses/:id] gmail hint attach failed:', {
+        expense_id: expense.id,
+        message: err?.message || String(err || 'unknown_error'),
+      });
+      res.json({ ...expense, duplicate_flags, items, gmail_review_hint: null });
+    }
   } catch (err) { next(err); }
 });
 
@@ -1190,19 +1214,33 @@ router.patch('/:id', async (req, res, next) => {
     });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (items !== undefined) {
-      const resolvedItems = await Promise.all(
-        (Array.isArray(items) ? items : []).map((item) =>
-          enrichItemWithResolution(item, merchant ?? expense.merchant)
-        )
-      );
-      await ExpenseItem.replaceItems(req.params.id, resolvedItems);
+      try {
+        const resolvedItems = await Promise.all(
+          (Array.isArray(items) ? items : []).map((item) =>
+            enrichItemWithResolution(item, merchant ?? expense.merchant)
+          )
+        );
+        await ExpenseItem.replaceItems(req.params.id, resolvedItems);
+      } catch (err) {
+        console.error('[expenses/:id PATCH] item replace failed:', {
+          expense_id: req.params.id,
+          message: err?.message || String(err || 'unknown_error'),
+        });
+      }
     }
     if (expense.source === 'email' && changedFields.length) {
-      await EmailImportLog.recordReviewFeedback(expense.id, {
-        action: 'edited',
-        changedFields,
-        incrementEditCount: true,
-      });
+      try {
+        await EmailImportLog.recordReviewFeedback(expense.id, {
+          action: 'edited',
+          changedFields,
+          incrementEditCount: true,
+        });
+      } catch (err) {
+        console.error('[expenses/:id PATCH] email review feedback failed:', {
+          expense_id: expense.id,
+          message: err?.message || String(err || 'unknown_error'),
+        });
+      }
     }
     res.json(expense);
   } catch (err) { next(err); }
