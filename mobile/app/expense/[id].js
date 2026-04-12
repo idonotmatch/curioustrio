@@ -573,6 +573,7 @@ export default function ExpenseDetailScreen() {
   const sourceText = sourceLabel[expense.source] || expense.source;
   const reviewState = expense.status === 'pending' && expense.source === 'email';
   const gmailReviewHint = expense.gmail_review_hint || null;
+  const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const subjectLine = `${gmailReviewHint?.message_subject || ''}`.trim();
   const isPendingEmailReview = reviewState;
@@ -590,6 +591,19 @@ export default function ExpenseDetailScreen() {
     setEditing(true);
     setActiveReviewField(fieldKey);
     if (fieldKey === 'items') setItemsExpanded(true);
+  }
+
+  function applyTreatmentSuggestion() {
+    if (!treatmentSuggestion) return;
+    if (treatmentSuggestion.suggested_private) {
+      setIsPrivate(true);
+    }
+    if (treatmentSuggestion.suggested_track_only) {
+      setExcludeFromBudget(true);
+      if (treatmentSuggestion.budget_exclusion_reason) {
+        setBudgetExclusionReason(treatmentSuggestion.budget_exclusion_reason);
+      }
+    }
   }
 
   return (
@@ -711,6 +725,21 @@ export default function ExpenseDetailScreen() {
         <View style={styles.reviewControlsCard}>
           <Text style={styles.reviewControlsEyebrow}>Review options</Text>
           <Text style={styles.reviewControlsTitle}>Decide how this should be counted before you approve it</Text>
+
+          {treatmentSuggestion ? (
+            <View style={styles.reviewSuggestionCard}>
+              <View style={styles.reviewSuggestionHeader}>
+                <View style={styles.reviewSuggestionCopy}>
+                  <Text style={styles.reviewSuggestionEyebrow}>Based on similar expenses</Text>
+                  <Text style={styles.reviewSuggestionTitle}>{treatmentSuggestion.summary}</Text>
+                  <Text style={styles.reviewSuggestionDetail}>{treatmentSuggestion.detail}</Text>
+                </View>
+                <TouchableOpacity style={styles.reviewSuggestionAction} onPress={applyTreatmentSuggestion} activeOpacity={0.82}>
+                  <Text style={styles.reviewSuggestionActionText}>Use this</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
 
           <View style={[styles.row, { paddingVertical: 12 }]}>
             <Text style={styles.label}>Private</Text>
@@ -1322,6 +1351,29 @@ const styles = StyleSheet.create({
   },
   reviewControlsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   reviewControlsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600', marginBottom: 10 },
+  reviewSuggestionCard: {
+    marginTop: 2,
+    marginBottom: 10,
+    backgroundColor: '#0d1511',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f3a2c',
+    padding: 12,
+  },
+  reviewSuggestionHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  reviewSuggestionCopy: { flex: 1 },
+  reviewSuggestionEyebrow: { color: '#86efac', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  reviewSuggestionTitle: { color: '#e8f7ee', fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  reviewSuggestionDetail: { color: '#8bb59a', fontSize: 11, lineHeight: 16, marginTop: 6 },
+  reviewSuggestionAction: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#29533d',
+    backgroundColor: '#123222',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  reviewSuggestionActionText: { color: '#c7f9d7', fontSize: 11, fontWeight: '700' },
   priorityFieldRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   priorityFieldRowActive: { backgroundColor: '#0f141d', marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 8 },
   priorityFieldTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },

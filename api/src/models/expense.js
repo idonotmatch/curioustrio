@@ -182,6 +182,45 @@ async function findPotentialDuplicates({ householdId, merchant, amount, date, ex
   return result.rows;
 }
 
+async function findTreatmentCandidates({ userId, merchant, categoryId = null, excludeId = null, limit = 24 }) {
+  const params = [userId];
+  const filters = [`user_id = $1`, `status = 'confirmed'`];
+
+  const merchantValue = `${merchant || ''}`.trim();
+  const hasMerchant = merchantValue.length > 0;
+  const hasCategoryId = !!categoryId;
+
+  if (hasMerchant && hasCategoryId) {
+    params.push(merchantValue, categoryId);
+    filters.push(`(LOWER(COALESCE(merchant, '')) = LOWER($2) OR category_id = $3)`);
+  } else if (hasMerchant) {
+    params.push(merchantValue);
+    filters.push(`LOWER(COALESCE(merchant, '')) = LOWER($2)`);
+  } else if (hasCategoryId) {
+    params.push(categoryId);
+    filters.push(`category_id = $2`);
+  } else {
+    return [];
+  }
+
+  if (excludeId) {
+    params.push(excludeId);
+    filters.push(`id != $${params.length}`);
+  }
+
+  params.push(Math.max(1, Math.min(Number(limit) || 24, 50)));
+
+  const result = await db.query(
+    `SELECT id, merchant, description, amount, date, category_id, is_private, exclude_from_budget, budget_exclusion_reason, source
+     FROM expenses
+     WHERE ${filters.join(' AND ')}
+     ORDER BY date DESC, created_at DESC
+     LIMIT $${params.length}`,
+    params
+  );
+  return result.rows;
+}
+
 async function findByMapkitStableId({ householdId, mapkitStableId, amount, date, excludeId }) {
   const params = [householdId, mapkitStableId, amount, date];
   let excludeClause = '';
@@ -370,4 +409,4 @@ async function updateStatusByHousehold(id, householdId, status) {
   return result.rows[0] || null;
 }
 
-module.exports = { create, findByUser, updateStatus, updateReviewMetadata, findPotentialDuplicates, findByMapkitStableId, findById, findByHousehold, update, updateStatusByHousehold };
+module.exports = { create, findByUser, updateStatus, updateReviewMetadata, findPotentialDuplicates, findTreatmentCandidates, findByMapkitStableId, findById, findByHousehold, update, updateStatusByHousehold };

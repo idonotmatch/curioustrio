@@ -714,6 +714,50 @@ describe('GET /expenses/:id', () => {
       headline: 'Low-confidence sender',
     });
   });
+
+  it('includes a treatment suggestion when similar confirmed expenses share the same handling', async () => {
+    const category = await db.query(
+      `INSERT INTO categories (household_id, name, kind)
+       VALUES ($1, 'Travel', 'expense')
+       RETURNING id`,
+      [householdId]
+    );
+    const categoryId = category.rows[0].id;
+
+    const pendingExpense = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, amount, date, source, status, category_id, notes
+       )
+       VALUES ($1, $2, 'Uber', 42.50, '2026-03-16', 'email', 'pending', $3, 'Airport ride')
+       RETURNING id`,
+      [userId, householdId, categoryId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address)
+       VALUES ($1, 'treatment-suggest-msg', $2, 'imported', 'Uber trip receipt', 'uber@uber.com')`,
+      [userId, pendingExpense.rows[0].id]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, description, amount, date, source, status, category_id, exclude_from_budget, budget_exclusion_reason
+       )
+       VALUES
+         ($1, $2, 'Uber', 'Airport ride', 38.00, '2026-03-02', 'manual', 'confirmed', $3, TRUE, 'business'),
+         ($1, $2, 'Uber', 'Airport ride', 47.00, '2026-03-09', 'manual', 'confirmed', $3, TRUE, 'business')`,
+      [userId, householdId, categoryId]
+    );
+
+    const res = await request(app).get(`/expenses/${pendingExpense.rows[0].id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.gmail_review_hint?.treatment_suggestion).toMatchObject({
+      suggested_track_only: true,
+      budget_exclusion_reason: 'business',
+      reason_label: 'Business',
+      matched_count: 2,
+    });
+  });
 });
 
 describe('PATCH /expenses/:id', () => {

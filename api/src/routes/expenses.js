@@ -78,6 +78,114 @@ function normalizeDismissalReason(value) {
   return null;
 }
 
+function normalizeText(value = '') {
+  return `${value || ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function descriptionTokens(value = '') {
+  return normalizeText(value)
+    .split(' ')
+    .filter((token) => token.length >= 3 && !['the', 'and', 'for', 'with', 'from'].includes(token));
+}
+
+function descriptionOverlapScore(a = '', b = '') {
+  const left = new Set(descriptionTokens(a));
+  const right = new Set(descriptionTokens(b));
+  if (!left.size || !right.size) return 0;
+  let overlap = 0;
+  for (const token of left) {
+    if (right.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(left.size, right.size);
+}
+
+function labelBudgetExclusionReason(value = '') {
+  const labels = {
+    business: 'Business',
+    reimbursable: 'Reimbursable',
+    another_budget: 'Different budget',
+    shared_not_mine: 'Shared, not mine',
+    transfer_like: 'Transfer-like',
+    other: 'Other',
+  };
+  return labels[value] || null;
+}
+
+async function buildExpenseTreatmentSuggestion(expense, userId) {
+  if (!expense?.id || !userId) return null;
+  const candidates = await Expense.findTreatmentCandidates({
+    userId,
+    merchant: expense.merchant,
+    categoryId: expense.category_id,
+    excludeId: expense.id,
+  });
+
+  const merchantNorm = normalizeText(expense.merchant);
+  const descriptionNorm = normalizeText(expense.description || expense.notes || '');
+  const qualified = [];
+
+  for (const candidate of candidates) {
+    let score = 0;
+    const sameMerchant = merchantNorm && normalizeText(candidate.merchant) === merchantNorm;
+    const sameCategory = expense.category_id && candidate.category_id && `${candidate.category_id}` === `${expense.category_id}`;
+    const descriptionOverlap = descriptionOverlapScore(descriptionNorm, candidate.description || '');
+    const amountDelta = Math.abs(Number(candidate.amount || 0) - Number(expense.amount || 0));
+    const amountClose = amountDelta <= Math.max(12, Math.abs(Number(expense.amount || 0)) * 0.25);
+
+    if (sameMerchant) score += 1.25;
+    if (sameCategory) score += 1;
+    if (descriptionOverlap >= 0.5) score += 1;
+    if (amountClose) score += 0.5;
+
+    if (score >= 2) {
+      qualified.push(candidate);
+    }
+  }
+
+  if (qualified.length < 2) return null;
+
+  const grouped = new Map();
+  for (const candidate of qualified) {
+    const key = JSON.stringify({
+      is_private: !!candidate.is_private,
+      exclude_from_budget: !!candidate.exclude_from_budget,
+      budget_exclusion_reason: candidate.exclude_from_budget ? (candidate.budget_exclusion_reason || null) : null,
+    });
+    const current = grouped.get(key) || { count: 0, candidate };
+    current.count += 1;
+    grouped.set(key, current);
+  }
+
+  const top = [...grouped.values()].sort((a, b) => b.count - a.count)[0];
+  if (!top || top.count < 2 || top.count / qualified.length < 0.75) return null;
+
+  const template = top.candidate;
+  const suggestedPrivate = !!template.is_private;
+  const suggestedTrackOnly = !!template.exclude_from_budget;
+  const suggestedReason = suggestedTrackOnly ? (template.budget_exclusion_reason || null) : null;
+
+  if (!suggestedPrivate && !suggestedTrackOnly) return null;
+
+  const parts = [];
+  if (suggestedTrackOnly) {
+    parts.push(`tracked only${suggestedReason ? ` as ${labelBudgetExclusionReason(suggestedReason)?.toLowerCase() || 'track only'}` : ''}`);
+  }
+  if (suggestedPrivate) {
+    parts.push(suggestedTrackOnly ? 'kept private too' : 'kept private');
+  }
+
+  return {
+    suggested_private: suggestedPrivate,
+    suggested_track_only: suggestedTrackOnly,
+    budget_exclusion_reason: suggestedReason,
+    reason_label: labelBudgetExclusionReason(suggestedReason),
+    matched_count: top.count,
+    basis_count: qualified.length,
+    summary: `You usually ${parts.join(' and ')} for similar expenses.`,
+    detail: `${top.count} of ${qualified.length} similar confirmed expenses were handled this way.`,
+  };
+}
+
 function normalizeReviewItem(item = {}, index = 0) {
   const amount = item.amount == null || item.amount === '' ? null : Number(item.amount);
   return {
@@ -385,9 +493,21 @@ async function attachGmailReviewHint(expense, userId) {
       };
     }
   }
+  let treatmentSuggestion = null;
+  try {
+    treatmentSuggestion = await buildExpenseTreatmentSuggestion(expense, userId);
+  } catch (err) {
+    console.error('[expenses/pending] treatment suggestion failed:', {
+      expense_id: expense?.id || null,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+  }
   return {
     ...expense,
-    gmail_review_hint: buildEmailReviewHint(expense, log, senderQuality),
+    gmail_review_hint: {
+      ...buildEmailReviewHint(expense, log, senderQuality),
+      treatment_suggestion: treatmentSuggestion,
+    },
   };
 }
 
