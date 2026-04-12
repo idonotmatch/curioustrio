@@ -595,6 +595,14 @@ export default function ExpenseDetailScreen() {
 
   function applyTreatmentSuggestion() {
     if (!treatmentSuggestion) return;
+    if (treatmentSuggestion.suggested_category_id) {
+      setCategoryId(treatmentSuggestion.suggested_category_id);
+    }
+    if (treatmentSuggestion.suggested_payment_method) {
+      setPaymentMethod(treatmentSuggestion.suggested_payment_method);
+      setCardLabel(treatmentSuggestion.suggested_card_label || '');
+      setCardLast4(treatmentSuggestion.suggested_card_last4 || '');
+    }
     if (treatmentSuggestion.suggested_private) {
       setIsPrivate(true);
     }
@@ -733,6 +741,18 @@ export default function ExpenseDetailScreen() {
                   <Text style={styles.reviewSuggestionEyebrow}>Based on similar expenses</Text>
                   <Text style={styles.reviewSuggestionTitle}>{treatmentSuggestion.summary}</Text>
                   <Text style={styles.reviewSuggestionDetail}>{treatmentSuggestion.detail}</Text>
+                  {treatmentSuggestion.suggested_category_name ? (
+                    <Text style={styles.reviewSuggestionMeta}>
+                      Usually categorized as {treatmentSuggestion.suggested_category_name}
+                    </Text>
+                  ) : null}
+                  {treatmentSuggestion.suggested_payment_method ? (
+                    <Text style={styles.reviewSuggestionMeta}>
+                      Usually paid with {treatmentSuggestion.suggested_payment_method}
+                      {treatmentSuggestion.suggested_card_label ? ` · ${treatmentSuggestion.suggested_card_label}` : ''}
+                      {treatmentSuggestion.suggested_card_last4 ? ` ····${treatmentSuggestion.suggested_card_last4}` : ''}
+                    </Text>
+                  ) : null}
                 </View>
                 <TouchableOpacity style={styles.reviewSuggestionAction} onPress={applyTreatmentSuggestion} activeOpacity={0.82}>
                   <Text style={styles.reviewSuggestionActionText}>Use this</Text>
@@ -1365,6 +1385,7 @@ const styles = StyleSheet.create({
   reviewSuggestionEyebrow: { color: '#86efac', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   reviewSuggestionTitle: { color: '#e8f7ee', fontSize: 13, fontWeight: '600', lineHeight: 18 },
   reviewSuggestionDetail: { color: '#8bb59a', fontSize: 11, lineHeight: 16, marginTop: 6 },
+  reviewSuggestionMeta: { color: '#b7d8c2', fontSize: 11, lineHeight: 16, marginTop: 6 },
   reviewSuggestionAction: {
     borderRadius: 999,
     borderWidth: 1,

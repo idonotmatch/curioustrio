@@ -740,11 +740,13 @@ describe('GET /expenses/:id', () => {
 
     await db.query(
       `INSERT INTO expenses (
-         user_id, household_id, merchant, description, amount, date, source, status, category_id, exclude_from_budget, budget_exclusion_reason
+         user_id, household_id, merchant, description, amount, date, source, status, category_id,
+         payment_method, card_label, card_last4,
+         exclude_from_budget, budget_exclusion_reason
        )
        VALUES
-         ($1, $2, 'Uber', 'Airport ride', 38.00, '2026-03-02', 'manual', 'confirmed', $3, TRUE, 'business'),
-         ($1, $2, 'Uber', 'Airport ride', 47.00, '2026-03-09', 'manual', 'confirmed', $3, TRUE, 'business')`,
+         ($1, $2, 'Uber', 'Airport ride', 38.00, '2026-03-02', 'manual', 'confirmed', $3, 'credit', 'Chase Sapphire', '4242', TRUE, 'business'),
+         ($1, $2, 'Uber', 'Airport ride', 47.00, '2026-03-09', 'manual', 'confirmed', $3, 'credit', 'Chase Sapphire', '4242', TRUE, 'business')`,
       [userId, householdId, categoryId]
     );
 
@@ -755,6 +757,11 @@ describe('GET /expenses/:id', () => {
       suggested_track_only: true,
       budget_exclusion_reason: 'business',
       reason_label: 'Business',
+      suggested_category_id: categoryId,
+      suggested_category_name: 'Travel',
+      suggested_payment_method: 'credit',
+      suggested_card_label: 'Chase Sapphire',
+      suggested_card_last4: '4242',
       matched_count: 2,
     });
   });

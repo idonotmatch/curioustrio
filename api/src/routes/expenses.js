@@ -111,6 +111,19 @@ function labelBudgetExclusionReason(value = '') {
   return labels[value] || null;
 }
 
+function majorityBy(candidates = [], selector) {
+  const grouped = new Map();
+  for (const candidate of candidates) {
+    const value = selector(candidate);
+    if (value == null) continue;
+    const key = JSON.stringify(value);
+    const current = grouped.get(key) || { count: 0, value };
+    current.count += 1;
+    grouped.set(key, current);
+  }
+  return [...grouped.values()].sort((a, b) => b.count - a.count)[0] || null;
+}
+
 async function buildExpenseTreatmentSuggestion(expense, userId) {
   if (!expense?.id || !userId) return null;
   const candidates = await Expense.findTreatmentCandidates({
@@ -164,7 +177,27 @@ async function buildExpenseTreatmentSuggestion(expense, userId) {
   const suggestedTrackOnly = !!template.exclude_from_budget;
   const suggestedReason = suggestedTrackOnly ? (template.budget_exclusion_reason || null) : null;
 
-  if (!suggestedPrivate && !suggestedTrackOnly) return null;
+  const categoryMajority = majorityBy(
+    qualified.filter((candidate) => candidate.category_id),
+    (candidate) => ({ id: candidate.category_id, name: candidate.category_name || null })
+  );
+  const paymentMajority = majorityBy(
+    qualified.filter((candidate) => candidate.payment_method && candidate.payment_method !== 'unknown'),
+    (candidate) => ({
+      payment_method: candidate.payment_method,
+      card_label: candidate.card_label || null,
+      card_last4: candidate.card_last4 || null,
+    })
+  );
+
+  const suggestedCategory = categoryMajority && categoryMajority.count >= 2 && categoryMajority.count / qualified.length >= 0.75
+    ? categoryMajority.value
+    : null;
+  const suggestedPayment = paymentMajority && paymentMajority.count >= 2 && paymentMajority.count / qualified.length >= 0.75
+    ? paymentMajority.value
+    : null;
+
+  if (!suggestedPrivate && !suggestedTrackOnly && !suggestedCategory && !suggestedPayment) return null;
 
   const parts = [];
   if (suggestedTrackOnly) {
@@ -173,12 +206,23 @@ async function buildExpenseTreatmentSuggestion(expense, userId) {
   if (suggestedPrivate) {
     parts.push(suggestedTrackOnly ? 'kept private too' : 'kept private');
   }
+  if (suggestedCategory?.name) {
+    parts.push(`categorized as ${suggestedCategory.name}`);
+  }
+  if (suggestedPayment?.payment_method) {
+    parts.push(`paid with ${suggestedPayment.payment_method}`);
+  }
 
   return {
     suggested_private: suggestedPrivate,
     suggested_track_only: suggestedTrackOnly,
     budget_exclusion_reason: suggestedReason,
     reason_label: labelBudgetExclusionReason(suggestedReason),
+    suggested_category_id: suggestedCategory?.id || null,
+    suggested_category_name: suggestedCategory?.name || null,
+    suggested_payment_method: suggestedPayment?.payment_method || null,
+    suggested_card_label: suggestedPayment?.card_label || null,
+    suggested_card_last4: suggestedPayment?.card_last4 || null,
     matched_count: top.count,
     basis_count: qualified.length,
     summary: `You usually ${parts.join(' and ')} for similar expenses.`,

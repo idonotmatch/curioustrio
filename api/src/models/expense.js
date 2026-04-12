@@ -211,10 +211,14 @@ async function findTreatmentCandidates({ userId, merchant, categoryId = null, ex
   params.push(Math.max(1, Math.min(Number(limit) || 24, 50)));
 
   const result = await db.query(
-    `SELECT id, merchant, description, amount, date, category_id, is_private, exclude_from_budget, budget_exclusion_reason, source
-     FROM expenses
+    `SELECT e.id, e.merchant, e.description, e.amount, e.date, e.category_id,
+            c.name AS category_name,
+            e.payment_method, e.card_label, e.card_last4,
+            e.is_private, e.exclude_from_budget, e.budget_exclusion_reason, e.source
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
      WHERE ${filters.join(' AND ')}
-     ORDER BY date DESC, created_at DESC
+     ORDER BY e.date DESC, e.created_at DESC
      LIMIT $${params.length}`,
     params
   );
