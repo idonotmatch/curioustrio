@@ -147,6 +147,7 @@ export default function SummaryScreen() {
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
   const displayGmailImportSummary = gmailImportSummary || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
+  const gmailRefreshTimestamp = displayGmailImportSummary?.last_synced_at || displayGmailImportSummary?.last_imported_at || null;
   const hasMultipleInsights = displayInsights.length > 1;
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
@@ -664,7 +665,7 @@ export default function SummaryScreen() {
             <Text style={styles.sectionLabelCompact}>Recent</Text>
             <Text style={styles.recentMeta}>
               {`${pendingExpenses.length} pending`}
-              {displayGmailImportSummary?.last_imported_at ? ` · Gmail synced ${formatRelativeTime(displayGmailImportSummary.last_imported_at)}` : ''}
+              {gmailRefreshTimestamp ? ` · Gmail synced ${formatRelativeTime(gmailRefreshTimestamp)}` : ''}
             </Text>
           </View>
           <TouchableOpacity onPress={() => router.navigate('/')}>
