@@ -10,6 +10,7 @@ import { api } from '../../services/api';
 import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { removePendingExpense } from '../../hooks/usePendingExpenses';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
@@ -947,6 +948,7 @@ export default function ExpenseDetailScreen() {
                   invalidateCacheByPrefix('cache:budget:'),
                   invalidateCacheByPrefix('cache:household-expenses:'),
                 ]);
+                removePendingExpense(id);
                 router.back();
               }
               catch (e) { Alert.alert('Error', e.message); setActioning(false); }
@@ -966,6 +968,7 @@ export default function ExpenseDetailScreen() {
                 await removeExpenseSnapshot(id);
                 const { invalidateCache } = await import('../../services/cache');
                 await invalidateCache('cache:expenses:pending');
+                removePendingExpense(id);
                 router.back();
               }
               catch (e) { Alert.alert('Error', e.message); setActioning(false); }

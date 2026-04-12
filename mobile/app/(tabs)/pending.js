@@ -4,7 +4,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { usePendingExpenses, removePendingExpense } from '../../hooks/usePendingExpenses';
 import { DuplicateAlert } from '../../components/DuplicateAlert';
 import { api } from '../../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../../services/cache';
@@ -87,7 +87,10 @@ export default function PendingScreen() {
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
 
-  const remove = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
+  const remove = (id) => {
+    setDisplayExpenses(prev => prev.filter(e => e.id !== id));
+    removePendingExpense(id);
+  };
 
   async function dismiss(id) {
     if (isUsingMockData) {
