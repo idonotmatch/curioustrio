@@ -11,6 +11,7 @@ import { usePendingExpenses, removePendingExpense } from '../../hooks/usePending
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
 import { ActionNotice } from '../../components/ActionNotice';
+import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { ReviewQueueItem } from '../../components/ReviewQueueItem';
 import { api } from '../../services/api';
@@ -206,6 +207,7 @@ export default function FeedScreen() {
   const { categories } = useCategories();
   const router = useRouter();
   const [notice, setNotice] = useState('');
+  const [dismissingId, setDismissingId] = useState(null);
 
   useEffect(() => {
     setSelectedMonth(currentPeriod(transactionStartDay));
@@ -239,16 +241,22 @@ export default function FeedScreen() {
     refreshPending();
   }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending, isMultiMember]));
 
-  async function dismissPending(id) {
+  function requestDismissPending(id) {
+    setDismissingId(id);
+  }
+
+  async function dismissPending(id, dismissalReason) {
     if (isUsingMockPending) {
       resolveMockExpense(id);
+      setDismissingId(null);
       setNotice('Dismissed from your review queue');
       return;
     }
     try {
-      await api.post(`/expenses/${id}/dismiss`);
+      await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
       await removeExpenseSnapshot(id);
       removePendingExpense(id);
+      setDismissingId(null);
       setNotice('Dismissed from your review queue');
       const { invalidateCache } = await import('../../services/cache');
       await invalidateCache('cache:expenses:pending');
@@ -337,7 +345,7 @@ export default function FeedScreen() {
                 },
               })}
               onApprove={approvePending}
-              onDismiss={dismissPending}
+              onDismiss={requestDismissPending}
             />
           ))}
           {item.items.length > 3 && (
@@ -459,6 +467,11 @@ export default function FeedScreen() {
           </View>
         </View>
       </Modal>
+      <DismissReasonSheet
+        visible={!!dismissingId}
+        onClose={() => setDismissingId(null)}
+        onSelect={(reason) => dismissPending(dismissingId, reason)}
+      />
       <ActionNotice message={notice} />
     </View>
   );

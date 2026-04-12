@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionNotice } from '../components/ActionNotice';
+import { DismissReasonSheet } from '../components/DismissReasonSheet';
 import { usePendingExpenses, removePendingExpense } from '../hooks/usePendingExpenses';
 import { ReviewQueueItem } from '../components/ReviewQueueItem';
 import { api } from '../services/api';
@@ -14,6 +15,7 @@ export default function ReviewQueueScreen() {
   const { expenses, loading, error, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
   const [notice, setNotice] = useState('');
+  const [dismissingId, setDismissingId] = useState(null);
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
   useEffect(() => {
@@ -27,18 +29,24 @@ export default function ReviewQueueScreen() {
     removePendingExpense(id);
   };
 
-  async function dismiss(id) {
+  function requestDismiss(id) {
+    setDismissingId(id);
+  }
+
+  async function dismiss(id, dismissalReason) {
     if (isUsingMockData) {
       resolveMockExpense(id);
       remove(id);
+      setDismissingId(null);
       setNotice('Dismissed from your review queue');
       return;
     }
     try {
-      await api.post(`/expenses/${id}/dismiss`);
+      await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
       await removeExpenseSnapshot(id);
       await invalidateCache('cache:expenses:pending');
       remove(id);
+      setDismissingId(null);
       setNotice('Dismissed from your review queue');
     } catch {
       // ignore
@@ -89,7 +97,7 @@ export default function ReviewQueueScreen() {
                 },
               })}
               onApprove={approve}
-              onDismiss={dismiss}
+              onDismiss={requestDismiss}
             />
           )}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
@@ -111,6 +119,11 @@ export default function ReviewQueueScreen() {
           }
         />
         <ActionNotice message={notice} />
+        <DismissReasonSheet
+          visible={!!dismissingId}
+          onClose={() => setDismissingId(null)}
+          onSelect={(reason) => dismiss(dismissingId, reason)}
+        />
       </View>
     </SafeAreaView>
   );

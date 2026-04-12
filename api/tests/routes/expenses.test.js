@@ -570,16 +570,19 @@ describe('POST /expenses/:id/dismiss', () => {
       [userId, expenseId]
     );
 
-    const res = await request(app).post(`/expenses/${expenseId}/dismiss`);
+    const res = await request(app)
+      .post(`/expenses/${expenseId}/dismiss`)
+      .send({ dismissal_reason: 'not_an_expense' });
     expect(res.status).toBe(200);
 
     const log = await db.query(
-      `SELECT review_action, reviewed_at
+      `SELECT review_action, review_changed_fields, reviewed_at
        FROM email_import_feedback
        WHERE expense_id = $1`,
       [expenseId]
     );
     expect(log.rows[0].review_action).toBe('dismissed');
+    expect(log.rows[0].review_changed_fields).toContain('dismiss_reason_not_an_expense');
     expect(log.rows[0].reviewed_at).toBeTruthy();
   });
 

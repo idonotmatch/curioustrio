@@ -19,6 +19,10 @@ function isReviewPathField(field = '') {
   return `${field}`.startsWith('review_path_');
 }
 
+function isDismissReasonField(field = '') {
+  return `${field}`.startsWith('dismiss_reason_');
+}
+
 function extractReviewPath(changedFields = []) {
   const fields = Array.isArray(changedFields) ? changedFields : [];
   const match = fields.find(isReviewPathField);
@@ -213,8 +217,19 @@ function buildSenderSummary(rows, limit = 5) {
     if (editCount > 0) {
       current.edited += 1;
       current._changedFieldCounts = current._changedFieldCounts || new Map();
+      current._dismissReasonCounts = current._dismissReasonCounts || new Map();
       for (const field of changedFields.filter((field) => !isReviewPathField(field))) {
+        if (isDismissReasonField(field)) {
+          current._dismissReasonCounts.set(field, (current._dismissReasonCounts.get(field) || 0) + 1);
+          continue;
+        }
         current._changedFieldCounts.set(field, (current._changedFieldCounts.get(field) || 0) + 1);
+      }
+    }
+    if (row.review_action === 'dismissed') {
+      current._dismissReasonCounts = current._dismissReasonCounts || new Map();
+      for (const field of changedFields.filter(isDismissReasonField)) {
+        current._dismissReasonCounts.set(field, (current._dismissReasonCounts.get(field) || 0) + 1);
       }
     }
     if (row.user_feedback === 'should_have_imported') current.should_have_imported += 1;
@@ -237,6 +252,10 @@ function buildSenderSummary(rows, limit = 5) {
       const review_paths = [...(entry._reviewPathCounts || new Map()).entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([path, count]) => ({ path, count }));
+      const top_dismiss_reasons = [...(entry._dismissReasonCounts || new Map()).entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 3)
+        .map(([reason, count]) => ({ reason: `${reason}`.replace(/^dismiss_reason_/, ''), count }));
       const feedbackSummary = feedbackBySender.get(entry.sender_domain) || {};
       const metrics = {
         imported: entry.imported,
@@ -254,6 +273,7 @@ function buildSenderSummary(rows, limit = 5) {
       const review_path_reliability = summarizeReviewPathReliability(review_paths, metrics);
       delete entry._changedFieldCounts;
       delete entry._reviewPathCounts;
+      delete entry._dismissReasonCounts;
       return {
         ...entry,
         clean_approval_rate: metrics.clean_approval_rate,
@@ -267,6 +287,7 @@ function buildSenderSummary(rows, limit = 5) {
         didnt_need_review_rate: toRate(feedbackSummary.didnt_need_review || 0, entry.imported),
         needed_more_review_rate: toRate(feedbackSummary.needed_more_review || 0, entry.imported),
         top_changed_fields: changedFieldCounts,
+        top_dismiss_reasons,
         review_paths,
         review_path_reliability,
         item_reliability: summarizeItemReliability(rows.filter((row) => extractSenderDomain(row.from_address) === entry.sender_domain)),
@@ -309,7 +330,7 @@ function buildQualityDebug(rows, senderLimit = 5) {
   const fieldCounts = new Map();
   for (const row of rows) {
     const changedFields = (Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [])
-      .filter((field) => !isReviewPathField(field));
+      .filter((field) => !isReviewPathField(field) && !isDismissReasonField(field));
     for (const field of changedFields) {
       fieldCounts.set(field, (fieldCounts.get(field) || 0) + 1);
     }
@@ -320,10 +341,25 @@ function buildQualityDebug(rows, senderLimit = 5) {
     .slice(0, 10)
     .map(([field, count]) => ({ field, count }));
 
+  const dismissReasonCounts = new Map();
+  for (const row of rows) {
+    const changedFields = (Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [])
+      .filter(isDismissReasonField);
+    for (const field of changedFields) {
+      dismissReasonCounts.set(field, (dismissReasonCounts.get(field) || 0) + 1);
+    }
+  }
+
+  const top_dismiss_reasons = [...dismissReasonCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10)
+    .map(([reason, count]) => ({ reason: `${reason}`.replace(/^dismiss_reason_/, ''), count }));
+
   return {
     sender_level_counts,
     top_corrected_senders,
     top_corrected_fields,
+    top_dismiss_reasons,
   };
 }
 

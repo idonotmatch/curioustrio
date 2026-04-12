@@ -11,6 +11,7 @@ import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { removePendingExpense } from '../../hooks/usePendingExpenses';
+import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
@@ -194,6 +195,7 @@ export default function ExpenseDetailScreen() {
   const [savingControls, setSavingControls] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actioning, setActioning] = useState(false);
+  const [showDismissReasonSheet, setShowDismissReasonSheet] = useState(false);
 
   // Edit state
   const [merchant, setMerchant] = useState('');
@@ -537,6 +539,22 @@ export default function ExpenseDetailScreen() {
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not remove recurring flag');
     } finally {
+      setActioning(false);
+    }
+  }
+
+  async function dismissPendingExpense(dismissalReason) {
+    setActioning(true);
+    try {
+      await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
+      await removeExpenseSnapshot(id);
+      const { invalidateCache } = await import('../../services/cache');
+      await invalidateCache('cache:expenses:pending');
+      removePendingExpense(id);
+      setShowDismissReasonSheet(false);
+      router.back();
+    } catch (e) {
+      Alert.alert('Error', e.message);
       setActioning(false);
     }
   }
@@ -1152,18 +1170,7 @@ export default function ExpenseDetailScreen() {
           <TouchableOpacity
             style={[styles.dismissBtn, actioning && { opacity: 0.5 }]}
             disabled={actioning}
-            onPress={async () => {
-              setActioning(true);
-              try {
-                await api.post(`/expenses/${id}/dismiss`);
-                await removeExpenseSnapshot(id);
-                const { invalidateCache } = await import('../../services/cache');
-                await invalidateCache('cache:expenses:pending');
-                removePendingExpense(id);
-                router.back();
-              }
-              catch (e) { Alert.alert('Error', e.message); setActioning(false); }
-            }}
+            onPress={() => setShowDismissReasonSheet(true)}
           >
             <Text style={styles.dismissBtnText}>Dismiss</Text>
           </TouchableOpacity>
@@ -1230,6 +1237,12 @@ export default function ExpenseDetailScreen() {
           </View>
         </View>
       </Modal>
+      <DismissReasonSheet
+        visible={showDismissReasonSheet}
+        busy={actioning}
+        onClose={() => !actioning && setShowDismissReasonSheet(false)}
+        onSelect={dismissPendingExpense}
+      />
     </DismissKeyboardScrollView>
   );
 }

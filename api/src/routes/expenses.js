@@ -67,6 +67,17 @@ function normalizeReviewContext(value) {
   return null;
 }
 
+function normalizeDismissalReason(value) {
+  const raw = `${value || ''}`.trim().toLowerCase();
+  if (raw === 'not_an_expense') return 'dismiss_reason_not_an_expense';
+  if (raw === 'duplicate') return 'dismiss_reason_duplicate';
+  if (raw === 'business_or_track_only') return 'dismiss_reason_business_or_track_only';
+  if (raw === 'transfer_or_payment') return 'dismiss_reason_transfer_or_payment';
+  if (raw === 'wrong_details') return 'dismiss_reason_wrong_details';
+  if (raw === 'other') return 'dismiss_reason_other';
+  return null;
+}
+
 function normalizeReviewItem(item = {}, index = 0) {
   const amount = item.amount == null || item.amount === '' ? null : Number(item.amount);
   return {
@@ -1050,8 +1061,12 @@ router.post('/:id/dismiss', async (req, res, next) => {
     const expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (expense.source === 'email') {
+      const dismissalReasonField = normalizeDismissalReason(req.body?.dismissal_reason);
       await Expense.updateReviewMetadata(expense.id, user.id, { reviewRequired: false }) || expense;
-      await EmailImportLog.recordReviewFeedback(expense.id, { action: 'dismissed' });
+      await EmailImportLog.recordReviewFeedback(expense.id, {
+        action: 'dismissed',
+        changedFields: dismissalReasonField ? [dismissalReasonField] : [],
+      });
     }
     res.json(expense);
   } catch (err) { next(err); }
