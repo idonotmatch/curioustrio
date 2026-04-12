@@ -374,7 +374,19 @@ async function attachGmailReviewHint(expense, userId) {
 }
 
 async function attachGmailReviewHints(expenses = [], userId) {
-  return Promise.all(expenses.map((expense) => attachGmailReviewHint(expense, userId)));
+  const results = await Promise.allSettled(
+    expenses.map((expense) => attachGmailReviewHint(expense, userId))
+  );
+  return results.map((result, index) => {
+    if (result.status === 'fulfilled') return result.value;
+    const expense = expenses[index];
+    console.error('[expenses/pending] gmail hint attach failed:', {
+      expense_id: expense?.id || null,
+      source: expense?.source || null,
+      message: result.reason?.message || String(result.reason || 'unknown_error'),
+    });
+    return { ...expense, gmail_review_hint: null };
+  });
 }
 
 const { aiEndpoints } = require('../middleware/rateLimit');
@@ -898,13 +910,37 @@ router.get('/pending', async (req, res, next) => {
        ORDER BY e.date DESC, e.created_at DESC`,
       [user.id]
     );
-    // For each expense, attach duplicate_flags
-    const expenses = await Promise.all(
-      result.rows.map(async (e) => ({
-        ...e,
-        duplicate_flags: await DuplicateFlag.findByExpenseId(e.id),
-      }))
+    const expenseResults = await Promise.allSettled(
+      result.rows.map(async (e) => {
+        let duplicateFlags = [];
+        try {
+          duplicateFlags = await DuplicateFlag.findByExpenseId(e.id);
+        } catch (err) {
+          console.error('[expenses/pending] duplicate flag lookup failed:', {
+            expense_id: e.id,
+            message: err?.message || String(err || 'unknown_error'),
+          });
+        }
+        return {
+          ...e,
+          duplicate_flags: duplicateFlags,
+        };
+      })
     );
+
+    const expenses = expenseResults.map((rowResult, index) => {
+      if (rowResult.status === 'fulfilled') return rowResult.value;
+      const base = result.rows[index];
+      console.error('[expenses/pending] expense row enrichment failed:', {
+        expense_id: base?.id || null,
+        message: rowResult.reason?.message || String(rowResult.reason || 'unknown_error'),
+      });
+      return {
+        ...base,
+        duplicate_flags: [],
+      };
+    });
+
     res.json(await attachGmailReviewHints(expenses, user.id));
   } catch (err) { next(err); }
 });
