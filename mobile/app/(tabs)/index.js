@@ -152,7 +152,7 @@ function BudgetBar({ spent, budget, label, periodText }) {
   );
 }
 
-function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMultiMember, selectedMonth, transactionStartDay, onMonthPress, householdName }) {
+function SpendHeader({ myBudget, householdBudget, isMultiMember, selectedMonth, transactionStartDay, onMonthPress, householdName }) {
   return (
     <View style={styles.spendHeader}>
       <GlobalPeriodHeader
@@ -161,9 +161,9 @@ function SpendHeader({ myTotal, myBudget, householdTotal, householdBudget, isMul
         onPress={onMonthPress}
         style={styles.globalHeader}
       />
-      <BudgetBar spent={myTotal} budget={myBudget} label="Mine" />
+      <BudgetBar spent={Number(myBudget?.total?.spent || 0)} budget={myBudget} label="Mine" />
       {isMultiMember && householdBudget && (
-        <BudgetBar spent={householdTotal} budget={householdBudget} label="Household" />
+        <BudgetBar spent={Number(householdBudget?.total?.spent || 0)} budget={householdBudget} label="Household" />
       )}
     </View>
   );
@@ -298,9 +298,6 @@ export default function FeedScreen() {
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
   const selectedDate = new Date(selectedMonth + '-02');
-  const myTotal = myExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-  const householdTotal = householdExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-
   const listData = [
     { _type: 'pending_section', items: pending || [] },
     ...displayExpenses.map(e => ({ _type: 'expense', ...e })),
@@ -412,9 +409,7 @@ export default function FeedScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <SpendHeader
-        myTotal={myTotal}
         myBudget={personalBudget}
-        householdTotal={householdTotal}
         householdBudget={householdBudget}
         isMultiMember={isMultiMember}
         selectedMonth={selectedMonth}

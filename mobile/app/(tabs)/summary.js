@@ -340,8 +340,8 @@ export default function SummaryScreen() {
     Alert.alert(insight.title, insight.body);
   }
 
-  const spent = (expenses || []).reduce((s, e) => s + Number(e.amount), 0);
-  const householdSpent = (householdExpenses || []).reduce((s, e) => s + Number(e.amount), 0);
+  const spent = Number(personalBudget?.total?.spent || 0);
+  const householdSpent = Number(householdBudget?.total?.spent || 0);
   const limit = personalBudget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
   const over = limit > 0 && spent > limit;
