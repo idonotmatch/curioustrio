@@ -59,5 +59,7 @@ export function useExpenses(month, startDayOverride) {
 
   useEffect(() => { load(); }, [load]);
 
-  return { expenses, loading, error, refresh };
+  // softRefresh: TTL-respecting refresh for lifecycle events (tab focus, app foreground).
+  // Unlike refresh(), this won't re-fetch if data was recently loaded or mutated.
+  return { expenses, loading, error, refresh, softRefresh: load };
 }

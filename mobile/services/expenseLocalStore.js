@@ -66,6 +66,36 @@ export async function loadExpenseItemsSnapshot(id) {
  *
  * Use this after a create/approve instead of invalidating cache:expenses:* entirely.
  */
+/**
+ * Reconstruct a month's expense list from individual detail snapshots.
+ * Used as a cache-miss fallback for past months so the household view
+ * can render offline without a network round-trip.
+ * Returns sorted-by-date-desc array, or null if no snapshots exist for that month.
+ */
+export async function loadExpenseSnapshotsForMonth(month) {
+  if (!month) return null;
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const detailKeys = allKeys.filter(k => k.startsWith(DETAIL_PREFIX));
+    if (!detailKeys.length) return null;
+    const entries = await AsyncStorage.multiGet(detailKeys);
+    const expenses = [];
+    for (const [, raw] of entries) {
+      if (!raw) continue;
+      try {
+        const { data } = JSON.parse(raw);
+        if (data?.date?.startsWith(month)) expenses.push(data);
+      } catch {
+        // skip malformed
+      }
+    }
+    if (!expenses.length) return null;
+    return expenses.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  } catch {
+    return null;
+  }
+}
+
 export async function prependToExpenseMonthCaches(expense) {
   if (!expense?.id || !expense?.date) return;
   const month = String(expense.date).slice(0, 7);
