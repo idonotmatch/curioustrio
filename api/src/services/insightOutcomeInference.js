@@ -1,5 +1,18 @@
 const db = require('../db');
 
+function isMissingExcludeFromBudgetError(err) {
+  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+async function queryBudgetRelevant(sql, params, fallbackSql) {
+  try {
+    return await db.query(sql, params);
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    return db.query(fallbackSql, params);
+  }
+}
+
 const INFERABLE_OUTCOME_TYPES = new Map([
   ['recurring_restock_window', { outcomeType: 'restocked_item', windowDays: 10 }],
   ['buy_soon_better_price', { outcomeType: 'bought_price_watched_item', windowDays: 10 }],
@@ -86,7 +99,24 @@ async function findMatchingPurchase({ user, groupKey, shownAt, windowDays }) {
     scopeClause = `AND e.user_id = $${params.length}`;
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       e.id AS expense_id,
+       e.date,
+       e.created_at,
+       e.merchant,
+       ei.description
+     FROM expense_items ei
+     JOIN expenses e ON e.id = ei.expense_id
+     WHERE ${identityClause}
+       AND e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.date >= $1::date
+       AND e.date <= ($1::date + ($2::text || ' days')::interval)
+       ${scopeClause}
+     ORDER BY e.date ASC, e.created_at ASC
+     LIMIT 1`,
+    params,
     `SELECT
        e.id AS expense_id,
        e.date,
@@ -101,8 +131,7 @@ async function findMatchingPurchase({ user, groupKey, shownAt, windowDays }) {
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
        ${scopeClause}
      ORDER BY e.date ASC, e.created_at ASC
-     LIMIT 1`,
-    params
+     LIMIT 1`
   );
 
   return result.rows[0] || null;
@@ -127,7 +156,24 @@ async function findCategorySpendAfterShown({ user, categoryKey, shownAt, windowD
     scopeClause = `AND e.user_id = $${params.length}`;
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       e.id AS expense_id,
+       e.date,
+       e.created_at,
+       e.merchant,
+       e.amount
+     FROM expenses e
+     WHERE e.category_id = $3
+       AND e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.amount >= $4
+       AND e.date >= $1::date
+       AND e.date <= ($1::date + ($2::text || ' days')::interval)
+       ${scopeClause}
+     ORDER BY e.date ASC, e.created_at ASC
+     LIMIT 1`,
+    params,
     `SELECT
        e.id AS expense_id,
        e.date,
@@ -142,8 +188,7 @@ async function findCategorySpendAfterShown({ user, categoryKey, shownAt, windowD
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
        ${scopeClause}
      ORDER BY e.date ASC, e.created_at ASC
-     LIMIT 1`,
-    params
+     LIMIT 1`
   );
 
   return result.rows[0] || null;
@@ -168,7 +213,23 @@ async function findMeaningfulSpendAfterShown({ user, shownAt, windowDays, scope,
     scopeClause = `AND e.user_id = $${params.length}`;
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       e.id AS expense_id,
+       e.date,
+       e.created_at,
+       e.merchant,
+       e.amount
+     FROM expenses e
+     WHERE e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.amount >= $3
+       AND e.date >= $1::date
+       AND e.date <= ($1::date + ($2::text || ' days')::interval)
+       ${scopeClause}
+     ORDER BY e.amount DESC, e.date ASC, e.created_at ASC
+     LIMIT 1`,
+    params,
     `SELECT
        e.id AS expense_id,
        e.date,
@@ -182,8 +243,7 @@ async function findMeaningfulSpendAfterShown({ user, shownAt, windowDays, scope,
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
        ${scopeClause}
      ORDER BY e.amount DESC, e.date ASC, e.created_at ASC
-     LIMIT 1`,
-    params
+     LIMIT 1`
   );
 
   return result.rows[0] || null;
@@ -208,7 +268,18 @@ async function findCategorizedExpenseAfterShown({ user, shownAt, windowDays, sco
     scopeClause = `AND e.user_id = $${params.length}`;
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT e.id AS expense_id, e.created_at, e.merchant, e.category_id
+     FROM expenses e
+     WHERE e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.category_id IS NOT NULL
+       AND e.created_at >= $1::timestamptz
+       AND e.created_at <= ($1::timestamptz + ($2::text || ' days')::interval)
+       ${scopeClause}
+     ORDER BY e.created_at ASC
+     LIMIT 1`,
+    params,
     `SELECT e.id AS expense_id, e.created_at, e.merchant, e.category_id
      FROM expenses e
      WHERE e.status = 'confirmed'
@@ -217,8 +288,7 @@ async function findCategorizedExpenseAfterShown({ user, shownAt, windowDays, sco
        AND e.created_at <= ($1::timestamptz + ($2::text || ' days')::interval)
        ${scopeClause}
      ORDER BY e.created_at ASC
-     LIMIT 1`,
-    params
+     LIMIT 1`
   );
 
   return result.rows[0] || null;

@@ -293,6 +293,11 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
                   {showUser && localExpense.is_private ? <Text style={styles.privateLabel}>Private</Text> : null}
                 </View>
               ) : null}
+              {localExpense.exclude_from_budget ? (
+                <View style={styles.trackOnlyChip}>
+                  <Text style={styles.trackOnlyChipText}>Track only</Text>
+                </View>
+              ) : null}
             </View>
             {locationLabel ? (
               <Text style={styles.locationMetaText} numberOfLines={1}>{locationLabel}</Text>
@@ -532,6 +537,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  trackOnlyChip: {
+    backgroundColor: '#10271d',
+    borderWidth: 1,
+    borderColor: '#1f513d',
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  trackOnlyChipText: {
+    color: '#9ae6b4',
+    fontSize: 10,
+    fontWeight: '700',
   },
   amount: {
     fontSize: 15,

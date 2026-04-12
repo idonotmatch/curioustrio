@@ -150,6 +150,25 @@ describe('detectRecurring', () => {
     const candidates = await detectRecurring(testHouseholdId);
     expect(candidates).toEqual([]);
   });
+
+  it('ignores track-only expenses when detecting recurring merchants', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 60);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 30);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 1);
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, exclude_from_budget)
+       VALUES
+         ($1, $2, 'Business SaaS', 30.00, $3, 'manual', 'confirmed', TRUE),
+         ($1, $2, 'Business SaaS', 30.00, $4, 'manual', 'confirmed', TRUE),
+         ($1, $2, 'Business SaaS', 30.00, $5, 'manual', 'confirmed', TRUE)`,
+      [testUserId, testHouseholdId, d1.toISOString().split('T')[0], d2.toISOString().split('T')[0], d3.toISOString().split('T')[0]]
+    );
+
+    const candidates = await detectRecurring(testHouseholdId);
+    expect(candidates.find((candidate) => candidate.merchant === 'business saas')).toBeFalsy();
+  });
 });
 
 describe('detectRecurringItems', () => {

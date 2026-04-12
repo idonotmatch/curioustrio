@@ -1,6 +1,19 @@
 const db = require('../db');
 const RecurringPreference = require('../models/recurringPreference');
 
+function isMissingExcludeFromBudgetError(err) {
+  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+async function queryBudgetRelevant(sql, params, fallbackSql) {
+  try {
+    return await db.query(sql, params);
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    return db.query(fallbackSql, params);
+  }
+}
+
 function median(values) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -21,7 +34,30 @@ function recurringExpenseScopeClause(scope = 'household', paramIndex = 1) {
 
 async function loadRecurringItemOccurrences(ownerId, options = {}) {
   const scope = options.scope === 'personal' ? 'personal' : 'household';
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       ei.product_id,
+       ei.comparable_key,
+       ei.product_match_confidence,
+       COALESCE(p.name, ei.description) AS item_name,
+       COALESCE(p.brand, ei.brand) AS brand,
+       ei.normalized_total_size_value,
+       ei.normalized_total_size_unit,
+       ei.estimated_unit_price,
+       ei.amount AS item_amount,
+       e.merchant,
+       e.date
+     FROM expense_items ei
+     JOIN expenses e ON e.id = ei.expense_id
+     LEFT JOIN products p ON p.id = ei.product_id
+     WHERE ${recurringExpenseScopeClause(scope, 1)}
+       AND e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.date >= CURRENT_DATE - INTERVAL '180 days'
+       AND COALESCE(ei.item_type, 'product') = 'product'
+       AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
+     ORDER BY e.date ASC`,
+    [ownerId],
     `SELECT
        ei.product_id,
        ei.comparable_key,
@@ -42,8 +78,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
-     ORDER BY e.date ASC`,
-    [ownerId]
+     ORDER BY e.date ASC`
   );
 
   const groups = new Map();
@@ -71,14 +106,21 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
 }
 
 async function detectRecurring(householdId) {
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT LOWER(merchant) as merchant, amount, date
+     FROM expenses
+     WHERE household_id = $1
+       AND status = 'confirmed'
+       AND exclude_from_budget = FALSE
+       AND date >= CURRENT_DATE - INTERVAL '90 days'
+     ORDER BY merchant, date`,
+    [householdId],
     `SELECT LOWER(merchant) as merchant, amount, date
      FROM expenses
      WHERE household_id = $1
        AND status = 'confirmed'
        AND date >= CURRENT_DATE - INTERVAL '90 days'
-     ORDER BY merchant, date`,
-    [householdId]
+     ORDER BY merchant, date`
   );
 
   const groups = {};

@@ -1,5 +1,18 @@
 const db = require('../db');
 
+function isMissingExcludeFromBudgetError(err) {
+  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+async function queryBudgetRelevant(sql, params, fallbackSql) {
+  try {
+    return await db.query(sql, params);
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    return db.query(fallbackSql, params);
+  }
+}
+
 const USAGE_INSIGHT_THRESHOLDS = {
   earlyTopCategory: {
     minSpend: 15,
@@ -311,7 +324,24 @@ function summarizeExpenseRows(rows = []) {
 async function listRollingExpenses({ user, scope = 'personal', from, toExclusive }) {
   const effectiveScope = scope === 'household' && user?.household_id ? 'household' : 'personal';
   if (effectiveScope === 'household') {
-    const result = await db.query(
+    const result = await queryBudgetRelevant(
+      `SELECT
+         e.merchant,
+         COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
+         COALESCE(NULLIF(TRIM(e.merchant), ''), 'Unknown') AS merchant_name,
+         e.amount,
+         e.date,
+         COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+         COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
+       FROM expenses e
+       LEFT JOIN categories c ON e.category_id = c.id
+       LEFT JOIN categories pc ON c.parent_id = pc.id
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.exclude_from_budget = FALSE
+         AND e.date >= $2
+         AND e.date < $3`,
+      [user.household_id, from, toExclusive],
       `SELECT
          e.merchant,
          COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
@@ -326,13 +356,29 @@ async function listRollingExpenses({ user, scope = 'personal', from, toExclusive
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
          AND e.status = 'confirmed'
          AND e.date >= $2
-         AND e.date < $3`,
-      [user.household_id, from, toExclusive]
+         AND e.date < $3`
     );
     return result.rows;
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       e.merchant,
+       COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
+       COALESCE(NULLIF(TRIM(e.merchant), ''), 'Unknown') AS merchant_name,
+       e.amount,
+       e.date,
+       COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+       COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN categories pc ON c.parent_id = pc.id
+     WHERE e.user_id = $1
+       AND e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.date >= $2
+       AND e.date < $3`,
+    [user.id, from, toExclusive],
     `SELECT
        e.merchant,
        COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
@@ -347,8 +393,7 @@ async function listRollingExpenses({ user, scope = 'personal', from, toExclusive
      WHERE e.user_id = $1
        AND e.status = 'confirmed'
        AND e.date >= $2
-       AND e.date < $3`,
-    [user.id, from, toExclusive]
+       AND e.date < $3`
   );
   return result.rows;
 }
