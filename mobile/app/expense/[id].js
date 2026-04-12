@@ -24,6 +24,11 @@ function formatImportedAt(value) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function formatEmailSnippet(value) {
+  const cleaned = `${value || ''}`.replace(/\s+/g, ' ').trim();
+  return cleaned || null;
+}
+
 function formatCurrency(value) {
   if (value == null || Number.isNaN(Number(value))) return null;
   return `$${Number(value).toFixed(2)}`;
@@ -576,6 +581,7 @@ export default function ExpenseDetailScreen() {
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const subjectLine = `${gmailReviewHint?.message_subject || ''}`.trim();
+  const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet);
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
@@ -692,6 +698,12 @@ export default function ExpenseDetailScreen() {
           ) : null}
           {subjectLine ? (
             <Text style={styles.reviewBannerSubject} numberOfLines={2}>{subjectLine}</Text>
+          ) : null}
+          {emailSnippet ? (
+            <View style={styles.reviewBannerEmailContext}>
+              <Text style={styles.reviewBannerEmailLabel}>From the email</Text>
+              <Text style={styles.reviewBannerEmailSnippet} numberOfLines={3}>{emailSnippet}</Text>
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -1343,6 +1355,20 @@ const styles = StyleSheet.create({
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
   reviewBannerMeta: { color: '#7f7766', fontSize: 11, lineHeight: 16, marginTop: 8 },
   reviewBannerSubject: { color: '#9a9a9a', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  reviewBannerEmailContext: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#24201a',
+  },
+  reviewBannerEmailLabel: {
+    color: '#cbb37c',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  reviewBannerEmailSnippet: { color: '#c9c1af', fontSize: 12, lineHeight: 18 },
   priorityFieldsCard: {
     marginHorizontal: 20,
     marginTop: 12,

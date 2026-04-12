@@ -437,8 +437,8 @@ describe('GET /expenses/pending', () => {
       [userId, householdId]
     );
     await db.query(
-      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address)
-       VALUES ($1, 'hint-msg', $2, 'imported', 'Order Confirmation', 'orders@amazon.com')`,
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, snippet)
+       VALUES ($1, 'hint-msg', $2, 'imported', 'Order Confirmation', 'orders@amazon.com', 'Your Amazon order total is $10.00')`,
       [userId, expResult.rows[0].id]
     );
 
@@ -486,6 +486,7 @@ describe('GET /expenses/pending', () => {
       headline: 'Trusted sender',
       item_reliability_level: 'unknown',
       review_mode: 'full_review',
+      message_snippet: 'Your Amazon order total is $10.00',
     });
     expect(Array.isArray(hinted.gmail_review_hint.likely_changed_fields)).toBe(true);
   });
@@ -666,8 +667,8 @@ describe('GET /expenses/:id', () => {
       [userId, householdId]
     );
     await db.query(
-      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address)
-       VALUES ($1, 'detail-hint-msg', $2, 'imported', 'Order Confirmation', 'alerts@messy.com')`,
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, snippet)
+       VALUES ($1, 'detail-hint-msg', $2, 'imported', 'Order Confirmation', 'alerts@messy.com', 'We found a total of $9.99 in this message')`,
       [userId, expResult.rows[0].id]
     );
 
@@ -712,6 +713,7 @@ describe('GET /expenses/:id', () => {
       sender_domain: 'messy.com',
       sender_quality_level: 'noisy',
       headline: 'Low-confidence sender',
+      message_snippet: 'We found a total of $9.99 in this message',
     });
   });
 

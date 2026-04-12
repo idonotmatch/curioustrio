@@ -132,11 +132,12 @@ async function importForUser(user) {
       continue;
     }
 
-    let msgSubject, msgFrom;
+    let msgSubject, msgFrom, msgSnippet;
     try {
       const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msg.id);
       msgSubject = subject;
       msgFrom = from;
+      msgSnippet = snippet;
       const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
       const senderQuality = await getSenderImportQuality(user.id, from);
       const reviewMode = recommendReviewMode(senderQuality);
@@ -151,7 +152,7 @@ async function importForUser(user) {
         const skipReason = classification.reason || 'classifier_not_expense';
         await EmailImportLog.create({
           userId: user.id, messageId: msg.id, status: 'skipped',
-          subject, fromAddress: from, skipReason,
+          subject, fromAddress: from, skipReason, snippet,
         });
         skipped++;
         increment(outcomes.skipped_reasons, skipReason);
@@ -169,7 +170,7 @@ async function importForUser(user) {
           const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';
           await EmailImportLog.create({
             userId: user.id, messageId: msg.id, status: 'skipped',
-            subject, fromAddress: from, skipReason,
+            subject, fromAddress: from, skipReason, snippet,
           });
           skipped++;
           increment(outcomes.skipped_reasons, skipReason);
@@ -179,7 +180,7 @@ async function importForUser(user) {
           const skipReason = 'low_sender_quality';
           await EmailImportLog.create({
             userId: user.id, messageId: msg.id, status: 'skipped',
-            subject, fromAddress: from, skipReason,
+            subject, fromAddress: from, skipReason, snippet,
           });
           skipped++;
           increment(outcomes.skipped_reasons, skipReason);
@@ -234,6 +235,7 @@ async function importForUser(user) {
           subject,
           fromAddress: from,
           skipReason: 'duplicate_expense',
+          snippet,
         });
         skipped++;
         increment(outcomes.skipped_reasons, 'duplicate_expense');
@@ -294,6 +296,7 @@ async function importForUser(user) {
         status: 'imported',
         subject: msgSubject,
         fromAddress: msgFrom,
+        snippet: msgSnippet,
       });
       imported++;
       if (reviewMode === 'quick_check') {
@@ -309,7 +312,7 @@ async function importForUser(user) {
       increment(outcomes.failed_reasons, e.code || e.message || 'unknown_error');
       await EmailImportLog.create({
         userId: user.id, messageId: msg.id, status: 'failed',
-        subject: msgSubject, fromAddress: msgFrom, skipReason: e.message,
+        subject: msgSubject, fromAddress: msgFrom, skipReason: e.message, snippet: msgSnippet,
       });
       failed++;
     }

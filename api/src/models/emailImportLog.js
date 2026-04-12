@@ -8,15 +8,31 @@ function isMissingExpenseReviewMetadataError(err) {
   return err?.code === '42703' && /review_(required|mode|source)/i.test(`${err?.message || ''}`);
 }
 
-async function create({ userId, messageId, expenseId, status = 'imported', subject, fromAddress, skipReason }) {
-  const result = await db.query(
-    `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (user_id, message_id) DO NOTHING
-     RETURNING *`,
-    [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null]
-  );
-  return result.rows[0] || null;
+function isMissingSnippetError(err) {
+  return err?.code === '42703' && /snippet/i.test(`${err?.message || ''}`);
+}
+
+async function create({ userId, messageId, expenseId, status = 'imported', subject, fromAddress, skipReason, snippet }) {
+  try {
+    const result = await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (user_id, message_id) DO NOTHING
+       RETURNING *`,
+      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, snippet || null]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingSnippetError(err)) throw err;
+    const fallback = await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (user_id, message_id) DO NOTHING
+       RETURNING *`,
+      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null]
+    );
+    return fallback.rows[0] || null;
+  }
 }
 
 async function findByExpenseId(expenseId) {
@@ -36,9 +52,10 @@ async function findByExpenseId(expenseId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingSnippetError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.*,
+              NULL::text AS snippet,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
@@ -102,7 +119,7 @@ async function recordReviewFeedback(expenseId, { action = null, changedFields = 
 async function findByMessageId(userId, messageId) {
   try {
     const result = await db.query(
-      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
               e.notes,
@@ -117,9 +134,10 @@ async function findByMessageId(userId, messageId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              NULL::text AS snippet,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
@@ -141,7 +159,7 @@ async function findByMessageId(userId, messageId) {
 async function listByUser(userId, limit = 100) {
   try {
     const result = await db.query(
-      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
               l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
@@ -159,9 +177,10 @@ async function listByUser(userId, limit = 100) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              NULL::text AS snippet,
               l.user_feedback, l.user_feedback_at,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
