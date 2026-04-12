@@ -662,7 +662,10 @@ export default function ExpenseDetailScreen() {
         </View>
 
         <View style={[styles.row, { paddingVertical: 12 }]}>
-          <Text style={styles.label}>Exclude from budget</Text>
+          <View style={styles.trackOnlyTextWrap}>
+            <Text style={styles.label}>Track only</Text>
+            <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
+          </View>
           <Switch
             value={excludeFromBudget}
             onValueChange={editing && canEdit ? setExcludeFromBudget : undefined}
@@ -1125,6 +1128,8 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 20 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
   label: { fontSize: 13, color: '#444', width: 90 },
+  trackOnlyTextWrap: { flex: 1, paddingRight: 12 },
+  trackOnlyHint: { color: '#666', fontSize: 11, lineHeight: 16, marginTop: 2, maxWidth: 220 },
   valueWrap: { flex: 1, alignItems: 'flex-end' },
   value: { fontSize: 14, color: '#f5f5f5', textAlign: 'right' },
   noteCard: {

@@ -746,7 +746,10 @@ export default function ConfirmScreen() {
       </View>
 
       <View style={styles.toggleRow}>
-        <Text style={styles.toggleLabel}>Exclude from budget</Text>
+        <View style={styles.toggleTextWrap}>
+          <Text style={styles.toggleLabel}>Track only</Text>
+          <Text style={styles.toggleHint}>Save it without counting it toward your budget.</Text>
+        </View>
         <Switch
           value={excludeFromBudget}
           onValueChange={setExcludeFromBudget}
@@ -890,7 +893,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8,
   },
+  toggleTextWrap: { flex: 1, paddingRight: 12 },
   toggleLabel: { color: '#fff', fontSize: 15 },
+  toggleHint: { color: '#7c7c7c', fontSize: 12, lineHeight: 17, marginTop: 2 },
   paymentSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
   sectionLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   methodRow: { flexDirection: 'row', gap: 6 },
