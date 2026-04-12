@@ -191,6 +191,7 @@ export default function ExpenseDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingControls, setSavingControls] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actioning, setActioning] = useState(false);
 
@@ -285,8 +286,6 @@ export default function ExpenseDetailScreen() {
   useEffect(() => {
     if (!excludeFromBudget) {
       setBudgetExclusionReason(null);
-    } else if (!budgetExclusionReason) {
-      setBudgetExclusionReason(TRACK_ONLY_REASONS[0].value);
     }
   }, [excludeFromBudget, budgetExclusionReason]);
 
@@ -358,6 +357,10 @@ export default function ExpenseDetailScreen() {
   async function persistReviewControlsIfNeeded() {
     if (!canAdjustReviewControls || !expense) return expense;
     const nextReason = excludeFromBudget ? budgetExclusionReason : null;
+    if (excludeFromBudget && !nextReason) {
+      Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
+      return expense;
+    }
     const reviewControlsChanged =
       Boolean(expense.is_private) !== Boolean(isPrivate)
       || Boolean(expense.exclude_from_budget) !== Boolean(excludeFromBudget)
@@ -373,6 +376,103 @@ export default function ExpenseDetailScreen() {
     setExpense(refreshed);
     saveExpenseSnapshot(refreshed);
     return refreshed;
+  }
+
+  async function persistExpenseControls(patch, optimisticState = {}) {
+    if (!canEdit || !expense) return expense;
+    const previousExpense = expense;
+    const nextExpense = {
+      ...expense,
+      ...optimisticState,
+    };
+
+    setExpense(nextExpense);
+    if (optimisticState.is_private !== undefined) setIsPrivate(Boolean(optimisticState.is_private));
+    if (optimisticState.exclude_from_budget !== undefined) setExcludeFromBudget(Boolean(optimisticState.exclude_from_budget));
+    if (optimisticState.budget_exclusion_reason !== undefined) setBudgetExclusionReason(optimisticState.budget_exclusion_reason || null);
+
+    setSavingControls(true);
+    try {
+      const refreshed = await api.patch(`/expenses/${id}`, patch);
+      setExpense(refreshed);
+      setIsPrivate(Boolean(refreshed.is_private));
+      setExcludeFromBudget(Boolean(refreshed.exclude_from_budget));
+      setBudgetExclusionReason(refreshed.budget_exclusion_reason || null);
+      saveExpenseSnapshot(refreshed);
+      await Promise.all([
+        invalidateCacheByPrefix('cache:expenses:'),
+        invalidateCacheByPrefix('cache:budget:'),
+        invalidateCacheByPrefix('cache:household-expenses:'),
+      ]);
+      return refreshed;
+    } catch (e) {
+      setExpense(previousExpense);
+      setIsPrivate(Boolean(previousExpense.is_private));
+      setExcludeFromBudget(Boolean(previousExpense.exclude_from_budget));
+      setBudgetExclusionReason(previousExpense.budget_exclusion_reason || null);
+      Alert.alert('Error', e.message);
+      return previousExpense;
+    } finally {
+      setSavingControls(false);
+    }
+  }
+
+  async function handleTogglePrivate(nextValue) {
+    if (!canEdit || savingControls) return;
+    await persistExpenseControls(
+      { is_private: nextValue },
+      { is_private: nextValue }
+    );
+  }
+
+  async function handleToggleTrackOnly(nextValue) {
+    if (!canEdit || savingControls) return;
+    if (!nextValue) {
+      await persistExpenseControls(
+        {
+          exclude_from_budget: false,
+          budget_exclusion_reason: null,
+        },
+        {
+          exclude_from_budget: false,
+          budget_exclusion_reason: null,
+        }
+      );
+      return;
+    }
+
+    const nextReason = budgetExclusionReason || expense?.budget_exclusion_reason || null;
+    setExcludeFromBudget(true);
+    if (nextReason) {
+      setBudgetExclusionReason(nextReason);
+      await persistExpenseControls(
+        {
+          exclude_from_budget: true,
+          budget_exclusion_reason: nextReason,
+        },
+        {
+          exclude_from_budget: true,
+          budget_exclusion_reason: nextReason,
+        }
+      );
+      return;
+    }
+
+    setExpense((current) => current ? { ...current, exclude_from_budget: true } : current);
+  }
+
+  async function handleSelectBudgetExclusionReason(reasonValue) {
+    if (!canEdit || savingControls) return;
+    await persistExpenseControls(
+      {
+        exclude_from_budget: true,
+        budget_exclusion_reason: reasonValue,
+      },
+      {
+        exclude_from_budget: true,
+        budget_exclusion_reason: reasonValue,
+      }
+    );
   }
 
   async function handleDelete() {
@@ -593,8 +693,8 @@ export default function ExpenseDetailScreen() {
             <Text style={styles.label}>Private</Text>
             <Switch
               value={isPrivate}
-              onValueChange={canAdjustReviewControls ? setIsPrivate : undefined}
-              disabled={!canAdjustReviewControls}
+              onValueChange={canAdjustReviewControls ? handleTogglePrivate : undefined}
+              disabled={!canAdjustReviewControls || savingControls}
               trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
               thumbColor={isPrivate ? '#fff' : '#555'}
             />
@@ -607,8 +707,8 @@ export default function ExpenseDetailScreen() {
             </View>
             <Switch
               value={excludeFromBudget}
-              onValueChange={canAdjustReviewControls ? setExcludeFromBudget : undefined}
-              disabled={!canAdjustReviewControls}
+              onValueChange={canAdjustReviewControls ? handleToggleTrackOnly : undefined}
+              disabled={!canAdjustReviewControls || savingControls}
               trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
               thumbColor={excludeFromBudget ? '#fff' : '#555'}
             />
@@ -622,12 +722,12 @@ export default function ExpenseDetailScreen() {
                   const selected = budgetExclusionReason === reason.value;
                   return (
                     <TouchableOpacity
-                      key={reason.value}
-                      style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                      onPress={() => canAdjustReviewControls ? setBudgetExclusionReason(reason.value) : undefined}
-                      activeOpacity={0.82}
-                      disabled={!canAdjustReviewControls}
-                    >
+                    key={reason.value}
+                    style={[styles.reasonChip, selected && styles.reasonChipActive]}
+                    onPress={() => canAdjustReviewControls ? handleSelectBudgetExclusionReason(reason.value) : undefined}
+                    activeOpacity={0.82}
+                    disabled={!canAdjustReviewControls || savingControls}
+                  >
                       <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
                     </TouchableOpacity>
                   );
@@ -764,8 +864,8 @@ export default function ExpenseDetailScreen() {
               <Text style={styles.label}>Private</Text>
               <Switch
                 value={isPrivate}
-                onValueChange={editing && canEdit ? setIsPrivate : undefined}
-                disabled={!editing || !canEdit}
+                onValueChange={canEdit ? handleTogglePrivate : undefined}
+                disabled={!canEdit || savingControls}
                 trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
                 thumbColor={isPrivate ? '#fff' : '#555'}
               />
@@ -778,8 +878,8 @@ export default function ExpenseDetailScreen() {
               </View>
               <Switch
                 value={excludeFromBudget}
-                onValueChange={editing && canEdit ? setExcludeFromBudget : undefined}
-                disabled={!editing || !canEdit}
+                onValueChange={canEdit ? handleToggleTrackOnly : undefined}
+                disabled={!canEdit || savingControls}
                 trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
                 thumbColor={excludeFromBudget ? '#fff' : '#555'}
               />
@@ -795,9 +895,9 @@ export default function ExpenseDetailScreen() {
                       <TouchableOpacity
                         key={reason.value}
                         style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                        onPress={() => editing && canEdit ? setBudgetExclusionReason(reason.value) : undefined}
+                        onPress={() => canEdit ? handleSelectBudgetExclusionReason(reason.value) : undefined}
                         activeOpacity={0.82}
-                        disabled={!editing || !canEdit}
+                        disabled={!canEdit || savingControls}
                       >
                         <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
                       </TouchableOpacity>
