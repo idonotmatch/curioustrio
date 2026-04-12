@@ -652,7 +652,7 @@ router.get('/ingest-summary', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
 
-    const days = req.query.days ? Number(req.query.days) : 30;
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
     const source = req.query.source ? `${req.query.source}`.trim() : null;
     const summary = await IngestAttemptLog.summarizeByUser(user.id, { source, days });
     res.json(summary || { counts: {}, reasons: [] });
@@ -1293,6 +1293,7 @@ router.post('/:id/approve', async (req, res, next) => {
 // Delete an expense
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Expense not found' });
     const user = await User.findByProviderUid(req.userId);
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
@@ -1325,6 +1326,7 @@ router.delete('/:id', authenticate, async (req, res, next) => {
 // Get a single expense by ID with duplicate_flags
 router.get('/:id', async (req, res, next) => {
   try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Expense not found' });
     const user = await getUser(req);
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
@@ -1365,6 +1367,7 @@ router.get('/:id', async (req, res, next) => {
 // Update an expense
 router.patch('/:id', async (req, res, next) => {
   try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Expense not found' });
     const { amount, date, category_id, notes,
             payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
             place_name, address, mapkit_stable_id } = req.body;
@@ -1387,7 +1390,9 @@ router.patch('/:id', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const originalExpense = await Expense.findById(req.params.id);
-    if (!originalExpense || originalExpense.user_id !== user.id) {
+    const ownedByUser = originalExpense?.user_id === user.id;
+    const ownedByHousehold = user?.household_id && originalExpense?.household_id === user.household_id;
+    if (!originalExpense || (!ownedByUser && !ownedByHousehold)) {
       return res.status(404).json({ error: 'Expense not found' });
     }
     const originalItems = originalExpense.source === 'email' && items !== undefined
@@ -1399,7 +1404,7 @@ router.patch('/:id', async (req, res, next) => {
     if (originalExpense.source === 'email' && items !== undefined) {
       changedFields.push(...collectItemReviewSignals(originalItems, Array.isArray(items) ? items : []));
     }
-    const expense = await Expense.update(req.params.id, user.id, {
+    const expense = await Expense.update(req.params.id, originalExpense.user_id, {
       merchant,
       amount,
       date,

@@ -23,6 +23,7 @@ const placesRouter = require('./routes/places');
 const priceObservationsRouter = require('./routes/priceObservations');
 const cronRouter = require('./routes/cron');
 const { seedDefaultCategories } = require('./db');
+const checkEnv = require('./startup/checkEnv');
 const checkSchema = require('./startup/checkSchema');
 
 const app = express();
@@ -83,6 +84,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 if (require.main === module) {
+  checkEnv();
   checkSchema()
     .then(() => {
       seedDefaultCategories();

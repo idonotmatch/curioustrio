@@ -35,7 +35,7 @@ function createOAuth2Client() {
 async function getAuthUrl(userId) {
   const stateToken = crypto.randomUUID();
   await db.query(
-    `INSERT INTO gmail_oauth_states (token, user_id) VALUES ($1, $2)`, [stateToken, userId]
+    `INSERT INTO gmail_oauth_states (token, user_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '10 minutes')`, [stateToken, userId]
   );
   const client = createOAuth2Client();
   return client.generateAuthUrl({
