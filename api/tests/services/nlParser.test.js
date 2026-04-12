@@ -129,6 +129,39 @@ describe('parseExpense', () => {
     expect(result.item_amount_sum).toBe(22.68);
   });
 
+  it('infers a single line item from a specific description plus merchant context', () => {
+    const result = cleanParsedExpense({
+      merchant: "Dick's Sporting Goods",
+      description: 'Nike running shoes',
+      amount: 122.24,
+      date: '2026-04-11',
+      notes: null,
+      payment_method: null,
+      card_label: null,
+      items: null,
+    }, '2026-04-11');
+
+    expect(result.items).toEqual([
+      { description: 'Nike running shoes', amount: 122.24 },
+    ]);
+    expect(result.item_inferred_from_description).toBe(true);
+  });
+
+  it('does not infer a single line item from a generic description', () => {
+    const result = cleanParsedExpense({
+      merchant: 'Target',
+      description: 'groceries',
+      amount: 42.18,
+      date: '2026-04-11',
+      notes: null,
+      payment_method: null,
+      card_label: null,
+      items: null,
+    }, '2026-04-11');
+
+    expect(result.items).toBeNull();
+  });
+
   it('recovers valid JSON when the model wraps it in prose', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();

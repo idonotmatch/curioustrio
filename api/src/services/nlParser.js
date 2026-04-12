@@ -239,18 +239,58 @@ function extractExplicitItemsFromInput(input = '') {
   };
 }
 
+function looksGenericExpenseDescription(description = '') {
+  const normalized = `${description || ''}`.trim().toLowerCase();
+  if (!normalized) return true;
+  const genericPhrases = [
+    'groceries',
+    'shopping',
+    'household',
+    'household stuff',
+    'stuff',
+    'order',
+    'purchase',
+    'supplies',
+    'essentials',
+    'food',
+    'meal',
+    'dinner',
+    'lunch',
+    'breakfast',
+    'gas',
+  ];
+  return genericPhrases.includes(normalized);
+}
+
+function inferSingleItemFromMerchantContext(parsed = {}) {
+  const merchant = `${parsed?.merchant || ''}`.trim();
+  const description = `${parsed?.description || ''}`.trim();
+  const amount = Number(parsed?.amount);
+  const existingItems = Array.isArray(parsed?.items) ? parsed.items : null;
+
+  if (!merchant || !description || existingItems?.length) return parsed;
+  if (!Number.isFinite(amount) || amount === 0) return parsed;
+  if (looksGenericExpenseDescription(description)) return parsed;
+
+  return {
+    ...parsed,
+    items: [{ description, amount }],
+  };
+}
+
 function cleanParsedExpense(parsed, todayDate) {
   if (!parsed || typeof parsed !== 'object') return null;
 
-  const merchant = typeof parsed.merchant === 'string' ? parsed.merchant.trim() : '';
-  const description = typeof parsed.description === 'string' ? parsed.description.trim() : '';
-  const amount = Number(parsed.amount);
-  const rawDate = typeof parsed.date === 'string' ? parsed.date.trim() : '';
+  const inferredParsed = inferSingleItemFromMerchantContext(parsed);
+  const merchant = typeof inferredParsed.merchant === 'string' ? inferredParsed.merchant.trim() : '';
+  const description = typeof inferredParsed.description === 'string' ? inferredParsed.description.trim() : '';
+  const amount = Number(inferredParsed.amount);
+  const rawDate = typeof inferredParsed.date === 'string' ? inferredParsed.date.trim() : '';
   const hasValidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate);
-  const items = Array.isArray(parsed.items) ? parsed.items : null;
-  const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
-  const cardLabel = typeof parsed.card_label === 'string' && parsed.card_label.trim() ? parsed.card_label.trim() : null;
-  const noteText = typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null;
+  const items = Array.isArray(inferredParsed.items) ? inferredParsed.items : null;
+  const paymentMethod = ['cash', 'credit', 'debit'].includes(inferredParsed.payment_method) ? inferredParsed.payment_method : null;
+  const cardLabel = typeof inferredParsed.card_label === 'string' && inferredParsed.card_label.trim() ? inferredParsed.card_label.trim() : null;
+  const noteText = typeof inferredParsed.notes === 'string' && inferredParsed.notes.trim() ? inferredParsed.notes.trim() : null;
   const normalizedPartyFields = normalizePersonPaymentFields({
     merchant,
     description,
@@ -308,6 +348,7 @@ function cleanParsedExpense(parsed, todayDate) {
     ...normalized,
     item_amount_sum: itemAmountSum,
     item_total_mismatch: itemTotalMismatch,
+    item_inferred_from_description: Boolean(items?.length === 1 && items[0]?.description === normalized.description && items[0]?.amount === normalized.amount),
     parse_status: review_fields.length > 0 ? 'partial' : 'complete',
     review_fields,
     field_confidence,
