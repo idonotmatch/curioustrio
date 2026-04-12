@@ -241,4 +241,17 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
   }
 }
 
-module.exports = { create, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser };
+async function pruneOlderThan(days = 90) {
+  try {
+    const result = await db.query(
+      `DELETE FROM ingest_attempt_log WHERE created_at < NOW() - ($1 || ' days')::interval`,
+      [days]
+    );
+    return result.rowCount ?? 0;
+  } catch (err) {
+    if (isMissingTableError(err)) return 0;
+    throw err;
+  }
+}
+
+module.exports = { create, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser, pruneOlderThan };

@@ -1,0 +1,22 @@
+name: Prune Logs
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'   # every Sunday at 03:00 UTC
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger log pruning
+        run: |
+          status=$(curl -sS -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/prune-logs \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          cat response.json
+          if [ "$status" -ge 400 ]; then
+            echo ""
+            echo "Log pruning failed with HTTP $status"
+            exit 1
+          fi

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const { perUser } = require('../middleware/rateLimit');
 const User = require('../models/user');
 const ScenarioMemory = require('../models/scenarioMemory');
 const { analyzeSpendingTrend } = require('../services/spendingTrendAnalyzer');
@@ -8,6 +9,7 @@ const { analyzeSpendProjection, evaluateScenarioAffordability } = require('../se
 const { refreshConsideringScenarios } = require('../services/scenarioMemoryService');
 
 router.use(authenticate);
+router.use(perUser);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);

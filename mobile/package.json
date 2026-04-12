@@ -40,7 +40,12 @@
   },
   "private": true,
   "devDependencies": {
-    "jest": "^30.3.0"
+    "jest": "^30.3.0",
+    "jest-expo": "~55.0.0",
+    "@testing-library/react-native": "^13.0.0"
+  },
+  "jest": {
+    "preset": "jest-expo"
   },
   "expo": {
     "install": {

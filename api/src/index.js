@@ -67,6 +67,22 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '5mb' }));
 
+// Versioned routes — all new clients should use /v1/
+app.use('/v1/expenses', expensesRouter);
+app.use('/v1/categories', categoriesRouter);
+app.use('/v1/users', usersRouter);
+app.use('/v1/households', householdsRouter);
+app.use('/v1/gmail', gmailRouter);
+app.use('/v1/budgets', budgetsRouter);
+app.use('/v1/recurring', recurringRouter);
+app.use('/v1/insights', insightsRouter);
+app.use('/v1/trends', trendsRouter);
+app.use('/v1/push', pushRouter);
+app.use('/v1/places', placesRouter);
+app.use('/v1/price-observations', priceObservationsRouter);
+
+// Legacy unversioned aliases — kept for backward compatibility during mobile rollout.
+// Remove once all clients have updated to /v1/.
 app.use('/expenses', expensesRouter);
 app.use('/categories', categoriesRouter);
 app.use('/users', usersRouter);
@@ -79,6 +95,7 @@ app.use('/trends', trendsRouter);
 app.use('/push', pushRouter);
 app.use('/places', placesRouter);
 app.use('/price-observations', priceObservationsRouter);
+
 app.use('/cron', cronRouter);
 app.use(errorHandler);
 

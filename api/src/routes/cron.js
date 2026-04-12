@@ -6,6 +6,8 @@ const OAuthToken = require('../models/oauthToken');
 const PushToken = require('../models/pushToken');
 const { importForUser } = require('../services/gmailImporter');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
+const IngestAttemptLog = require('../models/ingestAttemptLog');
+const db = require('../db');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -81,6 +83,31 @@ router.post('/insights-push', cronAuth, async (req, res, next) => {
 
     console.log(`[cron/insights-push] done — users=${usersProcessed} sent=${notificationsSent}`);
     res.json({ users_processed: usersProcessed, notifications_sent: notificationsSent });
+  } catch (err) { next(err); }
+});
+
+// POST /cron/prune-logs — delete log rows older than 90 days
+// Keeps ingest_attempt_log, email_import_feedback, and insight_events bounded.
+router.post('/prune-logs', cronAuth, async (req, res, next) => {
+  try {
+    const retentionDays = 90;
+
+    const ingestPruned = await IngestAttemptLog.pruneOlderThan(retentionDays);
+
+    const feedbackResult = await db.query(
+      `DELETE FROM email_import_feedback WHERE created_at < NOW() - ($1 || ' days')::interval`,
+      [retentionDays]
+    );
+    const feedbackPruned = feedbackResult.rowCount ?? 0;
+
+    const eventsResult = await db.query(
+      `DELETE FROM insight_events WHERE created_at < NOW() - ($1 || ' days')::interval`,
+      [retentionDays]
+    );
+    const eventsPruned = eventsResult.rowCount ?? 0;
+
+    console.log(`[cron/prune-logs] ingest_attempt_log=${ingestPruned} email_import_feedback=${feedbackPruned} insight_events=${eventsPruned}`);
+    res.json({ retention_days: retentionDays, ingest_attempt_log: ingestPruned, email_import_feedback: feedbackPruned, insight_events: eventsPruned });
   } catch (err) { next(err); }
 });
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const { perUser } = require('../middleware/rateLimit');
 const User = require('../models/user');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
@@ -10,6 +11,7 @@ const { buildFeedbackDebugSummary } = require('../services/insightFeedbackSummar
 const { inferOutcomeEventsForUser } = require('../services/insightOutcomeInference');
 
 router.use(authenticate);
+router.use(perUser);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);

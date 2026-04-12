@@ -20,7 +20,10 @@ async function getToken() {
   return session?.access_token ?? null;
 }
 
+const API_VERSION = '/v1';
+
 async function request(path, options = {}, tokenOverride) {
+  const versionedPath = path.startsWith('/v1') ? path : `${API_VERSION}${path}`;
   // tokenOverride lets callers pass a token they already have in memory,
   // avoiding a round-trip through AsyncStorage. This is necessary right after
   // sign-in: the session is in memory but may not yet be flushed to storage,
@@ -30,7 +33,7 @@ async function request(path, options = {}, tokenOverride) {
 
   for (const baseUrl of candidateBaseUrls()) {
     try {
-      const res = await fetch(`${baseUrl}${path}`, {
+      const res = await fetch(`${baseUrl}${versionedPath}`, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
@@ -64,7 +67,7 @@ async function request(path, options = {}, tokenOverride) {
   }
 
   const targets = candidateBaseUrls().join(' or ');
-  const enriched = new Error(`Could not reach the API at ${targets}. Make sure the local server is running.`);
+  const enriched = new Error(`Could not reach the API at ${targets}${versionedPath}. Make sure the local server is running.`);
   enriched.code = 'network_error';
   enriched.cause = lastNetworkError;
   throw enriched;

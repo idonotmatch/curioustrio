@@ -9,7 +9,7 @@ const GmailSenderPreference = require('../models/gmailSenderPreference');
 const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
 const { importForUser } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
-const { aiEndpoints } = require('../middleware/rateLimit');
+const { aiEndpoints, perUser } = require('../middleware/rateLimit');
 
 function classifyGmailImportError(err) {
   const message = `${err?.message || ''}`;
@@ -45,7 +45,7 @@ function classifyGmailImportError(err) {
 }
 
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
-router.get('/auth', authenticate, async (req, res, next) => {
+router.get('/auth', authenticate, perUser, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
@@ -78,7 +78,7 @@ router.get('/callback', async (req, res, next) => {
 });
 
 // GET /gmail/status — is Gmail connected?
-router.get('/status', authenticate, async (req, res, next) => {
+router.get('/status', authenticate, perUser, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
@@ -88,7 +88,7 @@ router.get('/status', authenticate, async (req, res, next) => {
 });
 
 // POST /gmail/import — trigger email import for authenticated user
-router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
+router.post('/import', authenticate, perUser, aiEndpoints, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
@@ -109,7 +109,7 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
 });
 
 // GET /gmail/import-summary — aggregate recent import outcomes for the authenticated user
-router.get('/import-summary', authenticate, async (req, res, next) => {
+router.get('/import-summary', authenticate, perUser, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
@@ -122,7 +122,7 @@ router.get('/import-summary', authenticate, async (req, res, next) => {
 });
 
 // GET /gmail/import-log — recent import log for the authenticated user
-router.get('/import-log', authenticate, async (req, res, next) => {
+router.get('/import-log', authenticate, perUser, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
@@ -132,7 +132,7 @@ router.get('/import-log', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/import-log/:id/feedback', authenticate, async (req, res, next) => {
+router.post('/import-log/:id/feedback', authenticate, perUser, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
@@ -146,7 +146,7 @@ router.post('/import-log/:id/feedback', authenticate, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
-router.post('/sender-preferences', authenticate, async (req, res, next) => {
+router.post('/sender-preferences', authenticate, perUser, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });

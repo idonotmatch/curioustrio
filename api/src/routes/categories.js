@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const { perUser } = require('../middleware/rateLimit');
 const db = require('../db');
 const User = require('../models/user');
 const Category = require('../models/category');
@@ -9,6 +10,7 @@ const MerchantMapping = require('../models/merchantMapping');
 const categorySuggester = require('../services/categorySuggester');
 
 router.use(authenticate);
+router.use(perUser);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);

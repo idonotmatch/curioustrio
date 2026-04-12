@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const { perUser } = require('../middleware/rateLimit');
 const { searchPlaces, MapkitSearchUnavailableError } = require('../services/mapkitService');
 
 router.use(authenticate);
+router.use(perUser);
 
 router.get('/search', async (req, res, next) => {
   try {

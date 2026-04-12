@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const { perUser } = require('../middleware/rateLimit');
 const User = require('../models/user');
 const Household = require('../models/household');
 const BudgetSetting = require('../models/budgetSetting');
 const db = require('../db');
 
 router.use(authenticate);
+router.use(perUser);
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
