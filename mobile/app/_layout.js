@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
+import { clearAllCache } from '../services/cache';
 import { MonthProvider } from '../contexts/MonthContext';
 
 function AppNavigator() {
@@ -150,6 +151,7 @@ function AppNavigator() {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        clearAllCache().catch(() => {});
         router.replace('/login');
         setBootstrapped(true);
       }

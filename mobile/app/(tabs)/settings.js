@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,9 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { invalidateCacheByPrefix } from '../../services/cache';
 import { useRecurring } from '../../hooks/useRecurring';
+import { useBudget } from '../../hooks/useBudget';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 
@@ -21,23 +23,17 @@ export default function SettingsScreen() {
   const { user } = useCurrentUser();
 
   const [budgetLimit, setBudgetLimit] = useState('');
-  const [currentBudget, setCurrentBudget] = useState(null);
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetMsg, setBudgetMsg] = useState('');
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
 
-  const loadBudget = useCallback(async () => {
-    try {
-      const data = await api.get('/budgets?scope=personal');
-      setCurrentBudget(data.total);
-      if (data.total?.limit) setBudgetLimit(String(data.total.limit));
-    } catch { /* ignore */ }
-  }, []);
+  const { budget, refresh: refreshBudget } = useBudget(null, 'personal', { cacheOnly: true });
 
+  // Sync the input field when the cached budget loads or updates
   useEffect(() => {
-    loadBudget();
-  }, [loadBudget]);
+    if (budget?.total?.limit) setBudgetLimit(String(budget.total.limit));
+  }, [budget]);
 
   useEffect(() => {
     api.get('/categories')
@@ -58,7 +54,8 @@ export default function SettingsScreen() {
       await api.put('/budgets/total', { monthly_limit: val });
       setBudgetMsg('Saved!');
       setBudgetMsgIsError(false);
-      loadBudget();
+      await invalidateCacheByPrefix('cache:budget:');
+      refreshBudget();
       setTimeout(() => setBudgetMsg(''), 2000);
     } catch (e) {
       setBudgetMsg(e.message || 'Failed to save');
