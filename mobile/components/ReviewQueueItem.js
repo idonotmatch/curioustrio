@@ -1,0 +1,275 @@
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Ionicons } from '@expo/vector-icons';
+import { DuplicateAlert } from './DuplicateAlert';
+
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const clean = dateStr.slice(0, 10) + 'T12:00:00';
+  const date = new Date(clean);
+  if (isNaN(date)) return dateStr;
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return `${MONTH_SHORT[date.getMonth()]} ${date.getDate()}`;
+}
+
+function reviewModePresentation(hint = {}) {
+  const mode = hint?.review_mode || 'full_review';
+  if (mode === 'quick_check') {
+    return {
+      chipLabel: 'Quick check',
+      guidance: 'Check merchant, amount, and date.',
+      approveLabel: 'Quick approve',
+      accent: styles.modeChipQuick,
+      accentText: styles.modeChipTextQuick,
+    };
+  }
+  if (mode === 'items_first') {
+    return {
+      chipLabel: 'Items first',
+      guidance: 'Review extracted items before approving.',
+      approveLabel: 'Check items',
+      accent: styles.modeChipItems,
+      accentText: styles.modeChipTextItems,
+    };
+  }
+  return {
+    chipLabel: 'Review',
+    guidance: 'Check merchant, date, and category.',
+    approveLabel: 'Approve',
+    accent: styles.modeChipFull,
+    accentText: styles.modeChipTextFull,
+  };
+}
+
+function pendingSourcePresentation(item = {}) {
+  if (item?.review_source === 'gmail' || item?.source === 'email') {
+    return {
+      label: 'Gmail import',
+      icon: 'mail-outline',
+      accent: styles.sourceChipEmail,
+      accentText: styles.sourceChipTextEmail,
+    };
+  }
+  return {
+    label: 'Pending',
+    icon: 'time-outline',
+    accent: styles.sourceChipDefault,
+    accentText: styles.sourceChipTextDefault,
+  };
+}
+
+function isQuickCheckPending(item = {}) {
+  if (item?.gmail_review_hint?.review_mode !== 'quick_check') return false;
+  if (Array.isArray(item?.duplicate_flags) && item.duplicate_flags.length > 0) return false;
+  const likelyChangedFields = Array.isArray(item?.gmail_review_hint?.likely_changed_fields)
+    ? item.gmail_review_hint.likely_changed_fields.filter(Boolean)
+    : [];
+  return likelyChangedFields.length <= 1;
+}
+
+export function reviewQueueGuidance(item = {}) {
+  return reviewModePresentation(item.gmail_review_hint).guidance;
+}
+
+export function reviewQueueLabel(item = {}) {
+  if (item?.review_source === 'gmail' || item?.source === 'email') {
+    const mode = item?.gmail_review_hint?.review_mode;
+    if (mode === 'quick_check') return 'Gmail import · Quick check';
+    if (mode === 'items_first') return 'Gmail import · Items first';
+    return 'Gmail import · Review';
+  }
+  return 'Pending review';
+}
+
+export function ReviewQueueItem({
+  item,
+  onOpen,
+  onApprove,
+  onDismiss,
+  variant = 'full',
+}) {
+  const mode = reviewModePresentation(item.gmail_review_hint);
+  const source = pendingSourcePresentation(item);
+  const quickCheck = isQuickCheckPending(item);
+  const isPreview = variant === 'preview';
+
+  const renderLeftActions = () => (
+    <TouchableOpacity style={styles.approveAction} onPress={() => onApprove(item.id)}>
+      <Ionicons name="checkmark" size={isPreview ? 16 : 20} color="#fff" />
+      <Text style={styles.actionLabel}>{isPreview ? 'Approve' : mode.approveLabel}</Text>
+    </TouchableOpacity>
+  );
+
+  const renderRightActions = () => (
+    <TouchableOpacity style={styles.dismissAction} onPress={() => onDismiss(item.id)}>
+      <Ionicons name="trash-outline" size={isPreview ? 16 : 20} color="#fff" />
+      <Text style={styles.actionLabel}>Dismiss</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View>
+      <Swipeable
+        renderLeftActions={renderLeftActions}
+        renderRightActions={renderRightActions}
+        overshootLeft={false}
+        overshootRight={false}
+      >
+        <TouchableOpacity style={isPreview ? styles.previewRow : styles.row} onPress={() => onOpen(item)} activeOpacity={0.85}>
+          <View style={isPreview ? styles.previewRowMain : styles.rowMain}>
+            <Text style={isPreview ? styles.previewMerchant : styles.merchant} numberOfLines={1}>
+              {item.merchant || item.description || '—'}
+            </Text>
+            {isPreview ? (
+              <>
+                <Text style={styles.previewMeta} numberOfLines={1}>{reviewQueueLabel(item)}</Text>
+                <Text style={styles.previewGuidance} numberOfLines={1}>{reviewQueueGuidance(item)}</Text>
+              </>
+            ) : (
+              <>
+                <View style={styles.metaRow}>
+                  <Text style={styles.date}>{formatDate(item.date)}</Text>
+                  <View style={[styles.sourceChip, source.accent]}>
+                    <Ionicons name={source.icon} size={11} color={source.accentText.color} />
+                    <Text style={[styles.sourceChipText, source.accentText]}>{source.label}</Text>
+                  </View>
+                </View>
+                {item.gmail_review_hint?.message_subject ? (
+                  <Text style={styles.emailSubject} numberOfLines={1}>{item.gmail_review_hint.message_subject}</Text>
+                ) : null}
+                {item.gmail_review_hint ? (
+                  <View style={styles.hintWrap}>
+                    <View style={styles.hintChipRow}>
+                      <View style={[styles.modeChip, mode.accent]}>
+                        <Text style={[styles.modeChipText, mode.accentText]}>{mode.chipLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.hintDetail} numberOfLines={1}>{mode.guidance}</Text>
+                  </View>
+                ) : null}
+              </>
+            )}
+          </View>
+          <View style={isPreview ? styles.previewRowRight : styles.rowRight}>
+            <Text style={isPreview ? styles.previewAmount : styles.amount}>${Number(item.amount).toFixed(2)}</Text>
+            {quickCheck ? (
+              <TouchableOpacity
+                style={isPreview ? styles.previewConfirmChip : styles.confirmChip}
+                onPress={(event) => {
+                  event.stopPropagation?.();
+                  onApprove(item.id);
+                }}
+                activeOpacity={0.82}
+              >
+                <Text style={isPreview ? styles.previewConfirmChipText : styles.confirmChipText}>Confirm</Text>
+              </TouchableOpacity>
+            ) : isPreview ? (
+              <View style={styles.previewReviewChip}>
+                <Text style={styles.previewReviewChipText}>Review</Text>
+              </View>
+            ) : null}
+          </View>
+        </TouchableOpacity>
+      </Swipeable>
+      {!isPreview && item.duplicate_flags?.length > 0 ? (
+        <DuplicateAlert flags={item.duplicate_flags} onDismiss={() => onDismiss(item.id)} />
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+    paddingVertical: 14, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: '#111',
+  },
+  rowMain: { flex: 1, marginRight: 12 },
+  merchant: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
+  date: { fontSize: 13, color: '#666', marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  emailSubject: { marginTop: 6, fontSize: 12, color: '#737373' },
+  sourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  sourceChipDefault: { backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.24)' },
+  sourceChipEmail: { backgroundColor: 'rgba(96,165,250,0.12)', borderColor: 'rgba(96,165,250,0.3)' },
+  sourceChipText: { fontSize: 11, fontWeight: '700' },
+  sourceChipTextDefault: { color: '#cbd5e1' },
+  sourceChipTextEmail: { color: '#93c5fd' },
+  hintWrap: { marginTop: 6, gap: 4 },
+  hintChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  modeChip: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+  modeChipText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  modeChipQuick: { backgroundColor: 'rgba(134,239,172,0.08)', borderColor: 'rgba(134,239,172,0.35)' },
+  modeChipTextQuick: { color: '#bbf7d0' },
+  modeChipItems: { backgroundColor: 'rgba(253,224,71,0.08)', borderColor: 'rgba(253,224,71,0.35)' },
+  modeChipTextItems: { color: '#fde68a' },
+  modeChipFull: { backgroundColor: 'rgba(147,197,253,0.08)', borderColor: 'rgba(147,197,253,0.28)' },
+  modeChipTextFull: { color: '#bfdbfe' },
+  hintDetail: { fontSize: 12, color: '#8a8a8a' },
+  rowRight: { alignItems: 'flex-end', gap: 6 },
+  amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },
+  confirmChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.3)',
+    backgroundColor: 'rgba(134,239,172,0.08)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  confirmChipText: { fontSize: 11, fontWeight: '700', color: '#bbf7d0' },
+  previewRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  previewRowMain: { flex: 1, marginRight: 8 },
+  previewMerchant: { fontSize: 14, color: '#f5f5f5' },
+  previewMeta: { fontSize: 11, color: '#8faed8', marginTop: 3, fontWeight: '600' },
+  previewGuidance: { fontSize: 12, color: '#8a8a8a', marginTop: 4 },
+  previewRowRight: { alignItems: 'flex-end', gap: 6 },
+  previewAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
+  previewConfirmChip: {
+    alignSelf: 'flex-end',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.3)',
+    backgroundColor: 'rgba(134,239,172,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  previewConfirmChipText: { color: '#bbf7d0', fontSize: 11, fontWeight: '700' },
+  previewReviewChip: {
+    alignSelf: 'flex-end',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2b3442',
+    backgroundColor: '#141920',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  previewReviewChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
+  approveAction: {
+    backgroundColor: '#22c55e',
+    justifyContent: 'center', alignItems: 'center',
+    width: 80, flexDirection: 'column', gap: 3,
+    borderBottomWidth: 1, borderBottomColor: '#111',
+  },
+  dismissAction: {
+    backgroundColor: '#ef4444',
+    justifyContent: 'center', alignItems: 'center',
+    width: 80, flexDirection: 'column', gap: 3,
+    borderBottomWidth: 1, borderBottomColor: '#111',
+  },
+  actionLabel: { color: '#fff', fontSize: 12, fontWeight: '600' },
+});

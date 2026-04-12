@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
@@ -12,6 +11,7 @@ import { usePendingExpenses, removePendingExpense } from '../../hooks/usePending
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
+import { ReviewQueueItem } from '../../components/ReviewQueueItem';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expenseLocalStore';
@@ -169,32 +169,6 @@ function SpendHeader({ myBudget, householdBudget, isMultiMember, selectedMonth, 
   );
 }
 
-function pendingPreviewLabel(expense = {}) {
-  if (expense?.review_source === 'gmail' || expense?.source === 'email') {
-    const mode = expense?.gmail_review_hint?.review_mode;
-    if (mode === 'quick_check') return 'Gmail import · Quick check';
-    if (mode === 'items_first') return 'Gmail import · Items first';
-    return 'Gmail import · Review';
-  }
-  return 'Pending review';
-}
-
-function pendingGuidance(expense = {}) {
-  const mode = expense?.gmail_review_hint?.review_mode;
-  if (mode === 'quick_check') return 'Check merchant, amount, and date.';
-  if (mode === 'items_first') return 'Review extracted items before approving.';
-  return 'Check merchant, date, and category.';
-}
-
-function isQuickCheckPending(expense = {}) {
-  if (expense?.gmail_review_hint?.review_mode !== 'quick_check') return false;
-  if (Array.isArray(expense?.duplicate_flags) && expense.duplicate_flags.length > 0) return false;
-  const likelyChangedFields = Array.isArray(expense?.gmail_review_hint?.likely_changed_fields)
-    ? expense.gmail_review_hint.likely_changed_fields.filter(Boolean)
-    : [];
-  return likelyChangedFields.length <= 1;
-}
-
 function pendingModeSummary(expenses = []) {
   const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
   for (const expense of expenses) {
@@ -340,60 +314,20 @@ export default function FeedScreen() {
             </TouchableOpacity>
           ) : null}
           {item.items.slice(0, 3).map(e => (
-            <Swipeable
+            <ReviewQueueItem
               key={e.id}
-              renderLeftActions={() => (
-                <TouchableOpacity style={styles.approveAction} onPress={() => approvePending(e.id)}>
-                  <Ionicons name="checkmark" size={16} color="#fff" />
-                  <Text style={styles.swipeLabel}>Approve</Text>
-                </TouchableOpacity>
-              )}
-              renderRightActions={() => (
-                <TouchableOpacity style={styles.dismissAction} onPress={() => dismissPending(e.id)}>
-                  <Ionicons name="trash-outline" size={16} color="#fff" />
-                  <Text style={styles.swipeLabel}>Dismiss</Text>
-                </TouchableOpacity>
-              )}
-              overshootLeft={false}
-              overshootRight={false}
-            >
-              <TouchableOpacity
-                style={styles.pendingRow}
-                onPress={() => router.push({
-                  pathname: '/expense/[id]',
-                  params: {
-                    id: e.id,
-                    expense: JSON.stringify(e),
-                  },
-                })}
-                activeOpacity={0.85}
-              >
-                <View style={styles.pendingRowMain}>
-                  <Text style={styles.pendingMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
-                  <Text style={styles.pendingMeta} numberOfLines={1}>{pendingPreviewLabel(e)}</Text>
-                  <Text style={styles.pendingGuidance} numberOfLines={1}>{pendingGuidance(e)}</Text>
-                </View>
-                <View style={styles.pendingRowRight}>
-                  <Text style={styles.pendingAmount}>${Number(e.amount).toFixed(2)}</Text>
-                  {isQuickCheckPending(e) ? (
-                    <TouchableOpacity
-                      style={styles.pendingConfirmChip}
-                      onPress={(event) => {
-                        event.stopPropagation?.();
-                        approvePending(e.id);
-                      }}
-                      activeOpacity={0.82}
-                    >
-                      <Text style={styles.pendingConfirmChipText}>Confirm</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.pendingReviewChip}>
-                      <Text style={styles.pendingReviewChipText}>Review</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            </Swipeable>
+              item={e}
+              variant="preview"
+              onOpen={(entry) => router.push({
+                pathname: '/expense/[id]',
+                params: {
+                  id: entry.id,
+                  expense: JSON.stringify(entry),
+                },
+              })}
+              onApprove={approvePending}
+              onDismiss={dismissPending}
+            />
           ))}
           {item.items.length > 3 && (
             <TouchableOpacity
@@ -608,31 +542,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   pendingOpenChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
-  pendingRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  pendingRowMain: { flex: 1, marginRight: 8 },
-  pendingMerchant: { fontSize: 14, color: '#f5f5f5' },
-  pendingMeta: { fontSize: 11, color: '#8faed8', marginTop: 3, fontWeight: '600' },
-  pendingGuidance: { fontSize: 12, color: '#8a8a8a', marginTop: 4 },
-  pendingRowRight: { alignItems: 'flex-end', gap: 6 },
-  pendingAmount: { fontSize: 14, color: '#f5f5f5', fontWeight: '600' },
-  pendingConfirmChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(134,239,172,0.3)',
-    backgroundColor: 'rgba(134,239,172,0.08)',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  pendingConfirmChipText: { color: '#bbf7d0', fontSize: 11, fontWeight: '700' },
-  pendingReviewChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2b3442',
-    backgroundColor: '#141920',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  pendingReviewChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
   pendingMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -641,9 +550,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   pendingMore: { color: '#888', fontSize: 14, textAlign: 'center' },
-  approveAction: { backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
-  dismissAction: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, flexDirection: 'column', gap: 2 },
-  swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600' },
 
   fab: {
     position: 'absolute', bottom: 24, right: 24,
