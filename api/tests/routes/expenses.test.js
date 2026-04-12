@@ -859,6 +859,67 @@ describe('PATCH /expenses/:id', () => {
     );
   });
 
+  it('persists pending-review controls for email imports without requiring deep edit state', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes, is_private)
+       VALUES ($1, $2, 'PendingReviewControls', 31.00, '2026-03-15', 'email', 'pending', 'Imported from Gmail', FALSE)
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'pending-review-controls-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({
+        is_private: true,
+        exclude_from_budget: true,
+        budget_exclusion_reason: 'business',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.is_private).toBe(true);
+    expect(res.body.exclude_from_budget).toBe(true);
+    expect(res.body.budget_exclusion_reason).toBe('business');
+
+    const log = await db.query(
+      `SELECT review_action, review_edit_count, review_changed_fields
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('edited');
+    expect(Number(log.rows[0].review_edit_count)).toBe(1);
+    expect(log.rows[0].review_changed_fields).toEqual(
+      expect.arrayContaining(['is_private', 'exclude_from_budget', 'budget_exclusion_reason'])
+    );
+  });
+
+  it('clears budget exclusion reason when track only is turned off', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, amount, date, source, status,
+         exclude_from_budget, budget_exclusion_reason
+       )
+       VALUES ($1, $2, 'TrackOnlyReset', 44.00, '2026-03-15', 'manual', 'confirmed', TRUE, 'business')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({ exclude_from_budget: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.exclude_from_budget).toBe(false);
+    expect(res.body.budget_exclusion_reason).toBeNull();
+  });
+
   it('records item-level Gmail import correction signals when imported items are edited', async () => {
     const expResult = await db.query(
       `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes)
@@ -1026,6 +1087,39 @@ describe('POST /expenses/:id/approve', () => {
     );
     expect(log.rows[0].review_action).toBe('approved');
     expect(log.rows[0].reviewed_at).toBeTruthy();
+  });
+
+  it('records quick-check approval context for Gmail imports', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, amount, date, source, status, review_required, review_mode, review_source
+       )
+       VALUES ($1, $2, 'QuickCheckApprove', 13.00, '2026-03-17', 'email', 'pending', TRUE, 'quick_check', 'gmail')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'approve-quick-check-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+
+    const res = await request(app)
+      .post(`/expenses/${expenseId}/approve`)
+      .send({ review_context: 'quick_check' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('confirmed');
+
+    const log = await db.query(
+      `SELECT review_action, review_changed_fields
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('approved');
+    expect(log.rows[0].review_changed_fields).toContain('review_path_quick_check');
   });
 });
 
