@@ -1,5 +1,9 @@
 const db = require('../db');
 
+function isMissingDuplicateFlagsTableError(err) {
+  return err?.code === '42P01' && `${err?.message || ''}`.includes('duplicate_flags');
+}
+
 async function create({ expenseIdA, expenseIdB, confidence }) {
   const result = await db.query(
     `INSERT INTO duplicate_flags (expense_id_a, expense_id_b, confidence)
@@ -10,13 +14,18 @@ async function create({ expenseIdA, expenseIdB, confidence }) {
 }
 
 async function findByExpenseId(expenseId) {
-  const result = await db.query(
-    `SELECT * FROM duplicate_flags
-     WHERE expense_id_a = $1 OR expense_id_b = $1
-     ORDER BY created_at DESC`,
-    [expenseId]
-  );
-  return result.rows;
+  try {
+    const result = await db.query(
+      `SELECT * FROM duplicate_flags
+       WHERE expense_id_a = $1 OR expense_id_b = $1
+       ORDER BY created_at DESC`,
+      [expenseId]
+    );
+    return result.rows;
+  } catch (err) {
+    if (!isMissingDuplicateFlagsTableError(err)) throw err;
+    return [];
+  }
 }
 
 async function updateStatus(id, { status, resolvedBy }) {
