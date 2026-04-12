@@ -557,19 +557,79 @@ async function attachGmailReviewHint(expense, userId) {
   };
 }
 
-async function attachGmailReviewHints(expenses = [], userId) {
+async function fetchPendingExpensesBase(userId) {
+  const result = await db.query(
+    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
+     WHERE e.user_id = $1 AND e.status = 'pending'
+     ORDER BY e.date DESC, e.created_at DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
+async function attachDuplicateFlagsBestEffort(expense) {
+  if (!expense?.id) return { ...expense, duplicate_flags: [] };
+  try {
+    const duplicateFlags = await DuplicateFlag.findByExpenseId(expense.id);
+    return { ...expense, duplicate_flags: duplicateFlags };
+  } catch (err) {
+    console.error('[expenses/enrich] duplicate flag lookup failed:', {
+      expense_id: expense.id,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+    return { ...expense, duplicate_flags: [] };
+  }
+}
+
+async function attachItemsBestEffort(expense) {
+  if (!expense?.id) return { ...expense, items: [] };
+  try {
+    const items = await ExpenseItem.findByExpenseId(expense.id);
+    return { ...expense, items };
+  } catch (err) {
+    console.error('[expenses/enrich] item lookup failed:', {
+      expense_id: expense.id,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+    return { ...expense, items: [] };
+  }
+}
+
+async function attachExpenseReviewContext(expense, userId, { includeItems = false } = {}) {
+  let enrichedExpense = await attachDuplicateFlagsBestEffort(expense);
+  if (includeItems) {
+    enrichedExpense = await attachItemsBestEffort(enrichedExpense);
+  }
+  try {
+    return await attachGmailReviewHint(enrichedExpense, userId);
+  } catch (err) {
+    console.error('[expenses/enrich] gmail hint attach failed:', {
+      expense_id: enrichedExpense?.id || null,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+    return { ...enrichedExpense, gmail_review_hint: null };
+  }
+}
+
+async function attachExpensesReviewContext(expenses = [], userId, { includeItems = false } = {}) {
   const results = await Promise.allSettled(
-    expenses.map((expense) => attachGmailReviewHint(expense, userId))
+    expenses.map((expense) => attachExpenseReviewContext(expense, userId, { includeItems }))
   );
   return results.map((result, index) => {
     if (result.status === 'fulfilled') return result.value;
     const expense = expenses[index];
-    console.error('[expenses/pending] gmail hint attach failed:', {
+    console.error('[expenses/enrich] expense enrichment failed:', {
       expense_id: expense?.id || null,
-      source: expense?.source || null,
       message: result.reason?.message || String(result.reason || 'unknown_error'),
     });
-    return { ...expense, gmail_review_hint: null };
+    return {
+      ...expense,
+      duplicate_flags: expense?.duplicate_flags || [],
+      ...(includeItems ? { items: expense?.items || [] } : {}),
+      gmail_review_hint: null,
+    };
   });
 }
 
@@ -1094,46 +1154,8 @@ router.get('/pending', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const result = await db.query(
-      `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
-       FROM expenses e
-       LEFT JOIN categories c ON e.category_id = c.id
-       WHERE e.user_id = $1 AND e.status = 'pending'
-       ORDER BY e.date DESC, e.created_at DESC`,
-      [user.id]
-    );
-    const expenseResults = await Promise.allSettled(
-      result.rows.map(async (e) => {
-        let duplicateFlags = [];
-        try {
-          duplicateFlags = await DuplicateFlag.findByExpenseId(e.id);
-        } catch (err) {
-          console.error('[expenses/pending] duplicate flag lookup failed:', {
-            expense_id: e.id,
-            message: err?.message || String(err || 'unknown_error'),
-          });
-        }
-        return {
-          ...e,
-          duplicate_flags: duplicateFlags,
-        };
-      })
-    );
-
-    const expenses = expenseResults.map((rowResult, index) => {
-      if (rowResult.status === 'fulfilled') return rowResult.value;
-      const base = result.rows[index];
-      console.error('[expenses/pending] expense row enrichment failed:', {
-        expense_id: base?.id || null,
-        message: rowResult.reason?.message || String(rowResult.reason || 'unknown_error'),
-      });
-      return {
-        ...base,
-        duplicate_flags: [],
-      };
-    });
-
-    res.json(await attachGmailReviewHints(expenses, user.id));
+    const baseExpenses = await fetchPendingExpensesBase(user.id);
+    res.json(await attachExpensesReviewContext(baseExpenses, user.id));
   } catch (err) { next(err); }
 });
 
@@ -1331,33 +1353,7 @@ router.get('/:id', async (req, res, next) => {
     const ownedByUser = expense.user_id === user?.id;
     const inHousehold = user?.household_id && expense.household_id === user.household_id;
     if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
-    let duplicate_flags = [];
-    let items = [];
-    try {
-      duplicate_flags = await DuplicateFlag.findByExpenseId(expense.id);
-    } catch (err) {
-      console.error('[expenses/:id] duplicate flag lookup failed:', {
-        expense_id: expense.id,
-        message: err?.message || String(err || 'unknown_error'),
-      });
-    }
-    try {
-      items = await ExpenseItem.findByExpenseId(expense.id);
-    } catch (err) {
-      console.error('[expenses/:id] item lookup failed:', {
-        expense_id: expense.id,
-        message: err?.message || String(err || 'unknown_error'),
-      });
-    }
-    try {
-      res.json(await attachGmailReviewHint({ ...expense, duplicate_flags, items }, user.id));
-    } catch (err) {
-      console.error('[expenses/:id] gmail hint attach failed:', {
-        expense_id: expense.id,
-        message: err?.message || String(err || 'unknown_error'),
-      });
-      res.json({ ...expense, duplicate_flags, items, gmail_review_hint: null });
-    }
+    res.json(await attachExpenseReviewContext(expense, user.id, { includeItems: true }));
   } catch (err) { next(err); }
 });
 
