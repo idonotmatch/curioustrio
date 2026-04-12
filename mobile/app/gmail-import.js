@@ -8,12 +8,12 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { invalidateCache } from '../services/cache';
-import { buildMockGmailImportState } from '../fixtures/mockGmailImport';
+import { buildMockGmailImportState, buildMockPendingExpenses } from '../fixtures/mockGmailImport';
 
 const SUMMARY_WINDOW_DAYS = 90;
 const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
@@ -30,9 +30,11 @@ function reviewModeCountChips(summary = {}) {
 const MOCK_GMAIL_IMPORT_STATE = buildMockGmailImportState();
 
 export default function GmailImportScreen() {
+  const router = useRouter();
   const [gmailStatus, setGmailStatus] = useState(null);
   const [importLog, setImportLog] = useState([]);
   const [importSummary, setImportSummary] = useState(null);
+  const [pendingReviewItems, setPendingReviewItems] = useState([]);
   const [importLogExpanded, setImportLogExpanded] = useState(false);
   const [importLogLoading, setImportLogLoading] = useState(false);
   const [importSummaryLoading, setImportSummaryLoading] = useState(false);
@@ -49,6 +51,9 @@ export default function GmailImportScreen() {
   const displayImportLog = isUsingMockData && displayGmailStatus?.connected
     ? MOCK_GMAIL_IMPORT_STATE.importLog
     : importLog;
+  const displayPendingReviewItems = isUsingMockData && displayGmailStatus?.connected
+    ? buildMockPendingExpenses().filter((item) => item.review_source === 'gmail' || item.source === 'email')
+    : pendingReviewItems;
 
   const loadGmailStatus = useCallback(async () => {
     try {
@@ -64,7 +69,10 @@ export default function GmailImportScreen() {
   }, [loadGmailStatus]);
 
   useEffect(() => {
-    if (gmailStatus?.connected) loadImportSummary();
+    if (gmailStatus?.connected) {
+      loadImportSummary();
+      loadPendingQueue();
+    }
   }, [gmailStatus?.connected]);
 
   function getImportReasonMeta(reason) {
@@ -250,16 +258,33 @@ function rankSenderCard(sender = {}) {
     }
   }
 
+  async function loadPendingQueue() {
+    try {
+      const data = await api.get('/expenses/pending');
+      const gmailItems = Array.isArray(data)
+        ? data.filter((item) => item?.review_source === 'gmail' || item?.source === 'email')
+        : [];
+      setPendingReviewItems(gmailItems);
+    } catch {
+      setPendingReviewItems([]);
+    }
+  }
+
   async function syncGmail() {
     setGmailSyncing(true);
     try {
       const result = await api.post('/gmail/import', {});
       await invalidateCache('cache:expenses:pending');
-      await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus()]);
+      await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
-      Alert.alert(
-        'Gmail sync',
-        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} added to your review queue` : ''}`
+      Alert.alert('Gmail sync',
+        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} added to your review queue` : ''}`,
+        pendingReview > 0
+          ? [
+              { text: 'Later', style: 'cancel' },
+              { text: 'Open review queue', onPress: () => router.push('/(tabs)/pending') },
+            ]
+          : [{ text: 'OK' }]
       );
     } catch (e) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
@@ -454,6 +479,53 @@ function rankSenderCard(sender = {}) {
 
         {displayGmailStatus?.connected && (
           <View style={styles.section}>
+            <View style={styles.logToggleRow}>
+              <Text style={styles.sectionTitle}>AWAITING YOUR REVIEW</Text>
+              {displayPendingReviewItems.length > 0 ? (
+                <TouchableOpacity onPress={() => router.push('/(tabs)/pending')} activeOpacity={0.75}>
+                  <Text style={styles.openQueueLink}>Open queue</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {displayPendingReviewItems.length === 0 ? (
+              <Text style={styles.emptyText}>No Gmail imports are currently waiting in your review queue.</Text>
+            ) : (
+              displayPendingReviewItems.slice(0, 3).map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.pendingRow}
+                  activeOpacity={0.82}
+                  onPress={() => router.push({
+                    pathname: '/expense/[id]',
+                    params: {
+                      id: item.id,
+                      expense: JSON.stringify(item),
+                    },
+                  })}
+                >
+                  <View style={styles.pendingRowMain}>
+                    <Text style={styles.pendingMerchant} numberOfLines={1}>
+                      {item.merchant || item.description || '(no merchant)'}
+                    </Text>
+                    <Text style={styles.pendingMeta} numberOfLines={1}>
+                      {item.gmail_review_hint?.review_mode === 'quick_check'
+                        ? 'Quick check'
+                        : item.gmail_review_hint?.review_mode === 'items_first'
+                          ? 'Items first'
+                          : 'Review'}
+                    </Text>
+                  </View>
+                  <View style={styles.pendingRowRight}>
+                    <Text style={styles.pendingAmount}>${Number(item.amount || 0).toFixed(2)}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+
+        {displayGmailStatus?.connected && (
+          <View style={styles.section}>
             <TouchableOpacity
               style={styles.logToggleRow}
               onPress={() => {
@@ -578,6 +650,20 @@ const styles = StyleSheet.create({
   expandToggleText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
   summaryWindow: { color: '#444', fontSize: 11, marginTop: 10 },
   logToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  openQueueLink: { color: '#8ab4ff', fontSize: 12, fontWeight: '600' },
+  pendingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+  },
+  pendingRowMain: { flex: 1, marginRight: 12 },
+  pendingMerchant: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
+  pendingMeta: { color: '#8ab4ff', fontSize: 11, marginTop: 4 },
+  pendingRowRight: { alignItems: 'flex-end' },
+  pendingAmount: { color: '#f5f5f5', fontSize: 13, fontWeight: '600' },
   logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#111' },
   logRowLeft: { flex: 1, marginRight: 12 },
   logSubject: { color: '#f5f5f5', fontSize: 13 },
