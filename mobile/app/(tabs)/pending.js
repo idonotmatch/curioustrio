@@ -81,7 +81,7 @@ function isQuickCheckPending(item = {}) {
 
 export default function PendingScreen() {
   const router = useRouter();
-  const { expenses, loading, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
+  const { expenses, loading, error, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
@@ -241,7 +241,11 @@ export default function PendingScreen() {
           </View>
         }
         ListEmptyComponent={
-          !loading && <Text style={styles.empty}>Nothing in your review queue. You're all caught up!</Text>
+          !loading && (
+            error
+              ? <Text style={styles.error}>{error}</Text>
+              : <Text style={styles.empty}>Nothing in your review queue. You're all caught up!</Text>
+          )
         }
       />
     </View>
@@ -256,6 +260,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, color: '#8a8a8a', marginBottom: 10 },
   hint: { fontSize: 12, color: '#444', textAlign: 'center', letterSpacing: 0.3 },
   empty: { color: '#555', textAlign: 'center', marginTop: 40 },
+  error: { color: '#fca5a5', textAlign: 'center', marginTop: 40, lineHeight: 20 },
 
   row: {
     flexDirection: 'row', alignItems: 'center',

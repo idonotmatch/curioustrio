@@ -227,7 +227,7 @@ export default function FeedScreen() {
   const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
-  const { expenses: pending, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
+  const { expenses: pending, error: pendingError, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
 
@@ -318,7 +318,13 @@ export default function FeedScreen() {
           {isUsingMockPending ? (
             <Text style={styles.pendingPreviewNote}>Dev preview queue</Text>
           ) : null}
-          {item.items.length === 0 ? (
+          {pendingError ? (
+            <View style={styles.pendingErrorState}>
+              <Text style={styles.pendingErrorTitle}>Could not load your review queue</Text>
+              <Text style={styles.pendingErrorBody}>{pendingError}</Text>
+            </View>
+          ) : null}
+          {!pendingError && item.items.length === 0 ? (
             <TouchableOpacity
               style={styles.pendingEmptyState}
               onPress={() => router.push('/(tabs)/pending')}
@@ -567,6 +573,9 @@ const styles = StyleSheet.create({
   pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 12 },
   pendingModeSummary: { fontSize: 11, color: '#7f8da4', paddingHorizontal: 12, paddingBottom: 2 },
   pendingPreviewNote: { fontSize: 11, color: '#8ab4ff', paddingHorizontal: 12, paddingBottom: 4 },
+  pendingErrorState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  pendingErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
+  pendingErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
   pendingEmptyState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingEmptyTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
   pendingEmptyBody: { fontSize: 12, color: '#8a8a8a', lineHeight: 18, marginBottom: 10 },

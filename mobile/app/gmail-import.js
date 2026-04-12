@@ -35,6 +35,7 @@ export default function GmailImportScreen() {
   const [importLog, setImportLog] = useState([]);
   const [importSummary, setImportSummary] = useState(null);
   const [pendingReviewItems, setPendingReviewItems] = useState([]);
+  const [pendingReviewError, setPendingReviewError] = useState(null);
   const [importLogExpanded, setImportLogExpanded] = useState(false);
   const [importLogLoading, setImportLogLoading] = useState(false);
   const [importSummaryLoading, setImportSummaryLoading] = useState(false);
@@ -265,8 +266,10 @@ function rankSenderCard(sender = {}) {
         ? data.filter((item) => item?.review_source === 'gmail' || item?.source === 'email')
         : [];
       setPendingReviewItems(gmailItems);
+      setPendingReviewError(null);
     } catch {
       setPendingReviewItems([]);
+      setPendingReviewError('Could not load your review queue.');
     }
   }
 
@@ -488,7 +491,9 @@ function rankSenderCard(sender = {}) {
               ) : null}
             </View>
             {displayPendingReviewItems.length === 0 ? (
-              <Text style={styles.emptyText}>No Gmail imports are currently waiting in your review queue.</Text>
+              <Text style={styles.emptyText}>
+                {pendingReviewError || 'No Gmail imports are currently waiting in your review queue.'}
+              </Text>
             ) : (
               displayPendingReviewItems.slice(0, 3).map((item) => (
                 <TouchableOpacity
