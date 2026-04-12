@@ -1,0 +1,39 @@
+name: API Stability
+
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - '.github/workflows/api-stability.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'api/**'
+      - '.github/workflows/api-stability.yml'
+
+jobs:
+  stability:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install API dependencies
+        run: npm ci
+
+      - name: Verify schema check script syntax
+        run: node --check scripts/check-schema-compatibility.js
+
+      - name: Run focused stability suite
+        run: npm run test:stability

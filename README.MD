@@ -17,3 +17,32 @@ Useful setup notes:
 - Copy [api/.env.example](/Users/dangnguyen/curious-trio/api/.env.example) to `api/.env` and fill in secrets.
 - Copy [mobile/.env.example](/Users/dangnguyen/curious-trio/mobile/.env.example) to `mobile/.env` if you want to pin a local API URL.
 - If `EXPO_PUBLIC_API_URL` is unset, the mobile client will try local `3001` and `3002`.
+
+## Stability checks
+
+For the highest-risk app flows, we now have two fast checks in the API:
+
+```bash
+cd api
+npm run test:stability
+npm run check:schema
+```
+
+What they cover:
+- `test:stability`
+  - Gmail review routing
+  - NL parsing
+  - insight builder core behavior
+- `check:schema`
+  - confirms required Gmail review / budget columns exist
+  - warns when optional best-effort tables are missing
+
+Recommended use:
+- before deploy
+- right after running new DB migrations
+- anytime Gmail review, expense editing, or budget-impact behavior changes
+
+Notes:
+- `test:stability` runs without the full integration DB setup.
+- `check:schema` needs a live database connection for the target environment.
+- GitHub Actions now runs the focused API stability suite automatically on API pushes and PRs via [api-stability.yml](/Users/dangnguyen/curious-trio/.github/workflows/api-stability.yml).
