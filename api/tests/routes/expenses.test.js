@@ -21,6 +21,8 @@ const { parseExpenseDetailed } = require('../../src/services/nlParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { parseReceiptDetailed } = require('../../src/services/receiptParser');
 const { searchPlace } = require('../../src/services/mapkitService');
+const DuplicateFlag = require('../../src/models/duplicateFlag');
+const EmailImportLog = require('../../src/models/emailImportLog');
 
 let householdId;
 let userId;
@@ -454,6 +456,52 @@ describe('GET /expenses/pending', () => {
       review_mode: 'full_review',
     });
     expect(Array.isArray(hinted.gmail_review_hint.likely_changed_fields)).toBe(true);
+  });
+
+  it('still returns pending expenses when duplicate flag lookup fails', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Duplicate Failure Merchant', 13.00, '2026-03-18', 'manual', 'pending')
+       RETURNING id`,
+      [userId, householdId]
+    );
+
+    const duplicateSpy = jest
+      .spyOn(DuplicateFlag, 'findByExpenseId')
+      .mockRejectedValue(new Error('duplicate lookup exploded'));
+
+    try {
+      const res = await request(app).get('/expenses/pending');
+      expect(res.status).toBe(200);
+      const pendingExpense = res.body.find((expense) => expense.id === expResult.rows[0].id);
+      expect(pendingExpense).toBeDefined();
+      expect(pendingExpense.duplicate_flags).toEqual([]);
+    } finally {
+      duplicateSpy.mockRestore();
+    }
+  });
+
+  it('still returns pending email expenses when Gmail hint enrichment fails', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, review_source)
+       VALUES ($1, $2, 'Hint Failure Merchant', 14.00, '2026-03-18', 'email', 'pending', 'gmail')
+       RETURNING id`,
+      [userId, householdId]
+    );
+
+    const emailLogSpy = jest
+      .spyOn(EmailImportLog, 'findByExpenseId')
+      .mockRejectedValue(new Error('gmail hint exploded'));
+
+    try {
+      const res = await request(app).get('/expenses/pending');
+      expect(res.status).toBe(200);
+      const pendingExpense = res.body.find((expense) => expense.id === expResult.rows[0].id);
+      expect(pendingExpense).toBeDefined();
+      expect(pendingExpense.gmail_review_hint).toBeNull();
+    } finally {
+      emailLogSpy.mockRestore();
+    }
   });
 });
 
