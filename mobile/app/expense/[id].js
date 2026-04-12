@@ -7,14 +7,20 @@ import { useState, useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
-import { invalidateCacheByPrefix } from '../../services/cache';
+import {
+  invalidateAfterExpenseEdit,
+  invalidateAfterExpenseDelete,
+  invalidateAfterPendingApproval,
+  invalidateAfterPendingDismiss,
+  invalidateAfterRecurringMutation,
+} from '../../services/cacheInvalidation';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { removePendingExpense } from '../../hooks/usePendingExpenses';
 import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
-import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
+import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot, prependToExpenseMonthCaches } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 
 function formatImportedAt(value) {
@@ -333,7 +339,7 @@ export default function ExpenseDetailScreen() {
       });
       const refreshed = await api.get(`/expenses/${id}`);
       setExpense(refreshed);
-      saveExpenseSnapshot(refreshed);
+      await saveExpenseSnapshot(refreshed);
       setEditing(false);
       setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({
         ...it,
@@ -349,11 +355,7 @@ export default function ExpenseDetailScreen() {
             }
           : null
       );
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
+      await invalidateAfterExpenseEdit();
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -410,12 +412,8 @@ export default function ExpenseDetailScreen() {
       setIsPrivate(Boolean(refreshed.is_private));
       setExcludeFromBudget(Boolean(refreshed.exclude_from_budget));
       setBudgetExclusionReason(refreshed.budget_exclusion_reason || null);
-      saveExpenseSnapshot(refreshed);
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
+      await saveExpenseSnapshot(refreshed);
+      await invalidateAfterExpenseEdit();
       return refreshed;
     } catch (e) {
       setExpense(previousExpense);
@@ -496,11 +494,7 @@ export default function ExpenseDetailScreen() {
           try {
             await api.delete(`/expenses/${id}`);
             await removeExpenseSnapshot(id);
-            await Promise.all([
-              invalidateCacheByPrefix('cache:expenses:'),
-              invalidateCacheByPrefix('cache:budget:'),
-              invalidateCacheByPrefix('cache:household-expenses:'),
-            ]);
+            await invalidateAfterExpenseDelete();
             router.back();
           } catch (e) {
             Alert.alert('Error', e.message);
@@ -523,7 +517,7 @@ export default function ExpenseDetailScreen() {
       setRecurringFrequencyDays(saved?.expected_frequency_days ? String(saved.expected_frequency_days) : '');
       setRecurringNotes(saved?.notes || '');
       setShowRecurringModal(false);
-      await invalidateCacheByPrefix('cache:insights:');
+      await invalidateAfterRecurringMutation();
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save recurring details');
     } finally {
@@ -540,7 +534,7 @@ export default function ExpenseDetailScreen() {
       setRecurringFrequencyDays('');
       setRecurringNotes('');
       setShowRecurringModal(false);
-      await invalidateCacheByPrefix('cache:insights:');
+      await invalidateAfterRecurringMutation();
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not remove recurring flag');
     } finally {
@@ -553,8 +547,7 @@ export default function ExpenseDetailScreen() {
     try {
       await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
       await removeExpenseSnapshot(id);
-      const { invalidateCache } = await import('../../services/cache');
-      await invalidateCache('cache:expenses:pending');
+      await invalidateAfterPendingDismiss();
       removePendingExpense(id);
       setShowDismissReasonSheet(false);
       router.back();
@@ -1210,14 +1203,11 @@ export default function ExpenseDetailScreen() {
                     ? 'quick_check'
                     : 'full_review';
                 const approved = await api.post(`/expenses/${id}/approve`, { review_context: reviewContext });
-                if (approved?.id) await saveExpenseSnapshot(approved);
-                const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
-                await Promise.all([
-                  invalidateCache('cache:expenses:pending'),
-                  invalidateCacheByPrefix('cache:expenses:'),
-                  invalidateCacheByPrefix('cache:budget:'),
-                  invalidateCacheByPrefix('cache:household-expenses:'),
-                ]);
+                if (approved?.id) {
+                  await saveExpenseSnapshot(approved);
+                  await prependToExpenseMonthCaches(approved);
+                }
+                await invalidateAfterPendingApproval();
                 removePendingExpense(id);
                 router.back();
               }

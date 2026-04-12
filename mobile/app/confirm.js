@@ -5,8 +5,8 @@ import * as MediaLibrary from 'expo-media-library';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
-import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
-import { saveExpenseSnapshot } from '../services/expenseLocalStore';
+import { saveExpenseSnapshot, prependToExpenseMonthCaches } from '../services/expenseLocalStore';
+import { invalidateAfterExpenseCreate } from '../services/cacheInvalidation';
 import { LocationPicker } from '../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCategories } from '../hooks/useCategories';
@@ -397,6 +397,7 @@ export default function ConfirmScreen() {
       });
       if (result?.expense?.id) {
         await saveExpenseSnapshot(result.expense);
+        await prependToExpenseMonthCaches(result.expense);
       }
       if (parsed?.scenario_memory_id) {
         try {
@@ -408,16 +409,8 @@ export default function ConfirmScreen() {
           // non-fatal
         }
       }
-      await Promise.all([
-        invalidateCache(`cache:expenses:${expenseMonth}`),
-        invalidateCache(`cache:budget:${expenseMonth}:personal`),
-        // Personal feeds are cache-first and keyed by budget period, which may
-        // differ from the expense's calendar month when the user uses a custom
-        // budget reset day. Clearing by prefix guarantees "Mine" refetches.
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
+      // Expense was prepended to list cache above; only budget + household need full invalidation.
+      await invalidateAfterExpenseCreate();
       if (isWatchedPlanFlow) {
         router.replace({
           pathname: '/watching-plans',

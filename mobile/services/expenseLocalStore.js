@@ -59,6 +59,40 @@ export async function loadExpenseItemsSnapshot(id) {
   return Array.isArray(expense?.items) ? expense.items : null;
 }
 
+/**
+ * Prepend a newly confirmed expense to every cached month-list that covers its date.
+ * Marks the updated entries with ts=0 so the next loadWithCache call still fires a
+ * background revalidation — giving us instant local feedback without skipping reconciliation.
+ *
+ * Use this after a create/approve instead of invalidating cache:expenses:* entirely.
+ */
+export async function prependToExpenseMonthCaches(expense) {
+  if (!expense?.id || !expense?.date) return;
+  const month = String(expense.date).slice(0, 7);
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const monthKeys = allKeys.filter(k => k.startsWith(`cache:expenses:${month}:`));
+    if (!monthKeys.length) return;
+    const entries = await AsyncStorage.multiGet(monthKeys);
+    const updates = [];
+    for (const [key, raw] of entries) {
+      if (!raw) continue;
+      try {
+        const { data } = JSON.parse(raw);
+        if (!Array.isArray(data)) continue;
+        if (data.some(e => e.id === expense.id)) continue; // already present
+        // ts=0 forces background revalidation on next loadWithCache call
+        updates.push([key, JSON.stringify({ data: [expense, ...data], ts: 0 })]);
+      } catch {
+        // skip malformed entry
+      }
+    }
+    if (updates.length) await AsyncStorage.multiSet(updates);
+  } catch {
+    // non-fatal
+  }
+}
+
 export async function findExpenseSnapshotInCaches(id) {
   const direct = await loadExpenseSnapshot(id);
   if (direct) return direct;

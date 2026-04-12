@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
-import { clearAllCache } from '../services/cache';
+import { clearAllCache, loadWithCache } from '../services/cache';
 import { MonthProvider } from '../contexts/MonthContext';
 
 function AppNavigator() {
@@ -34,6 +34,37 @@ function AppNavigator() {
     } catch {
       return null;
     }
+  }
+
+  // Fire-and-forget background prefetch of common screens after login.
+  // Writes to cache so the first navigation to each tab is a cache hit.
+  async function prefetchOnLogin(user, token) {
+    if (!user) return;
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const noop = () => {};
+    await Promise.allSettled([
+      loadWithCache(
+        `cache:expenses:${month}:default`,
+        () => api.get(`/expenses?month=${month}`, { token }),
+        noop, noop,
+      ),
+      loadWithCache(
+        `cache:budget:${month}:personal:default`,
+        () => api.get(`/budgets?scope=personal&month=${month}`, { token }),
+        noop, noop,
+      ),
+      loadWithCache(
+        'cache:categories',
+        async () => { const d = await api.get('/categories', { token }); return d.categories || []; },
+        noop, noop,
+      ),
+      user.household_id && loadWithCache(
+        'cache:household',
+        () => api.get('/households/me', { token }),
+        noop, noop,
+      ),
+    ].filter(Boolean));
   }
 
   async function maybeAutoSyncGmail(token) {
@@ -116,7 +147,10 @@ function AppNavigator() {
           }
         }
 
-        if (me) await cacheCurrentUser(me);
+        if (me) {
+          await cacheCurrentUser(me);
+          prefetchOnLogin(me, session.access_token).catch(() => {});
+        }
 
         if (!isAnon && me && !me.household_id) {
           router.replace('/onboarding');
