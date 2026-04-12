@@ -78,6 +78,25 @@ describe('GET /budgets — solo user', () => {
     expect(res.body.total.remaining).toBe(425);
   });
 
+  it('excludes track-only expenses from budget totals', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [soloUserId]
+    );
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status, exclude_from_budget)
+       VALUES ($1, 75, $2, 'manual', 'confirmed', FALSE),
+              ($1, 20, $2, 'manual', 'confirmed', TRUE)`,
+      [soloUserId, `${thisMonth}-15`]
+    );
+
+    const res = await request(app).get('/budgets');
+    expect(res.status).toBe(200);
+    expect(res.body.total.spent).toBe(75);
+    expect(res.body.total.remaining).toBe(425);
+  });
+
   it('uses start_day override when provided', async () => {
     await db.query(
       `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,

@@ -228,6 +228,21 @@ describe('POST /expenses/confirm', () => {
     expect(res.body.expense.source).toBe('refund');
   });
 
+  it('persists exclude_from_budget when provided', async () => {
+    const res = await request(app)
+      .post('/expenses/confirm')
+      .send({
+        merchant: 'Business Lunch',
+        amount: 48.25,
+        date: '2026-03-21',
+        source: 'manual',
+        exclude_from_budget: true,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.expense.exclude_from_budget).toBe(true);
+  });
+
   it('persists items when items payload is provided', async () => {
     const res = await request(app)
       .post('/expenses/confirm')

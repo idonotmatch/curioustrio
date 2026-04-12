@@ -8,6 +8,19 @@ const db = require('../db');
 
 router.use(authenticate);
 
+function isMissingExcludeFromBudgetError(err) {
+  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+async function queryBudgetRelevant(sql, params, fallbackSql = null) {
+  try {
+    return await db.query(sql, params);
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    return db.query(fallbackSql, params);
+  }
+}
+
 async function requireUser(req, res) {
   const user = await User.findByProviderUid(req.userId);
   if (!user) { res.status(401).json({ error: 'User not synced' }); return null; }
@@ -53,12 +66,16 @@ router.get('/', async (req, res, next) => {
       // Household path: aggregate across all members
       const settings = await BudgetSetting.findByHousehold(user.household_id);
 
-      const spendResult = await db.query(
+      const spendResult = await queryBudgetRelevant(
+        `SELECT category_id, SUM(amount) as spent FROM expenses
+         WHERE (household_id = $1 OR user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND status = 'confirmed' AND exclude_from_budget = FALSE AND date >= $2 AND date < $3
+         GROUP BY category_id`,
+        [user.household_id, from, to],
         `SELECT category_id, SUM(amount) as spent FROM expenses
          WHERE (household_id = $1 OR user_id IN (SELECT id FROM users WHERE household_id = $1))
            AND status = 'confirmed' AND date >= $2 AND date < $3
-         GROUP BY category_id`,
-        [user.household_id, from, to]
+         GROUP BY category_id`
       );
       const spendByCategory = {};
       for (const row of spendResult.rows) {
@@ -66,13 +83,18 @@ router.get('/', async (req, res, next) => {
       }
       const totalSpent = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
 
-      const parentSpendResult = await db.query(
+      const parentSpendResult = await queryBudgetRelevant(
+        `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
+         FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+         WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND e.status = 'confirmed' AND e.exclude_from_budget = FALSE AND e.date >= $2 AND e.date < $3
+         GROUP BY group_id`,
+        [user.household_id, from, to],
         `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
          FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
          WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
            AND e.status = 'confirmed' AND e.date >= $2 AND e.date < $3
-         GROUP BY group_id`,
-        [user.household_id, from, to]
+         GROUP BY group_id`
       );
       const groupIds = parentSpendResult.rows.map(r => r.group_id).filter(Boolean);
       const catNames = {};
@@ -112,11 +134,14 @@ router.get('/', async (req, res, next) => {
       // Solo user path
       const settings = await BudgetSetting.findByUser(user.id);
 
-      const spendResult = await db.query(
+      const spendResult = await queryBudgetRelevant(
+        `SELECT category_id, SUM(amount) as spent FROM expenses
+         WHERE user_id = $1 AND status = 'confirmed' AND exclude_from_budget = FALSE AND date >= $2 AND date < $3
+         GROUP BY category_id`,
+        [user.id, from, to],
         `SELECT category_id, SUM(amount) as spent FROM expenses
          WHERE user_id = $1 AND status = 'confirmed' AND date >= $2 AND date < $3
-         GROUP BY category_id`,
-        [user.id, from, to]
+         GROUP BY category_id`
       );
       const spendByCategory = {};
       for (const row of spendResult.rows) {
@@ -124,12 +149,16 @@ router.get('/', async (req, res, next) => {
       }
       const totalSpent = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
 
-      const parentSpendResult = await db.query(
+      const parentSpendResult = await queryBudgetRelevant(
+        `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
+         FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+         WHERE e.user_id = $1 AND e.status = 'confirmed' AND e.exclude_from_budget = FALSE AND e.date >= $2 AND e.date < $3
+         GROUP BY group_id`,
+        [user.id, from, to],
         `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
          FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
          WHERE e.user_id = $1 AND e.status = 'confirmed' AND e.date >= $2 AND e.date < $3
-         GROUP BY group_id`,
-        [user.id, from, to]
+         GROUP BY group_id`
       );
       const groupIds = parentSpendResult.rows.map(r => r.group_id).filter(Boolean);
       const catNames = {};

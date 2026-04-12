@@ -1,0 +1,3 @@
+ALTER TABLE expenses
+  ADD COLUMN IF NOT EXISTS exclude_from_budget BOOLEAN NOT NULL DEFAULT FALSE;
+

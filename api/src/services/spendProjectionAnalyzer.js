@@ -1,6 +1,19 @@
 const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
+
+function isMissingExcludeFromBudgetError(err) {
+  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+async function queryBudgetRelevant(sql, params, fallbackSql) {
+  try {
+    return await db.query(sql, params);
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    return db.query(fallbackSql, params);
+  }
+}
 const { detectRecurringItems } = require('./recurringDetector');
 
 function pad(n) {
@@ -888,7 +901,23 @@ function projectOverallSpend({
 
 async function listExpensesInPeriod({ scope, householdId, userId, from, toExclusive }) {
   if (scope === 'household') {
-    const result = await db.query(
+    const result = await queryBudgetRelevant(
+      `SELECT
+         e.id,
+         e.merchant,
+         e.amount,
+         e.date,
+         COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+         COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
+       FROM expenses e
+       LEFT JOIN categories c ON e.category_id = c.id
+       LEFT JOIN categories pc ON c.parent_id = pc.id
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.exclude_from_budget = FALSE
+         AND e.date >= $2
+         AND e.date < $3`,
+      [householdId, from, toExclusive],
       `SELECT
          e.id,
          e.merchant,
@@ -902,13 +931,28 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
          AND e.status = 'confirmed'
          AND e.date >= $2
-         AND e.date < $3`,
-      [householdId, from, toExclusive]
+         AND e.date < $3`
     );
     return result.rows.map(normalizeExpenseRow);
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       e.id,
+       e.merchant,
+       e.amount,
+       e.date,
+       COALESCE(e.category_id::text, 'uncategorized') AS category_key,
+       COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
+     FROM expenses e
+     LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN categories pc ON c.parent_id = pc.id
+     WHERE e.user_id = $1
+       AND e.status = 'confirmed'
+       AND e.exclude_from_budget = FALSE
+       AND e.date >= $2
+       AND e.date < $3`,
+    [userId, from, toExclusive],
     `SELECT
        e.id,
        e.merchant,
@@ -922,15 +966,24 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
      WHERE e.user_id = $1
        AND e.status = 'confirmed'
        AND e.date >= $2
-       AND e.date < $3`,
-    [userId, from, toExclusive]
+       AND e.date < $3`
   );
   return result.rows.map(normalizeExpenseRow);
 }
 
 async function periodActivity({ scope, householdId, userId, from, toExclusive }) {
   if (scope === 'household') {
-    const result = await db.query(
+    const result = await queryBudgetRelevant(
+      `SELECT
+         COUNT(*)::int AS expense_count,
+         COUNT(DISTINCT e.date)::int AS active_day_count
+       FROM expenses e
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'
+         AND e.exclude_from_budget = FALSE
+         AND e.date >= $2
+         AND e.date < $3`,
+      [householdId, from, toExclusive],
       `SELECT
          COUNT(*)::int AS expense_count,
          COUNT(DISTINCT e.date)::int AS active_day_count
@@ -938,8 +991,7 @@ async function periodActivity({ scope, householdId, userId, from, toExclusive })
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
          AND e.status = 'confirmed'
          AND e.date >= $2
-         AND e.date < $3`,
-      [householdId, from, toExclusive]
+         AND e.date < $3`
     );
     return {
       expense_count: Number(result.rows[0]?.expense_count || 0),
@@ -947,7 +999,17 @@ async function periodActivity({ scope, householdId, userId, from, toExclusive })
     };
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
+    `SELECT
+       COUNT(*)::int AS expense_count,
+       COUNT(DISTINCT date)::int AS active_day_count
+     FROM expenses
+     WHERE user_id = $1
+       AND status = 'confirmed'
+       AND exclude_from_budget = FALSE
+       AND date >= $2
+       AND date < $3`,
+    [userId, from, toExclusive],
     `SELECT
        COUNT(*)::int AS expense_count,
        COUNT(DISTINCT date)::int AS active_day_count
@@ -955,8 +1017,7 @@ async function periodActivity({ scope, householdId, userId, from, toExclusive })
      WHERE user_id = $1
        AND status = 'confirmed'
        AND date >= $2
-       AND date < $3`,
-    [userId, from, toExclusive]
+       AND date < $3`
   );
   return {
     expense_count: Number(result.rows[0]?.expense_count || 0),
@@ -977,22 +1038,32 @@ async function getTotalBudgetLimit({ scope, householdId, userId }) {
 
 async function getFirstConfirmedExpenseDate({ scope, householdId, userId }) {
   if (scope === 'household') {
-    const result = await db.query(
+    const result = await queryBudgetRelevant(
       `SELECT MIN(e.date) AS first_date
        FROM expenses e
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
-         AND e.status = 'confirmed'`,
-      [householdId]
+         AND e.status = 'confirmed'
+         AND e.exclude_from_budget = FALSE`,
+      [householdId],
+      `SELECT MIN(e.date) AS first_date
+       FROM expenses e
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND e.status = 'confirmed'`
     );
     return result.rows[0]?.first_date || null;
   }
 
-  const result = await db.query(
+  const result = await queryBudgetRelevant(
     `SELECT MIN(date) AS first_date
      FROM expenses
      WHERE user_id = $1
-       AND status = 'confirmed'`,
-    [userId]
+       AND status = 'confirmed'
+       AND exclude_from_budget = FALSE`,
+    [userId],
+    `SELECT MIN(date) AS first_date
+     FROM expenses
+     WHERE user_id = $1
+       AND status = 'confirmed'`
   );
   return result.rows[0]?.first_date || null;
 }

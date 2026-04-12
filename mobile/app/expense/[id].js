@@ -137,6 +137,7 @@ function applyExpenseToState(record, setters) {
     setCardLast4,
     setCardLabel,
     setIsPrivate,
+    setExcludeFromBudget,
     setItems,
     setLocationData,
     setItemsEdits,
@@ -151,6 +152,7 @@ function applyExpenseToState(record, setters) {
   setCardLast4(record.card_last4 || '');
   setCardLabel(record.card_label || '');
   setIsPrivate(record.is_private || false);
+  setExcludeFromBudget(record.exclude_from_budget || false);
   setItems(record.items || []);
   setLocationData(
     record.place_name || record.address || record.mapkit_stable_id
@@ -190,6 +192,7 @@ export default function ExpenseDetailScreen() {
   const [cardLast4, setCardLast4] = useState('');
   const [cardLabel, setCardLabel] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [excludeFromBudget, setExcludeFromBudget] = useState(false);
   const [items, setItems] = useState([]);
   const [itemsExpanded, setItemsExpanded] = useState(false);
   const [itemsEdits, setItemsEdits] = useState([]);
@@ -217,6 +220,7 @@ export default function ExpenseDetailScreen() {
         setCardLast4,
         setCardLabel,
         setIsPrivate,
+        setExcludeFromBudget,
         setItems,
         setLocationData,
         setItemsEdits,
@@ -276,6 +280,7 @@ export default function ExpenseDetailScreen() {
         card_last4: cardLast4 || null,
         card_label: cardLabel || null,
         is_private: isPrivate,
+        exclude_from_budget: excludeFromBudget,
         place_name: locationData?.place_name || null,
         address: locationData?.address || null,
         mapkit_stable_id: locationData?.mapkit_stable_id || null,
@@ -455,6 +460,11 @@ export default function ExpenseDetailScreen() {
               {expense.is_private ? (
                 <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
                   <Text style={styles.heroMetaText}>Private</Text>
+                </View>
+              ) : null}
+              {expense.exclude_from_budget ? (
+                <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
+                  <Text style={styles.heroMetaText}>Track only</Text>
                 </View>
               ) : null}
             </View>
@@ -648,6 +658,17 @@ export default function ExpenseDetailScreen() {
             disabled={!editing || !canEdit}
             trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
             thumbColor={isPrivate ? '#fff' : '#555'}
+          />
+        </View>
+
+        <View style={[styles.row, { paddingVertical: 12 }]}>
+          <Text style={styles.label}>Exclude from budget</Text>
+          <Switch
+            value={excludeFromBudget}
+            onValueChange={editing && canEdit ? setExcludeFromBudget : undefined}
+            disabled={!editing || !canEdit}
+            trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
+            thumbColor={excludeFromBudget ? '#fff' : '#555'}
           />
         </View>
       </View>

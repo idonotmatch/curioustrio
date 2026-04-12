@@ -44,6 +44,7 @@ export default function ConfirmScreen() {
   const [paymentMethod, setPaymentMethod] = useState(parsed.payment_method || 'unknown');
   const [cardLast4, setCardLast4] = useState(parsed.card_last4 || '');
   const [cardLabel, setCardLabel] = useState(parsed.card_label || '');
+  const [excludeFromBudget, setExcludeFromBudget] = useState(parsed.exclude_from_budget || false);
   const [savedCards, setSavedCards] = useState([]);
   const [selectedSavedCardKey, setSelectedSavedCardKey] = useState(null);
   const [savedCardMatchNote, setSavedCardMatchNote] = useState(null);
@@ -343,6 +344,7 @@ export default function ConfirmScreen() {
         card_last4: cardLast4 || null,
         card_label: cardLabel || null,
         is_private: isPrivate,
+        exclude_from_budget: excludeFromBudget,
         ingest_attempt_id: parsed?.ingest_attempt_id || null,
         parsed_payment_snapshot: parsed?.parsed_payment_snapshot || {
           payment_method: parsed?.payment_method || null,
@@ -740,6 +742,16 @@ export default function ConfirmScreen() {
           onValueChange={setIsPrivate}
           trackColor={{ false: '#333', true: '#6366f1' }}
           thumbColor={isPrivate ? '#fff' : '#888'}
+        />
+      </View>
+
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Exclude from budget</Text>
+        <Switch
+          value={excludeFromBudget}
+          onValueChange={setExcludeFromBudget}
+          trackColor={{ false: '#333', true: '#0f3a2b' }}
+          thumbColor={excludeFromBudget ? '#fff' : '#888'}
         />
       </View>
 

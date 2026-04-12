@@ -4,6 +4,10 @@ function isMissingExpenseReviewMetadataError(err) {
   return err?.code === '42703' && /review_(required|mode|source)/i.test(`${err?.message || ''}`);
 }
 
+function isMissingExcludeFromBudgetError(err) {
+  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -23,6 +27,7 @@ async function create({
   cardLast4 = null,
   cardLabel = null,
   isPrivate = false,
+  excludeFromBudget = false,
   reviewRequired = false,
   reviewMode = null,
   reviewSource = null,
@@ -32,18 +37,18 @@ async function create({
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
          place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
-         is_private, review_required, review_mode, review_source
+         is_private, exclude_from_budget, review_required, review_mode, review_source
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
       [
         userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
         placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
-        isPrivate, reviewRequired, reviewMode, reviewSource,
+        isPrivate, excludeFromBudget, reviewRequired, reviewMode, reviewSource,
       ]
     );
     return result.rows[0];
   } catch (err) {
-    if (!isMissingExpenseReviewMetadataError(err)) throw err;
+    if (!isMissingExpenseReviewMetadataError(err) && !isMissingExcludeFromBudgetError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
@@ -261,7 +266,7 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
 
 async function update(id, userId, {
   merchant, amount, date, categoryId, notes,
-  paymentMethod, cardLast4, cardLabel, isPrivate,
+  paymentMethod, cardLast4, cardLabel, isPrivate, excludeFromBudget,
   placeName, address, mapkitStableId,
 } = {}) {
   const hasMerchant = merchant !== undefined;
@@ -273,41 +278,80 @@ async function update(id, userId, {
   const hasCardLast4 = cardLast4 !== undefined;
   const hasCardLabel = cardLabel !== undefined;
   const hasIsPrivate = isPrivate !== undefined;
+  const hasExcludeFromBudget = excludeFromBudget !== undefined;
   const hasPlaceName = placeName !== undefined;
   const hasAddress = address !== undefined;
   const hasMapkitStableId = mapkitStableId !== undefined;
-  const result = await db.query(
-    `UPDATE expenses SET
-       merchant = CASE WHEN $3 THEN $4 ELSE merchant END,
-       amount = CASE WHEN $5 THEN $6 ELSE amount END,
-       date = CASE WHEN $7 THEN $8 ELSE date END,
-       category_id = CASE WHEN $9 THEN $10 ELSE category_id END,
-       notes = CASE WHEN $11 THEN $12 ELSE notes END,
-       payment_method = CASE WHEN $13 THEN $14 ELSE payment_method END,
-       card_last4 = CASE WHEN $15 THEN $16 ELSE card_last4 END,
-       card_label = CASE WHEN $17 THEN $18 ELSE card_label END,
-       is_private = CASE WHEN $19 THEN $20 ELSE is_private END,
-       place_name = CASE WHEN $21 THEN $22 ELSE place_name END,
-       address = CASE WHEN $23 THEN $24 ELSE address END,
-       mapkit_stable_id = CASE WHEN $25 THEN $26 ELSE mapkit_stable_id END
-     WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [
-      id, userId,
-      hasMerchant, merchant,
-      hasAmount, amount,
-      hasDate, date,
-      hasCategoryId, categoryId,
-      hasNotes, notes,
-      hasPaymentMethod, paymentMethod,
-      hasCardLast4, cardLast4,
-      hasCardLabel, cardLabel,
-      hasIsPrivate, isPrivate,
-      hasPlaceName, placeName,
-      hasAddress, address,
-      hasMapkitStableId, mapkitStableId,
-    ]
-  );
-  return result.rows[0] || null;
+  try {
+    const result = await db.query(
+      `UPDATE expenses SET
+         merchant = CASE WHEN $3 THEN $4 ELSE merchant END,
+         amount = CASE WHEN $5 THEN $6 ELSE amount END,
+         date = CASE WHEN $7 THEN $8 ELSE date END,
+         category_id = CASE WHEN $9 THEN $10 ELSE category_id END,
+         notes = CASE WHEN $11 THEN $12 ELSE notes END,
+         payment_method = CASE WHEN $13 THEN $14 ELSE payment_method END,
+         card_last4 = CASE WHEN $15 THEN $16 ELSE card_last4 END,
+         card_label = CASE WHEN $17 THEN $18 ELSE card_label END,
+         is_private = CASE WHEN $19 THEN $20 ELSE is_private END,
+         exclude_from_budget = CASE WHEN $21 THEN $22 ELSE exclude_from_budget END,
+         place_name = CASE WHEN $23 THEN $24 ELSE place_name END,
+         address = CASE WHEN $25 THEN $26 ELSE address END,
+         mapkit_stable_id = CASE WHEN $27 THEN $28 ELSE mapkit_stable_id END
+       WHERE id = $1 AND user_id = $2 RETURNING *`,
+      [
+        id, userId,
+        hasMerchant, merchant,
+        hasAmount, amount,
+        hasDate, date,
+        hasCategoryId, categoryId,
+        hasNotes, notes,
+        hasPaymentMethod, paymentMethod,
+        hasCardLast4, cardLast4,
+        hasCardLabel, cardLabel,
+        hasIsPrivate, isPrivate,
+        hasExcludeFromBudget, excludeFromBudget,
+        hasPlaceName, placeName,
+        hasAddress, address,
+        hasMapkitStableId, mapkitStableId,
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err)) throw err;
+    const fallback = await db.query(
+      `UPDATE expenses SET
+         merchant = CASE WHEN $3 THEN $4 ELSE merchant END,
+         amount = CASE WHEN $5 THEN $6 ELSE amount END,
+         date = CASE WHEN $7 THEN $8 ELSE date END,
+         category_id = CASE WHEN $9 THEN $10 ELSE category_id END,
+         notes = CASE WHEN $11 THEN $12 ELSE notes END,
+         payment_method = CASE WHEN $13 THEN $14 ELSE payment_method END,
+         card_last4 = CASE WHEN $15 THEN $16 ELSE card_last4 END,
+         card_label = CASE WHEN $17 THEN $18 ELSE card_label END,
+         is_private = CASE WHEN $19 THEN $20 ELSE is_private END,
+         place_name = CASE WHEN $21 THEN $22 ELSE place_name END,
+         address = CASE WHEN $23 THEN $24 ELSE address END,
+         mapkit_stable_id = CASE WHEN $25 THEN $26 ELSE mapkit_stable_id END
+       WHERE id = $1 AND user_id = $2 RETURNING *`,
+      [
+        id, userId,
+        hasMerchant, merchant,
+        hasAmount, amount,
+        hasDate, date,
+        hasCategoryId, categoryId,
+        hasNotes, notes,
+        hasPaymentMethod, paymentMethod,
+        hasCardLast4, cardLast4,
+        hasCardLabel, cardLabel,
+        hasIsPrivate, isPrivate,
+        hasPlaceName, placeName,
+        hasAddress, address,
+        hasMapkitStableId, mapkitStableId,
+      ]
+    );
+    return fallback.rows[0] || null;
+  }
 }
 
 async function updateStatusByHousehold(id, householdId, status) {
