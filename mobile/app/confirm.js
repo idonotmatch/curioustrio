@@ -518,16 +518,18 @@ export default function ConfirmScreen() {
       </View>
 
       {/* Category — tappable picker */}
-      <TouchableOpacity
-        style={styles.categoryRow}
-        onPress={() => setShowCategoryPicker(!showCategoryPicker)}
-      >
-        <Text style={styles.categoryLabel}>CATEGORY</Text>
-        <View style={styles.categoryRight}>
-          <Text style={styles.categoryValue}>{expense.category_name || 'Unassigned'}</Text>
-          <Text style={styles.categoryChevron}>{showCategoryPicker ? '▲' : '▼'}</Text>
-        </View>
-      </TouchableOpacity>
+      <View style={styles.editableGroup}>
+        <TouchableOpacity
+          style={styles.categoryRow}
+          onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+        >
+          <Text style={styles.categoryLabel}>CATEGORY</Text>
+          <View style={styles.categoryRight}>
+            <Text style={styles.categoryValue} numberOfLines={1}>{expense.category_name || 'Unassigned'}</Text>
+            <Text style={styles.categoryChevron}>{showCategoryPicker ? '▲' : '▼'}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
       {showCategoryPicker && (
         <View style={styles.categoryPicker}>
           {/* Search / create input */}
@@ -845,17 +847,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     minHeight: 28,
   },
-  confirmDatePicker: { marginRight: -8 },
-  dateButton: { flex: 1, alignItems: 'flex-end', paddingVertical: 2 },
+  confirmDatePicker: { marginRight: -2 },
+  dateButton: { flex: 1, alignItems: 'flex-end', paddingHorizontal: 6, paddingVertical: 4, minHeight: 28, justifyContent: 'center' },
   dateButtonText: { color: '#fff', fontSize: 15, textAlign: 'right' },
 
   categoryRow: {
     backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
-    marginBottom: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  categoryLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1 },
-  categoryRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  categoryValue: { fontSize: 15, color: '#fff' },
+  categoryLabel: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 92 },
+  categoryRight: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 6, minHeight: 28, paddingLeft: 8 },
+  categoryValue: { flexShrink: 1, fontSize: 15, color: '#fff', textAlign: 'right' },
   categoryChevron: { fontSize: 11, color: '#888' },
   categoryPicker: {
     backgroundColor: '#111', borderRadius: 8, padding: 10, marginBottom: 8, gap: 8,
