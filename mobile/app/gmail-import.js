@@ -187,6 +187,18 @@ function senderPolicyLabel(sender = {}) {
   return 'Review path adapts from recent history';
 }
 
+function formatDismissReason(reason = '') {
+  switch (`${reason}`) {
+    case 'not_an_expense': return 'not an expense';
+    case 'duplicate': return 'duplicate';
+    case 'business_or_track_only': return 'business or track only';
+    case 'transfer_or_payment': return 'transfer or payment';
+    case 'wrong_details': return 'wrong details';
+    case 'other': return 'other';
+    default: return `${reason}`.replace(/_/g, ' ');
+  }
+}
+
 function rankSenderCard(sender = {}) {
   if (sender.sender_preference?.force_review) return 0;
   if (sender.level === 'noisy') return 1;
@@ -222,6 +234,9 @@ function rankSenderCard(sender = {}) {
       || (b.imported || 0) - (a.imported || 0)
       || a.sender_domain.localeCompare(b.sender_domain));
   const visibleSenderCards = senderTrustExpanded ? senderCards : senderCards.slice(0, 3);
+  const topDismissReasons = Array.isArray(displayImportSummary?.debug?.top_dismiss_reasons)
+    ? displayImportSummary.debug.top_dismiss_reasons
+    : [];
 
   async function connectGmail() {
     try {
@@ -415,6 +430,29 @@ function rankSenderCard(sender = {}) {
                 </View>
                 <View style={styles.senderTrustSection}>
                   <View style={styles.senderTrustHeader}>
+                    <Text style={styles.senderTrustTitle}>Top dismiss reasons</Text>
+                    <Text style={styles.senderTrustSub}>
+                      Why imported Gmail expenses are getting removed from your review queue.
+                    </Text>
+                  </View>
+                  {topDismissReasons.length > 0 ? (
+                    <View style={styles.reasonWrap}>
+                      {topDismissReasons.slice(0, 6).map((item) => (
+                        <View key={item.reason} style={styles.reasonChip}>
+                          <Text style={styles.reasonChipText}>
+                            {formatDismissReason(item.reason)} · {item.count}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.sectionEmptyText}>
+                      No recent dismiss reasons yet.
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.senderTrustSection}>
+                  <View style={styles.senderTrustHeader}>
                     <Text style={styles.senderTrustTitle}>Sender trust</Text>
                     <Text style={styles.senderTrustSub}>
                       Reliable senders can move into lighter review paths.
@@ -439,6 +477,11 @@ function rankSenderCard(sender = {}) {
                         {Array.isArray(sender.top_changed_fields) && sender.top_changed_fields.length > 0 ? (
                           <Text style={styles.senderTrustDetail}>
                             Usually corrected: {sender.top_changed_fields.map((entry) => entry.field.replace(/_/g, ' ')).join(', ')}
+                          </Text>
+                        ) : null}
+                        {Array.isArray(sender.top_dismiss_reasons) && sender.top_dismiss_reasons.length > 0 ? (
+                          <Text style={styles.senderTrustDetail}>
+                            Usually dismissed as: {sender.top_dismiss_reasons.map((entry) => formatDismissReason(entry.reason)).join(', ')}
                           </Text>
                         ) : null}
                         <Text style={[
