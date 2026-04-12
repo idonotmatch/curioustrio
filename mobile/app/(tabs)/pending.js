@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { DuplicateAlert } from '../../components/DuplicateAlert';
 import { api } from '../../services/api';
@@ -145,6 +146,7 @@ export default function PendingScreen() {
   }
 
   return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
     <View style={styles.container}>
       <FlatList
         data={displayExpenses}
@@ -249,13 +251,20 @@ export default function PendingScreen() {
         }
       />
     </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  list: { padding: 16 },
-  header: { marginBottom: 14 },
+  list: { paddingHorizontal: 16, paddingBottom: 16 },
+  header: {
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 8,
+    backgroundColor: '#0a0a0a',
+  },
   title: { fontSize: 24, color: '#f5f5f5', fontWeight: '700', marginBottom: 4 },
   subtitle: { fontSize: 13, color: '#8a8a8a', marginBottom: 10 },
   hint: { fontSize: 12, color: '#444', textAlign: 'center', letterSpacing: 0.3 },
