@@ -276,6 +276,7 @@ export default function ExpenseDetailScreen() {
 
   const canEdit = !!currentUserId && !!expense && String(expense.user_id) === String(currentUserId);
   const itemSignals = summarizeItemSignals(items);
+  const canAdjustReviewControls = canEdit && expense?.status === 'pending' && expense?.source === 'email';
 
   useEffect(() => {
     if (!canEdit && editing) setEditing(false);
@@ -352,6 +353,26 @@ export default function ExpenseDetailScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function persistReviewControlsIfNeeded() {
+    if (!canAdjustReviewControls || !expense) return expense;
+    const nextReason = excludeFromBudget ? budgetExclusionReason : null;
+    const reviewControlsChanged =
+      Boolean(expense.is_private) !== Boolean(isPrivate)
+      || Boolean(expense.exclude_from_budget) !== Boolean(excludeFromBudget)
+      || `${expense.budget_exclusion_reason || ''}` !== `${nextReason || ''}`;
+
+    if (!reviewControlsChanged) return expense;
+
+    const refreshed = await api.patch(`/expenses/${id}`, {
+      is_private: isPrivate,
+      exclude_from_budget: excludeFromBudget,
+      budget_exclusion_reason: nextReason,
+    });
+    setExpense(refreshed);
+    saveExpenseSnapshot(refreshed);
+    return refreshed;
   }
 
   async function handleDelete() {
@@ -439,6 +460,8 @@ export default function ExpenseDetailScreen() {
     ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
     : [];
   const showSecondaryDetails = !isPendingEmailReview || secondaryDetailsExpanded;
+  const displayIsPrivate = isPendingEmailReview ? isPrivate : (editing ? isPrivate : expense.is_private);
+  const displayExcludeFromBudget = isPendingEmailReview ? excludeFromBudget : (editing ? excludeFromBudget : expense.exclude_from_budget);
 
   function activateReviewField(fieldKey) {
     setEditing(true);
@@ -485,12 +508,12 @@ export default function ExpenseDetailScreen() {
                   <Text style={styles.heroMetaText}>{ownerLabel}</Text>
                 </View>
               ) : null}
-              {expense.is_private ? (
+              {displayIsPrivate ? (
                 <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
                   <Text style={styles.heroMetaText}>Private</Text>
                 </View>
               ) : null}
-              {expense.exclude_from_budget ? (
+              {displayExcludeFromBudget ? (
                 <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
                   <Text style={styles.heroMetaText}>Track only</Text>
                 </View>
@@ -685,8 +708,8 @@ export default function ExpenseDetailScreen() {
           <Text style={styles.label}>Private</Text>
           <Switch
             value={isPrivate}
-            onValueChange={editing && canEdit ? setIsPrivate : undefined}
-            disabled={!editing || !canEdit}
+            onValueChange={(editing && canEdit) || canAdjustReviewControls ? setIsPrivate : undefined}
+            disabled={(!editing || !canEdit) && !canAdjustReviewControls}
             trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
             thumbColor={isPrivate ? '#fff' : '#555'}
           />
@@ -699,8 +722,8 @@ export default function ExpenseDetailScreen() {
           </View>
           <Switch
             value={excludeFromBudget}
-            onValueChange={editing && canEdit ? setExcludeFromBudget : undefined}
-            disabled={!editing || !canEdit}
+            onValueChange={(editing && canEdit) || canAdjustReviewControls ? setExcludeFromBudget : undefined}
+            disabled={(!editing || !canEdit) && !canAdjustReviewControls}
             trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
             thumbColor={excludeFromBudget ? '#fff' : '#555'}
           />
@@ -716,9 +739,9 @@ export default function ExpenseDetailScreen() {
                   <TouchableOpacity
                     key={reason.value}
                     style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                    onPress={() => editing && canEdit ? setBudgetExclusionReason(reason.value) : undefined}
+                    onPress={() => (editing && canEdit) || canAdjustReviewControls ? setBudgetExclusionReason(reason.value) : undefined}
                     activeOpacity={0.82}
-                    disabled={!editing || !canEdit}
+                    disabled={(!editing || !canEdit) && !canAdjustReviewControls}
                   >
                     <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
                   </TouchableOpacity>
@@ -934,6 +957,7 @@ export default function ExpenseDetailScreen() {
             onPress={async () => {
               setActioning(true);
               try {
+                await persistReviewControlsIfNeeded();
                 const reviewContext = isItemsFirstReview
                   ? 'items_first'
                   : isQuickCheckReview
