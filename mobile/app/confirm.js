@@ -448,15 +448,17 @@ export default function ConfirmScreen() {
       {/* If both merchant and description exist (e.g. from receipt scan), show both */}
       {merchant.trim() && description.trim() ? (
         <>
-          <View style={styles.editableRow}>
-            <Text style={styles.editableLabel}>DESCRIPTION</Text>
-            <TextInput
-              style={styles.editableInput}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Description"
-              placeholderTextColor="#444"
-            />
+          <View style={styles.editableGroup}>
+            <View style={styles.editableRow}>
+              <Text style={styles.editableLabel}>DESCRIPTION</Text>
+              <TextInput
+                style={styles.editableInput}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Description"
+                placeholderTextColor="#444"
+              />
+            </View>
           </View>
           {reviewNote('description', 'Description was inferred from the parse.')}
         </>
@@ -834,7 +836,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   editableLabel: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 92 },
-  editableInput: { flex: 1, color: '#fff', fontSize: 15, textAlign: 'right', padding: 0 },
+  editableInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    textAlign: 'right',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    minHeight: 28,
+  },
   confirmDatePicker: { marginRight: -8 },
   dateButton: { flex: 1, alignItems: 'flex-end', paddingVertical: 2 },
   dateButtonText: { color: '#fff', fontSize: 15, textAlign: 'right' },
