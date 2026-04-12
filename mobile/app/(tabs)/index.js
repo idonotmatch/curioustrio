@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
-import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { usePendingExpenses, removePendingExpense } from '../../hooks/usePendingExpenses';
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
@@ -266,9 +266,9 @@ export default function FeedScreen() {
     try {
       await api.post(`/expenses/${id}/dismiss`);
       await removeExpenseSnapshot(id);
+      removePendingExpense(id);
       const { invalidateCache } = await import('../../services/cache');
       await invalidateCache('cache:expenses:pending');
-      refreshPending();
     } catch { /* ignore */ }
   }
 
@@ -280,7 +280,7 @@ export default function FeedScreen() {
     try {
       const approved = await api.post(`/expenses/${id}/approve`);
       if (approved?.id) await saveExpenseSnapshot(approved);
-      refreshPending();
+      removePendingExpense(id);
       const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
       await Promise.all([
         invalidateCache('cache:expenses:pending'),
