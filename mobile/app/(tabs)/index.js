@@ -327,8 +327,13 @@ export default function FeedScreen() {
               onPress={() => router.push('/(tabs)/pending')}
               activeOpacity={0.82}
             >
-              <Text style={styles.pendingEmptyTitle}>Your review queue is clear</Text>
-              <Text style={styles.pendingEmptyBody}>Open the queue to review new Gmail imports when they arrive.</Text>
+              <View style={styles.pendingEmptyIconWrap}>
+                <Ionicons name="checkmark-done" size={18} color="#d5e5da" />
+              </View>
+              <View style={styles.pendingEmptyCopy}>
+                <Text style={styles.pendingEmptyTitle}>You’re all caught up</Text>
+                <Text style={styles.pendingEmptyBody}>New Gmail imports will land here when they need your review.</Text>
+              </View>
               <View style={styles.pendingOpenChip}>
                 <Text style={styles.pendingOpenChipText}>Open queue</Text>
               </View>
@@ -571,9 +576,28 @@ const styles = StyleSheet.create({
   pendingErrorState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
   pendingErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
-  pendingEmptyState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  pendingEmptyState: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pendingEmptyIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#102017',
+    borderWidth: 1,
+    borderColor: '#22372a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingEmptyCopy: { flex: 1, minWidth: 0 },
   pendingEmptyTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
-  pendingEmptyBody: { fontSize: 12, color: '#8a8a8a', lineHeight: 18, marginBottom: 10 },
+  pendingEmptyBody: { fontSize: 12, color: '#8a8a8a', lineHeight: 18 },
   pendingOpenChip: {
     alignSelf: 'flex-start',
     borderRadius: 999,
