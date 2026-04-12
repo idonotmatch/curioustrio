@@ -585,6 +585,60 @@ export default function ExpenseDetailScreen() {
       ) : null}
 
       {isPendingEmailReview ? (
+        <View style={styles.reviewControlsCard}>
+          <Text style={styles.reviewControlsEyebrow}>Review options</Text>
+          <Text style={styles.reviewControlsTitle}>Decide how this should be counted before you approve it</Text>
+
+          <View style={[styles.row, { paddingVertical: 12 }]}>
+            <Text style={styles.label}>Private</Text>
+            <Switch
+              value={isPrivate}
+              onValueChange={canAdjustReviewControls ? setIsPrivate : undefined}
+              disabled={!canAdjustReviewControls}
+              trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
+              thumbColor={isPrivate ? '#fff' : '#555'}
+            />
+          </View>
+
+          <View style={[styles.row, { paddingVertical: 12 }]}>
+            <View style={styles.trackOnlyTextWrap}>
+              <Text style={styles.label}>Track only</Text>
+              <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
+            </View>
+            <Switch
+              value={excludeFromBudget}
+              onValueChange={canAdjustReviewControls ? setExcludeFromBudget : undefined}
+              disabled={!canAdjustReviewControls}
+              trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
+              thumbColor={excludeFromBudget ? '#fff' : '#555'}
+            />
+          </View>
+
+          {excludeFromBudget ? (
+            <View style={styles.trackOnlyReasonBlock}>
+              <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
+              <View style={styles.reasonChipWrap}>
+                {TRACK_ONLY_REASONS.map((reason) => {
+                  const selected = budgetExclusionReason === reason.value;
+                  return (
+                    <TouchableOpacity
+                      key={reason.value}
+                      style={[styles.reasonChip, selected && styles.reasonChipActive]}
+                      onPress={() => canAdjustReviewControls ? setBudgetExclusionReason(reason.value) : undefined}
+                      activeOpacity={0.82}
+                      disabled={!canAdjustReviewControls}
+                    >
+                      <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {isPendingEmailReview ? (
         <View style={styles.reviewFieldsHeader}>
           <Text style={styles.reviewFieldsEyebrow}>Expense details</Text>
           <Text style={styles.reviewFieldsTitle}>These are the details that will be saved</Text>
@@ -704,51 +758,55 @@ export default function ExpenseDetailScreen() {
           </Row>
         )}
 
-        <View style={[styles.row, { paddingVertical: 12 }]}>
-          <Text style={styles.label}>Private</Text>
-          <Switch
-            value={isPrivate}
-            onValueChange={(editing && canEdit) || canAdjustReviewControls ? setIsPrivate : undefined}
-            disabled={(!editing || !canEdit) && !canAdjustReviewControls}
-            trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
-            thumbColor={isPrivate ? '#fff' : '#555'}
-          />
-        </View>
-
-        <View style={[styles.row, { paddingVertical: 12 }]}>
-          <View style={styles.trackOnlyTextWrap}>
-            <Text style={styles.label}>Track only</Text>
-            <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
-          </View>
-          <Switch
-            value={excludeFromBudget}
-            onValueChange={(editing && canEdit) || canAdjustReviewControls ? setExcludeFromBudget : undefined}
-            disabled={(!editing || !canEdit) && !canAdjustReviewControls}
-            trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
-            thumbColor={excludeFromBudget ? '#fff' : '#555'}
-          />
-        </View>
-
-        {excludeFromBudget ? (
-          <View style={styles.trackOnlyReasonBlock}>
-            <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
-            <View style={styles.reasonChipWrap}>
-              {TRACK_ONLY_REASONS.map((reason) => {
-                const selected = budgetExclusionReason === reason.value;
-                return (
-                  <TouchableOpacity
-                    key={reason.value}
-                    style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                    onPress={() => (editing && canEdit) || canAdjustReviewControls ? setBudgetExclusionReason(reason.value) : undefined}
-                    activeOpacity={0.82}
-                    disabled={(!editing || !canEdit) && !canAdjustReviewControls}
-                  >
-                    <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+        {!isPendingEmailReview ? (
+          <>
+            <View style={[styles.row, { paddingVertical: 12 }]}>
+              <Text style={styles.label}>Private</Text>
+              <Switch
+                value={isPrivate}
+                onValueChange={editing && canEdit ? setIsPrivate : undefined}
+                disabled={!editing || !canEdit}
+                trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
+                thumbColor={isPrivate ? '#fff' : '#555'}
+              />
             </View>
-          </View>
+
+            <View style={[styles.row, { paddingVertical: 12 }]}>
+              <View style={styles.trackOnlyTextWrap}>
+                <Text style={styles.label}>Track only</Text>
+                <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
+              </View>
+              <Switch
+                value={excludeFromBudget}
+                onValueChange={editing && canEdit ? setExcludeFromBudget : undefined}
+                disabled={!editing || !canEdit}
+                trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
+                thumbColor={excludeFromBudget ? '#fff' : '#555'}
+              />
+            </View>
+
+            {excludeFromBudget ? (
+              <View style={styles.trackOnlyReasonBlock}>
+                <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
+                <View style={styles.reasonChipWrap}>
+                  {TRACK_ONLY_REASONS.map((reason) => {
+                    const selected = budgetExclusionReason === reason.value;
+                    return (
+                      <TouchableOpacity
+                        key={reason.value}
+                        style={[styles.reasonChip, selected && styles.reasonChipActive]}
+                        onPress={() => editing && canEdit ? setBudgetExclusionReason(reason.value) : undefined}
+                        activeOpacity={0.82}
+                        disabled={!editing || !canEdit}
+                      >
+                        <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+          </>
         ) : null}
       </View>
 
@@ -1129,6 +1187,19 @@ const styles = StyleSheet.create({
   priorityFieldsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   priorityFieldsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
   priorityFieldsAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600', marginTop: 2 },
+  reviewControlsCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: -4,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reviewControlsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  reviewControlsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600', marginBottom: 10 },
   priorityFieldRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   priorityFieldRowActive: { backgroundColor: '#0f141d', marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 8 },
   priorityFieldTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },

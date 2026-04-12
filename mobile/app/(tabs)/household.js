@@ -18,10 +18,7 @@ export default function HouseholdScreen() {
 
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const total = displayExpenses
-    .filter(e => e.date?.startsWith(currentMonth))
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+  const total = Number(budget?.total?.spent || 0);
 
   return (
     <View style={styles.container}>
