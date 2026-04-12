@@ -14,6 +14,7 @@ const {
   getGmailImportQualitySummary,
   extractSenderDomain,
   getSenderImportQuality,
+  frequentDismissReason,
   recommendReviewMode,
 } = require('../../src/services/gmailImportQualityService');
 
@@ -230,6 +231,35 @@ describe('gmailImportQualityService', () => {
     const senderQuality = await getSenderImportQuality('user-1', 'orders@amazon.com');
     expect(senderQuality.sender_preference.force_review).toBe(true);
     expect(recommendReviewMode(senderQuality)).toBe('full_review');
+  });
+
+  it('identifies a repeated dismiss reason from sender history', () => {
+    expect(frequentDismissReason({
+      top_dismiss_reasons: [
+        { reason: 'duplicate', count: 2 },
+        { reason: 'wrong_details', count: 1 },
+      ],
+    })).toBe('duplicate');
+  });
+
+  it('keeps repeat duplicate or transfer dismissals out of quick check', () => {
+    expect(recommendReviewMode({
+      level: 'trusted',
+      item_reliability: { level: 'trusted' },
+      review_path_reliability: { fast_lane_eligible: true },
+      top_dismiss_reasons: [
+        { reason: 'duplicate', count: 3 },
+      ],
+    })).toBe('full_review');
+
+    expect(recommendReviewMode({
+      level: 'trusted',
+      item_reliability: { level: 'trusted' },
+      review_path_reliability: { fast_lane_eligible: true },
+      top_dismiss_reasons: [
+        { reason: 'transfer_or_payment', count: 2 },
+      ],
+    })).toBe('full_review');
   });
 
   it('uses import-log feedback to make sender trust more conservative', async () => {

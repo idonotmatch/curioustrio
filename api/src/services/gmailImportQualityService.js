@@ -121,6 +121,13 @@ function summarizeSenderFeedback(feedbackRows = []) {
   };
 }
 
+function frequentDismissReason(senderQuality = {}) {
+  const topReasons = Array.isArray(senderQuality?.top_dismiss_reasons)
+    ? senderQuality.top_dismiss_reasons
+    : [];
+  return topReasons.find((entry) => Number(entry?.count || 0) >= 2)?.reason || null;
+}
+
 function recommendReviewMode(senderQuality = {}) {
   if (senderQuality?.sender_preference?.force_review) {
     return 'full_review';
@@ -128,6 +135,17 @@ function recommendReviewMode(senderQuality = {}) {
   const senderLevel = senderQuality?.level || 'unknown';
   const itemLevel = senderQuality?.item_reliability?.level || 'unknown';
   const fastLaneEligible = !!senderQuality?.review_path_reliability?.fast_lane_eligible;
+  const dominantDismissReason = frequentDismissReason(senderQuality);
+
+  if ([
+    'not_an_expense',
+    'duplicate',
+    'transfer_or_payment',
+    'business_or_track_only',
+    'wrong_details',
+  ].includes(dominantDismissReason)) {
+    return 'full_review';
+  }
 
   if (senderLevel === 'trusted' && (itemLevel === 'trusted' || fastLaneEligible)) {
     return 'quick_check';
@@ -453,5 +471,6 @@ module.exports = {
   extractSenderDomain,
   getSenderImportQuality,
   classifySenderMetrics,
+  frequentDismissReason,
   recommendReviewMode,
 };
