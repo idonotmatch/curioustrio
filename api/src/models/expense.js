@@ -173,10 +173,11 @@ async function findPotentialDuplicates({ householdId, merchant, amount, date, ex
     `SELECT * FROM expenses
      WHERE household_id = $1
        AND LOWER(merchant) = LOWER($2)
-       AND ABS(amount - $3) <= 1.00
+       AND ABS(amount - $3) <= GREATEST(1.00, $3::numeric * 0.02)
        AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
        AND status IN ('pending', 'confirmed')
-       ${excludeClause}`,
+       ${excludeClause}
+     LIMIT 10`,
     params
   );
   return result.rows;
@@ -237,10 +238,11 @@ async function findByMapkitStableId({ householdId, mapkitStableId, amount, date,
      WHERE household_id = $1
        AND mapkit_stable_id = $2
        AND mapkit_stable_id IS NOT NULL
-       AND ABS(amount - $3) <= 1.00
+       AND ABS(amount - $3) <= GREATEST(1.00, $3::numeric * 0.02)
        AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
        AND status IN ('pending', 'confirmed')
-       ${excludeClause}`,
+       ${excludeClause}
+     LIMIT 10`,
     params
   );
   return result.rows;

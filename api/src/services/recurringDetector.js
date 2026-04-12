@@ -1,17 +1,8 @@
 const db = require('../db');
 const RecurringPreference = require('../models/recurringPreference');
 
-function isMissingExcludeFromBudgetError(err) {
-  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
-}
-
-async function queryBudgetRelevant(sql, params, fallbackSql) {
-  try {
-    return await db.query(sql, params);
-  } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
-    return db.query(fallbackSql, params);
-  }
+function queryBudgetRelevant(sql, params) {
+  return db.query(sql, params);
 }
 
 function median(values) {
@@ -56,7 +47,8 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
-     ORDER BY e.date ASC`,
+     ORDER BY e.date ASC
+     LIMIT 2000`,
     [ownerId],
     `SELECT
        ei.product_id,
@@ -78,7 +70,8 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
-     ORDER BY e.date ASC`
+     ORDER BY e.date ASC
+     LIMIT 2000`
   );
 
   const groups = new Map();
@@ -113,14 +106,16 @@ async function detectRecurring(householdId) {
        AND status = 'confirmed'
        AND exclude_from_budget = FALSE
        AND date >= CURRENT_DATE - INTERVAL '90 days'
-     ORDER BY merchant, date`,
+     ORDER BY merchant, date
+     LIMIT 2000`,
     [householdId],
     `SELECT LOWER(merchant) as merchant, amount, date
      FROM expenses
      WHERE household_id = $1
        AND status = 'confirmed'
        AND date >= CURRENT_DATE - INTERVAL '90 days'
-     ORDER BY merchant, date`
+     ORDER BY merchant, date
+     LIMIT 2000`
   );
 
   const groups = {};

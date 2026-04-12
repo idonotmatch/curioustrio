@@ -2,17 +2,8 @@ const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
 
-function isMissingExcludeFromBudgetError(err) {
-  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
-}
-
-async function queryBudgetRelevant(sql, params, fallbackSql) {
-  try {
-    return await db.query(sql, params);
-  } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
-    return db.query(fallbackSql, params);
-  }
+function queryBudgetRelevant(sql, params) {
+  return db.query(sql, params);
 }
 
 function pad(n) {

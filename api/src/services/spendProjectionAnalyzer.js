@@ -2,17 +2,8 @@ const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
 
-function isMissingExcludeFromBudgetError(err) {
-  return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
-}
-
-async function queryBudgetRelevant(sql, params, fallbackSql) {
-  try {
-    return await db.query(sql, params);
-  } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
-    return db.query(fallbackSql, params);
-  }
+function queryBudgetRelevant(sql, params) {
+  return db.query(sql, params);
 }
 const { detectRecurringItems } = require('./recurringDetector');
 
@@ -916,7 +907,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
          AND e.status = 'confirmed'
          AND e.exclude_from_budget = FALSE
          AND e.date >= $2
-         AND e.date < $3`,
+         AND e.date < $3
+       LIMIT 2000`,
       [householdId, from, toExclusive],
       `SELECT
          e.id,
@@ -931,7 +923,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
          AND e.status = 'confirmed'
          AND e.date >= $2
-         AND e.date < $3`
+         AND e.date < $3
+       LIMIT 2000`
     );
     return result.rows.map(normalizeExpenseRow);
   }
@@ -951,7 +944,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
        AND e.status = 'confirmed'
        AND e.exclude_from_budget = FALSE
        AND e.date >= $2
-       AND e.date < $3`,
+       AND e.date < $3
+     LIMIT 2000`,
     [userId, from, toExclusive],
     `SELECT
        e.id,
@@ -966,7 +960,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
      WHERE e.user_id = $1
        AND e.status = 'confirmed'
        AND e.date >= $2
-       AND e.date < $3`
+       AND e.date < $3
+     LIMIT 2000`
   );
   return result.rows.map(normalizeExpenseRow);
 }

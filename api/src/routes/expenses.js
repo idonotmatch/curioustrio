@@ -935,11 +935,12 @@ router.post('/confirm', async (req, res, next) => {
   }
 
   try {
-    const { merchant, description, amount, date, category_id, source, notes,
+    const { description, amount, date, category_id, source, notes,
             place_name, address,
             mapkit_stable_id, linked_expense_id,
             payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
             ingest_attempt_id, parsed_payment_snapshot } = req.body;
+    const merchant = `${req.body.merchant || ''}`.trim() || null;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
     confirmAttemptId = ingest_attempt_id || null;
     confirmSource = source || null;
@@ -1364,9 +1365,12 @@ router.get('/:id', async (req, res, next) => {
 // Update an expense
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { merchant, amount, date, category_id, notes,
+    const { amount, date, category_id, notes,
             payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
             place_name, address, mapkit_stable_id } = req.body;
+    const merchant = req.body.merchant !== undefined
+      ? (`${req.body.merchant || ''}`.trim() || null)
+      : undefined;
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }

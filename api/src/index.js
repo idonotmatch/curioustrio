@@ -23,6 +23,7 @@ const placesRouter = require('./routes/places');
 const priceObservationsRouter = require('./routes/priceObservations');
 const cronRouter = require('./routes/cron');
 const { seedDefaultCategories } = require('./db');
+const checkSchema = require('./startup/checkSchema');
 
 const app = express();
 
@@ -82,12 +83,19 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 if (require.main === module) {
-  seedDefaultCategories();
-  // Bind explicitly to 0.0.0.0 (IPv4 wildcard) so the server is reachable from
-  // the iOS Simulator and physical devices on the local network. Without an
-  // explicit hostname, Node.js on some systems binds to :: (IPv6 only) which
-  // is unreachable when the client falls back to 127.0.0.1.
-  app.listen(PORT, '0.0.0.0', () => console.log(`API running on ${PORT}`));
+  checkSchema()
+    .then(() => {
+      seedDefaultCategories();
+      // Bind explicitly to 0.0.0.0 (IPv4 wildcard) so the server is reachable from
+      // the iOS Simulator and physical devices on the local network. Without an
+      // explicit hostname, Node.js on some systems binds to :: (IPv6 only) which
+      // is unreachable when the client falls back to 127.0.0.1.
+      app.listen(PORT, '0.0.0.0', () => console.log(`API running on ${PORT}`));
+    })
+    .catch((err) => {
+      console.error('Startup failed:', err.message);
+      process.exit(1);
+    });
 }
 
 module.exports = app;
