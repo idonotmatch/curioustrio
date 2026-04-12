@@ -324,7 +324,7 @@ export default function FeedScreen() {
           {!pendingError && item.items.length === 0 ? (
             <TouchableOpacity
               style={styles.pendingEmptyState}
-              onPress={() => router.push('/(tabs)/pending')}
+              onPress={() => router.push('/review-queue')}
               activeOpacity={0.82}
             >
               <View style={styles.pendingEmptyIconWrap}>
@@ -398,7 +398,7 @@ export default function FeedScreen() {
           {item.items.length > 3 && (
             <TouchableOpacity
               style={styles.pendingMoreButton}
-              onPress={() => router.push('/(tabs)/pending')}
+              onPress={() => router.push('/review-queue')}
               activeOpacity={0.8}
             >
               <Text style={styles.pendingMore}>+{item.items.length - 3} more</Text>

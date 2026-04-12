@@ -285,7 +285,7 @@ function rankSenderCard(sender = {}) {
         pendingReview > 0
           ? [
               { text: 'Later', style: 'cancel' },
-              { text: 'Open review queue', onPress: () => router.push('/(tabs)/pending') },
+              { text: 'Open review queue', onPress: () => router.push('/review-queue') },
             ]
           : [{ text: 'OK' }]
       );
@@ -485,7 +485,7 @@ function rankSenderCard(sender = {}) {
             <View style={styles.logToggleRow}>
               <Text style={styles.sectionTitle}>AWAITING YOUR REVIEW</Text>
               {displayPendingReviewItems.length > 0 ? (
-                <TouchableOpacity onPress={() => router.push('/(tabs)/pending')} activeOpacity={0.75}>
+                <TouchableOpacity onPress={() => router.push('/review-queue')} activeOpacity={0.75}>
                   <Text style={styles.openQueueLink}>Open queue</Text>
                 </TouchableOpacity>
               ) : null}
