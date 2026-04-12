@@ -8,7 +8,9 @@
     "dev": "nodemon src/index.js",
     "test": "jest --passWithNoTests --runInBand",
     "test:unit": "jest --config jest.unit.config.js --passWithNoTests --runInBand",
-    "test:integration": "jest --config jest.integration.config.js --passWithNoTests --runInBand"
+    "test:integration": "jest --config jest.integration.config.js --passWithNoTests --runInBand",
+    "test:stability": "jest --runInBand tests/services/gmailImportQualityService.test.js tests/services/nlParser.test.js tests/services/insightBuilder.test.js",
+    "check:schema": "node scripts/check-schema-compatibility.js"
   },
   "keywords": [],
   "author": "",
