@@ -359,7 +359,7 @@ export default function ExpenseDetailScreen() {
     const nextReason = excludeFromBudget ? budgetExclusionReason : null;
     if (excludeFromBudget && !nextReason) {
       Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
-      return expense;
+      return null;
     }
     const reviewControlsChanged =
       Boolean(expense.is_private) !== Boolean(isPrivate)
@@ -368,14 +368,19 @@ export default function ExpenseDetailScreen() {
 
     if (!reviewControlsChanged) return expense;
 
-    const refreshed = await api.patch(`/expenses/${id}`, {
-      is_private: isPrivate,
-      exclude_from_budget: excludeFromBudget,
-      budget_exclusion_reason: nextReason,
-    });
-    setExpense(refreshed);
-    saveExpenseSnapshot(refreshed);
-    return refreshed;
+    try {
+      const refreshed = await api.patch(`/expenses/${id}`, {
+        is_private: isPrivate,
+        exclude_from_budget: excludeFromBudget,
+        budget_exclusion_reason: nextReason,
+      });
+      setExpense(refreshed);
+      saveExpenseSnapshot(refreshed);
+      return refreshed;
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not save review options');
+      return null;
+    }
   }
 
   async function persistExpenseControls(patch, optimisticState = {}) {
@@ -1115,7 +1120,11 @@ export default function ExpenseDetailScreen() {
             onPress={async () => {
               setActioning(true);
               try {
-                await persistReviewControlsIfNeeded();
+                const persistedExpense = await persistReviewControlsIfNeeded();
+                if (!persistedExpense) {
+                  setActioning(false);
+                  return;
+                }
                 const reviewContext = isItemsFirstReview
                   ? 'items_first'
                   : isQuickCheckReview

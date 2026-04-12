@@ -143,6 +143,11 @@ function parseStartDay(value, fallback) {
   return day;
 }
 
+function normalizeBudgetExclusionReason(value) {
+  const normalized = `${value || ''}`.trim();
+  return normalized || null;
+}
+
 async function enrichItemWithResolution(item, merchant) {
   const resolution = await resolveProductMatch(item, merchant);
   return {
@@ -781,6 +786,12 @@ router.post('/confirm', async (req, res, next) => {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
 
+    const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(budget_exclusion_reason);
+    if (exclude_from_budget && !normalizedBudgetExclusionReason) {
+      await markConfirmFailure('missing_budget_exclusion_reason');
+      return res.status(400).json({ error: 'budget_exclusion_reason required when exclude_from_budget is true' });
+    }
+
     const expense = await Expense.create({
       userId: user.id,
       householdId: user?.household_id,
@@ -798,7 +809,7 @@ router.post('/confirm', async (req, res, next) => {
       cardLabel: card_label,
       isPrivate: is_private ?? false,
       excludeFromBudget: exclude_from_budget ?? false,
-      budgetExclusionReason: exclude_from_budget ? (budget_exclusion_reason || null) : null,
+      budgetExclusionReason: exclude_from_budget ? normalizedBudgetExclusionReason : null,
     });
 
     if (Array.isArray(items) && items.length > 0) {
@@ -1184,6 +1195,10 @@ router.patch('/:id', async (req, res, next) => {
         return res.status(400).json({ error: 'Each item must have a non-empty description' });
       }
     }
+    const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(budget_exclusion_reason);
+    if (exclude_from_budget === true && !normalizedBudgetExclusionReason) {
+      return res.status(400).json({ error: 'budget_exclusion_reason required when exclude_from_budget is true' });
+    }
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const originalExpense = await Expense.findById(req.params.id);
@@ -1210,7 +1225,7 @@ router.patch('/:id', async (req, res, next) => {
       cardLabel: card_label,
       isPrivate: is_private,
       excludeFromBudget: exclude_from_budget,
-      budgetExclusionReason: exclude_from_budget === false ? null : budget_exclusion_reason,
+      budgetExclusionReason: exclude_from_budget === false ? null : normalizedBudgetExclusionReason,
       placeName: place_name,
       address,
       mapkitStableId: mapkit_stable_id,
