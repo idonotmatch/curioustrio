@@ -1053,16 +1053,45 @@ router.post('/:id/approve', async (req, res, next) => {
     if (expense.source === 'email') {
       const normalizedNotes = normalizeApprovedEmailNotes(expense.notes || '');
       if (normalizedNotes && normalizedNotes !== expense.notes) {
-        expense = await Expense.update(req.params.id, user.id, { notes: normalizedNotes }) || expense;
+        try {
+          expense = await Expense.update(req.params.id, user.id, { notes: normalizedNotes }) || expense;
+        } catch (err) {
+          console.error('[expenses/approve] note normalization update failed:', {
+            expense_id: expense.id,
+            message: err?.message || String(err || 'unknown_error'),
+          });
+        }
       }
-      expense = await Expense.updateReviewMetadata(expense.id, user.id, { reviewRequired: false }) || expense;
+      try {
+        expense = await Expense.updateReviewMetadata(expense.id, user.id, { reviewRequired: false }) || expense;
+      } catch (err) {
+        console.error('[expenses/approve] review metadata update failed:', {
+          expense_id: expense.id,
+          message: err?.message || String(err || 'unknown_error'),
+        });
+      }
       const reviewContextField = normalizeReviewContext(req.body?.review_context);
-      await EmailImportLog.recordReviewFeedback(expense.id, {
-        action: 'approved',
-        changedFields: reviewContextField ? [reviewContextField] : [],
-      });
+      try {
+        await EmailImportLog.recordReviewFeedback(expense.id, {
+          action: 'approved',
+          changedFields: reviewContextField ? [reviewContextField] : [],
+        });
+      } catch (err) {
+        console.error('[expenses/approve] email review feedback failed:', {
+          expense_id: expense.id,
+          message: err?.message || String(err || 'unknown_error'),
+        });
+      }
     }
-    res.json(await attachGmailReviewHint(expense, user.id));
+    try {
+      res.json(await attachGmailReviewHint(expense, user.id));
+    } catch (err) {
+      console.error('[expenses/approve] gmail hint attach failed:', {
+        expense_id: expense.id,
+        message: err?.message || String(err || 'unknown_error'),
+      });
+      res.json({ ...expense, gmail_review_hint: null });
+    }
   } catch (err) { next(err); }
 });
 
