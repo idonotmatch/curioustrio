@@ -237,10 +237,12 @@ describe('POST /expenses/confirm', () => {
         date: '2026-03-21',
         source: 'manual',
         exclude_from_budget: true,
+        budget_exclusion_reason: 'business',
       });
 
     expect(res.status).toBe(201);
     expect(res.body.expense.exclude_from_budget).toBe(true);
+    expect(res.body.expense.budget_exclusion_reason).toBe('business');
   });
 
   it('persists items when items payload is provided', async () => {
@@ -718,6 +720,23 @@ describe('PATCH /expenses/:id', () => {
     expect(res.body.merchant).toBe('UpdatedMerchant');
     expect(parseFloat(res.body.amount)).toBe(25.00);
     expect(res.body.notes).toBe('updated note');
+  });
+
+  it('updates budget exclusion reason when track only is enabled', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES ($1, $2, 'Client Dinner', 62.00, '2026-03-15', 'manual', 'confirmed') RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+
+    const res = await request(app)
+      .patch(`/expenses/${expenseId}`)
+      .send({ exclude_from_budget: true, budget_exclusion_reason: 'reimbursable' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.exclude_from_budget).toBe(true);
+    expect(res.body.budget_exclusion_reason).toBe('reimbursable');
   });
 
   it('records Gmail import edit feedback and changed fields for email-sourced expenses', async () => {

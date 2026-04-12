@@ -41,6 +41,7 @@ function collectChangedFields(originalExpense, patch = {}) {
     ['card_label', patch.card_label],
     ['is_private', patch.is_private],
     ['exclude_from_budget', patch.exclude_from_budget],
+    ['budget_exclusion_reason', patch.budget_exclusion_reason],
     ['place_name', patch.place_name],
     ['address', patch.address],
     ['mapkit_stable_id', patch.mapkit_stable_id],
@@ -755,7 +756,7 @@ router.post('/confirm', async (req, res, next) => {
     const { merchant, description, amount, date, category_id, source, notes,
             place_name, address,
             mapkit_stable_id, linked_expense_id,
-            payment_method, card_last4, card_label, is_private, exclude_from_budget, items,
+            payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
             ingest_attempt_id, parsed_payment_snapshot } = req.body;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
     confirmAttemptId = ingest_attempt_id || null;
@@ -797,6 +798,7 @@ router.post('/confirm', async (req, res, next) => {
       cardLabel: card_label,
       isPrivate: is_private ?? false,
       excludeFromBudget: exclude_from_budget ?? false,
+      budgetExclusionReason: exclude_from_budget ? (budget_exclusion_reason || null) : null,
     });
 
     if (Array.isArray(items) && items.length > 0) {
@@ -1171,7 +1173,7 @@ router.get('/:id', async (req, res, next) => {
 router.patch('/:id', async (req, res, next) => {
   try {
     const { merchant, amount, date, category_id, notes,
-            payment_method, card_last4, card_label, is_private, exclude_from_budget, items,
+            payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
             place_name, address, mapkit_stable_id } = req.body;
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
@@ -1208,6 +1210,7 @@ router.patch('/:id', async (req, res, next) => {
       cardLabel: card_label,
       isPrivate: is_private,
       excludeFromBudget: exclude_from_budget,
+      budgetExclusionReason: exclude_from_budget === false ? null : budget_exclusion_reason,
       placeName: place_name,
       address,
       mapkitStableId: mapkit_stable_id,

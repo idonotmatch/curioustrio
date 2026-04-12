@@ -8,6 +8,10 @@ function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
 }
 
+function isMissingBudgetExclusionReasonError(err) {
+  return err?.code === '42703' && /budget_exclusion_reason/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -28,6 +32,7 @@ async function create({
   cardLabel = null,
   isPrivate = false,
   excludeFromBudget = false,
+  budgetExclusionReason = null,
   reviewRequired = false,
   reviewMode = null,
   reviewSource = null,
@@ -37,18 +42,18 @@ async function create({
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
          place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
-         is_private, exclude_from_budget, review_required, review_mode, review_source
+         is_private, exclude_from_budget, budget_exclusion_reason, review_required, review_mode, review_source
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
       [
         userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
         placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
-        isPrivate, excludeFromBudget, reviewRequired, reviewMode, reviewSource,
+        isPrivate, excludeFromBudget, budgetExclusionReason, reviewRequired, reviewMode, reviewSource,
       ]
     );
     return result.rows[0];
   } catch (err) {
-    if (!isMissingExpenseReviewMetadataError(err) && !isMissingExcludeFromBudgetError(err)) throw err;
+    if (!isMissingExpenseReviewMetadataError(err) && !isMissingExcludeFromBudgetError(err) && !isMissingBudgetExclusionReasonError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
@@ -266,7 +271,7 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
 
 async function update(id, userId, {
   merchant, amount, date, categoryId, notes,
-  paymentMethod, cardLast4, cardLabel, isPrivate, excludeFromBudget,
+  paymentMethod, cardLast4, cardLabel, isPrivate, excludeFromBudget, budgetExclusionReason,
   placeName, address, mapkitStableId,
 } = {}) {
   const hasMerchant = merchant !== undefined;
@@ -279,6 +284,7 @@ async function update(id, userId, {
   const hasCardLabel = cardLabel !== undefined;
   const hasIsPrivate = isPrivate !== undefined;
   const hasExcludeFromBudget = excludeFromBudget !== undefined;
+  const hasBudgetExclusionReason = budgetExclusionReason !== undefined;
   const hasPlaceName = placeName !== undefined;
   const hasAddress = address !== undefined;
   const hasMapkitStableId = mapkitStableId !== undefined;
@@ -295,9 +301,10 @@ async function update(id, userId, {
          card_label = CASE WHEN $17 THEN $18 ELSE card_label END,
          is_private = CASE WHEN $19 THEN $20 ELSE is_private END,
          exclude_from_budget = CASE WHEN $21 THEN $22 ELSE exclude_from_budget END,
-         place_name = CASE WHEN $23 THEN $24 ELSE place_name END,
-         address = CASE WHEN $25 THEN $26 ELSE address END,
-         mapkit_stable_id = CASE WHEN $27 THEN $28 ELSE mapkit_stable_id END
+         budget_exclusion_reason = CASE WHEN $23 THEN $24 ELSE budget_exclusion_reason END,
+         place_name = CASE WHEN $25 THEN $26 ELSE place_name END,
+         address = CASE WHEN $27 THEN $28 ELSE address END,
+         mapkit_stable_id = CASE WHEN $29 THEN $30 ELSE mapkit_stable_id END
        WHERE id = $1 AND user_id = $2 RETURNING *`,
       [
         id, userId,
@@ -311,6 +318,7 @@ async function update(id, userId, {
         hasCardLabel, cardLabel,
         hasIsPrivate, isPrivate,
         hasExcludeFromBudget, excludeFromBudget,
+        hasBudgetExclusionReason, budgetExclusionReason,
         hasPlaceName, placeName,
         hasAddress, address,
         hasMapkitStableId, mapkitStableId,
@@ -318,7 +326,7 @@ async function update(id, userId, {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err)) throw err;
+    if (!isMissingExcludeFromBudgetError(err) && !isMissingBudgetExclusionReasonError(err)) throw err;
     const fallback = await db.query(
       `UPDATE expenses SET
          merchant = CASE WHEN $3 THEN $4 ELSE merchant END,

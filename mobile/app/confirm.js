@@ -25,6 +25,15 @@ function savedCardKey(card = {}) {
   return `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
 }
 
+const TRACK_ONLY_REASONS = [
+  { value: 'business', label: 'Business' },
+  { value: 'reimbursable', label: 'Reimbursable' },
+  { value: 'different_budget', label: 'Different budget' },
+  { value: 'shared_not_mine', label: 'Shared, not mine' },
+  { value: 'transfer_like', label: 'Transfer-like' },
+  { value: 'other', label: 'Other' },
+];
+
 export default function ConfirmScreen() {
   const { data } = useLocalSearchParams();
   const parsed = createManualExpenseDraft(parseConfirmData(data));
@@ -45,6 +54,7 @@ export default function ConfirmScreen() {
   const [cardLast4, setCardLast4] = useState(parsed.card_last4 || '');
   const [cardLabel, setCardLabel] = useState(parsed.card_label || '');
   const [excludeFromBudget, setExcludeFromBudget] = useState(parsed.exclude_from_budget || false);
+  const [budgetExclusionReason, setBudgetExclusionReason] = useState(parsed.budget_exclusion_reason || null);
   const [savedCards, setSavedCards] = useState([]);
   const [selectedSavedCardKey, setSelectedSavedCardKey] = useState(null);
   const [savedCardMatchNote, setSavedCardMatchNote] = useState(null);
@@ -139,6 +149,14 @@ export default function ConfirmScreen() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    if (!excludeFromBudget) {
+      setBudgetExclusionReason(null);
+    } else if (!budgetExclusionReason) {
+      setBudgetExclusionReason(TRACK_ONLY_REASONS[0].value);
+    }
+  }, [excludeFromBudget, budgetExclusionReason]);
 
   useEffect(() => {
     if (selectedSavedCard && selectedSavedCard.payment_method !== paymentMethod) {
@@ -316,6 +334,10 @@ export default function ConfirmScreen() {
   async function handleConfirm() {
     try {
       setSaving(true);
+      if (excludeFromBudget && !budgetExclusionReason) {
+        Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
+        return;
+      }
 
       if (isCameraSource && saveToRoll && parsed.image_uri) {
         try {
@@ -345,6 +367,7 @@ export default function ConfirmScreen() {
         card_label: cardLabel || null,
         is_private: isPrivate,
         exclude_from_budget: excludeFromBudget,
+        budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
         ingest_attempt_id: parsed?.ingest_attempt_id || null,
         parsed_payment_snapshot: parsed?.parsed_payment_snapshot || {
           payment_method: parsed?.payment_method || null,
@@ -758,6 +781,27 @@ export default function ConfirmScreen() {
         />
       </View>
 
+      {excludeFromBudget ? (
+        <View style={styles.trackOnlyReasonBlock}>
+          <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
+          <View style={styles.reasonChipWrap}>
+            {TRACK_ONLY_REASONS.map((reason) => {
+              const selected = budgetExclusionReason === reason.value;
+              return (
+                <TouchableOpacity
+                  key={reason.value}
+                  style={[styles.reasonChip, selected && styles.reasonChipActive]}
+                  onPress={() => setBudgetExclusionReason(reason.value)}
+                  activeOpacity={0.82}
+                >
+                  <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
       {isCameraSource && (
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Save receipt to camera roll</Text>
@@ -896,6 +940,23 @@ const styles = StyleSheet.create({
   toggleTextWrap: { flex: 1, paddingRight: 12 },
   toggleLabel: { color: '#fff', fontSize: 15 },
   toggleHint: { color: '#7c7c7c', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  trackOnlyReasonBlock: { marginTop: -4, marginBottom: 14 },
+  trackOnlyReasonLabel: { color: '#bdbdbd', fontSize: 12, marginBottom: 10 },
+  reasonChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  reasonChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#121212',
+  },
+  reasonChipActive: {
+    borderColor: '#0f3a2b',
+    backgroundColor: '#0f3a2b',
+  },
+  reasonChipText: { color: '#cfcfcf', fontSize: 12, fontWeight: '600' },
+  reasonChipTextActive: { color: '#fff' },
   paymentSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
   sectionLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   methodRow: { flexDirection: 'row', gap: 6 },

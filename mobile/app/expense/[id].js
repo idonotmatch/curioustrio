@@ -124,6 +124,15 @@ function summarizeItemSignals(items = []) {
   }, { matched: 0, unitPriced: 0, nonProduct: 0 });
 }
 
+const TRACK_ONLY_REASONS = [
+  { value: 'business', label: 'Business' },
+  { value: 'reimbursable', label: 'Reimbursable' },
+  { value: 'different_budget', label: 'Different budget' },
+  { value: 'shared_not_mine', label: 'Shared, not mine' },
+  { value: 'transfer_like', label: 'Transfer-like' },
+  { value: 'other', label: 'Other' },
+];
+
 function applyExpenseToState(record, setters) {
   if (!record) return;
   const {
@@ -138,6 +147,7 @@ function applyExpenseToState(record, setters) {
     setCardLabel,
     setIsPrivate,
     setExcludeFromBudget,
+    setBudgetExclusionReason,
     setItems,
     setLocationData,
     setItemsEdits,
@@ -153,6 +163,7 @@ function applyExpenseToState(record, setters) {
   setCardLabel(record.card_label || '');
   setIsPrivate(record.is_private || false);
   setExcludeFromBudget(record.exclude_from_budget || false);
+  setBudgetExclusionReason(record.budget_exclusion_reason || null);
   setItems(record.items || []);
   setLocationData(
     record.place_name || record.address || record.mapkit_stable_id
@@ -193,6 +204,7 @@ export default function ExpenseDetailScreen() {
   const [cardLabel, setCardLabel] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [excludeFromBudget, setExcludeFromBudget] = useState(false);
+  const [budgetExclusionReason, setBudgetExclusionReason] = useState(null);
   const [items, setItems] = useState([]);
   const [itemsExpanded, setItemsExpanded] = useState(false);
   const [itemsEdits, setItemsEdits] = useState([]);
@@ -221,6 +233,7 @@ export default function ExpenseDetailScreen() {
         setCardLabel,
         setIsPrivate,
         setExcludeFromBudget,
+        setBudgetExclusionReason,
         setItems,
         setLocationData,
         setItemsEdits,
@@ -267,9 +280,21 @@ export default function ExpenseDetailScreen() {
     if (!canEdit && editing) setEditing(false);
   }, [canEdit, editing]);
 
+  useEffect(() => {
+    if (!excludeFromBudget) {
+      setBudgetExclusionReason(null);
+    } else if (!budgetExclusionReason) {
+      setBudgetExclusionReason(TRACK_ONLY_REASONS[0].value);
+    }
+  }, [excludeFromBudget, budgetExclusionReason]);
+
   async function handleSave() {
     setSaving(true);
     try {
+      if (excludeFromBudget && !budgetExclusionReason) {
+        Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
+        return;
+      }
       await api.patch(`/expenses/${id}`, {
         merchant,
         amount: parseFloat(amount),
@@ -281,6 +306,7 @@ export default function ExpenseDetailScreen() {
         card_label: cardLabel || null,
         is_private: isPrivate,
         exclude_from_budget: excludeFromBudget,
+        budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
         place_name: locationData?.place_name || null,
         address: locationData?.address || null,
         mapkit_stable_id: locationData?.mapkit_stable_id || null,
@@ -678,6 +704,28 @@ export default function ExpenseDetailScreen() {
             thumbColor={excludeFromBudget ? '#fff' : '#555'}
           />
         </View>
+
+        {excludeFromBudget ? (
+          <View style={styles.trackOnlyReasonBlock}>
+            <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
+            <View style={styles.reasonChipWrap}>
+              {TRACK_ONLY_REASONS.map((reason) => {
+                const selected = budgetExclusionReason === reason.value;
+                return (
+                  <TouchableOpacity
+                    key={reason.value}
+                    style={[styles.reasonChip, selected && styles.reasonChipActive]}
+                    onPress={() => editing && canEdit ? setBudgetExclusionReason(reason.value) : undefined}
+                    activeOpacity={0.82}
+                    disabled={!editing || !canEdit}
+                  >
+                    <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {isPendingEmailReview ? (
@@ -1135,6 +1183,23 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, color: '#444', width: 90 },
   trackOnlyTextWrap: { flex: 1, paddingRight: 12 },
   trackOnlyHint: { color: '#666', fontSize: 11, lineHeight: 16, marginTop: 2, maxWidth: 220 },
+  trackOnlyReasonBlock: { marginBottom: 16 },
+  trackOnlyReasonLabel: { color: '#bdbdbd', fontSize: 12, marginBottom: 10 },
+  reasonChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  reasonChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#121212',
+  },
+  reasonChipActive: {
+    borderColor: '#0f3a2b',
+    backgroundColor: '#0f3a2b',
+  },
+  reasonChipText: { color: '#cfcfcf', fontSize: 12, fontWeight: '600' },
+  reasonChipTextActive: { color: '#fff' },
   valueWrap: { flex: 1, alignItems: 'flex-end' },
   value: { fontSize: 14, color: '#f5f5f5', textAlign: 'right' },
   noteCard: {
