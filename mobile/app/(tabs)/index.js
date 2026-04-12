@@ -302,7 +302,7 @@ export default function FeedScreen() {
   const householdTotal = householdExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   const listData = [
-    ...(pending?.length > 0 ? [{ _type: 'pending_section', items: pending }] : []),
+    { _type: 'pending_section', items: pending || [] },
     ...displayExpenses.map(e => ({ _type: 'expense', ...e })),
   ];
 
@@ -317,6 +317,19 @@ export default function FeedScreen() {
           ) : null}
           {isUsingMockPending ? (
             <Text style={styles.pendingPreviewNote}>Dev preview queue</Text>
+          ) : null}
+          {item.items.length === 0 ? (
+            <TouchableOpacity
+              style={styles.pendingEmptyState}
+              onPress={() => router.push('/(tabs)/pending')}
+              activeOpacity={0.82}
+            >
+              <Text style={styles.pendingEmptyTitle}>Your review queue is clear</Text>
+              <Text style={styles.pendingEmptyBody}>Open the queue to review new Gmail imports when they arrive.</Text>
+              <View style={styles.pendingOpenChip}>
+                <Text style={styles.pendingOpenChipText}>Open queue</Text>
+              </View>
+            </TouchableOpacity>
           ) : null}
           {item.items.slice(0, 3).map(e => (
             <Swipeable
@@ -554,6 +567,19 @@ const styles = StyleSheet.create({
   pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 12 },
   pendingModeSummary: { fontSize: 11, color: '#7f8da4', paddingHorizontal: 12, paddingBottom: 2 },
   pendingPreviewNote: { fontSize: 11, color: '#8ab4ff', paddingHorizontal: 12, paddingBottom: 4 },
+  pendingEmptyState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  pendingEmptyTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
+  pendingEmptyBody: { fontSize: 12, color: '#8a8a8a', lineHeight: 18, marginBottom: 10 },
+  pendingOpenChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2b3442',
+    backgroundColor: '#141920',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  pendingOpenChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
   pendingRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingRowMain: { flex: 1, marginRight: 8 },
   pendingMerchant: { fontSize: 14, color: '#f5f5f5' },
