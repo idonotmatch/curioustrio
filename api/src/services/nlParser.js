@@ -183,6 +183,62 @@ function normalizePersonPaymentFields({ merchant, description, notes }) {
   };
 }
 
+function parseExplicitItemAmount(value) {
+  const amount = Number(`${value || ''}`.replace(/^\$/, ''));
+  return Number.isFinite(amount) && amount !== 0 ? amount : null;
+}
+
+function parseExplicitItemSegment(segment = '') {
+  const trimmed = `${segment || ''}`.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(.*?)(?:\s+|\s*\$)(-?\d+(?:\.\d{1,2})?)$/);
+  if (match) {
+    const description = `${match[1] || ''}`.trim();
+    const amount = parseExplicitItemAmount(match[2]);
+    if (!description) return null;
+    return {
+      description,
+      amount,
+    };
+  }
+
+  return {
+    description: trimmed,
+    amount: null,
+  };
+}
+
+function extractExplicitItemsFromInput(input = '') {
+  const text = `${input || ''}`.trim();
+  if (!text) return null;
+
+  const markerMatch = text.match(/\bitems\s*:\s*(.+)$/i);
+  if (!markerMatch) return null;
+
+  const itemText = `${markerMatch[1] || ''}`.trim();
+  if (!itemText) return null;
+
+  const items = itemText
+    .split(/\s*,\s*/)
+    .map(parseExplicitItemSegment)
+    .filter(Boolean);
+
+  if (!items.length) return null;
+
+  const amountSum = items
+    .map((item) => item.amount)
+    .filter((amount) => amount != null)
+    .reduce((sum, amount) => sum + amount, 0);
+
+  return {
+    items,
+    explicit_item_count: items.length,
+    explicit_item_amount_sum: Number(amountSum.toFixed(2)),
+    explicit_item_has_missing_amounts: items.some((item) => item.amount == null),
+  };
+}
+
 function cleanParsedExpense(parsed, todayDate) {
   if (!parsed || typeof parsed !== 'object') return null;
 
@@ -230,12 +286,28 @@ function cleanParsedExpense(parsed, todayDate) {
   if (!hasValidDate) review_fields.push('date');
   if (!normalized.payment_method && normalized.card_label) review_fields.push('payment method');
 
+  const itemAmountSum = items
+    ?.map((item) => Number(item?.amount))
+    .filter((value) => Number.isFinite(value))
+    .reduce((sum, value) => sum + value, 0) ?? null;
+  const itemTotalMismatch = (
+    normalized.amount != null
+    && itemAmountSum != null
+    && Math.abs(itemAmountSum - normalized.amount) > 0.01
+  );
+  if ((items?.length || 0) > 0 && (itemTotalMismatch || items.some((item) => item?.amount == null))) {
+    if (!review_fields.includes('items')) review_fields.push('items');
+    field_confidence.items = itemTotalMismatch ? 'low' : 'medium';
+  }
+
   if (normalized.amount == null || (!normalized.merchant && !normalized.description)) {
     return null;
   }
 
   return {
     ...normalized,
+    item_amount_sum: itemAmountSum,
+    item_total_mismatch: itemTotalMismatch,
     parse_status: review_fields.length > 0 ? 'partial' : 'complete',
     review_fields,
     field_confidence,
@@ -272,10 +344,14 @@ async function parseExpenseDetailed(input, todayDate) {
   }
 
   const { raw, parser_mode } = parseJsonWithRecovery(text);
+  const explicitItems = extractExplicitItemsFromInput(input);
   const baseDiagnostics = {
     raw_text_preview: clipTextPreview(text),
     response_length: text.length,
     parser_mode,
+    explicit_item_syntax_detected: Boolean(explicitItems),
+    explicit_item_count: explicitItems?.explicit_item_count || 0,
+    explicit_item_amount_sum: explicitItems?.explicit_item_amount_sum ?? null,
   };
   if (!raw) {
     return {
@@ -286,13 +362,18 @@ async function parseExpenseDetailed(input, todayDate) {
     };
   }
 
-  const parsed = cleanParsedExpense(raw, todayDate);
-  const diagnostics = { ...buildNlDiagnostics(input, raw), ...baseDiagnostics };
+  const mergedRaw = explicitItems ? { ...raw, items: explicitItems.items } : raw;
+  const parsed = cleanParsedExpense(mergedRaw, todayDate);
+  const diagnostics = {
+    ...buildNlDiagnostics(input, mergedRaw),
+    ...baseDiagnostics,
+    explicit_item_has_missing_amounts: explicitItems?.explicit_item_has_missing_amounts || false,
+  };
   if (parsed) return { parsed, failureReason: null, raw, diagnostics };
 
-  const amount = Number(raw?.amount);
-  const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
-  const description = typeof raw?.description === 'string' ? raw.description.trim() : '';
+  const amount = Number(mergedRaw?.amount);
+  const merchant = typeof mergedRaw?.merchant === 'string' ? mergedRaw.merchant.trim() : '';
+  const description = typeof mergedRaw?.description === 'string' ? mergedRaw.description.trim() : '';
 
   let failureReason = 'missing_required_fields';
   if (!Number.isFinite(amount) || amount === 0) {

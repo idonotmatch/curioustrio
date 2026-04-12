@@ -98,6 +98,37 @@ describe('parseExpense', () => {
     expect(result.items[0].description).toBe('Nike running shoes');
   });
 
+  it('extracts explicit items syntax from NL input even when the model omits items', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: JSON.stringify({
+          merchant: 'Target',
+          description: 'groceries',
+          amount: 42.18,
+          date: '2026-04-11',
+          notes: null,
+          payment_method: null,
+          card_label: null,
+          items: null,
+        }),
+      }],
+    });
+
+    const result = await parseExpense(
+      'target 42.18 items: bananas 3.20, yogurt 6.99, paper towels 12.49',
+      '2026-04-11'
+    );
+
+    expect(result.items).toEqual([
+      { description: 'bananas', amount: 3.2 },
+      { description: 'yogurt', amount: 6.99 },
+      { description: 'paper towels', amount: 12.49 },
+    ]);
+    expect(result.item_amount_sum).toBe(22.68);
+  });
+
   it('recovers valid JSON when the model wraps it in prose', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();
@@ -139,6 +170,27 @@ describe('parseExpense', () => {
     expect(result.parse_status).toBe('partial');
     expect(result.review_fields).toContain('date');
     expect(result.field_confidence.date).toBe('medium');
+  });
+
+  it('marks explicit items for review when item totals do not match the expense total', () => {
+    const result = cleanParsedExpense({
+      merchant: 'Whole Foods',
+      description: 'groceries',
+      amount: 31.4,
+      date: '2026-04-11',
+      notes: null,
+      payment_method: null,
+      card_label: null,
+      items: [
+        { description: 'salmon', amount: 18.5 },
+        { description: 'asparagus', amount: 6.2 },
+      ],
+    }, '2026-04-11');
+
+    expect(result.item_total_mismatch).toBe(true);
+    expect(result.parse_status).toBe('partial');
+    expect(result.review_fields).toContain('items');
+    expect(result.field_confidence.items).toBe('low');
   });
 
   it('returns null when amount is missing', () => {
