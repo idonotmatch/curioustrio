@@ -403,6 +403,7 @@ export default function ExpenseDetailScreen() {
   const reviewState = expense.status === 'pending' && expense.source === 'email';
   const gmailReviewHint = expense.gmail_review_hint || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
+  const subjectLine = `${gmailReviewHint?.message_subject || ''}`.trim();
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
@@ -493,6 +494,9 @@ export default function ExpenseDetailScreen() {
           </Text>
           {importMetaBits.length ? (
             <Text style={styles.reviewBannerMeta}>{importMetaBits.join('  ·  ')}</Text>
+          ) : null}
+          {subjectLine ? (
+            <Text style={styles.reviewBannerSubject} numberOfLines={2}>{subjectLine}</Text>
           ) : null}
         </View>
       ) : null}
@@ -1034,6 +1038,7 @@ const styles = StyleSheet.create({
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginBottom: 4 },
   reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
   reviewBannerMeta: { color: '#7f7766', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  reviewBannerSubject: { color: '#9a9a9a', fontSize: 12, lineHeight: 17, marginTop: 8 },
   priorityFieldsCard: {
     marginHorizontal: 20,
     marginTop: 12,

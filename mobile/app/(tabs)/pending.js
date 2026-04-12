@@ -187,6 +187,11 @@ export default function PendingScreen() {
                       </Text>
                     </View>
                   </View>
+                  {item.gmail_review_hint?.message_subject ? (
+                    <Text style={styles.emailSubject} numberOfLines={1}>
+                      {item.gmail_review_hint.message_subject}
+                    </Text>
+                  ) : null}
                   {item.gmail_review_hint ? (
                     (() => {
                       const mode = reviewModePresentation(item.gmail_review_hint);
@@ -281,6 +286,7 @@ const styles = StyleSheet.create({
   merchant: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  emailSubject: { marginTop: 6, fontSize: 12, color: '#737373' },
   sourceChip: {
     flexDirection: 'row',
     alignItems: 'center',
