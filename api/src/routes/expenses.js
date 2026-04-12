@@ -352,9 +352,21 @@ async function attachGmailReviewHint(expense, userId) {
   if (!log?.from_address && expense.review_source !== 'gmail') {
     return { ...expense, gmail_review_hint: null };
   }
-  const senderQuality = log?.from_address
-    ? await getSenderImportQuality(userId, log.from_address)
-    : { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
+  let senderQuality = { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
+  if (log?.from_address) {
+    try {
+      senderQuality = await getSenderImportQuality(userId, log.from_address);
+    } catch (err) {
+      console.error('[expenses/pending] gmail hint quality fallback:', err?.message || err);
+      senderQuality = {
+        level: 'unknown',
+        sender_domain: null,
+        metrics: null,
+        item_reliability: null,
+        top_changed_fields: [],
+      };
+    }
+  }
   return {
     ...expense,
     gmail_review_hint: buildEmailReviewHint(expense, log, senderQuality),
