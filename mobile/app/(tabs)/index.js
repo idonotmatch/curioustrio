@@ -10,6 +10,7 @@ import { useBudget } from '../../hooks/useBudget';
 import { usePendingExpenses, removePendingExpense } from '../../hooks/usePendingExpenses';
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
+import { ActionNotice } from '../../components/ActionNotice';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { ReviewQueueItem } from '../../components/ReviewQueueItem';
 import { api } from '../../services/api';
@@ -204,10 +205,16 @@ export default function FeedScreen() {
   const { expenses: pending, error: pendingError, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
+  const [notice, setNotice] = useState('');
 
   useEffect(() => {
     setSelectedMonth(currentPeriod(transactionStartDay));
   }, [transactionStartDay]);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(''), 1800);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const expenses = mode === 'mine' ? myExpenses : householdExpenses;
   const loading = mode === 'mine' ? myLoading : householdLoading;
@@ -235,12 +242,14 @@ export default function FeedScreen() {
   async function dismissPending(id) {
     if (isUsingMockPending) {
       resolveMockExpense(id);
+      setNotice('Dismissed from your review queue');
       return;
     }
     try {
       await api.post(`/expenses/${id}/dismiss`);
       await removeExpenseSnapshot(id);
       removePendingExpense(id);
+      setNotice('Dismissed from your review queue');
       const { invalidateCache } = await import('../../services/cache');
       await invalidateCache('cache:expenses:pending');
     } catch { /* ignore */ }
@@ -249,12 +258,14 @@ export default function FeedScreen() {
   async function approvePending(id) {
     if (isUsingMockPending) {
       resolveMockExpense(id);
+      setNotice('Approved and added to your expenses');
       return;
     }
     try {
       const approved = await api.post(`/expenses/${id}/approve`);
       if (approved?.id) await saveExpenseSnapshot(approved);
       removePendingExpense(id);
+      setNotice('Approved and added to your expenses');
       const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
       await Promise.all([
         invalidateCache('cache:expenses:pending'),
@@ -448,6 +459,7 @@ export default function FeedScreen() {
           </View>
         </View>
       </Modal>
+      <ActionNotice message={notice} />
     </View>
   );
 }

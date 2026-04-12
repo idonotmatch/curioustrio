@@ -2,6 +2,7 @@ import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActionNotice } from '../components/ActionNotice';
 import { usePendingExpenses, removePendingExpense } from '../hooks/usePendingExpenses';
 import { ReviewQueueItem } from '../components/ReviewQueueItem';
 import { api } from '../services/api';
@@ -12,8 +13,14 @@ export default function ReviewQueueScreen() {
   const router = useRouter();
   const { expenses, loading, error, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
+  const [notice, setNotice] = useState('');
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(''), 1800);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const remove = (id) => {
     setDisplayExpenses((prev) => prev.filter((expense) => expense.id !== id));
@@ -24,6 +31,7 @@ export default function ReviewQueueScreen() {
     if (isUsingMockData) {
       resolveMockExpense(id);
       remove(id);
+      setNotice('Dismissed from your review queue');
       return;
     }
     try {
@@ -31,6 +39,7 @@ export default function ReviewQueueScreen() {
       await removeExpenseSnapshot(id);
       await invalidateCache('cache:expenses:pending');
       remove(id);
+      setNotice('Dismissed from your review queue');
     } catch {
       // ignore
     }
@@ -40,6 +49,7 @@ export default function ReviewQueueScreen() {
     if (isUsingMockData) {
       resolveMockExpense(id);
       remove(id);
+      setNotice('Approved and added to your expenses');
       return;
     }
     try {
@@ -56,6 +66,7 @@ export default function ReviewQueueScreen() {
         invalidateCacheByPrefix('cache:household-expenses:'),
       ]);
       remove(id);
+      setNotice('Approved and added to your expenses');
     } catch {
       // ignore
     }
@@ -99,6 +110,7 @@ export default function ReviewQueueScreen() {
             )
           }
         />
+        <ActionNotice message={notice} />
       </View>
     </SafeAreaView>
   );
