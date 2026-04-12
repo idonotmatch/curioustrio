@@ -239,6 +239,14 @@ export default function PendingScreen() {
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.replace('/(tabs)')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chevron-back" size={16} color="#cfcfcf" />
+              <Text style={styles.backButtonText}>All transactions</Text>
+            </TouchableOpacity>
             <Text style={styles.title}>Your review queue</Text>
             <Text style={styles.subtitle}>
               Confirm your Gmail imports before they are counted.
@@ -273,6 +281,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#0a0a0a',
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 10,
+  },
+  backButtonText: { color: '#cfcfcf', fontSize: 13, fontWeight: '600' },
   title: { fontSize: 24, color: '#f5f5f5', fontWeight: '700', marginBottom: 4 },
   subtitle: { fontSize: 13, color: '#8a8a8a', marginBottom: 10 },
   hint: { fontSize: 12, color: '#444', textAlign: 'center', letterSpacing: 0.3 },
