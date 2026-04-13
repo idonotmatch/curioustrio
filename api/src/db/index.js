@@ -13,7 +13,13 @@ if (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://')) {
 
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+  // Supabase's connection pooler (PgBouncer) uses an intermediate certificate
+  // that Node.js rejects with strict verification. Data is still encrypted over
+  // SSL — we just skip the cert chain check. Set DB_SSL_REJECT_UNAUTHORIZED=true
+  // to opt back in if connecting to a standard Postgres instance with a valid cert.
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' }
+    : false,
   max: process.env.DB_POOL_MAX ? Number(process.env.DB_POOL_MAX) : 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
