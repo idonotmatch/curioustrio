@@ -6,10 +6,10 @@ const REQUIRED_COLUMNS = [
   ['expenses', 'review_required'],
   ['expenses', 'review_mode'],
   ['expenses', 'review_source'],
-  ['email_import_logs', 'subject'],
-  ['email_import_logs', 'from_address'],
-  ['email_import_logs', 'skip_reason'],
-  ['email_import_logs', 'snippet'],
+  ['email_import_log', 'subject'],
+  ['email_import_log', 'from_address'],
+  ['email_import_log', 'skip_reason'],
+  ['email_import_log', 'snippet'],
 ];
 
 const REQUIRED_TABLES = [
