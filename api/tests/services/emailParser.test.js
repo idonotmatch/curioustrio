@@ -94,6 +94,23 @@ describe('emailParser', () => {
     )).toBeNull();
   });
 
+  it('treats Uber and Lyft senders as transactional when ride context is present', () => {
+    const uberSignals = analyzeEmailSignals(
+      'Your ride with Uber',
+      'uber.us@uber.com',
+      'Trip total: $18.42'
+    );
+    const lyftSignals = analyzeEmailSignals(
+      'Thanks for riding with Lyft',
+      'receipt@lyftmail.com',
+      'Ride receipt total $24.18'
+    );
+    expect(uberSignals.senderLooksTransactional).toBe(true);
+    expect(uberSignals.shouldSurfaceToReview).toBe(true);
+    expect(lyftSignals.senderLooksTransactional).toBe(true);
+    expect(lyftSignals.shouldSurfaceToReview).toBe(true);
+  });
+
   it('throws when emailBody is empty', async () => {
     await expect(parseEmailExpense('', 'sub', 'from@test.com', '2026-03-21')).rejects.toThrow('emailBody is required');
   });

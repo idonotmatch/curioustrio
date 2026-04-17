@@ -7,9 +7,13 @@ const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
 const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
-const { importForUser } = require('../services/gmailImporter');
+const { importForUser, retryFailedImportLog, retryFailedImportsForUser } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { aiEndpoints } = require('../middleware/rateLimit');
+
+function gmailAppReturnUrl() {
+  return process.env.GMAIL_APP_REDIRECT_URI || 'adlo://gmail-import?connected=1';
+}
 
 function classifyGmailImportError(err) {
   const message = `${err?.message || ''}`;
@@ -44,6 +48,19 @@ function classifyGmailImportError(err) {
   };
 }
 
+function serializeSyncStatus(token, email = null) {
+  return {
+    connected: !!token,
+    email: email || null,
+    last_synced_at: token?.last_synced_at || null,
+    last_sync_attempted_at: token?.last_sync_attempted_at || null,
+    last_sync_error_at: token?.last_sync_error_at || null,
+    last_sync_error: token?.last_sync_error || null,
+    last_sync_source: token?.last_sync_source || null,
+    last_sync_status: token?.last_sync_status || null,
+  };
+}
+
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
   try {
@@ -73,7 +90,24 @@ router.get('/callback', async (req, res, next) => {
     const userId = stateRow.rows[0].user_id;
     const tokens = await exchangeCode(code);
     await OAuthToken.upsert({ userId, ...tokens, accessToken: null }); // do not persist access_token
-    res.send('<html><body><h2>Gmail connected!</h2><p>You can close this tab.</p></body></html>');
+    const returnUrl = gmailAppReturnUrl();
+    const escapedReturnUrl = returnUrl.replace(/"/g, '&quot;');
+    res.send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0;url=${escapedReturnUrl}" />
+    <title>Gmail connected</title>
+  </head>
+  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px;">
+    <h2>Gmail connected</h2>
+    <p>Returning to Adlo…</p>
+    <p><a href="${escapedReturnUrl}">Open Adlo</a></p>
+    <script>
+      window.location.replace(${JSON.stringify(returnUrl)});
+    </script>
+  </body>
+</html>`);
   } catch (err) { next(err); }
 });
 
@@ -83,7 +117,7 @@ router.get('/status', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
-    res.json({ connected: !!token, last_synced_at: token?.last_synced_at || null });
+    res.json(serializeSyncStatus(token, user.email));
   } catch (err) { next(err); }
 });
 
@@ -94,11 +128,19 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
     if (!token) return res.status(403).json({ error: 'Gmail not connected. Visit GET /gmail/auth first.' });
+    await OAuthToken.markSyncAttempt(user.id, { source: 'manual' });
     const result = await importForUser(user);
-    await OAuthToken.markSynced(user.id);
+    await OAuthToken.markSynced(user.id, { source: 'manual' });
     res.json(result);
   } catch (err) {
     const classified = classifyGmailImportError(err);
+    const user = req.userId ? await User.findByProviderUid(req.userId) : null;
+    if (user?.id) {
+      await OAuthToken.markSyncFailure(user.id, {
+        source: 'manual',
+        error: err?.message ? `${err.message}`.slice(0, 500) : classified.message,
+      });
+    }
     console.error('[gmail import] top-level failure:', {
       user_provider_uid: req.userId,
       status: classified.status,
@@ -117,7 +159,15 @@ router.get('/import-summary', authenticate, async (req, res, next) => {
     const senderLimit = Math.min(parseInt(req.query.sender_limit, 10) || 5, 20);
     const summary = await getGmailImportQualitySummary(user.id, days, senderLimit);
     const token = await OAuthToken.findByUserId(user.id);
-    res.json({ ...summary, last_synced_at: token?.last_synced_at || null });
+    res.json({
+      ...summary,
+      last_synced_at: token?.last_synced_at || null,
+      last_sync_attempted_at: token?.last_sync_attempted_at || null,
+      last_sync_error_at: token?.last_sync_error_at || null,
+      last_sync_error: token?.last_sync_error || null,
+      last_sync_source: token?.last_sync_source || null,
+      last_sync_status: token?.last_sync_status || null,
+    });
   } catch (err) { next(err); }
 });
 
@@ -129,6 +179,28 @@ router.get('/import-log', authenticate, async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const logs = await EmailImportLog.listByUser(user.id, limit);
     res.json(logs);
+  } catch (err) { next(err); }
+});
+
+router.post('/import-log/:id/retry', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const log = await EmailImportLog.findByIdForUser(req.params.id, user.id);
+    if (!log) return res.status(404).json({ error: 'Import log not found' });
+    if (log.status !== 'failed') return res.status(400).json({ error: 'Only failed imports can be retried' });
+    const result = await retryFailedImportLog(user, log);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.post('/retry-failed', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const limit = Math.max(1, Math.min(Number(req.body?.limit) || 10, 50));
+    const result = await retryFailedImportsForUser(user, { limit });
+    res.json(result);
   } catch (err) { next(err); }
 });
 

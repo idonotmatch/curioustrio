@@ -109,7 +109,16 @@ describe('GET /gmail/status', () => {
   it('returns { connected: false } when no token', async () => {
     const res = await request(app).get('/gmail/status');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ connected: false, last_synced_at: null });
+    expect(res.body).toEqual({
+      connected: false,
+      email: 'test@example.com',
+      last_synced_at: null,
+      last_sync_attempted_at: null,
+      last_sync_error_at: null,
+      last_sync_error: null,
+      last_sync_source: null,
+      last_sync_status: null,
+    });
   });
 
   it('returns { connected: true } when token exists', async () => {
@@ -121,7 +130,10 @@ describe('GET /gmail/status', () => {
     const res = await request(app).get('/gmail/status');
     expect(res.status).toBe(200);
     expect(res.body.connected).toBe(true);
+    expect(res.body.email).toBe('test@example.com');
     expect(res.body.last_synced_at).toBeNull();
+    expect(res.body.last_sync_attempted_at).toBeNull();
+    expect(res.body.last_sync_error).toBeNull();
   });
 });
 
@@ -202,8 +214,135 @@ describe('POST /gmail/import', () => {
       skipped_existing: 0,
       skipped_reasons: { classifier_not_expense: 1 },
     });
-    const token = await db.query(`SELECT last_synced_at FROM oauth_tokens WHERE user_id = $1`, [userId]);
+    const token = await db.query(
+      `SELECT last_synced_at, last_sync_attempted_at, last_sync_status, last_sync_source, last_sync_error
+       FROM oauth_tokens WHERE user_id = $1`,
+      [userId]
+    );
     expect(token.rows[0].last_synced_at).toBeTruthy();
+    expect(token.rows[0].last_sync_attempted_at).toBeTruthy();
+    expect(token.rows[0].last_sync_status).toBe('success');
+    expect(token.rows[0].last_sync_source).toBe('manual');
+    expect(token.rows[0].last_sync_error).toBeNull();
+  });
+
+  it('treats amazon ORDER subjects as transaction-like even if the classifier says not_expense', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'msg-order' }]);
+    getMessage.mockResolvedValue({
+      subject: 'ORDER: placed on April 10',
+      from: 'orders@amazon.com',
+      body: 'Thanks for your order. Order total: $29.99',
+      snippet: 'Order total: $29.99',
+      receivedAt: '2026-04-10',
+    });
+    analyzeEmailSignals.mockReturnValue({
+      shouldSurfaceToReview: false,
+      strongMoneySignal: false,
+      mediumMoneySignal: false,
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'not_expense', merchant: null, reason: 'classifier_not_expense' });
+    parseEmailExpense.mockResolvedValue({ merchant: 'Amazon', amount: 29.99, date: '2026-04-10', notes: null });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+  });
+
+  it('recovers a stacked estimated total when the parser returns a partial object without amount', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'msg-amazon-stack-total' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your Amazon order summary',
+      from: 'orders@amazon.com',
+      snippet: 'Estimated total $396.32',
+      body: `Order summary
+Subtotal (4 items)
+Additional savings
+Treats Rewards points applied
+Estimated shipping
+Estimated tax
+Estimated total
+$436.76
+-$16.44
+-$24.00
+$0.00
+$0.00
+$396.32`,
+      receivedAt: '2026-04-17',
+    });
+    classifyEmailExpense.mockResolvedValue({
+      disposition: 'expense',
+      merchant: 'Amazon',
+      reason: 'receipt',
+    });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Amazon',
+      amount: null,
+      date: '2026-04-17',
+      notes: 'Imported from Gmail',
+      items: null,
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+
+    const expense = await db.query(
+      `SELECT amount, status, notes
+       FROM expenses
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+    expect(Number(expense.rows[0].amount)).toBe(396.32);
+    expect(expense.rows[0].status).toBe('pending');
+    expect(expense.rows[0].notes).toMatch(/needs review/i);
+  });
+
+  it('pre-queue skips amazon shipping templates without transaction signals', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'msg-ship' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your Amazon order has shipped',
+      from: 'shipment-tracking@amazon.com',
+      body: 'Track your package here.',
+      snippet: 'Track your package here.',
+      receivedAt: '2026-04-10',
+    });
+    analyzeEmailSignals.mockReturnValue({
+      shouldSurfaceToReview: false,
+      strongMoneySignal: false,
+      mediumMoneySignal: false,
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'not_expense', merchant: null, reason: 'classifier_not_expense' });
+    parseEmailExpense.mockResolvedValue(null);
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(0);
+    expect(res.body.skipped).toBe(1);
+    expect(res.body.outcomes.skipped_reasons).toHaveProperty('template_skip_amazon_shipping', 1);
   });
 
   it('skips already-imported messages', async () => {
@@ -755,6 +894,11 @@ describe('GET /gmail/import-summary', () => {
     }));
     expect(res.body.last_imported_at).toBeTruthy();
     expect(res.body.last_synced_at).toBeNull();
+    expect(res.body.last_sync_attempted_at).toBeNull();
+    expect(res.body.last_sync_error_at).toBeNull();
+    expect(res.body.last_sync_error).toBeNull();
+    expect(res.body.last_sync_source).toBeNull();
+    expect(res.body.last_sync_status).toBeNull();
     expect(res.body.reasons).toEqual(expect.arrayContaining([
       { reason: 'Network error', count: 1 },
       { reason: 'classifier_uncertain', count: 1 },

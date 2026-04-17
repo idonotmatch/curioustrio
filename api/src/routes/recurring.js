@@ -121,7 +121,8 @@ router.post('/preferences', async (req, res, next) => {
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     const ownedByUser = expense.user_id === user.id;
     const inHousehold = user.household_id && expense.household_id === user.household_id;
-    if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
+    const canAccessExpense = ownedByUser || (inHousehold && expense.is_private !== true);
+    if (!canAccessExpense) return res.status(404).json({ error: 'Expense not found' });
 
     const items = await ExpenseItem.findByExpenseId(expense.id);
     const identifiedItems = items.filter((item) => item.product_id || item.comparable_key);
@@ -180,6 +181,13 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const recurring = await RecurringExpense.findById(req.params.id);
+    if (!recurring || recurring.household_id !== user.household_id) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (recurring.user_id !== user.id) {
+      return res.status(403).json({ error: 'Only the creator can remove this recurring expense' });
+    }
     const removed = await RecurringExpense.remove(req.params.id, user.household_id);
     if (!removed) return res.status(404).json({ error: 'Not found' });
     res.json(removed);

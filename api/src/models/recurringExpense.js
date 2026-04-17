@@ -22,6 +22,17 @@ async function findByHousehold(householdId) {
   return result.rows;
 }
 
+async function findById(id) {
+  const result = await db.query(
+    `SELECT r.*, c.name as category_name, c.icon as category_icon
+     FROM recurring_expenses r
+     LEFT JOIN categories c ON r.category_id = c.id
+     WHERE r.id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
 async function remove(id, householdId) {
   const result = await db.query(
     'DELETE FROM recurring_expenses WHERE id = $1 AND household_id = $2 RETURNING *',
@@ -41,4 +52,4 @@ async function findDue(householdId, withinDays = 3) {
   return result.rows;
 }
 
-module.exports = { create, findByHousehold, remove, findDue };
+module.exports = { create, findById, findByHousehold, remove, findDue };

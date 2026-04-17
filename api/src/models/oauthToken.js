@@ -36,18 +36,64 @@ async function findAllWithGmail() {
   return result.rows.map(r => r.user_id);
 }
 
-async function markSynced(userId, provider = 'google') {
+async function markSyncAttempt(userId, { provider = 'google', source = null } = {}) {
   const result = await db.query(
     `UPDATE oauth_tokens
-     SET last_synced_at = NOW(),
+     SET last_sync_attempted_at = NOW(),
+         last_sync_status = 'running',
+         last_sync_source = COALESCE($3, last_sync_source),
          updated_at = NOW()
      WHERE user_id = $1 AND provider = $2
      RETURNING *`,
-    [userId, provider]
+    [userId, provider, source]
   );
   if (!result.rows[0]) return null;
   const row = result.rows[0];
   return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
 }
 
-module.exports = { upsert, findByUserId, findAllWithGmail, markSynced };
+async function markSynced(userId, { provider = 'google', source = null } = {}) {
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET last_synced_at = NOW(),
+         last_sync_attempted_at = NOW(),
+         last_sync_status = 'success',
+         last_sync_source = COALESCE($3, last_sync_source),
+         last_sync_error = NULL,
+         last_sync_error_at = NULL,
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider, source]
+  );
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+}
+
+async function markSyncFailure(userId, { provider = 'google', source = null, error = null } = {}) {
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET last_sync_attempted_at = NOW(),
+         last_sync_error_at = NOW(),
+         last_sync_error = $4,
+         last_sync_status = 'failed',
+         last_sync_source = COALESCE($3, last_sync_source),
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider, source, error]
+  );
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+}
+
+module.exports = {
+  upsert,
+  findByUserId,
+  findAllWithGmail,
+  markSyncAttempt,
+  markSynced,
+  markSyncFailure,
+};

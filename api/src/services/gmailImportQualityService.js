@@ -6,6 +6,52 @@ function extractSenderDomain(fromAddress = '') {
   return match?.[1] || 'unknown';
 }
 
+function extractSubjectPattern(subject = '', fromAddress = '') {
+  const senderDomain = extractSenderDomain(fromAddress);
+  const trimmed = `${subject || ''}`.trim();
+  const normalized = trimmed.replace(/\s+/g, ' ');
+  const lower = normalized.toLowerCase();
+
+  if (senderDomain === 'amazon.com') {
+    if (/^ORDER:\s*/i.test(normalized)) return 'amazon_order';
+    if (/\b(refund|return|returned|refund processed)\b/i.test(normalized)) return 'amazon_refund';
+    if (/\b(shipped|shipping|arriving|delivered|out for delivery|has shipped|on the way)\b/i.test(normalized)) {
+      return 'amazon_shipping';
+    }
+    if (/\b(deal|promotion|recommended|save on|subscribe & save)\b/i.test(normalized)) {
+      return 'amazon_marketing';
+    }
+  }
+
+  const genericPatterns = [
+    ['generic_order', /^order:\s*/i],
+    ['generic_receipt', /\b(receipt|your receipt|order receipt|purchase receipt)\b/i],
+    ['generic_refund', /\b(refund|return processed|refund processed|returned)\b/i],
+    ['generic_shipping', /\b(shipped|shipping update|arriving|delivered|out for delivery|has shipped|on the way|ready for pickup)\b/i],
+    ['generic_payment', /\b(payment sent|payment received|receipt for your payment|paid to|you paid)\b/i],
+    ['generic_invoice', /\b(invoice|bill available|statement ready)\b/i],
+    ['generic_subscription', /\b(subscription|renewal|membership renewal|plan renewal)\b/i],
+    ['generic_trip', /\b(trip receipt|ride receipt|your trip|your ride|thanks for riding|stay receipt|booking confirmation|reservation confirmed)\b/i],
+    ['generic_marketing', /\b(deal|promotion|recommended|save on|weekly deals|sale|special offer)\b/i],
+  ];
+  for (const [key, pattern] of genericPatterns) {
+    if (pattern.test(normalized)) return key;
+  }
+
+  const leadingToken = normalized.match(/^([A-Za-z][A-Za-z0-9 '&/-]{1,30}:)/);
+  if (leadingToken) return leadingToken[1].toLowerCase();
+
+  const tokenized = lower
+    .replace(/\b\d{1,4}[/-]\d{1,4}([/-]\d{2,4})?\b/g, ' * ')
+    .replace(/\b\d+\b/g, ' * ')
+    .replace(/\b[a-f0-9]{8,}\b/gi, ' * ')
+    .replace(/\b(order|invoice|receipt|payment|refund|return|trip|booking|reservation)\s+#?[a-z0-9-]+\b/gi, '$1 *')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return tokenized.slice(0, 64) || 'unknown_subject';
+}
+
 function toRate(numerator, denominator) {
   if (!denominator) return 0;
   return Number((numerator / denominator).toFixed(4));
@@ -126,6 +172,127 @@ function frequentDismissReason(senderQuality = {}) {
     ? senderQuality.top_dismiss_reasons
     : [];
   return topReasons.find((entry) => Number(entry?.count || 0) >= 2)?.reason || null;
+}
+
+function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
+  const senderDomain = extractSenderDomain(fromAddress);
+  const subjectPattern = extractSubjectPattern(subject, fromAddress);
+  const templateRows = rows.filter((row) =>
+    extractSenderDomain(row.from_address) === senderDomain
+    && extractSubjectPattern(row.subject, row.from_address) === subjectPattern
+  );
+
+  const imported = templateRows.length;
+  let cleanApproved = 0;
+  let dismissed = 0;
+  let edited = 0;
+
+  for (const row of templateRows) {
+    const editCount = Number(row.review_edit_count || 0);
+    if (row.review_action === 'approved' && editCount === 0) cleanApproved += 1;
+    if (row.review_action === 'dismissed') dismissed += 1;
+    if (editCount > 0) edited += 1;
+  }
+
+  const learnedDisposition = inferTemplateDisposition(subjectPattern, imported, cleanApproved, dismissed);
+
+  return {
+    subject_pattern: subjectPattern,
+    imported,
+    clean_approved: cleanApproved,
+    dismissed,
+    edited,
+    clean_approval_rate: toRate(cleanApproved, imported),
+    dismissal_rate: toRate(dismissed, imported),
+    edit_rate: toRate(edited, imported),
+    learned_disposition: learnedDisposition,
+    force_import_review: learnedDisposition === 'transactional',
+    should_skip_prequeue: learnedDisposition === 'non_transactional',
+  };
+}
+
+function inferTemplateDisposition(subjectPattern = '', imported = 0, cleanApproved = 0, dismissed = 0) {
+  const baseline = {
+    amazon_order: 'transactional',
+    amazon_refund: 'transactional',
+    amazon_shipping: 'non_transactional',
+    amazon_marketing: 'non_transactional',
+    generic_order: 'transactional',
+    generic_receipt: 'transactional',
+    generic_refund: 'transactional',
+    generic_shipping: 'non_transactional',
+    generic_payment: 'transactional',
+    generic_invoice: 'transactional',
+    generic_subscription: 'transactional',
+    generic_trip: 'transactional',
+    generic_marketing: 'non_transactional',
+  }[subjectPattern] || 'unknown';
+
+  let learnedDisposition = baseline;
+  if (imported >= 2) {
+    const dismissalRate = toRate(dismissed, imported);
+    const cleanApprovalRate = toRate(cleanApproved, imported);
+    if (dismissalRate >= 0.5) learnedDisposition = 'non_transactional';
+    else if (cleanApprovalRate >= 0.5) learnedDisposition = 'transactional';
+  }
+  return learnedDisposition;
+}
+
+function buildTemplateSummary(rows = [], limit = 8) {
+  const grouped = new Map();
+
+  for (const row of rows) {
+    const senderDomain = extractSenderDomain(row.from_address);
+    const subjectPattern = extractSubjectPattern(row.subject, row.from_address);
+    const key = `${senderDomain}::${subjectPattern}`;
+    const current = grouped.get(key) || {
+      sender_domain: senderDomain,
+      subject_pattern: subjectPattern,
+      total: 0,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      approved: 0,
+      dismissed: 0,
+      edited: 0,
+      top_skip_reasons: new Map(),
+    };
+
+    current.total += 1;
+    if (row.status === 'imported') current.imported += 1;
+    if (row.status === 'skipped') current.skipped += 1;
+    if (row.status === 'failed') current.failed += 1;
+    if (row.review_action === 'approved') current.approved += 1;
+    if (row.review_action === 'dismissed') current.dismissed += 1;
+    if (Number(row.review_edit_count || 0) > 0) current.edited += 1;
+    if (row.status === 'skipped' && row.skip_reason) {
+      current.top_skip_reasons.set(row.skip_reason, (current.top_skip_reasons.get(row.skip_reason) || 0) + 1);
+    }
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()]
+    .map((entry) => ({
+      sender_domain: entry.sender_domain,
+      subject_pattern: entry.subject_pattern,
+      total: entry.total,
+      imported: entry.imported,
+      skipped: entry.skipped,
+      failed: entry.failed,
+      approved: entry.approved,
+      dismissed: entry.dismissed,
+      edited: entry.edited,
+      learned_disposition: inferTemplateDisposition(entry.subject_pattern, entry.imported, entry.approved, entry.dismissed),
+      top_skip_reasons: [...entry.top_skip_reasons.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 2)
+        .map(([reason, count]) => ({ reason, count })),
+    }))
+    .sort((a, b) =>
+      b.total - a.total
+      || b.skipped - a.skipped
+      || a.subject_pattern.localeCompare(b.subject_pattern))
+    .slice(0, Math.max(1, Math.min(Number(limit) || 8, 20)));
 }
 
 function recommendReviewMode(senderQuality = {}) {
@@ -382,10 +549,11 @@ function buildQualityDebug(rows, senderLimit = 5) {
 }
 
 async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) {
-  const [summary, rows, feedbackRows] = await Promise.all([
+  const [summary, rows, feedbackRows, templateRows] = await Promise.all([
     EmailImportLog.summarizeByUser(userId, days),
     EmailImportLog.listQualitySignalsByUser(userId, days),
     EmailImportLog.listDecisionFeedbackByUser(userId, days),
+    EmailImportLog.listTemplateSignalsByUser(userId, days),
   ]);
   const senderPreferences = await GmailSenderPreference.listByUser(userId);
   const preferenceMap = new Map(senderPreferences.map((pref) => [pref.sender_domain, pref]));
@@ -426,17 +594,29 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
       edit_rate: toRate(edited, imported),
       sender_quality: senderQuality,
     },
-    debug: buildQualityDebug(rows, senderLimit),
+    debug: {
+      ...buildQualityDebug(rows, senderLimit),
+      top_templates: buildTemplateSummary(templateRows, 8),
+    },
     sender_preferences: senderPreferences,
   };
 }
 
 async function getSenderImportQuality(userId, fromAddress, days = 90) {
+  let subject = '';
+  let safeDays = days;
+  if (typeof days === 'string' && arguments.length >= 3) {
+    subject = days;
+    safeDays = arguments[3] || 90;
+  } else if (typeof arguments[2] === 'string') {
+    subject = arguments[2];
+    safeDays = arguments[3] || 90;
+  }
   const senderDomain = extractSenderDomain(fromAddress);
   const senderPreference = await GmailSenderPreference.findByUserAndDomain(userId, senderDomain);
   const [rows, feedbackRows] = await Promise.all([
-    EmailImportLog.listQualitySignalsByUser(userId, days),
-    EmailImportLog.listDecisionFeedbackByUser(userId, days),
+    EmailImportLog.listQualitySignalsByUser(userId, safeDays),
+    EmailImportLog.listDecisionFeedbackByUser(userId, safeDays),
   ]);
   const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
   const senderFeedbackSummary = summarizeSenderFeedback(
@@ -451,6 +631,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const review_paths = senderSummary.review_paths || [];
   const review_path_reliability = senderSummary.review_path_reliability || summarizeReviewPathReliability([], metrics);
   const item_reliability = summarizeItemReliability(senderRows);
+  const template_quality = summarizeTemplateRows(rows, fromAddress, subject);
 
   return {
     sender_domain: senderDomain,
@@ -460,6 +641,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
     review_paths,
     review_path_reliability,
     item_reliability,
+    template_quality,
     sender_preference: senderPreference
       ? { force_review: !!senderPreference.force_review }
       : { force_review: false },
@@ -469,6 +651,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
 module.exports = {
   getGmailImportQualitySummary,
   extractSenderDomain,
+  extractSubjectPattern,
   getSenderImportQuality,
   classifySenderMetrics,
   frequentDismissReason,

@@ -2,6 +2,7 @@ jest.mock('../../src/models/emailImportLog', () => ({
   summarizeByUser: jest.fn(),
   listQualitySignalsByUser: jest.fn(),
   listDecisionFeedbackByUser: jest.fn(),
+  listTemplateSignalsByUser: jest.fn(),
 }));
 jest.mock('../../src/models/gmailSenderPreference', () => ({
   findByUserAndDomain: jest.fn(),
@@ -13,6 +14,7 @@ const GmailSenderPreference = require('../../src/models/gmailSenderPreference');
 const {
   getGmailImportQualitySummary,
   extractSenderDomain,
+  extractSubjectPattern,
   getSenderImportQuality,
   frequentDismissReason,
   recommendReviewMode,
@@ -23,16 +25,31 @@ describe('gmailImportQualityService', () => {
     EmailImportLog.summarizeByUser.mockReset();
     EmailImportLog.listQualitySignalsByUser.mockReset();
     EmailImportLog.listDecisionFeedbackByUser.mockReset();
+    EmailImportLog.listTemplateSignalsByUser.mockReset();
     GmailSenderPreference.findByUserAndDomain.mockReset();
     GmailSenderPreference.listByUser.mockReset();
     GmailSenderPreference.findByUserAndDomain.mockResolvedValue(null);
     GmailSenderPreference.listByUser.mockResolvedValue([]);
     EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([]);
+    EmailImportLog.listTemplateSignalsByUser.mockResolvedValue([]);
   });
 
   it('extracts sender domains from from-address strings', () => {
     expect(extractSenderDomain('Amazon Orders <orders@amazon.com>')).toBe('amazon.com');
     expect(extractSenderDomain('no-email-here')).toBe('unknown');
+  });
+
+  it('normalizes high-signal subject templates for amazon emails', () => {
+    expect(extractSubjectPattern('ORDER: Placed on April 10', 'Amazon Orders <orders@amazon.com>')).toBe('amazon_order');
+    expect(extractSubjectPattern('Your package has shipped', 'shipment-tracking@amazon.com')).toBe('amazon_shipping');
+    expect(extractSubjectPattern('Refund processed for your return', 'orders@amazon.com')).toBe('amazon_refund');
+  });
+
+  it('generalizes common subject families across non-amazon senders', () => {
+    expect(extractSubjectPattern('Receipt for your payment to Heather', 'service@paypal.com')).toBe('generic_receipt');
+    expect(extractSubjectPattern('Your package has shipped', 'updates@shop.com')).toBe('generic_shipping');
+    expect(extractSubjectPattern('Trip receipt from Uber', 'uber.us@uber.com')).toBe('generic_receipt');
+    expect(extractSubjectPattern('Invoice #4821 from Notion', 'team-billing@notion.so')).toBe('generic_invoice');
   });
 
   it('builds quality metrics and sender summaries', async () => {
@@ -76,6 +93,10 @@ describe('gmailImportQualityService', () => {
         review_edit_count: 1,
         review_changed_fields: ['amount', 'date'],
       },
+    ]);
+    EmailImportLog.listTemplateSignalsByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', subject: 'ORDER: First', status: 'imported', review_action: 'approved', review_edit_count: 0, skip_reason: null },
+      { from_address: 'receipts@target.com', subject: 'Your package has shipped', status: 'skipped', review_action: null, review_edit_count: 0, skip_reason: 'template_skip_generic_shipping' },
     ]);
 
     const summary = await getGmailImportQualitySummary('user-1', 30, 5);
@@ -138,23 +159,37 @@ describe('gmailImportQualityService', () => {
         ]),
       }),
     ]));
+    expect(summary.debug.top_templates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sender_domain: 'amazon.com',
+        subject_pattern: 'amazon_order',
+      }),
+      expect.objectContaining({
+        sender_domain: 'target.com',
+        subject_pattern: 'generic_shipping',
+      }),
+    ]));
   });
 
   it('classifies sender domains as trusted or noisy based on review history', async () => {
     EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant'] },
+      { from_address: 'orders@amazon.com', subject: 'ORDER: First', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'orders@amazon.com', subject: 'ORDER: Second', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'orders@amazon.com', subject: 'ORDER: Third', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant'] },
       { from_address: 'alerts@messy.com', review_action: 'dismissed', review_edit_count: 0 },
       { from_address: 'alerts@messy.com', review_action: null, review_edit_count: 1 },
       { from_address: 'alerts@messy.com', review_action: null, review_edit_count: 1 },
     ]);
 
-    await expect(getSenderImportQuality('user-1', 'orders@amazon.com')).resolves.toMatchObject({
+    await expect(getSenderImportQuality('user-1', 'orders@amazon.com', 'ORDER: Latest')).resolves.toMatchObject({
       sender_domain: 'amazon.com',
       level: 'trusted',
       metrics: expect.objectContaining({ imported: 3 }),
       item_reliability: expect.objectContaining({ level: 'trusted' }),
+      template_quality: expect.objectContaining({
+        subject_pattern: 'amazon_order',
+        force_import_review: true,
+      }),
     });
 
     await expect(getSenderImportQuality('user-1', 'alerts@messy.com')).resolves.toMatchObject({
@@ -186,14 +221,46 @@ describe('gmailImportQualityService', () => {
     });
   });
 
-  it('tracks quick-check approvals separately from changed fields', async () => {
+  it('learns a transactional template outside amazon from repeated approvals', async () => {
     EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
-      { from_address: 'orders@amazon.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant', 'review_path_full_review'] },
+      { from_address: 'payments@service.com', subject: 'Receipt for your payment to Heather', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'payments@service.com', subject: 'Receipt for your payment to John', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
+      { from_address: 'payments@service.com', subject: 'Receipt for your payment to Kelly', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant'] },
     ]);
 
-    await expect(getSenderImportQuality('user-1', 'orders@amazon.com')).resolves.toMatchObject({
+    await expect(getSenderImportQuality('user-1', 'payments@service.com', 'Receipt for your payment to Mason')).resolves.toMatchObject({
+      template_quality: expect.objectContaining({
+        subject_pattern: 'generic_receipt',
+        learned_disposition: 'transactional',
+        force_import_review: true,
+      }),
+    });
+  });
+
+  it('learns a non-transactional template outside amazon from repeated dismissals', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'updates@shop.com', subject: 'Your package has shipped', review_action: 'dismissed', review_edit_count: 0, review_changed_fields: ['dismiss_reason_not_an_expense'] },
+      { from_address: 'updates@shop.com', subject: 'Your package has shipped', review_action: 'dismissed', review_edit_count: 0, review_changed_fields: ['dismiss_reason_not_an_expense'] },
+      { from_address: 'updates@shop.com', subject: 'Your package has shipped', review_action: null, review_edit_count: 0, review_changed_fields: [] },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'updates@shop.com', 'Your package has shipped')).resolves.toMatchObject({
+      template_quality: expect.objectContaining({
+        subject_pattern: 'generic_shipping',
+        learned_disposition: 'non_transactional',
+        should_skip_prequeue: true,
+      }),
+    });
+  });
+
+  it('tracks quick-check approvals separately from changed fields', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@amazon.com', subject: 'ORDER: First', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', subject: 'ORDER: Second', review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { from_address: 'orders@amazon.com', subject: 'ORDER: Third', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['merchant', 'review_path_full_review'] },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'orders@amazon.com', 'ORDER: Fourth')).resolves.toMatchObject({
       sender_domain: 'amazon.com',
       top_changed_fields: expect.arrayContaining([
         expect.objectContaining({ field: 'merchant', count: 1 }),
@@ -205,6 +272,9 @@ describe('gmailImportQualityService', () => {
       review_path_reliability: expect.objectContaining({
         fast_lane_eligible: true,
         quick_check_count: 2,
+      }),
+      template_quality: expect.objectContaining({
+        subject_pattern: 'amazon_order',
       }),
     });
   });

@@ -4,9 +4,13 @@ describe('gmailClient helpers', () => {
   it('broadens the Gmail search query beyond basic receipt subjects', () => {
     expect(GMAIL_SEARCH_QUERY).toContain('invoice');
     expect(GMAIL_SEARCH_QUERY).toContain('renewal');
-    expect(GMAIL_SEARCH_QUERY).toContain('from:(amazon.com)');
+    expect(GMAIL_SEARCH_QUERY).toContain('subject:"ORDER:"');
+    expect(GMAIL_SEARCH_QUERY).toContain('"ride receipt"');
+    expect(GMAIL_SEARCH_QUERY).toContain('from:(uber.com)');
+    expect(GMAIL_SEARCH_QUERY).toContain('from:(lyftmail.com)');
     expect(GMAIL_SEARCH_QUERY).toContain('from:(auto-confirm@amazon.com)');
-    expect(GMAIL_SEARCH_QUERY).not.toContain('-category:promotions');
+    expect(GMAIL_SEARCH_QUERY).toContain('-category:promotions');
+    expect(GMAIL_SEARCH_QUERY).toContain('-category:social');
   });
 
   it('turns transactional HTML into readable text', () => {

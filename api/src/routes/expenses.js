@@ -31,6 +31,19 @@ async function getUser(req) {
   return User.findByProviderUid(req.userId);
 }
 
+function canViewExpense(user, expense) {
+  if (!user || !expense) return false;
+  if (expense.user_id === user.id) return true;
+  const inSameHousehold = !!(user.household_id && expense.household_id === user.household_id);
+  if (!inSameHousehold) return false;
+  return expense.is_private !== true;
+}
+
+function canDeleteExpense(user, expense) {
+  if (!user || !expense) return false;
+  return expense.user_id === user.id;
+}
+
 function collectChangedFields(originalExpense, patch = {}) {
   const changedFields = [];
   const fieldPairs = [
@@ -885,9 +898,7 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
-    const ownedByUser = expense.user_id === user?.id;
-    const ownedByHousehold = user?.household_id && expense.household_id === user.household_id;
-    if (!ownedByUser && !ownedByHousehold) return res.status(404).json({ error: 'Expense not found' });
+    if (!canDeleteExpense(user, expense)) return res.status(404).json({ error: 'Expense not found' });
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
@@ -897,8 +908,8 @@ router.delete('/:id', authenticate, async (req, res, next) => {
       await client.query(`DELETE FROM expense_items WHERE expense_id = $1`, [req.params.id]);
       await client.query(`DELETE FROM recurring_preferences WHERE expense_id = $1`, [req.params.id]);
       await client.query(
-        `DELETE FROM expenses WHERE id = $1 AND (user_id = $2 OR household_id = $3)`,
-        [req.params.id, user.id, user.household_id || null]
+        `DELETE FROM expenses WHERE id = $1 AND user_id = $2`,
+        [req.params.id, user.id]
       );
       await client.query('COMMIT');
     } catch (err) {
@@ -917,10 +928,7 @@ router.get('/:id', async (req, res, next) => {
     const user = await getUser(req);
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
-    // Scope to user's household or own expenses
-    const ownedByUser = expense.user_id === user?.id;
-    const inHousehold = user?.household_id && expense.household_id === user.household_id;
-    if (!ownedByUser && !inHousehold) return res.status(404).json({ error: 'Expense not found' });
+    if (!canViewExpense(user, expense)) return res.status(404).json({ error: 'Expense not found' });
     res.json(await attachExpenseReviewContext(expense, user.id, { includeItems: true }));
   } catch (err) { next(err); }
 });

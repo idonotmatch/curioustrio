@@ -39,8 +39,9 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
         const user = await User.findById(userId);
         if (!user) continue;
 
+        await OAuthToken.markSyncAttempt(userId, { source: 'scheduler' });
         const { imported, skipped, failed } = await importForUser(user);
-        await OAuthToken.markSynced(userId);
+        await OAuthToken.markSynced(userId, { source: 'scheduler' });
         totalImported += imported;
         totalSkipped += skipped;
         totalFailed += failed;
@@ -49,6 +50,10 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
         console.log(`[cron/gmail-sync] user=${userId} imported=${imported} skipped=${skipped} failed=${failed}`);
       } catch (e) {
         // Expired token or other per-user error — log and continue
+        await OAuthToken.markSyncFailure(userId, {
+          source: 'scheduler',
+          error: e?.message ? `${e.message}`.slice(0, 500) : 'Unknown Gmail sync error',
+        });
         console.error(`[cron/gmail-sync] user=${userId} error:`, e.message);
       }
     }

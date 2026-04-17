@@ -14,6 +14,14 @@ async function getUser(req) {
   return User.findByProviderUid(req.userId);
 }
 
+function requireHousehold(user, res) {
+  if (!user?.household_id) {
+    res.status(403).json({ error: 'Must be in a household' });
+    return false;
+  }
+  return true;
+}
+
 function normalizeText(value = '') {
   return value.toLowerCase().replace(/[^a-z0-9\s&]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -169,7 +177,7 @@ router.get('/quick-parent-suggestion', async (req, res, next) => {
     const description = (req.query.description || '').trim();
     if (!name) return res.status(400).json({ error: 'name required' });
     const user = await getUser(req);
-    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    if (!requireHousehold(user, res)) return;
 
     const { parent, source } = await suggestQuickCreateParent({
       householdId: user.household_id,
@@ -191,7 +199,7 @@ router.post('/quick', async (req, res, next) => {
     const { name, merchant, description, preferred_parent_id } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     const user = await getUser(req);
-    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    if (!requireHousehold(user, res)) return;
 
     const { parent, source } = await suggestQuickCreateParent({
       householdId: user.household_id,
@@ -220,8 +228,9 @@ router.post('/', async (req, res, next) => {
     const { name, icon, color, parent_id } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     const user = await getUser(req);
+    if (!requireHousehold(user, res)) return;
     const category = await Category.create({
-      householdId: user?.household_id,
+      householdId: user.household_id,
       name,
       icon,
       color,
@@ -242,17 +251,18 @@ router.patch('/:id', async (req, res, next) => {
     const parentId = 'parent_id' in req.body ? req.body.parent_id : undefined;
     const sortOrder = 'sort_order' in req.body ? req.body.sort_order : undefined;
     const user = await getUser(req);
-    const existing = await Category.findAccessibleById(req.params.id, user?.household_id);
+    if (!requireHousehold(user, res)) return;
+    const existing = await Category.findAccessibleById(req.params.id, user.household_id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    if (user?.household_id && existing.is_default) {
+    if (existing.is_default) {
       if (parentId !== undefined || icon !== undefined || color !== undefined || sortOrder !== undefined) {
         return res.status(400).json({ error: 'Default categories can only be renamed for your household' });
       }
       if (!name) return res.status(400).json({ error: 'name required' });
       const category = await Category.renameDefaultForHousehold({
         id: req.params.id,
-        householdId: user?.household_id,
+        householdId: user.household_id,
         displayName: name,
       });
       return res.json(category);
@@ -261,17 +271,16 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'A category cannot be its own parent' });
     }
     if (parentId) {
-      const user2 = await getUser(req);
       const parentCat = await db.query(
         'SELECT parent_id FROM categories WHERE id = $1 AND (household_id = $2 OR household_id IS NULL)',
-        [parentId, user2?.household_id]
+        [parentId, user.household_id]
       );
       if (!parentCat.rows.length) return res.status(404).json({ error: 'Parent category not found' });
       if (parentCat.rows[0].parent_id) return res.status(400).json({ error: 'Cannot use a child category as a parent' });
     }
     const category = await Category.update({
       id: req.params.id,
-      householdId: user?.household_id,
+      householdId: user.household_id,
       name,
       icon,
       color,
@@ -288,7 +297,7 @@ router.post('/:id/merge', async (req, res, next) => {
     const { target_category_id } = req.body;
     if (!target_category_id) return res.status(400).json({ error: 'target_category_id required' });
     const user = await getUser(req);
-    if (!user?.household_id) return res.status(403).json({ error: 'No household' });
+    if (!requireHousehold(user, res)) return;
     const result = await Category.merge({
       sourceId: req.params.id,
       targetId: target_category_id,
@@ -305,7 +314,8 @@ router.post('/:id/merge', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     const user = await getUser(req);
-    const result = await Category.remove({ id: req.params.id, householdId: user?.household_id });
+    if (!requireHousehold(user, res)) return;
+    const result = await Category.remove({ id: req.params.id, householdId: user.household_id });
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.status(204).send();
   } catch (err) { next(err); }
@@ -314,10 +324,11 @@ router.delete('/:id', async (req, res, next) => {
 router.post('/:id/restore', async (req, res, next) => {
   try {
     const user = await getUser(req);
-    const category = await Category.findAccessibleById(req.params.id, user?.household_id);
+    if (!requireHousehold(user, res)) return;
+    const category = await Category.findAccessibleById(req.params.id, user.household_id);
     if (!category || !category.is_default) return res.status(404).json({ error: 'Not found' });
-    await Category.restoreDefault({ id: req.params.id, householdId: user?.household_id });
-    const restored = await Category.findByHousehold(user?.household_id, { includeHidden: true });
+    await Category.restoreDefault({ id: req.params.id, householdId: user.household_id });
+    const restored = await Category.findByHousehold(user.household_id, { includeHidden: true });
     res.json(restored.find(c => c.id === req.params.id) || null);
   } catch (err) { next(err); }
 });

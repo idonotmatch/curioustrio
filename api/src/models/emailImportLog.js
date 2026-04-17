@@ -202,6 +202,102 @@ async function listByUser(userId, limit = 100) {
   }
 }
 
+async function findByIdForUser(id, userId) {
+  try {
+    const result = await db.query(
+      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
+              l.user_feedback, l.user_feedback_at,
+              f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
+              e.status AS expense_status,
+              e.notes,
+              e.review_required,
+              e.review_mode,
+              e.review_source
+       FROM email_import_log l
+       LEFT JOIN expenses e ON e.id = l.expense_id
+       LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
+       WHERE l.id = $1
+         AND l.user_id = $2
+       LIMIT 1`,
+      [id, userId]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              NULL::text AS snippet,
+              l.user_feedback, l.user_feedback_at,
+              NULL::timestamptz AS reviewed_at,
+              NULL::text AS review_action,
+              '[]'::jsonb AS review_changed_fields,
+              0::int AS review_edit_count,
+              e.status AS expense_status,
+              e.notes,
+              FALSE AS review_required,
+              NULL::text AS review_mode,
+              NULL::text AS review_source
+       FROM email_import_log l
+       LEFT JOIN expenses e ON e.id = l.expense_id
+       WHERE l.id = $1
+         AND l.user_id = $2
+       LIMIT 1`,
+      [id, userId]
+    );
+    return fallback.rows[0] || null;
+  }
+}
+
+async function listFailedByUser(userId, limit = 25) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+  const result = await db.query(
+    `SELECT id, user_id, message_id, expense_id, status, subject, from_address, skip_reason, imported_at
+     FROM email_import_log
+     WHERE user_id = $1
+       AND status = 'failed'
+     ORDER BY imported_at DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+  return result.rows;
+}
+
+async function upsertResult({ userId, messageId, expenseId = null, status = 'imported', subject, fromAddress, skipReason, snippet }) {
+  try {
+    const result = await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (user_id, message_id) DO UPDATE SET
+         expense_id = EXCLUDED.expense_id,
+         status = EXCLUDED.status,
+         subject = EXCLUDED.subject,
+         from_address = EXCLUDED.from_address,
+         skip_reason = EXCLUDED.skip_reason,
+         snippet = EXCLUDED.snippet,
+         imported_at = NOW()
+       RETURNING *`,
+      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, snippet || null]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingSnippetError(err)) throw err;
+    const fallback = await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (user_id, message_id) DO UPDATE SET
+         expense_id = EXCLUDED.expense_id,
+         status = EXCLUDED.status,
+         subject = EXCLUDED.subject,
+         from_address = EXCLUDED.from_address,
+         skip_reason = EXCLUDED.skip_reason,
+         imported_at = NOW()
+       RETURNING *`,
+      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null]
+    );
+    return fallback.rows[0] || null;
+  }
+}
+
 async function recordLogFeedback(logId, userId, feedback) {
   const cleanFeedback = `${feedback || ''}`.trim();
   const allowed = new Set(['should_have_imported', 'didnt_need_review', 'needed_more_review']);
@@ -455,14 +551,59 @@ async function listDecisionFeedbackByUser(userId, days = 30) {
   return result.rows;
 }
 
+async function listTemplateSignalsByUser(userId, days = 30) {
+  const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
+  try {
+    const result = await db.query(
+      `SELECT l.subject,
+              l.from_address,
+              l.status,
+              l.skip_reason,
+              l.imported_at,
+              f.review_action,
+              f.review_changed_fields,
+              f.review_edit_count
+       FROM email_import_log l
+       LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
+       WHERE l.user_id = $1
+         AND l.imported_at >= NOW() - ($2::text || ' days')::interval
+       ORDER BY l.imported_at DESC`,
+      [userId, safeDays]
+    );
+    return result.rows;
+  } catch (err) {
+    if (!isMissingFeedbackTableError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT l.subject,
+              l.from_address,
+              l.status,
+              l.skip_reason,
+              l.imported_at,
+              NULL::text AS review_action,
+              '[]'::jsonb AS review_changed_fields,
+              0::int AS review_edit_count
+       FROM email_import_log l
+       WHERE l.user_id = $1
+         AND l.imported_at >= NOW() - ($2::text || ' days')::interval
+       ORDER BY l.imported_at DESC`,
+      [userId, safeDays]
+    );
+    return fallback.rows;
+  }
+}
+
 module.exports = {
   create,
   findByExpenseId,
   recordReviewFeedback,
+  findByIdForUser,
   findByMessageId,
   listByUser,
+  listFailedByUser,
   recordLogFeedback,
   summarizeByUser,
   listQualitySignalsByUser,
   listDecisionFeedbackByUser,
+  listTemplateSignalsByUser,
+  upsertResult,
 };

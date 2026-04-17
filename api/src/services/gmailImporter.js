@@ -30,7 +30,11 @@ function guessMerchant(subject = '', fromAddress = '') {
   return subjectMatch ? subjectMatch[1].trim() : 'Email import';
 }
 
-function findLikelyAmount(body = '') {
+function findLikelyAmount(...parts) {
+  const body = parts
+    .filter(Boolean)
+    .map((part) => `${part}`)
+    .join('\n');
   const patterns = [
     /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund total)[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
     /\btotal\b[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
@@ -42,6 +46,28 @@ function findLikelyAmount(body = '') {
   const allMoney = [...body.matchAll(/\$\s?(-?\d+(?:\.\d{2})?)/g)];
   if (allMoney.length > 0) return Number(allMoney[allMoney.length - 1][1]);
   return null;
+}
+
+function hasValidParsedAmount(parsed) {
+  return Number.isFinite(Number(parsed?.amount)) && Number(parsed.amount) !== 0;
+}
+
+function createOutcomes() {
+  return {
+    imported_parsed: 0,
+    imported_pending_review: 0,
+    imported_auto_confirmed: 0,
+    imported_fast_lane: 0,
+    imported_items_first: 0,
+    imported_full_review: 0,
+    skipped_existing: 0,
+    skipped_reasons: {},
+    failed_reasons: {},
+  };
+}
+
+function increment(bucket, key) {
+  bucket[key] = (bucket[key] || 0) + 1;
 }
 
 function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'needs review' }) {
@@ -97,6 +123,214 @@ async function resolveEmailLocation({ merchant = '', subject = '', from = '', bo
   }
 }
 
+async function processMessageImport(user, msgId, {
+  categories,
+  todayDate,
+  allowExistingRetry = false,
+  existingLog = null,
+  outcomes = createOutcomes(),
+} = {}) {
+  if (!allowExistingRetry) {
+    const existing = existingLog || await EmailImportLog.findByMessageId(user.id, msgId);
+    if (existing) {
+      outcomes.skipped_existing++;
+      return { imported: 0, skipped: 1, failed: 0, reason: 'existing' };
+    }
+  }
+
+  let msgSubject, msgFrom, msgSnippet;
+  try {
+    const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msgId);
+    msgSubject = subject;
+    msgFrom = from;
+    msgSnippet = snippet;
+    const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
+    const senderQuality = await getSenderImportQuality(user.id, from, subject);
+    const reviewMode = recommendReviewMode(senderQuality);
+    const softenSkipBehavior = shouldSoftenSkipBehavior(senderQuality);
+    const templateQuality = senderQuality?.template_quality || {};
+    const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
+    const signals = analyzeEmailSignals(subject, from, body);
+
+    if (
+      templateQuality.should_skip_prequeue
+      && !signals.shouldSurfaceToReview
+      && !signals.strongMoneySignal
+      && !signals.mediumMoneySignal
+    ) {
+      const skipReason = `template_skip_${templateQuality.subject_pattern || 'non_transactional'}`;
+      await EmailImportLog.upsertResult({
+        userId: user.id, messageId: msgId, status: 'skipped',
+        subject, fromAddress: from, skipReason, snippet,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+    }
+
+    if (classification.disposition === 'not_expense') {
+      if (signals.shouldSurfaceToReview || softenSkipBehavior || templateQuality.force_import_review) {
+        classification.disposition = 'uncertain';
+      } else {
+        const skipReason = classification.reason || 'classifier_not_expense';
+        await EmailImportLog.upsertResult({
+          userId: user.id, messageId: msgId, status: 'skipped',
+          subject, fromAddress: from, skipReason, snippet,
+        });
+        increment(outcomes.skipped_reasons, skipReason);
+        return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+      }
+    }
+
+    let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
+    let importedAsPendingReview = false;
+    const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
+
+    if (!parsed || !hasValidParsedAmount(parsed)) {
+      const fallbackAmount = findLikelyAmount(subject, snippet, body);
+      if (!fallbackAmount) {
+        const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';
+        await EmailImportLog.upsertResult({
+          userId: user.id, messageId: msgId, status: 'skipped',
+          subject, fromAddress: from, skipReason, snippet,
+        });
+        increment(outcomes.skipped_reasons, skipReason);
+        return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+      }
+      if (senderQuality.level === 'noisy' && !softenSkipBehavior) {
+        const skipReason = 'low_sender_quality';
+        await EmailImportLog.upsertResult({
+          userId: user.id, messageId: msgId, status: 'skipped',
+          subject, fromAddress: from, skipReason, snippet,
+        });
+        increment(outcomes.skipped_reasons, skipReason);
+        return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+      }
+      parsed = {
+        ...parsed,
+        merchant: parsed?.merchant || classification.merchant || guessMerchant(subject, from),
+        amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
+        date: clampExpenseDate(parsed?.date, maxExpenseDate),
+        notes: parsed?.notes || buildReviewNotes({ subject, snippet, body, reason: 'needs review' }),
+        items: Array.isArray(parsed?.items) ? parsed.items : null,
+      };
+      importedAsPendingReview = true;
+    }
+
+    parsed.date = clampExpenseDate(parsed.date, maxExpenseDate);
+    if (!hasValidParsedAmount(parsed)) {
+      const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';
+      await EmailImportLog.upsertResult({
+        userId: user.id, messageId: msgId, status: 'skipped',
+        subject, fromAddress: from, skipReason, snippet,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+    }
+    if (!parsed.notes || /needs review/i.test(parsed.notes)) {
+      parsed.notes = buildReviewNotes({
+        subject,
+        snippet,
+        body,
+        reason: importedAsPendingReview ? 'needs review' : 'imported from gmail',
+      });
+    }
+    if (senderQuality.level === 'noisy' && !/needs review/i.test(parsed.notes || '')) {
+      parsed.notes = buildReviewNotes({ subject, snippet, body, reason: 'needs review' });
+      importedAsPendingReview = true;
+    }
+
+    const duplicateCandidates = await Expense.findPotentialDuplicates({
+      householdId: user.household_id,
+      merchant: parsed.merchant,
+      amount: parsed.amount,
+      date: parsed.date,
+    });
+    if (duplicateCandidates.length > 0) {
+      await EmailImportLog.upsertResult({
+        userId: user.id,
+        messageId: msgId,
+        status: 'skipped',
+        subject,
+        fromAddress: from,
+        skipReason: 'duplicate_expense',
+        snippet,
+      });
+      increment(outcomes.skipped_reasons, 'duplicate_expense');
+      return { imported: 0, skipped: 1, failed: 0, reason: 'duplicate_expense' };
+    }
+
+    const { category_id } = await assignCategory({
+      merchant: parsed.merchant,
+      householdId: user.household_id,
+      categories,
+    });
+    const { location } = await resolveEmailLocation({ merchant: parsed.merchant, subject, from, body });
+    const expense = await Expense.create({
+      userId: user.id,
+      householdId: user.household_id,
+      merchant: parsed.merchant,
+      amount: parsed.amount,
+      date: parsed.date,
+      categoryId: category_id,
+      source: 'email',
+      status: 'pending',
+      notes: parsed.notes,
+      placeName: location?.place_name || null,
+      address: location?.address || null,
+      mapkitStableId: location?.mapkit_stable_id || null,
+      paymentMethod: parsed.payment_method || 'unknown',
+      cardLast4: parsed.card_last4 || null,
+      cardLabel: parsed.card_label || null,
+      reviewRequired: true,
+      reviewMode: reviewMode || null,
+      reviewSource: 'gmail',
+    });
+
+    if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+      const itemsWithProducts = await Promise.all(
+        parsed.items.filter(it => it.description).map(async (item) => {
+          const resolution = await resolveProductMatch(item, parsed.merchant);
+          return {
+            ...item,
+            product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
+            product_match_confidence: resolution?.confidence || null,
+            product_match_reason: resolution?.reason || null,
+          };
+        })
+      );
+      await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
+    }
+
+    await EmailImportLog.upsertResult({
+      userId: user.id,
+      messageId: msgId,
+      expenseId: expense.id,
+      status: 'imported',
+      subject: msgSubject,
+      fromAddress: msgFrom,
+      snippet: msgSnippet,
+    });
+
+    if (reviewMode === 'quick_check') {
+      outcomes.imported_fast_lane++;
+    } else if (reviewMode === 'items_first') {
+      outcomes.imported_items_first++;
+    } else {
+      outcomes.imported_full_review++;
+    }
+    outcomes.imported_pending_review++;
+    return { imported: 1, skipped: 0, failed: 0, expense };
+  } catch (e) {
+    console.error(`[gmail import] user=${user.id} msg=${msgId}:`, e.message);
+    increment(outcomes.failed_reasons, e.code || e.message || 'unknown_error');
+    await EmailImportLog.upsertResult({
+      userId: user.id, messageId: msgId, status: 'failed',
+      subject: msgSubject, fromAddress: msgFrom, skipReason: e.message, snippet: msgSnippet,
+    });
+    return { imported: 0, skipped: 0, failed: 1, error: e };
+  }
+}
+
 /**
  * Run a Gmail import for a single user.
  * Returns { imported, skipped, failed, outcomes }.
@@ -108,214 +342,13 @@ async function importForUser(user) {
   const todayDate = new Date().toISOString().split('T')[0];
 
   let imported = 0, skipped = 0, failed = 0;
-  const outcomes = {
-    imported_parsed: 0,
-    imported_pending_review: 0,
-    imported_auto_confirmed: 0,
-    imported_fast_lane: 0,
-    imported_items_first: 0,
-    imported_full_review: 0,
-    skipped_existing: 0,
-    skipped_reasons: {},
-    failed_reasons: {},
-  };
-
-  function increment(bucket, key) {
-    bucket[key] = (bucket[key] || 0) + 1;
-  }
+  const outcomes = createOutcomes();
 
   for (const msg of messages) {
-    const existing = await EmailImportLog.findByMessageId(user.id, msg.id);
-    if (existing) {
-      skipped++;
-      outcomes.skipped_existing++;
-      continue;
-    }
-
-    let msgSubject, msgFrom, msgSnippet;
-    try {
-      const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msg.id);
-      msgSubject = subject;
-      msgFrom = from;
-      msgSnippet = snippet;
-      const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
-      const senderQuality = await getSenderImportQuality(user.id, from);
-      const reviewMode = recommendReviewMode(senderQuality);
-      const softenSkipBehavior = shouldSoftenSkipBehavior(senderQuality);
-      const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
-      const signals = analyzeEmailSignals(subject, from, body);
-
-      if (classification.disposition === 'not_expense') {
-        if (signals.shouldSurfaceToReview || softenSkipBehavior) {
-          classification.disposition = 'uncertain';
-        } else {
-        const skipReason = classification.reason || 'classifier_not_expense';
-        await EmailImportLog.create({
-          userId: user.id, messageId: msg.id, status: 'skipped',
-          subject, fromAddress: from, skipReason, snippet,
-        });
-        skipped++;
-        increment(outcomes.skipped_reasons, skipReason);
-        continue;
-        }
-      }
-
-      let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
-      let importedAsPendingReview = false;
-      const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
-
-      if (!parsed) {
-        const fallbackAmount = findLikelyAmount(body);
-        if (!fallbackAmount) {
-          const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';
-          await EmailImportLog.create({
-            userId: user.id, messageId: msg.id, status: 'skipped',
-            subject, fromAddress: from, skipReason, snippet,
-          });
-          skipped++;
-          increment(outcomes.skipped_reasons, skipReason);
-          continue;
-        }
-        if (senderQuality.level === 'noisy' && !softenSkipBehavior) {
-          const skipReason = 'low_sender_quality';
-          await EmailImportLog.create({
-            userId: user.id, messageId: msg.id, status: 'skipped',
-            subject, fromAddress: from, skipReason, snippet,
-          });
-          skipped++;
-          increment(outcomes.skipped_reasons, skipReason);
-          continue;
-        }
-        const fallbackExpense = {
-          merchant: classification.merchant || guessMerchant(subject, from),
-          amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
-          date: maxExpenseDate,
-          notes: buildReviewNotes({
-            subject,
-            snippet,
-            body,
-            reason: 'needs review',
-          }),
-          items: null,
-        };
-        parsed = fallbackExpense;
-        importedAsPendingReview = true;
-      }
-
-      parsed.date = clampExpenseDate(parsed.date, maxExpenseDate);
-      if (!parsed.notes || /needs review/i.test(parsed.notes)) {
-        parsed.notes = buildReviewNotes({
-          subject,
-          snippet,
-          body,
-          reason: importedAsPendingReview ? 'needs review' : 'imported from gmail',
-        });
-      }
-      if (senderQuality.level === 'noisy' && !/needs review/i.test(parsed.notes || '')) {
-        parsed.notes = buildReviewNotes({
-          subject,
-          snippet,
-          body,
-          reason: 'needs review',
-        });
-        importedAsPendingReview = true;
-      }
-
-      const duplicateCandidates = await Expense.findPotentialDuplicates({
-        householdId: user.household_id,
-        merchant: parsed.merchant,
-        amount: parsed.amount,
-        date: parsed.date,
-      });
-      if (duplicateCandidates.length > 0) {
-        await EmailImportLog.create({
-          userId: user.id,
-          messageId: msg.id,
-          status: 'skipped',
-          subject,
-          fromAddress: from,
-          skipReason: 'duplicate_expense',
-          snippet,
-        });
-        skipped++;
-        increment(outcomes.skipped_reasons, 'duplicate_expense');
-        continue;
-      }
-
-      const { category_id } = await assignCategory({
-        merchant: parsed.merchant,
-        householdId: user.household_id,
-        categories,
-      });
-      const { location } = await resolveEmailLocation({
-        merchant: parsed.merchant,
-        subject,
-        from,
-        body,
-      });
-      const expense = await Expense.create({
-        userId: user.id,
-        householdId: user.household_id,
-        merchant: parsed.merchant,
-        amount: parsed.amount,
-        date: parsed.date,
-        categoryId: category_id,
-        source: 'email',
-        status: 'pending',
-        notes: parsed.notes,
-        placeName: location?.place_name || null,
-        address: location?.address || null,
-        mapkitStableId: location?.mapkit_stable_id || null,
-        paymentMethod: parsed.payment_method || 'unknown',
-        cardLast4: parsed.card_last4 || null,
-        cardLabel: parsed.card_label || null,
-        reviewRequired: true,
-        reviewMode: reviewMode || null,
-        reviewSource: 'gmail',
-      });
-
-      if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-        const itemsWithProducts = await Promise.all(
-          parsed.items.filter(it => it.description).map(async (item) => {
-            const resolution = await resolveProductMatch(item, parsed.merchant);
-            return {
-              ...item,
-              product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
-              product_match_confidence: resolution?.confidence || null,
-              product_match_reason: resolution?.reason || null,
-            };
-          })
-        );
-        await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
-      }
-
-      await EmailImportLog.create({
-        userId: user.id,
-        messageId: msg.id,
-        expenseId: expense.id,
-        status: 'imported',
-        subject: msgSubject,
-        fromAddress: msgFrom,
-        snippet: msgSnippet,
-      });
-      imported++;
-      if (reviewMode === 'quick_check') {
-        outcomes.imported_fast_lane++;
-      } else if (reviewMode === 'items_first') {
-        outcomes.imported_items_first++;
-      } else {
-        outcomes.imported_full_review++;
-      }
-      outcomes.imported_pending_review++;
-    } catch (e) {
-      console.error(`[gmail import] user=${user.id} msg=${msg.id}:`, e.message);
-      increment(outcomes.failed_reasons, e.code || e.message || 'unknown_error');
-      await EmailImportLog.create({
-        userId: user.id, messageId: msg.id, status: 'failed',
-        subject: msgSubject, fromAddress: msgFrom, skipReason: e.message, snippet: msgSnippet,
-      });
-      failed++;
-    }
+    const result = await processMessageImport(user, msg.id, { categories, todayDate, outcomes });
+    imported += result.imported;
+    skipped += result.skipped;
+    failed += result.failed;
   }
 
   // Send push notification if new expenses were imported
@@ -341,4 +374,39 @@ async function importForUser(user) {
   return { imported, skipped, failed, outcomes };
 }
 
-module.exports = { importForUser };
+async function retryFailedImportLog(user, log) {
+  const categories = await Category.findByHousehold(user.household_id);
+  const todayDate = new Date().toISOString().split('T')[0];
+  const outcomes = createOutcomes();
+  return processMessageImport(user, log.message_id, {
+    categories,
+    todayDate,
+    allowExistingRetry: true,
+    existingLog: log,
+    outcomes,
+  });
+}
+
+async function retryFailedImportsForUser(user, { limit = 10 } = {}) {
+  const failedLogs = await EmailImportLog.listFailedByUser(user.id, limit);
+  let imported = 0, skipped = 0, failed = 0;
+  const outcomes = createOutcomes();
+
+  const categories = await Category.findByHousehold(user.household_id);
+  const todayDate = new Date().toISOString().split('T')[0];
+  for (const log of failedLogs) {
+    const result = await processMessageImport(user, log.message_id, {
+      categories,
+      todayDate,
+      allowExistingRetry: true,
+      existingLog: log,
+      outcomes,
+    });
+    imported += result.imported;
+    skipped += result.skipped;
+    failed += result.failed;
+  }
+  return { imported, skipped, failed, outcomes, attempted: failedLogs.length };
+}
+
+module.exports = { importForUser, retryFailedImportLog, retryFailedImportsForUser };
