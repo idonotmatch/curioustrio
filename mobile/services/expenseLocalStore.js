@@ -59,6 +59,61 @@ export async function loadExpenseItemsSnapshot(id) {
   return Array.isArray(expense?.items) ? expense.items : null;
 }
 
+/**
+ * Reconstruct a past-month expense list from individual detail snapshots.
+ * Used as a fallback when the month-array cache is cold but detail snapshots exist.
+ * Returns an array sorted newest-first, or null if no snapshots found.
+ */
+export async function loadExpenseSnapshotsForMonth(month) {
+  if (!month) return null;
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const detailKeys = keys.filter(k => k.startsWith(DETAIL_PREFIX));
+    if (!detailKeys.length) return null;
+    const pairs = await AsyncStorage.multiGet(detailKeys);
+    const expenses = [];
+    for (const [, raw] of pairs) {
+      if (!raw) continue;
+      try {
+        const { data } = JSON.parse(raw);
+        if (data?.date?.startsWith(month)) expenses.push(data);
+      } catch {}
+    }
+    if (!expenses.length) return null;
+    return expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write-through helper: prepend a newly confirmed expense into all matching
+ * month-array cache entries. Sets ts: 0 so TTL is bypassed and the cache
+ * revalidates in the background on next load.
+ */
+export async function prependToExpenseMonthCaches(expense) {
+  if (!expense?.id || !expense?.date) return;
+  const month = expense.date.slice(0, 7); // YYYY-MM
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const monthKeys = keys.filter(k =>
+      (k.startsWith('cache:expenses:') || k.startsWith('cache:household-expenses:')) &&
+      k.includes(month)
+    );
+    for (const key of monthKeys) {
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) continue;
+        const { data } = JSON.parse(raw);
+        if (!Array.isArray(data)) continue;
+        const already = data.some(e => e.id === expense.id);
+        if (already) continue;
+        await AsyncStorage.setItem(key, JSON.stringify({ data: [expense, ...data], ts: 0 }));
+      } catch {}
+    }
+  } catch {}
+}
+
 export async function findExpenseSnapshotInCaches(id) {
   const direct = await loadExpenseSnapshot(id);
   if (direct) return direct;

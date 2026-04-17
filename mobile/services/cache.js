@@ -4,20 +4,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * Stale-while-revalidate: serve cache immediately, always background-fetch.
  * Use for data that can be updated by other parties (household members, server-side sync).
  *
- * 1. If a cached value exists, calls onData immediately (instant render, no spinner).
- * 2. Always fetches fresh data in the background regardless of cache age.
- * 3. Calls onData again with fresh data and writes it back to cache.
- * 4. Calls onError if the network fetch fails and no cache was served.
+ * Options:
+ *   ttlMs — if cache is younger than this, skip the background fetch entirely.
+ *           Use for current-month data where hammering on every focus event is wasteful.
+ *           Set ts: 0 on a cache entry to force revalidation regardless of TTL.
  */
-export async function loadWithCache(key, fetcher, onData, onError) {
+export async function loadWithCache(key, fetcher, onData, onError, { ttlMs = 0 } = {}) {
   let served = false;
 
   try {
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
-      const { data } = JSON.parse(raw);
+      const { data, ts } = JSON.parse(raw);
       onData(data);
       served = true;
+      if (ttlMs > 0 && ts && (Date.now() - ts) < ttlMs) return;
     }
   } catch {
     // cache read failure is non-fatal
@@ -34,12 +35,8 @@ export async function loadWithCache(key, fetcher, onData, onError) {
 
 /**
  * Cache-first: serve cache if it exists and skip the network call entirely.
- * Use for data only the local user can mutate (personal expenses, personal budget).
+ * Use for past months (frozen data) or data only the local user can mutate.
  * After any mutation, call invalidateCache(key) so the next load re-fetches once.
- *
- * 1. If a cached value exists, calls onData immediately and returns — no network call.
- * 2. If no cache (first load or after invalidation), fetches, caches, then calls onData.
- * 3. Calls onError if fetch fails and no cache was served.
  */
 export async function loadCacheOnly(key, fetcher, onData, onError) {
   try {
@@ -73,5 +70,14 @@ export async function invalidateCacheByPrefix(prefix) {
     const keys = await AsyncStorage.getAllKeys();
     const matching = keys.filter(k => k.startsWith(prefix));
     if (matching.length) await AsyncStorage.multiRemove(matching);
+  } catch {}
+}
+
+/** Remove all cache:* entries — call on logout to prevent stale data leaking between accounts. */
+export async function clearAllCache() {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const cacheKeys = keys.filter(k => k.startsWith('cache:'));
+    if (cacheKeys.length) await AsyncStorage.multiRemove(cacheKeys);
   } catch {}
 }

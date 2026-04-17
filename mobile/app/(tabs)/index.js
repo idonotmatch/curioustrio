@@ -199,8 +199,8 @@ export default function FeedScreen() {
   const [selectedMonth, setSelectedMonth] = useState(() => currentPeriod(transactionStartDay));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showSortPicker, setShowSortPicker] = useState(false);
-  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
-  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
+  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine, softRefresh: softRefreshMine } = useExpenses(selectedMonth, transactionStartDay);
+  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses, softRefresh: softRefreshHousehold } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { expenses: pending, error: pendingError, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
@@ -235,11 +235,12 @@ export default function FeedScreen() {
   }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold, isMultiMember]);
 
   useFocusEffect(useCallback(() => {
-    if (isMultiMember) refreshHouseholdExpenses();
+    softRefreshMine();
+    if (isMultiMember) softRefreshHousehold();
     if (isMultiMember) refreshHouseholdBudget();
     refreshPersonalBudget();
     refreshPending();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending, isMultiMember]));
+  }, [softRefreshMine, softRefreshHousehold, refreshHouseholdBudget, refreshPersonalBudget, refreshPending, isMultiMember]));
 
   function requestDismissPending(id) {
     setDismissingId(id);

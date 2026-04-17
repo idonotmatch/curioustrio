@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
+import { loadWithCache, loadCacheOnly } from '../services/cache';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 
 const FEEDBACK_REASONS = [
@@ -298,15 +299,19 @@ export default function TrendDetailScreen() {
       }
       try {
         setLoading(true);
-        const params = new URLSearchParams({
-          scope: `${scope}` === 'household' ? 'household' : 'personal',
-          month: `${month}`,
-        });
-        const data = await api.get(`/trends/summary?${params.toString()}`);
-        if (!cancelled) {
-          setTrend(data);
-          setError('');
-        }
+        const trendScope = `${scope}` === 'household' ? 'household' : 'personal';
+        const params = new URLSearchParams({ scope: trendScope, month: `${month}` });
+        const url = `/trends/summary?${params.toString()}`;
+        const cacheKey = `cache:trends:${trendScope}:${month}`;
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const loader = `${month}` < currentMonth ? loadCacheOnly : (k, f, onD, onE) => loadWithCache(k, f, onD, onE, { ttlMs: 3 * 60 * 1000 });
+        await loader(
+          cacheKey,
+          () => api.get(url),
+          (data) => { if (!cancelled) { setTrend(data); setError(''); setLoading(false); } },
+          (err) => { if (!cancelled) { setError(err.message || 'Could not load trend detail'); setLoading(false); } },
+        );
       } catch (err) {
         if (!cancelled) setError(err.message || 'Could not load trend detail');
       } finally {
@@ -413,13 +418,20 @@ export default function TrendDetailScreen() {
       }
       try {
         setCategoryExpensesLoading(true);
-        const params = new URLSearchParams({
-          month: `${month}`,
-          category_id: `${categoryKey}`,
-        });
-        const endpoint = `${scope}` === 'household' ? '/expenses/household' : '/expenses';
-        const rows = await api.get(`${endpoint}?${params.toString()}`);
-        if (!cancelled) setCategoryExpenses(Array.isArray(rows) ? rows.slice(0, 8) : []);
+        const trendScope = `${scope}` === 'household' ? 'household' : 'personal';
+        const params = new URLSearchParams({ month: `${month}`, category_id: `${categoryKey}` });
+        const endpoint = trendScope === 'household' ? '/expenses/household' : '/expenses';
+        const url = `${endpoint}?${params.toString()}`;
+        const cacheKey = `cache:trends:category-expenses:${trendScope}:${month}:${categoryKey}`;
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const loader = `${month}` < currentMonth ? loadCacheOnly : (k, f, onD, onE) => loadWithCache(k, f, onD, onE, { ttlMs: 3 * 60 * 1000 });
+        await loader(
+          cacheKey,
+          () => api.get(url),
+          (rows) => { if (!cancelled) { setCategoryExpenses(Array.isArray(rows) ? rows.slice(0, 8) : []); setCategoryExpensesLoading(false); } },
+          () => { if (!cancelled) { setCategoryExpenses([]); setCategoryExpensesLoading(false); } },
+        );
       } catch {
         if (!cancelled) setCategoryExpenses([]);
       } finally {

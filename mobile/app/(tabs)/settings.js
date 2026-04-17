@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,10 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { invalidateCacheByPrefix } from '../../services/cache';
 import { useRecurring } from '../../hooks/useRecurring';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useBudget } from '../../hooks/useBudget';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 
 export default function SettingsScreen() {
@@ -19,6 +21,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { recurring, loading: recurringLoading, refresh: refreshRecurring } = useRecurring();
   const { user } = useCurrentUser();
+  const { budget: budgetData, refresh: refreshBudget } = useBudget(null, 'personal', { cacheOnly: true });
 
   const [budgetLimit, setBudgetLimit] = useState('');
   const [currentBudget, setCurrentBudget] = useState(null);
@@ -27,17 +30,11 @@ export default function SettingsScreen() {
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
 
-  const loadBudget = useCallback(async () => {
-    try {
-      const data = await api.get('/budgets?scope=personal');
-      setCurrentBudget(data.total);
-      if (data.total?.limit) setBudgetLimit(String(data.total.limit));
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => {
-    loadBudget();
-  }, [loadBudget]);
+    if (!budgetData) return;
+    setCurrentBudget(budgetData.total);
+    if (budgetData.total?.limit) setBudgetLimit(String(budgetData.total.limit));
+  }, [budgetData]);
 
   useEffect(() => {
     api.get('/categories')
@@ -58,7 +55,8 @@ export default function SettingsScreen() {
       await api.put('/budgets/total', { monthly_limit: val });
       setBudgetMsg('Saved!');
       setBudgetMsgIsError(false);
-      loadBudget();
+      await invalidateCacheByPrefix('cache:budget:');
+      refreshBudget();
       setTimeout(() => setBudgetMsg(''), 2000);
     } catch (e) {
       setBudgetMsg(e.message || 'Failed to save');

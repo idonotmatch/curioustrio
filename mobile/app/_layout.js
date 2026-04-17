@@ -6,8 +6,26 @@ import { AppState, Image, Platform, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
+import { clearAllCache } from '../services/cache';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
+
+// Fire-and-forget background prefetch to warm the most-used caches right after login.
+// Failures are silently ignored — this is purely a performance optimisation.
+async function prefetchOnLogin(user, token) {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const startDay = user?.budget_start_day || 1;
+  const fetches = [
+    () => api.get(`/expenses?month=${month}&start_day=${startDay}`, { token }),
+    () => api.get(`/budgets?scope=personal`, { token }),
+    () => api.get('/categories', { token }),
+  ];
+  if (user?.household_id) {
+    fetches.push(() => api.get(`/expenses/household?month=${month}&start_day=${startDay}`, { token }));
+  }
+  await Promise.allSettled(fetches.map(f => f()));
+}
 
 function AppNavigator() {
   const router = useRouter();
@@ -115,7 +133,10 @@ function AppNavigator() {
           }
         }
 
-        if (me) await cacheCurrentUser(me);
+        if (me) {
+          await cacheCurrentUser(me);
+          prefetchOnLogin(me, session.access_token);
+        }
 
         if (!isAnon && me && !me.household_id) {
           router.replace('/onboarding');
@@ -150,6 +171,7 @@ function AppNavigator() {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        clearAllCache();
         router.replace('/login');
         setBootstrapped(true);
       }

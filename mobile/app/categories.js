@@ -7,6 +7,7 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
+import { loadWithCache, invalidateCacheByPrefix } from '../services/cache';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 
 export default function CategoriesScreen() {
@@ -35,23 +36,30 @@ export default function CategoriesScreen() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const load = useCallback(async () => {
-    setLoading(true);
     setErrorMsg('');
-    try {
-      const data = await api.get('/categories?include_hidden=1');
-      setCategories(data.categories || []);
-      const count = data.pending_suggestions_count || 0;
-      setPendingCount(count);
-      if (count > 0) {
-        const s = await api.get('/categories/suggestions');
+    await loadWithCache(
+      'cache:categories:include_hidden',
+      async () => {
+        const data = await api.get('/categories?include_hidden=1');
+        const suggestions = data.pending_suggestions_count > 0
+          ? await api.get('/categories/suggestions')
+          : [];
+        return { data, suggestions };
+      },
+      ({ data, suggestions: s }) => {
+        setCategories(data.categories || []);
+        setPendingCount(data.pending_suggestions_count || 0);
         setSuggestions(s);
-      } else {
-        setSuggestions([]);
-      }
-    } catch { /* ignore */ } finally {
-      setLoading(false);
-    }
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
   }, []);
+
+  const reloadAfterMutation = useCallback(async () => {
+    await invalidateCacheByPrefix('cache:categories');
+    await reloadAfterMutation();
+  }, [reloadAfterMutation]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -73,7 +81,7 @@ export default function CategoriesScreen() {
       await api.post('/categories', body);
       setNewCatName('');
       setNewCatParentId(null);
-      load();
+      reloadAfterMutation();
     } catch (e) {
       setErrorMsg(e.message || 'Something went wrong');
     } finally {
@@ -112,7 +120,7 @@ export default function CategoriesScreen() {
       if (editingParentId !== undefined) body.parent_id = editingParentId;
       await api.patch(`/categories/${id}`, body);
       setEditingCatId(null);
-      load();
+      reloadAfterMutation();
     } catch (e) {
       setErrorMsg(e.message || 'Something went wrong');
     }
@@ -131,7 +139,7 @@ export default function CategoriesScreen() {
         {
           text: action, style: cat.is_default ? 'default' : 'destructive', onPress: async () => {
             setErrorMsg('');
-            try { await api.delete(`/categories/${cat.id}`); load(); }
+            try { await api.delete(`/categories/${cat.id}`); reloadAfterMutation(); }
             catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
           },
         },
@@ -143,7 +151,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/${id}/restore`, {});
-      load();
+      reloadAfterMutation();
     } catch (e) {
       setErrorMsg(e.message || 'Something went wrong');
     }
@@ -156,7 +164,7 @@ export default function CategoriesScreen() {
       await api.patch(`/categories/${id}`, { parent_id: movingParentId });
       setMovingCatId(null);
       setMovingParentId(null);
-      load();
+      reloadAfterMutation();
     } catch (e) {
       setErrorMsg(e.message || 'Something went wrong');
     } finally {
@@ -172,7 +180,7 @@ export default function CategoriesScreen() {
       await api.post(`/categories/${id}/merge`, { target_category_id: mergeTargetId });
       setMergingCatId(null);
       setMergeTargetId(null);
-      load();
+      reloadAfterMutation();
     } catch (e) {
       setErrorMsg(e.message || 'Something went wrong');
     } finally {
@@ -184,7 +192,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/suggestions/${id}/accept`);
-      load();
+      reloadAfterMutation();
     } catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
   }
 
@@ -192,7 +200,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/suggestions/${id}/reject`);
-      load();
+      reloadAfterMutation();
     } catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
   }
 
