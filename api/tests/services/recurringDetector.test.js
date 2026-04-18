@@ -49,6 +49,7 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  await db.query(`DELETE FROM recurring_preferences WHERE household_id = $1`, [testHouseholdId]);
   await db.query(
     `DELETE FROM expense_items
      WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
@@ -379,5 +380,29 @@ describe('detectRecurringWatchCandidates', () => {
 
     const candidates = await detectRecurringWatchCandidates(testHouseholdId, { windowDays: 5 });
     expect(candidates.find((item) => item.item_name === 'Organic Bananas')).toBeFalsy();
+  });
+
+  it('hydrates manual recurring preferences without crashing the household insight path', async () => {
+    const today = new Date();
+    const expenseDate = new Date(today);
+    expenseDate.setDate(expenseDate.getDate() - 10);
+
+    const expenseId = await insertExpense('Local Shop', 24.5, expenseDate.toISOString().split('T')[0]);
+    await db.query(
+      `INSERT INTO recurring_preferences (
+        user_id, household_id, expense_id, merchant, item_name, expected_frequency_days, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [testUserId, testHouseholdId, expenseId, 'Local Shop', 'Local Shop order', 14, 'manual cadence']
+    );
+
+    const candidates = await detectRecurringWatchCandidates(testHouseholdId, { windowDays: 5 });
+    expect(candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group_key: `manual:${expenseId}`,
+        item_name: 'Local Shop order',
+        source: 'manual',
+        manual_preference_id: expect.any(String),
+      }),
+    ]));
   });
 });

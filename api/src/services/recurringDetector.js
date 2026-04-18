@@ -391,7 +391,7 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
     if (!pref.expected_frequency_days || pref.expected_frequency_days <= 0) continue;
     const expenseResult = await db.query(
       `SELECT date, amount FROM expenses WHERE id = $1 AND household_id = $2`,
-      [pref.expense_id, householdId]
+      [pref.expense_id, ownerId]
     );
     const sourceExpense = expenseResult.rows[0];
     if (!sourceExpense?.date) continue;
