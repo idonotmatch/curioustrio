@@ -25,7 +25,7 @@ Adlo is a **personal-first, household-aware, AI-augmented expense tracker** desi
 | **Trend Analysis** | Rolling 30-day category trends; projection to end of period; deep-dive per category | Year-over-year comparisons; custom date ranges; downloadable reports; anomaly explanation | 50% |
 | **Location Tagging** | Apple MapKit place search; location stored on expense | Auto-suggest merchant from GPS at time of entry; map view of spend by location | 25% |
 | **Push Notifications** | Insight notifications queued + dispatched via cron; device token registration | Rich notifications with inline actions; notification preferences; smart timing (don't notify at 2am) | 40% |
-| **Web Dashboard** | Vercel config present; no frontend code exists | Full web companion for desktop review, reports, household admin | 5% |
+| **Web Dashboard** | No supported web app deployment path; legacy landing/contact artifacts have been removed from the active repo | Full web companion for desktop review, reports, household admin | 5% |
 | **Export / Reports** | None | CSV/PDF export; accountant-ready summaries; tax category tagging | 0% |
 
 ---
@@ -33,7 +33,7 @@ Adlo is a **personal-first, household-aware, AI-augmented expense tracker** desi
 ## 3. Inefficiencies, Bugs & Immediate Opportunities
 
 ### Bugs / Dead Code
-- ~~**vercel.json rewrite** for `/submit-form → /api/submitForm` references an endpoint that does not exist anywhere in the codebase.~~ **Fixed: removed with Popstart artifact cleanup.**
+- ~~**vercel.json rewrite** for `/submit-form → /api/submitForm` references an endpoint that does not exist anywhere in the codebase.~~ **Fixed: removed again; Vercel deploy artifact deleted from the repo.**
 - ~~**Backwards-compat query fallbacks** (e.g., `exclude_from_budget`, `budget_exclusion_reason`) silently retry without new columns on error.~~ **Fixed: collapsed to passthrough; `checkSchema.js` now validates required columns at startup.**
 - ~~**Merchant normalization is inconsistent** — "Target", "target", "TARGET" can become separate merchants.~~ **Fixed: normalized to trimmed string at write in both POST and PATCH expense routes.**
 
@@ -57,7 +57,7 @@ Adlo is a **personal-first, household-aware, AI-augmented expense tracker** desi
 2. Add logging/alerting on cron job failures (simple Slack webhook or email on non-200 response).
 3. ~~Normalize merchant names at write time~~ Done.
 4. ~~Cap insight queries with `LIMIT` clauses~~ Done.
-5. ~~Delete the vercel.json dead rewrite~~ Done.
+5. ~~Delete the vercel.json dead rewrite~~ Done. Legacy web/contact files were also removed, so the repo no longer carries the old Vercel-era landing/contact runtime.
 6. ~~Add `DB_POOL_MAX` env var to make DB pool tunable without a deploy~~ Done.
 
 ---
