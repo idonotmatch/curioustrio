@@ -7,13 +7,16 @@ import { loadWithCache, loadCacheOnly } from '../services/cache';
 export function useBudget(month, scope, { cacheOnly = false, startDayOverride = null, enabled = true } = {}) {
   const [budget, setBudget] = useState(null);
   const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
     if (!enabled) {
       setBudget(null);
+      setError(null);
       setLoading(false);
       return;
     }
+    setError(null);
     const params = [
       month && `month=${month}`,
       scope && `scope=${scope}`,
@@ -25,11 +28,11 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
       `cache:budget:${month || 'all'}:${scope || 'default'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => { setBudget(data); setLoading(false); },
-      () => { setBudget(null); setLoading(false); },
+      (err) => { setBudget(null); setError(err?.message || 'Could not load budget'); setLoading(false); },
     );
   }, [month, scope, cacheOnly, startDayOverride, enabled]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  return { budget, loading, refresh };
+  return { budget, loading, error, refresh };
 }

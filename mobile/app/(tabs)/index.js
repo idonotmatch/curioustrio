@@ -199,10 +199,10 @@ export default function FeedScreen() {
   const [selectedMonth, setSelectedMonth] = useState(() => currentPeriod(transactionStartDay));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showSortPicker, setShowSortPicker] = useState(false);
-  const { expenses: myExpenses, loading: myLoading, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
-  const { expenses: householdExpenses, loading: householdLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
-  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
+  const { expenses: myExpenses, loading: myLoading, error: myError, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
+  const { expenses: householdExpenses, loading: householdLoading, error: householdError, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
+  const { budget: personalBudget, error: personalBudgetError, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
+  const { budget: householdBudget, error: householdBudgetError, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { expenses: pending, error: pendingError, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
@@ -220,6 +220,8 @@ export default function FeedScreen() {
 
   const expenses = mode === 'mine' ? myExpenses : householdExpenses;
   const loading = mode === 'mine' ? myLoading : householdLoading;
+  const expenseError = mode === 'mine' ? myError : householdError;
+  const budgetError = mode === 'mine' ? personalBudgetError : householdBudgetError;
   const currentSortLabel = SORT_OPTIONS.find((option) => option.key === sortKey)?.label || 'Newest';
 
   const [displayExpenses, setDisplayExpenses] = useState([]);
@@ -315,11 +317,7 @@ export default function FeedScreen() {
             </View>
           ) : null}
           {!pendingError && item.items.length === 0 ? (
-            <TouchableOpacity
-              style={styles.pendingEmptyState}
-              onPress={() => router.push('/review-queue')}
-              activeOpacity={0.82}
-            >
+            <View style={styles.pendingEmptyState}>
               <View style={styles.pendingEmptyIconWrap}>
                 <Ionicons name="checkmark-done" size={18} color="#d5e5da" />
               </View>
@@ -327,10 +325,7 @@ export default function FeedScreen() {
                 <Text style={styles.pendingEmptyTitle}>You’re all caught up</Text>
                 <Text style={styles.pendingEmptyBody}>New Gmail imports will land here when they need your review.</Text>
               </View>
-              <View style={styles.pendingOpenChip}>
-                <Text style={styles.pendingOpenChipText}>Open queue</Text>
-              </View>
-            </TouchableOpacity>
+            </View>
           ) : null}
           {item.items.slice(0, 3).map(e => (
             <ReviewQueueItem
@@ -408,6 +403,14 @@ export default function FeedScreen() {
         contentContainerStyle={styles.list}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          expenseError || budgetError ? (
+            <View style={styles.feedErrorState}>
+              <Text style={styles.feedErrorTitle}>Could not refresh your transactions</Text>
+              <Text style={styles.feedErrorBody}>{expenseError || budgetError}</Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           !loading && <Text style={styles.empty}>No expenses yet. Tap + to get started.</Text>
         }
@@ -535,18 +538,30 @@ const styles = StyleSheet.create({
   pendingErrorState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   pendingErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
   pendingErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
+  feedErrorState: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#3a1f1f',
+    backgroundColor: '#181111',
+    borderRadius: 8,
+  },
+  feedErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
+  feedErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
   pendingEmptyState: {
     paddingHorizontal: 12,
-    paddingVertical: 14,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: '#1a1a1a',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   pendingEmptyIconWrap: {
-    width: 34,
-    height: 34,
+    width: 30,
+    height: 30,
     borderRadius: 8,
     backgroundColor: '#102017',
     borderWidth: 1,
@@ -555,18 +570,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pendingEmptyCopy: { flex: 1, minWidth: 0 },
-  pendingEmptyTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
-  pendingEmptyBody: { fontSize: 12, color: '#8a8a8a', lineHeight: 18 },
-  pendingOpenChip: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2b3442',
-    backgroundColor: '#141920',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  pendingOpenChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
+  pendingEmptyTitle: { fontSize: 13, color: '#f5f5f5', fontWeight: '600', marginBottom: 2 },
+  pendingEmptyBody: { fontSize: 11, color: '#8a8a8a', lineHeight: 16 },
   pendingMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',

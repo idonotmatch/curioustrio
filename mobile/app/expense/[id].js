@@ -34,6 +34,13 @@ function formatCurrency(value) {
   return `$${Number(value).toFixed(2)}`;
 }
 
+function formatShortDate(value) {
+  if (!value) return null;
+  const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
   const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
   const likelySet = new Set(likelyFields);
@@ -43,14 +50,15 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
   const itemSignalSummary = itemSignals.length
     ? itemSignals.map((entry) => `${entry.field}`.replace(/^items_/, '').replace(/_/g, ' ')).join(', ')
     : null;
+  const itemHistoryReason = (itemSignalSummary ? `This sender often needs item cleanup around ${itemSignalSummary}.` : null)
+    || gmailReviewHint?.item_reliability_message
+    || 'This sender often needs item cleanup before approval.';
   const candidates = [
     ...(isItemsFirst ? [{
       key: 'items',
       label: 'Items',
       value: itemCount ? `${itemCount} extracted ${itemCount === 1 ? 'item' : 'items'}` : 'Review extracted items',
-      reason: itemSignalSummary
-        ? `This sender often needs item cleanup around ${itemSignalSummary}.`
-        : (gmailReviewHint?.item_reliability_message || 'This sender often needs item cleanup before approval.'),
+      reason: itemHistoryReason,
       weight: 110,
     }] : []),
     {
@@ -592,6 +600,7 @@ export default function ExpenseDetailScreen() {
   const showSecondaryDetails = !isPendingEmailReview || secondaryDetailsExpanded;
   const displayIsPrivate = isPendingEmailReview ? isPrivate : (editing ? isPrivate : expense.is_private);
   const displayExcludeFromBudget = isPendingEmailReview ? excludeFromBudget : (editing ? excludeFromBudget : expense.exclude_from_budget);
+  const itemReviewContext = Array.isArray(expense.item_review_context) ? expense.item_review_context : [];
 
   function activateReviewField(fieldKey) {
     setEditing(true);
@@ -849,6 +858,50 @@ export default function ExpenseDetailScreen() {
           {recurringPreference?.notes ? (
             <Text style={styles.recurringNotePreview}>{recurringPreference.notes}</Text>
           ) : null}
+        </View>
+      ) : null}
+
+      {!isPendingEmailReview && itemReviewContext.length > 0 ? (
+        <View style={styles.itemHistoryCard}>
+          <Text style={styles.itemHistoryEyebrow}>Item patterns</Text>
+          <Text style={styles.itemHistoryTitle}>Recent item history from your own spend</Text>
+          {itemReviewContext.map((entry) => {
+            const merchantCount = Array.isArray(entry.merchants) ? entry.merchants.length : 0;
+            const merchantLine = merchantCount > 1
+              ? `${merchantCount} merchants`
+              : entry.merchants?.[0] || null;
+            const latest = entry.latest_purchase || null;
+            const subline = [
+              latest?.merchant || null,
+              latest?.date ? formatShortDate(latest.date) : null,
+              latest?.amount != null ? formatCurrency(latest.amount) : null,
+            ].filter(Boolean).join('  •  ') || null;
+            const occurrenceCount = Number(entry.occurrence_count || 0);
+            const cadence = Number(entry.average_gap_days || 0);
+            const medianAmount = formatCurrency(entry.median_amount);
+            const summary = occurrenceCount >= 3 && cadence > 0
+              ? `${entry.item_name || 'This item'} has shown up ${occurrenceCount} times, about every ${cadence} days${medianAmount ? ` at around ${medianAmount}` : ''}.`
+              : occurrenceCount >= 2
+                ? `${entry.item_name || 'This item'} has shown up ${occurrenceCount} times recently${medianAmount ? ` at around ${medianAmount}` : ''}.`
+                : `${entry.item_name || 'This item'} has some recent history${medianAmount ? ` around ${medianAmount}` : ''}.`;
+            return (
+              <View key={entry.group_key} style={styles.itemHistoryRow}>
+                <View style={styles.itemHistoryText}>
+                  <Text style={styles.itemHistoryName}>{entry.item_name || 'Untitled item'}</Text>
+                  <Text style={styles.itemHistorySummary}>{summary}</Text>
+                  {subline ? <Text style={styles.itemHistoryMeta}>{subline}</Text> : null}
+                </View>
+                <View style={styles.itemHistoryRight}>
+                  {merchantLine ? <Text style={styles.itemHistoryBadge}>{merchantLine}</Text> : null}
+                  {entry.median_unit_price != null ? (
+                    <Text style={styles.itemHistoryUnit}>
+                      {formatCurrency(entry.median_unit_price)} / {entry.normalized_total_size_unit || 'unit'}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
         </View>
       ) : null}
 
@@ -1462,6 +1515,44 @@ const styles = StyleSheet.create({
   recurringSubtitle: { color: '#777', fontSize: 13, lineHeight: 18, marginTop: 4 },
   recurringAction: { color: '#8ab4ff', fontSize: 14, fontWeight: '600' },
   recurringNotePreview: { color: '#b8b8b8', fontSize: 13, lineHeight: 18, marginTop: 10 },
+  itemHistoryCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#111',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    padding: 14,
+  },
+  itemHistoryEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  itemHistoryTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  itemHistoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingTop: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+  },
+  itemHistoryText: { flex: 1, minWidth: 0 },
+  itemHistoryName: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
+  itemHistorySummary: { color: '#cfcfcf', fontSize: 13, lineHeight: 19, marginTop: 4 },
+  itemHistoryMeta: { color: '#8d8d8d', fontSize: 12, marginTop: 5 },
+  itemHistoryRight: { alignItems: 'flex-end', gap: 6, maxWidth: 110 },
+  itemHistoryBadge: {
+    color: '#d7d7d7',
+    fontSize: 11,
+    fontWeight: '600',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    overflow: 'hidden',
+  },
+  itemHistoryUnit: { color: '#8ab4ff', fontSize: 11, fontWeight: '600', textAlign: 'right' },
   editDetailsCard: {
     marginHorizontal: 20,
     marginTop: 12,
