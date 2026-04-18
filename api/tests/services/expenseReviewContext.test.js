@@ -23,12 +23,17 @@ jest.mock('../../src/services/gmailImportQualityService', () => ({
   recommendReviewMode: jest.fn(),
 }));
 
+jest.mock('../../src/services/itemHistoryService', () => ({
+  getItemHistoryByGroupKey: jest.fn(),
+}));
+
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
 const ExpenseItem = require('../../src/models/expenseItem');
 const EmailImportLog = require('../../src/models/emailImportLog');
 const { getSenderImportQuality, recommendReviewMode } = require('../../src/services/gmailImportQualityService');
+const { getItemHistoryByGroupKey } = require('../../src/services/itemHistoryService');
 const {
   fetchPendingExpensesBase,
   attachExpenseReviewContext,
@@ -123,6 +128,7 @@ describe('expenseReviewContext', () => {
         budget_exclusion_reason: 'business',
       },
     ]);
+    getItemHistoryByGroupKey.mockResolvedValueOnce(null);
 
     const result = await attachExpenseReviewContext(expense, 'user-1', { includeItems: true });
 
@@ -143,6 +149,132 @@ describe('expenseReviewContext', () => {
         suggested_card_last4: '4242',
       }),
     });
+  });
+
+  it('attaches compact item history context when expense items have stable identities', async () => {
+    const expense = {
+      id: 'expense-3',
+      user_id: 'user-1',
+      household_id: 'household-1',
+      merchant: 'Target',
+      amount: 14.99,
+      source: 'manual',
+      status: 'confirmed',
+    };
+
+    DuplicateFlag.findByExpenseId.mockResolvedValueOnce([]);
+    ExpenseItem.findByExpenseId.mockResolvedValueOnce([
+      {
+        description: 'Paper Towels',
+        amount: 14.99,
+        comparable_key: 'paper towel|brand:bounty',
+      },
+    ]);
+    getItemHistoryByGroupKey.mockResolvedValueOnce({
+      group_key: 'comparable:paper towel|brand:bounty',
+      item_name: 'Paper Towels',
+      brand: 'Bounty',
+      occurrence_count: 3,
+      average_gap_days: 12,
+      median_amount: 13.99,
+      median_unit_price: null,
+      normalized_total_size_unit: null,
+      last_purchased_at: '2026-04-10',
+      merchants: ['Target', 'Costco'],
+      merchant_breakdown: [
+        { merchant: 'Target', occurrence_count: 2, median_amount: 13.49 },
+        { merchant: 'Costco', occurrence_count: 1, median_amount: 15.99 },
+      ],
+      purchases: [
+        { date: '2026-03-15', merchant: 'Target', amount: 13.49 },
+        { date: '2026-03-27', merchant: 'Costco', amount: 15.99 },
+        { date: '2026-04-10', merchant: 'Target', amount: 14.99 },
+      ],
+    });
+
+    const result = await attachExpenseReviewContext(expense, 'user-1', { includeItems: true });
+
+    expect(getItemHistoryByGroupKey).toHaveBeenCalledWith(
+      'user-1',
+      'comparable:paper towel|brand:bounty',
+      { scope: 'personal', lookbackDays: 180 }
+    );
+    expect(result.item_review_context).toEqual([
+      expect.objectContaining({
+        group_key: 'comparable:paper towel|brand:bounty',
+        item_name: 'Paper Towels',
+        occurrence_count: 3,
+        average_gap_days: 12,
+        median_amount: 13.99,
+        latest_purchase: expect.objectContaining({
+          merchant: 'Target',
+          amount: 14.99,
+        }),
+      }),
+    ]);
+    expect(result.gmail_review_hint).toBeUndefined();
+  });
+
+  it('keeps item history on the expense while leaving Gmail review hints focused on verification', async () => {
+    const expense = {
+      id: 'expense-4',
+      user_id: 'user-1',
+      household_id: 'household-1',
+      merchant: 'Whole Foods',
+      amount: 18.49,
+      source: 'email',
+      status: 'pending',
+      review_source: 'gmail',
+    };
+
+    DuplicateFlag.findByExpenseId.mockResolvedValueOnce([]);
+    ExpenseItem.findByExpenseId.mockResolvedValueOnce([
+      {
+        description: 'Sparkling Water',
+        amount: 18.49,
+        comparable_key: 'sparkling water|brand:water co',
+      },
+    ]);
+    EmailImportLog.findByExpenseId.mockResolvedValueOnce({
+      message_id: 'gmail-msg-4',
+      subject: 'Your receipt from Whole Foods',
+      snippet: 'Total $18.49',
+      from_address: 'receipts@wholefoods.com',
+      imported_at: '2026-04-16T14:00:00.000Z',
+      review_action: null,
+    });
+    Expense.findTreatmentCandidates.mockResolvedValueOnce([]);
+    getItemHistoryByGroupKey.mockResolvedValueOnce({
+      group_key: 'comparable:sparkling water|brand:water co',
+      item_name: 'Sparkling Water',
+      brand: 'Water Co',
+      occurrence_count: 3,
+      average_gap_days: 10,
+      median_amount: 17.99,
+      median_unit_price: null,
+      normalized_total_size_unit: null,
+      last_purchased_at: '2026-04-12',
+      merchants: ['Target', 'Whole Foods'],
+      merchant_breakdown: [],
+      purchases: [
+        { date: '2026-03-20', merchant: 'Target', amount: 17.49 },
+        { date: '2026-04-01', merchant: 'Target', amount: 18.09 },
+        { date: '2026-04-12', merchant: 'Target', amount: 18.39 },
+      ],
+    });
+
+    const result = await attachExpenseReviewContext(expense, 'user-1', { includeItems: true });
+
+    expect(result.item_review_context).toEqual([
+      expect.objectContaining({
+        group_key: 'comparable:sparkling water|brand:water co',
+        item_name: 'Sparkling Water',
+        occurrence_count: 3,
+      }),
+    ]);
+    expect(result.gmail_review_hint).toEqual(expect.not.objectContaining({
+      item_review_signals: expect.anything(),
+    }));
   });
 
   it('keeps core expense data when Gmail hint attachment fails', async () => {

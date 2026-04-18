@@ -3,6 +3,7 @@ const Expense = require('../models/expense');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
+const { getItemHistoryByGroupKey } = require('./itemHistoryService');
 const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
 
 function normalizeText(value = '') {
@@ -409,10 +410,86 @@ async function attachItemsBestEffort(expense) {
   }
 }
 
+function buildItemReviewHistorySummary(item = {}, history = null) {
+  if (!history?.group_key) return null;
+  const latestPurchase = Array.isArray(history.purchases) && history.purchases.length
+    ? history.purchases[history.purchases.length - 1]
+    : null;
+
+  return {
+    group_key: history.group_key,
+    item_name: history.item_name || item.description || null,
+    brand: history.brand || item.brand || null,
+    occurrence_count: Number(history.occurrence_count || 0),
+    average_gap_days: history.average_gap_days == null ? null : Number(history.average_gap_days),
+    median_amount: history.median_amount == null ? null : Number(history.median_amount),
+    median_unit_price: history.median_unit_price == null ? null : Number(history.median_unit_price),
+    normalized_total_size_unit: history.normalized_total_size_unit || item.normalized_total_size_unit || item.unit || null,
+    last_purchased_at: history.last_purchased_at || null,
+    merchants: Array.isArray(history.merchants) ? history.merchants : [],
+    merchant_breakdown: Array.isArray(history.merchant_breakdown) ? history.merchant_breakdown.slice(0, 3) : [],
+    latest_purchase: latestPurchase ? {
+      date: latestPurchase.date || null,
+      merchant: latestPurchase.merchant || null,
+      amount: latestPurchase.amount == null ? null : Number(latestPurchase.amount),
+    } : null,
+  };
+}
+
+async function attachItemHistoryBestEffort(expense, userId) {
+  const items = Array.isArray(expense?.items) ? expense.items : [];
+  if (!expense || !items.length || !userId) return { ...expense, item_review_context: [] };
+
+  const scope = expense.user_id === userId ? 'personal' : 'household';
+  const ownerId = scope === 'personal' ? userId : expense.household_id;
+  if (!ownerId) return { ...expense, item_review_context: [] };
+
+  const candidates = items
+    .filter((item) => item?.product_id || item?.comparable_key)
+    .map((item) => ({
+      item,
+      group_key: item.product_id ? `product:${item.product_id}` : `comparable:${item.comparable_key}`,
+    }));
+
+  const seen = new Set();
+  const uniqueCandidates = [];
+  for (const candidate of candidates) {
+    if (!candidate.group_key || seen.has(candidate.group_key)) continue;
+    seen.add(candidate.group_key);
+    uniqueCandidates.push(candidate);
+    if (uniqueCandidates.length >= 2) break;
+  }
+
+  if (!uniqueCandidates.length) return { ...expense, item_review_context: [] };
+
+  const results = await Promise.allSettled(
+    uniqueCandidates.map(({ item, group_key }) => (
+      getItemHistoryByGroupKey(ownerId, group_key, { scope, lookbackDays: 180 })
+        .then((history) => buildItemReviewHistorySummary(item, history))
+    ))
+  );
+
+  return {
+    ...expense,
+    item_review_context: results
+      .filter((result) => result.status === 'fulfilled' && result.value)
+      .map((result) => result.value),
+  };
+}
+
 async function attachExpenseReviewContext(expense, userId, { includeItems = false } = {}) {
   let enrichedExpense = await attachDuplicateFlagsBestEffort(expense);
   if (includeItems) {
     enrichedExpense = await attachItemsBestEffort(enrichedExpense);
+    try {
+      enrichedExpense = await attachItemHistoryBestEffort(enrichedExpense, userId);
+    } catch (err) {
+      console.error('[expenseReviewContext] item history attach failed:', {
+        expense_id: enrichedExpense?.id || null,
+        message: err?.message || String(err || 'unknown_error'),
+      });
+      enrichedExpense = { ...enrichedExpense, item_review_context: [] };
+    }
   }
   try {
     return await attachGmailReviewHint(enrichedExpense, userId);
@@ -439,7 +516,7 @@ async function attachExpensesReviewContext(expenses = [], userId, { includeItems
     return {
       ...expense,
       duplicate_flags: expense?.duplicate_flags || [],
-      ...(includeItems ? { items: expense?.items || [] } : {}),
+      ...(includeItems ? { items: expense?.items || [], item_review_context: expense?.item_review_context || [] } : {}),
       gmail_review_hint: null,
     };
   });

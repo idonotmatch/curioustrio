@@ -15,6 +15,12 @@ jest.mock('../../src/services/gmailClient', () => ({
 jest.mock('../../src/services/mapkitService', () => ({
   searchPlace: jest.fn(),
 }));
+jest.mock('../../src/services/productResolver', () => ({
+  resolveProductMatch: jest.fn(),
+}));
+jest.mock('../../src/services/itemHistoryService', () => ({
+  getItemHistoryByGroupKey: jest.fn(),
+}));
 jest.mock('../../src/services/emailParser', () => ({
   classifyEmailExpense: jest.fn(),
   parseEmailExpense: jest.fn(),
@@ -35,6 +41,8 @@ const { exchangeCode, listRecentMessages, getMessage } = require('../../src/serv
 const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals, classifyEmailModality, extractEmailLocationCandidate } = require('../../src/services/emailParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { searchPlace } = require('../../src/services/mapkitService');
+const { resolveProductMatch } = require('../../src/services/productResolver');
+const { getItemHistoryByGroupKey } = require('../../src/services/itemHistoryService');
 
 let householdId;
 let userId;
@@ -92,6 +100,10 @@ beforeEach(async () => {
   extractEmailLocationCandidate.mockReturnValue(null);
   searchPlace.mockReset();
   searchPlace.mockResolvedValue(null);
+  resolveProductMatch.mockReset();
+  resolveProductMatch.mockResolvedValue(null);
+  getItemHistoryByGroupKey.mockReset();
+  getItemHistoryByGroupKey.mockResolvedValue(null);
   assignCategory.mockReset();
   // Clean state between tests
   await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
@@ -224,6 +236,147 @@ describe('POST /gmail/import', () => {
     expect(token.rows[0].last_sync_status).toBe('success');
     expect(token.rows[0].last_sync_source).toBe('manual');
     expect(token.rows[0].last_sync_error).toBeNull();
+  });
+
+  it('promotes a familiar item import to quick_check when parsed items match personal history', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+    const historicalExpenseIds = [];
+    for (const merchant of ['Amazon', 'Amazon', 'Amazon']) {
+      const inserted = await db.query(
+        `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+         VALUES ($1, $2, $3, 19.99, '2026-04-01', 'email', 'confirmed')
+         RETURNING id`,
+        [userId, householdId, merchant]
+      );
+      historicalExpenseIds.push(inserted.rows[0].id);
+    }
+    for (const [index, expenseId] of historicalExpenseIds.entries()) {
+      await db.query(
+        `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address, subject)
+         VALUES ($1, $2, $3, 'imported', 'orders@amazon.com', $4)`,
+        [userId, `hist-msg-${index}`, expenseId, `ORDER: Hist ${index}`]
+      );
+      await db.query(
+        `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+         VALUES ($1, 'approved', '["review_path_quick_check"]'::jsonb, 0)`,
+        [expenseId]
+      );
+    }
+
+    listRecentMessages.mockResolvedValue([{ id: 'msg-familiar-item' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Your receipt from Target',
+      from: 'orders@amazon.com',
+      body: 'Total: $18.49',
+      snippet: 'Total: $18.49',
+      receivedAt: '2026-04-16',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Target', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Target',
+      amount: 18.49,
+      date: '2026-04-16',
+      notes: null,
+      items: [{ description: 'Sparkling Water', amount: 18.49, comparable_key: 'sparkling water|brand:water co' }],
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+    resolveProductMatch.mockResolvedValue({ confidence: 'medium', reason: 'normalized_match', product_id: null });
+    getItemHistoryByGroupKey.mockResolvedValue({
+      group_key: 'comparable:sparkling water|brand:water co',
+      item_name: 'Sparkling Water',
+      occurrence_count: 3,
+      median_amount: 17.99,
+      latest_purchase: { merchant: 'Target', amount: 18.19 },
+    });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.outcomes).toMatchObject({
+      imported_pending_review: 1,
+      imported_fast_lane: 1,
+      imported_items_first: 0,
+      imported_full_review: 0,
+    });
+
+    const inserted = await db.query(
+      `SELECT review_mode FROM expenses WHERE user_id = $1 AND merchant = 'Target' ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    expect(inserted.rows[0].review_mode).toBe('quick_check');
+  });
+
+  it('keeps item-heavy imports in items_first when parsed items conflict with personal history', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+    const historicalExpenseIds = [];
+    for (const merchant of ['Amazon', 'Amazon', 'Amazon']) {
+      const inserted = await db.query(
+        `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+         VALUES ($1, $2, $3, 19.99, '2026-04-01', 'email', 'confirmed')
+         RETURNING id`,
+        [userId, householdId, merchant]
+      );
+      historicalExpenseIds.push(inserted.rows[0].id);
+    }
+    for (const [index, expenseId] of historicalExpenseIds.entries()) {
+      await db.query(
+        `INSERT INTO email_import_log (user_id, message_id, expense_id, status, from_address, subject)
+         VALUES ($1, $2, $3, 'imported', 'orders@amazon.com', $4)`,
+        [userId, `hist-conflict-${index}`, expenseId, `ORDER: Hist ${index}`]
+      );
+      await db.query(
+        `INSERT INTO email_import_feedback (expense_id, review_action, review_changed_fields, review_edit_count)
+         VALUES ($1, 'approved', '["review_path_quick_check"]'::jsonb, 0)`,
+        [expenseId]
+      );
+    }
+
+    listRecentMessages.mockResolvedValue([{ id: 'msg-conflict-item' }]);
+    getMessage.mockResolvedValue({
+      subject: 'ORDER: conflicting item',
+      from: 'orders@amazon.com',
+      body: 'Total: $39.99',
+      snippet: 'Total: $39.99',
+      receivedAt: '2026-04-16',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Whole Foods', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Whole Foods',
+      amount: 39.99,
+      date: '2026-04-16',
+      notes: null,
+      items: [{ description: 'Sparkling Water', amount: 39.99, comparable_key: 'sparkling water|brand:water co' }],
+    });
+    assignCategory.mockResolvedValue({ category_id: null });
+    resolveProductMatch.mockResolvedValue({ confidence: 'medium', reason: 'normalized_match', product_id: null });
+    getItemHistoryByGroupKey.mockResolvedValue({
+      group_key: 'comparable:sparkling water|brand:water co',
+      item_name: 'Sparkling Water',
+      occurrence_count: 3,
+      median_amount: 17.99,
+      latest_purchase: { merchant: 'Target', amount: 18.19 },
+    });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.outcomes).toMatchObject({
+      imported_pending_review: 1,
+      imported_fast_lane: 0,
+      imported_items_first: 1,
+    });
+
+    const inserted = await db.query(
+      `SELECT review_mode FROM expenses WHERE user_id = $1 AND merchant = 'Whole Foods' ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    expect(inserted.rows[0].review_mode).toBe('items_first');
   });
 
   it('treats amazon ORDER subjects as transaction-like even if the classifier says not_expense', async () => {

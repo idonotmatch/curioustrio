@@ -18,6 +18,8 @@ const { resolveProductMatch } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
 const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
+const { getItemHistoryByGroupKey } = require('./itemHistoryService');
+const { pushNotificationsEnabled } = require('./pushPreferences');
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -70,6 +72,39 @@ function increment(bucket, key) {
   bucket[key] = (bucket[key] || 0) + 1;
 }
 
+function buildGmailImportPushPayload(imported, outcomes = {}) {
+  const pendingReview = Number(outcomes.imported_pending_review || 0);
+  const autoAdded = Math.max(0, Number(imported || 0) - pendingReview);
+
+  if (pendingReview > 0) {
+    return {
+      title: pendingReview === 1 ? '1 Gmail import needs review' : `${pendingReview} Gmail imports need review`,
+      body: pendingReview === 1
+        ? 'A new receipt is waiting in your review queue.'
+        : `${pendingReview} new receipts are waiting in your review queue.`,
+      data: {
+        type: 'review_queue',
+        route: '/review-queue',
+        imported_count: Number(imported || 0),
+        review_count: pendingReview,
+      },
+    };
+  }
+
+  return {
+    title: autoAdded === 1 ? '1 Gmail expense added' : `${autoAdded} Gmail expenses added`,
+    body: autoAdded === 1
+      ? 'A new expense was added from Gmail.'
+      : `${autoAdded} new expenses were added from Gmail.`,
+    data: {
+      type: 'gmail_import',
+      route: '/(tabs)/index',
+      imported_count: Number(imported || 0),
+      review_count: 0,
+    },
+  };
+}
+
 function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'needs review' }) {
   const cleanedSubject = (subject || '').trim();
   const cleanedSnippet = (snippet || '').replace(/\s+/g, ' ').trim();
@@ -95,6 +130,51 @@ function shouldSoftenSkipBehavior(senderQuality = {}) {
     Number(metrics.should_have_imported || 0) >= 1
     || Number(metrics.should_have_imported_rate || 0) >= 0.2
   );
+}
+
+function buildItemHistoryReviewAdjustment(expenseLike = {}, itemHistories = []) {
+  const contexts = Array.isArray(itemHistories) ? itemHistories : [];
+  if (!contexts.length) return null;
+
+  const totalAmount = Math.abs(Number(expenseLike.amount || 0));
+  let trustedSignals = 0;
+  let cautionSignals = 0;
+
+  for (const context of contexts) {
+    const latestPurchase = context.latest_purchase || null;
+    const latestMerchant = `${latestPurchase?.merchant || ''}`.trim().toLowerCase();
+    const currentMerchant = `${expenseLike.merchant || ''}`.trim().toLowerCase();
+    const medianAmount = Number(context.median_amount || 0);
+    const deltaPercent = medianAmount > 0
+      ? Math.round((Math.abs(totalAmount - medianAmount) / medianAmount) * 100)
+      : null;
+
+    if (Number(context.occurrence_count || 0) >= 3) trustedSignals += 1;
+    if (medianAmount > 0 && deltaPercent != null && deltaPercent <= 15) trustedSignals += 1;
+    if (latestMerchant && currentMerchant && latestMerchant === currentMerchant) trustedSignals += 1;
+
+    if (latestMerchant && currentMerchant && latestMerchant !== currentMerchant) cautionSignals += 1;
+    if (medianAmount > 0 && deltaPercent != null && deltaPercent >= 30) cautionSignals += 1;
+  }
+
+  if (cautionSignals > 0) {
+    return {
+      level: 'noisy',
+      message: 'Parsed items do not line up cleanly with recent item history.',
+    };
+  }
+
+  if (trustedSignals >= 2) {
+    return {
+      level: 'trusted',
+      message: 'Parsed items line up with familiar purchase history.',
+    };
+  }
+
+  return {
+    level: 'mixed',
+    message: 'Parsed items partially match familiar purchase history.',
+  };
 }
 
 async function resolveEmailLocation({ merchant = '', subject = '', from = '', body = '' }) {
@@ -146,7 +226,6 @@ async function processMessageImport(user, msgId, {
     msgSnippet = snippet;
     const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
     const senderQuality = await getSenderImportQuality(user.id, from, subject);
-    const reviewMode = recommendReviewMode(senderQuality);
     const softenSkipBehavior = shouldSoftenSkipBehavior(senderQuality);
     const templateQuality = senderQuality?.template_quality || {};
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
@@ -265,6 +344,47 @@ async function processMessageImport(user, msgId, {
       categories,
     });
     const { location } = await resolveEmailLocation({ merchant: parsed.merchant, subject, from, body });
+    let itemsWithProducts = [];
+    if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+      itemsWithProducts = await Promise.all(
+        parsed.items.filter(it => it.description).map(async (item) => {
+          const resolution = await resolveProductMatch(item, parsed.merchant);
+          return {
+            ...item,
+            product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
+            product_match_confidence: resolution?.confidence || null,
+            product_match_reason: resolution?.reason || null,
+          };
+        })
+      );
+    }
+
+    let effectiveSenderQuality = senderQuality;
+    if (itemsWithProducts.length > 0) {
+      const uniqueGroupKeys = [...new Set(itemsWithProducts
+        .map((item) => item.product_id ? `product:${item.product_id}` : (item.comparable_key ? `comparable:${item.comparable_key}` : null))
+        .filter(Boolean))]
+        .slice(0, 2);
+      if (uniqueGroupKeys.length > 0) {
+        const histories = await Promise.all(
+          uniqueGroupKeys.map((groupKey) => getItemHistoryByGroupKey(user.id, groupKey, { scope: 'personal', lookbackDays: 180 }))
+        );
+        const adjustment = buildItemHistoryReviewAdjustment(parsed, histories.filter(Boolean));
+        if (adjustment?.level) {
+          effectiveSenderQuality = {
+            ...senderQuality,
+            item_reliability: {
+              ...(senderQuality.item_reliability || {}),
+              level: adjustment.level,
+              message: adjustment.message,
+            },
+          };
+        }
+      }
+    }
+
+    const reviewMode = recommendReviewMode(effectiveSenderQuality);
+
     const expense = await Expense.create({
       userId: user.id,
       householdId: user.household_id,
@@ -286,18 +406,7 @@ async function processMessageImport(user, msgId, {
       reviewSource: 'gmail',
     });
 
-    if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-      const itemsWithProducts = await Promise.all(
-        parsed.items.filter(it => it.description).map(async (item) => {
-          const resolution = await resolveProductMatch(item, parsed.merchant);
-          return {
-            ...item,
-            product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
-            product_match_confidence: resolution?.confidence || null,
-            product_match_reason: resolution?.reason || null,
-          };
-        })
-      );
+    if (itemsWithProducts.length > 0) {
       await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
     }
 
@@ -354,17 +463,20 @@ async function importForUser(user) {
   // Send push notification if new expenses were imported
   if (imported > 0) {
     try {
-      const tokens = await PushToken.findByUser(user.id);
-      if (tokens.length > 0) {
-        const body = imported === 1
-          ? '1 new expense imported from Gmail'
-          : `${imported} new expenses imported from Gmail`;
-        await sendNotifications(tokens.map(t => ({
-          to: t.token,
-          title: 'New expenses',
-          body,
-          data: { screen: 'pending' },
-        })));
+      const notification = buildGmailImportPushPayload(imported, outcomes);
+      const shouldSend = notification.data?.review_count > 0
+        ? pushNotificationsEnabled(user, 'push_gmail_review_enabled')
+        : pushNotificationsEnabled(user, 'push_gmail_review_enabled');
+      if (shouldSend) {
+        const tokens = await PushToken.findByUser(user.id);
+        if (tokens.length > 0) {
+          await sendNotifications(tokens.map(t => ({
+            to: t.token,
+            title: notification.title,
+            body: notification.body,
+            data: notification.data,
+          })));
+        }
       }
     } catch (e) {
       console.error(`[gmail import] push notification failed user=${user.id}:`, e.message);
@@ -409,4 +521,10 @@ async function retryFailedImportsForUser(user, { limit = 10 } = {}) {
   return { imported, skipped, failed, outcomes, attempted: failedLogs.length };
 }
 
-module.exports = { importForUser, retryFailedImportLog, retryFailedImportsForUser };
+module.exports = {
+  importForUser,
+  retryFailedImportLog,
+  retryFailedImportsForUser,
+  buildGmailImportPushPayload,
+  buildItemHistoryReviewAdjustment,
+};
