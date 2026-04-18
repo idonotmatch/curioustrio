@@ -4,21 +4,47 @@ import {
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { signInWithGoogle, signInWithApple, statusCodes } from '../lib/auth';
 import { supabase } from '../lib/supabase';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [loadingApple, setLoadingApple] = useState(false);
   const [loadingAnon, setLoadingAnon] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function loadAppleAvailability() {
+      try {
+        const available = Platform.OS === 'ios'
+          ? await AppleAuthentication.isAvailableAsync()
+          : false;
+        if (active) setAppleAvailable(available);
+      } catch {
+        if (active) setAppleAvailable(false);
+      }
+    }
+    loadAppleAvailability();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleContinueAnonymously() {
     setLoadingAnon(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace('/(tabs)/summary');
+        return;
+      }
       const { error } = await supabase.auth.signInAnonymously();
       if (error) throw error;
       // _layout.js onAuthStateChange handles routing
     } catch (e) {
-      Alert.alert('Sign in failed', 'Please try again.');
+      Alert.alert('Sign in failed', e?.message || 'Please try again.');
     } finally {
       setLoadingAnon(false);
     }
@@ -27,11 +53,16 @@ export default function LoginScreen() {
   async function handleGoogleSignIn() {
     setLoadingGoogle(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace('/(tabs)/summary');
+        return;
+      }
       await signInWithGoogle();
       // _layout.js onAuthStateChange handles routing after sign-in
     } catch (e) {
       if (e.code === statusCodes.SIGN_IN_CANCELLED) return; // user dismissed
-      Alert.alert('Sign in failed', 'Please try again.');
+      Alert.alert('Sign in failed', e?.message || 'Please try again.');
     } finally {
       setLoadingGoogle(false);
     }
@@ -40,11 +71,16 @@ export default function LoginScreen() {
   async function handleAppleSignIn() {
     setLoadingApple(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace('/(tabs)/summary');
+        return;
+      }
       await signInWithApple();
       // _layout.js onAuthStateChange handles routing after sign-in
     } catch (e) {
       if (e.code === 'ERR_CANCELED') return; // user dismissed
-      Alert.alert('Sign in failed', 'Please try again.');
+      Alert.alert('Sign in failed', e?.message || 'Please try again.');
     } finally {
       setLoadingApple(false);
     }
@@ -65,7 +101,7 @@ export default function LoginScreen() {
           : <Text style={styles.googleBtnText}>Sign in with Google</Text>}
       </TouchableOpacity>
 
-      {Platform.OS === 'ios' && (
+      {appleAvailable && (
         <AppleAuthentication.AppleAuthenticationButton
           buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
           buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}

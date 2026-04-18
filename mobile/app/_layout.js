@@ -9,12 +9,31 @@ import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
+
+function firstValue(value, fallback = null) {
+  if (Array.isArray(value)) return value[0] ?? fallback;
+  return value ?? fallback;
+}
+
+function normalizeNotificationData(data = {}) {
+  if (!data || typeof data !== 'object') return {};
+  return data;
+}
+
 function AppNavigator() {
   const router = useRouter();
   const [bootstrapped, setBootstrapped] = useState(false);
   const resolvingSessionRef = useRef(false);
   const gmailSyncInFlightRef = useRef(false);
   const lastGmailAutoSyncAttemptRef = useRef(0);
+  const lastHandledNotificationRef = useRef(null);
 
   async function cacheCurrentUser(user) {
     if (!user) return;
@@ -172,6 +191,82 @@ function AppNavigator() {
     });
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    async function handleNotificationResponse(response) {
+      const identifier = response?.notification?.request?.identifier;
+      if (identifier && lastHandledNotificationRef.current === identifier) return;
+      if (identifier) lastHandledNotificationRef.current = identifier;
+
+      const content = response?.notification?.request?.content || {};
+      const data = normalizeNotificationData(content.data);
+      const route = firstValue(data.route);
+      const type = firstValue(data.type, '');
+
+      if (type === 'insight') {
+        try {
+          await api.post('/insights/events', {
+            events: [{
+              insight_id: firstValue(data.insight_id),
+              event_type: 'tapped',
+              metadata: {
+                source: 'push',
+                insight_type: firstValue(data.insight_type),
+              },
+            }],
+          });
+        } catch {
+          // Non-fatal
+        }
+
+        const metadata = typeof data.metadata === 'string'
+          ? data.metadata
+          : JSON.stringify(data.metadata || {});
+        router.push({
+          pathname: '/insight-detail',
+          params: {
+            insight_id: firstValue(data.insight_id, ''),
+            insight_type: firstValue(data.insight_type, ''),
+            title: firstValue(data.title, content.title || 'Insight detail'),
+            body: firstValue(data.body, content.body || ''),
+            severity: firstValue(data.severity, 'low'),
+            entity_type: firstValue(data.entity_type, ''),
+            entity_id: firstValue(data.entity_id, ''),
+            metadata,
+          },
+        });
+        return;
+      }
+
+      if (route) {
+        router.push(route);
+        return;
+      }
+
+      if (type === 'recurring') {
+        router.push('/watching-plans');
+        return;
+      }
+
+      if (type === 'review_queue' || type === 'gmail_import') {
+        router.push('/review-queue');
+      }
+    }
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationResponse(response);
+    });
+
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) handleNotificationResponse(response);
+      })
+      .catch(() => {
+        // Non-fatal
+      });
+
+    return () => subscription.remove();
+  }, [router]);
 
   if (!bootstrapped) {
     return (
