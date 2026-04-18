@@ -1,4 +1,5 @@
 const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('./recurringDetector');
+const { listItemHistorySummaries } = require('./itemHistoryService');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
@@ -139,6 +140,139 @@ function toBuySoonBetterPriceInsight(opportunity, scope = 'household') {
     },
     actions: [],
   };
+}
+
+function buildItemHistoryInsights(histories = [], scope = 'household') {
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+  const insights = [];
+
+  for (const history of histories) {
+    const itemName = history.item_name || 'This item';
+    const merchantBreakdown = Array.isArray(history.merchant_breakdown) ? history.merchant_breakdown : [];
+    const stapleEmerging = (
+      Number(history.occurrence_count || 0) >= 3
+      && Number(history.average_gap_days || 0) > 0
+      && Number(history.average_gap_days || 0) <= 21
+      && Number(history.median_amount || 0) >= 8
+    );
+
+    const sortedMerchants = merchantBreakdown
+      .filter((entry) => Number(entry.occurrence_count || 0) >= 1)
+      .sort((a, b) => {
+        const aValue = a.median_unit_price ?? a.median_amount ?? Number.MAX_SAFE_INTEGER;
+        const bValue = b.median_unit_price ?? b.median_amount ?? Number.MAX_SAFE_INTEGER;
+        return aValue - bValue;
+      });
+
+    let merchantVariance = null;
+    if (sortedMerchants.length >= 2) {
+      const cheapest = sortedMerchants[0];
+      const priciest = sortedMerchants[sortedMerchants.length - 1];
+      const cheapestValue = Number(cheapest.median_unit_price ?? cheapest.median_amount ?? 0);
+      const priciestValue = Number(priciest.median_unit_price ?? priciest.median_amount ?? 0);
+      const deltaAmount = Number((priciestValue - cheapestValue).toFixed(2));
+      const deltaPercent = cheapestValue > 0
+        ? Number((((priciestValue - cheapestValue) / cheapestValue) * 100).toFixed(1))
+        : 0;
+
+      if (deltaAmount >= 1.5 && deltaPercent >= 10) {
+        merchantVariance = {
+          cheapest,
+          priciest,
+          cheapestValue,
+          priciestValue,
+          deltaAmount,
+          deltaPercent,
+        };
+      }
+    }
+
+    if (stapleEmerging && merchantVariance) {
+      insights.push({
+        id: `item_staple_merchant_opportunity:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
+        type: 'item_staple_merchant_opportunity',
+        title: `${itemName} is becoming a regular buy`,
+        body: `${itemName} has shown up ${history.occurrence_count} times recently, and ${merchantVariance.cheapest.merchant} has been about ${merchantVariance.deltaPercent}% cheaper than ${merchantVariance.priciest.merchant}.`,
+        severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 || Number(history.occurrence_count || 0) >= 4 ? 'medium' : 'low',
+        entity_type: 'item',
+        entity_id: history.group_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          ...history,
+          scope,
+          maturity: 'developing',
+          confidence: history.identity_confidence || 'medium',
+          comparison_type: merchantVariance.cheapest.median_unit_price != null && merchantVariance.priciest.median_unit_price != null ? 'unit_price' : 'price',
+          cheaper_merchant: merchantVariance.cheapest.merchant,
+          pricier_merchant: merchantVariance.priciest.merchant,
+          cheaper_value: merchantVariance.cheapestValue,
+          pricier_value: merchantVariance.priciestValue,
+          delta_amount: merchantVariance.deltaAmount,
+          delta_percent: merchantVariance.deltaPercent,
+          continuity_key: `item_story:${scope}:${history.group_key}`,
+        },
+        actions: [],
+      });
+      continue;
+    }
+
+    if (stapleEmerging) {
+      insights.push({
+        id: `item_staple_emerging:${scope}:${history.group_key}:${history.last_purchased_at}`,
+        type: 'item_staple_emerging',
+        title: `${itemName} is becoming a regular buy`,
+        body: history.merchants?.length > 1
+          ? `You have bought ${itemName} ${history.occurrence_count} times recently, about every ${history.average_gap_days} days, across ${history.merchants.length} merchants.`
+          : `You have bought ${itemName} ${history.occurrence_count} times recently, about every ${history.average_gap_days} days.`,
+        severity: Number(history.occurrence_count || 0) >= 4 ? 'medium' : 'low',
+        entity_type: 'item',
+        entity_id: history.group_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          ...history,
+          scope,
+          maturity: 'developing',
+          confidence: history.identity_confidence || 'medium',
+          continuity_key: `item_pattern:${scope}:${history.group_key}`,
+        },
+        actions: [],
+      });
+    }
+
+    if (merchantVariance) {
+        insights.push({
+          id: `item_merchant_variance:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
+          type: 'item_merchant_variance',
+          title: `${itemName} tends to cost less at ${merchantVariance.cheapest.merchant}`,
+          body: `${history.item_name || 'This item'} has recently run about ${merchantVariance.deltaPercent}% lower at ${merchantVariance.cheapest.merchant} than at ${merchantVariance.priciest.merchant}.`,
+          severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 ? 'medium' : 'low',
+          entity_type: 'item',
+          entity_id: history.group_key,
+          created_at: createdAt,
+          expires_at: expiresAt,
+          metadata: {
+            ...history,
+            scope,
+            maturity: 'developing',
+            confidence: history.identity_confidence || 'medium',
+            comparison_type: merchantVariance.cheapest.median_unit_price != null && merchantVariance.priciest.median_unit_price != null ? 'unit_price' : 'price',
+            cheaper_merchant: merchantVariance.cheapest.merchant,
+            pricier_merchant: merchantVariance.priciest.merchant,
+            cheaper_value: merchantVariance.cheapestValue,
+            pricier_value: merchantVariance.priciestValue,
+            delta_amount: merchantVariance.deltaAmount,
+            delta_percent: merchantVariance.deltaPercent,
+            continuity_key: `item_merchant:${scope}:${history.group_key}`,
+          },
+          actions: [],
+        });
+    }
+  }
+
+  return insights;
 }
 
 function remainingDaysInPeriod(projection) {
@@ -627,6 +761,8 @@ function portfolioRole(insight) {
     || type === 'recurring_repurchase_due'
     || type === 'recurring_restock_window'
     || type === 'buy_soon_better_price'
+    || type === 'item_merchant_variance'
+    || type === 'item_staple_merchant_opportunity'
   ) return 'act';
 
   if (
@@ -652,6 +788,7 @@ function portfolioRole(insight) {
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
+    || type === 'item_staple_emerging'
   ) return 'explain';
 
   return 'other';
@@ -682,6 +819,7 @@ function portfolioFamily(insight) {
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
+    || type === 'item_staple_emerging'
   ) return 'explanation';
 
   if (
@@ -689,6 +827,8 @@ function portfolioFamily(insight) {
     || type === 'projected_category_under_baseline'
     || type === 'recurring_restock_window'
     || type === 'buy_soon_better_price'
+    || type === 'item_merchant_variance'
+    || type === 'item_staple_merchant_opportunity'
   ) return 'opportunity';
 
   if (
@@ -720,6 +860,7 @@ function narrativeClusterKey(insight) {
     || type === 'developing_category_shift'
     || type === 'developing_repeated_merchant'
     || type === 'developing_weekly_spend_change'
+    || type === 'item_staple_emerging'
   ) {
     return `trend:${scope}:${month}`;
   }
@@ -739,6 +880,8 @@ function narrativeClusterKey(insight) {
     || type === 'recurring_restock_window'
     || type === 'buy_soon_better_price'
     || type === 'recurring_cost_pressure'
+    || type === 'item_merchant_variance'
+    || type === 'item_staple_merchant_opportunity'
   ) {
     return `recurring:${scope}:${month}`;
   }
@@ -1267,6 +1410,13 @@ async function buildInsights({ user, limit = 10 }) {
   const hasMultipleHouseholdMembers = householdMembers.length > 1;
 
   if (user?.household_id) {
+    const householdItemHistory = await listItemHistorySummaries(user.household_id, {
+      scope: 'household',
+      minOccurrences: 3,
+      limit: 8,
+    });
+    insightSets.push(buildItemHistoryInsights(householdItemHistory, 'household'));
+
     recurringSignals = await detectRecurringItemSignals(user.household_id);
     insightSets.push(recurringSignals.map((signal) => toInsight(signal, 'household')));
     const watchCandidates = await detectRecurringWatchCandidates(user.household_id);
@@ -1337,6 +1487,13 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   if (user?.id) {
+    const personalItemHistory = await listItemHistorySummaries(user.id, {
+      scope: 'personal',
+      minOccurrences: 3,
+      limit: 8,
+    });
+    insightSets.push(buildItemHistoryInsights(personalItemHistory, 'personal'));
+
     const personalRecurringSignals = await detectRecurringItemSignals(user.id, { scope: 'personal' });
     insightSets.push(personalRecurringSignals.map((signal) => toInsight(signal, 'personal')));
     const personalWatchCandidates = await detectRecurringWatchCandidates(user.id, { scope: 'personal' });

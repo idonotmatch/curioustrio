@@ -85,6 +85,7 @@ function signalSummary(insightType, metadata = {}, history = null, fallbackBody 
 export default function RecurringItemScreen() {
   const {
     group_key: groupKey,
+    scope = 'household',
     title,
     insight_id: insightId = '',
     insight_type: insightType = '',
@@ -116,7 +117,8 @@ export default function RecurringItemScreen() {
       }
       try {
         setLoading(true);
-        const data = await api.get(`/recurring/item-history?group_key=${encodeURIComponent(groupKey)}`);
+        const normalizedScope = `${Array.isArray(scope) ? scope[0] : scope}` === 'personal' ? 'personal' : 'household';
+        const data = await api.get(`/recurring/item-history?group_key=${encodeURIComponent(groupKey)}&scope=${encodeURIComponent(normalizedScope)}`);
         if (!cancelled) {
           setHistory(data);
           setError('');

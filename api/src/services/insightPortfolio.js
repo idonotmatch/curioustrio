@@ -11,6 +11,7 @@ function insightDestinationAdjustment(insight) {
     type === 'one_offs_driving_variance'
     || type === 'one_off_expense_skewing_projection'
     || type === 'recurring_cost_pressure'
+    || type === 'item_staple_merchant_opportunity'
   ) return 6;
 
   if (

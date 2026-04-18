@@ -191,6 +191,34 @@ function evidenceTitle(mode, metadata = {}) {
   return 'Recent evidence';
 }
 
+function merchantComparisonRows(metadata = {}) {
+  const rows = Array.isArray(metadata.merchant_breakdown) ? metadata.merchant_breakdown : [];
+  return rows
+    .filter((row) => row?.merchant)
+    .map((row) => ({
+      merchant: row.merchant,
+      occurrence_count: Number(row.occurrence_count || 0),
+      median_amount: row.median_amount == null ? null : Number(row.median_amount),
+      median_unit_price: row.median_unit_price == null ? null : Number(row.median_unit_price),
+      last_purchased_at: row.last_purchased_at || null,
+    }));
+}
+
+function purchaseHistoryRows(metadata = {}) {
+  const rows = Array.isArray(metadata.purchases) ? metadata.purchases : [];
+  return rows
+    .filter(Boolean)
+    .map((row, index) => ({
+      id: `${row.date || 'date'}:${row.merchant || 'merchant'}:${index}`,
+      date: row.date || null,
+      merchant: row.merchant || null,
+      amount: row.amount == null ? null : Number(row.amount),
+      estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
+      normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
+      normalized_total_size_unit: row.normalized_total_size_unit || null,
+    }));
+}
+
 export default function InsightDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -246,6 +274,8 @@ export default function InsightDetailScreen() {
   const changed = whatChangedCopy(metadata, body);
   const whyItMatters = whyItMattersCopy(insightType, metadata);
   const nextStep = nextStepCopy(descriptor, primaryAction);
+  const merchantComparisons = merchantComparisonRows(metadata);
+  const purchaseHistory = purchaseHistoryRows(metadata);
 
   useEffect(() => {
     let cancelled = false;
@@ -434,6 +464,58 @@ export default function InsightDetailScreen() {
                 <Text style={styles.metricValue}>{row.value}</Text>
               </View>
             ))}
+          </View>
+        ) : null}
+
+        {merchantComparisons.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardEyebrow}>Merchant comparison</Text>
+            <Text style={styles.cardTitle}>Where this has been landing</Text>
+            <View style={styles.metricList}>
+              {merchantComparisons.map((row) => {
+                const comparisonValue = row.median_unit_price != null
+                  ? `${formatCurrency(row.median_unit_price)} / ${metadata.normalized_total_size_unit || 'unit'}`
+                  : formatCurrency(row.median_amount);
+                const detail = [
+                  row.occurrence_count ? `${row.occurrence_count}x` : null,
+                  row.last_purchased_at ? formatShortDate(row.last_purchased_at) : null,
+                ].filter(Boolean).join(' / ');
+                return (
+                  <View key={row.merchant} style={styles.metricRow}>
+                    <View style={styles.metricTextBlock}>
+                      <Text style={styles.metricMerchant}>{row.merchant}</Text>
+                      {detail ? <Text style={styles.metricSub}>{detail}</Text> : null}
+                    </View>
+                    <Text style={styles.metricValue}>{comparisonValue || 'n/a'}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+
+        {purchaseHistory.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardEyebrow}>Recent purchases</Text>
+            <Text style={styles.cardTitle}>How this has moved lately</Text>
+            <View style={styles.expenseList}>
+              {purchaseHistory.slice().reverse().map((purchase) => {
+                const unitDetail = purchase.estimated_unit_price != null
+                  ? `${formatCurrency(purchase.estimated_unit_price)} / ${purchase.normalized_total_size_unit || 'unit'}`
+                  : null;
+                return (
+                  <View key={purchase.id} style={styles.expenseRow}>
+                    <View style={styles.expenseText}>
+                      <Text style={styles.expenseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
+                      <Text style={styles.expenseMeta}>
+                        {[formatShortDate(purchase.date), unitDetail].filter(Boolean).join(' / ')}
+                      </Text>
+                    </View>
+                    <Text style={styles.expenseAmount}>{formatCurrency(purchase.amount)}</Text>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         ) : null}
 
@@ -670,12 +752,16 @@ const styles = StyleSheet.create({
   metricRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#242424',
     paddingTop: 10,
   },
+  metricTextBlock: { flex: 1 },
   metricLabel: { color: '#8a8a8a', fontSize: 12, flex: 1 },
+  metricMerchant: { color: '#f5f5f5', fontSize: 13, fontWeight: '700' },
+  metricSub: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
   metricValue: { color: '#f5f5f5', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
   feedbackRow: { flexDirection: 'row', gap: 10 },
   feedbackButton: {

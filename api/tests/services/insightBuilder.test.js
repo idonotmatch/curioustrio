@@ -68,6 +68,37 @@ describe('insightBuilder orchestration', () => {
     }))).toBe('projection');
   });
 
+  it('classifies item-history insights into useful families and clusters', () => {
+    expect(portfolioRole(buildInsight({
+      type: 'item_staple_merchant_opportunity',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('act');
+    expect(portfolioFamily(buildInsight({
+      type: 'item_staple_merchant_opportunity',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('opportunity');
+    expect(narrativeClusterKey(buildInsight({
+      type: 'item_staple_merchant_opportunity',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('recurring:personal:2026-04');
+    expect(portfolioFamily(buildInsight({
+      type: 'item_merchant_variance',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('opportunity');
+    expect(portfolioFamily(buildInsight({
+      type: 'item_staple_emerging',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('explanation');
+    expect(narrativeClusterKey(buildInsight({
+      type: 'item_staple_emerging',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('trend:personal:2026-04');
+    expect(narrativeClusterKey(buildInsight({
+      type: 'item_merchant_variance',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('recurring:personal:2026-04');
+  });
+
   it('prefers a more diverse final portfolio over multiple similar cards', () => {
     const insights = [
       buildInsight({ id: 'warn-1', type: 'projected_month_end_over_budget', severity: 'high', entity_id: 'budget:1' }),

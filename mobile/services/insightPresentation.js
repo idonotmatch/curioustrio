@@ -37,6 +37,12 @@ export function getInsightActionDescriptor(insight, context = {}) {
 
   if (insight?.entity_type === 'item' && metadata?.group_key) {
     switch (type) {
+      case 'item_staple_merchant_opportunity':
+        return { label: 'Review item history', reason: 'Pattern and savings' };
+      case 'item_merchant_variance':
+        return { label: 'Compare where you buy it', reason: 'Actionable now' };
+      case 'item_staple_emerging':
+        return { label: 'Review item history', reason: 'Pattern forming' };
       case 'recurring_price_spike':
         return { label: 'Compare recent prices', reason: 'Worth checking' };
       case 'buy_soon_better_price':
@@ -199,6 +205,9 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
     case 'buy_soon_better_price':
     case 'recurring_repurchase_due':
     case 'recurring_restock_window':
+    case 'item_staple_merchant_opportunity':
+    case 'item_merchant_variance':
+    case 'item_staple_emerging':
       return {
         title: 'Review the item detail first',
         body: 'Use the item history, merchant comparison, and recent purchases to decide whether this is worth acting on now.',

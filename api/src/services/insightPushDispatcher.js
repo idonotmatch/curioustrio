@@ -2,6 +2,7 @@ const PushToken = require('../models/pushToken');
 const InsightNotification = require('../models/insightNotification');
 const { sendNotifications } = require('./pushService');
 const { buildInsightsForUser } = require('./insightBuilder');
+const { pushNotificationsEnabled } = require('./pushPreferences');
 
 const PUSHABLE_INSIGHT_TYPES = new Set([
   'recurring_repurchase_due',
@@ -9,24 +10,78 @@ const PUSHABLE_INSIGHT_TYPES = new Set([
   'buy_soon_better_price',
 ]);
 
+function trimSentence(value = '', max = 140) {
+  const text = `${value || ''}`.replace(/\s+/g, ' ').trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+function pushCopyForInsight(insight) {
+  const merchant = insight?.metadata?.merchant_name || insight?.metadata?.merchant_key || null;
+  const store = insight?.metadata?.store_name || insight?.metadata?.retailer_name || null;
+  const product = insight?.metadata?.product_name || insight?.title || 'item';
+
+  if (insight?.type === 'buy_soon_better_price') {
+    return {
+      title: 'Better price spotted',
+      body: trimSentence(
+        `${product}${store ? ` is cheaper at ${store}` : ' is below your usual price'}${insight?.body ? `. ${insight.body}` : ''}`,
+        150
+      ),
+    };
+  }
+
+  if (insight?.type === 'recurring_price_spike') {
+    return {
+      title: 'A usual buy got pricier',
+      body: trimSentence(
+        `${merchant || product} looks higher than usual${insight?.body ? `. ${insight.body}` : ''}`,
+        150
+      ),
+    };
+  }
+
+  if (insight?.type === 'recurring_repurchase_due') {
+    return {
+      title: 'You may need this again soon',
+      body: trimSentence(
+        `${merchant || product} is due again soon${insight?.body ? `. ${insight.body}` : ''}`,
+        150
+      ),
+    };
+  }
+
+  return {
+    title: trimSentence(insight?.title || 'New insight', 60),
+    body: trimSentence(insight?.body || 'We noticed something worth a look.', 150),
+  };
+}
+
 function toPushMessage(token, insight) {
+  const copy = pushCopyForInsight(insight);
   return {
     to: token.token,
-    title: insight.title,
-    body: insight.body,
+    title: copy.title,
+    body: copy.body,
     data: {
       type: 'insight',
+      route: '/insight-detail',
       insight_id: insight.id,
       insight_type: insight.type,
+      title: insight.title,
+      body: insight.body,
+      severity: insight.severity || null,
       entity_type: insight.entity_type,
       entity_id: insight.entity_id,
       group_key: insight.metadata?.group_key || null,
+      metadata: insight.metadata || null,
     },
   };
 }
 
 async function dispatchInsightPushesForUser(user) {
   if (!user?.id) return { sent: 0, considered: 0 };
+  if (!pushNotificationsEnabled(user, 'push_insights_enabled')) return { sent: 0, considered: 0 };
   const tokens = await PushToken.findByUser(user.id);
   if (!tokens.length) return { sent: 0, considered: 0 };
 
@@ -58,4 +113,5 @@ async function dispatchInsightPushesForUser(user) {
 module.exports = {
   dispatchInsightPushesForUser,
   PUSHABLE_INSIGHT_TYPES,
+  pushCopyForInsight,
 };
