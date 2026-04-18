@@ -27,6 +27,67 @@ function inferableOutcomeConfig(insightType) {
   return INFERABLE_OUTCOME_TYPES.get(`${insightType || ''}`.trim()) || null;
 }
 
+function summarizeOutcomeWindows(events = [], now = new Date()) {
+  if (!Array.isArray(events) || !events.length) return [];
+  const nowMs = new Date(now).getTime();
+  if (Number.isNaN(nowMs)) return [];
+
+  const byInsightId = new Map();
+  for (const event of events) {
+    const insightId = `${event?.insight_id || ''}`.trim();
+    if (!insightId) continue;
+    if (!byInsightId.has(insightId)) byInsightId.set(insightId, []);
+    byInsightId.get(insightId).push(event);
+  }
+
+  const windows = [];
+
+  for (const [insightId, insightEvents] of byInsightId.entries()) {
+    const shownOrTapped = insightEvents
+      .filter((event) => event.event_type === 'shown' || event.event_type === 'tapped')
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+    if (!shownOrTapped) continue;
+
+    const insightType = `${shownOrTapped?.metadata?.insight_type || shownOrTapped?.metadata?.type || ''}`.trim()
+      || insightId.split(':')[0];
+    const config = inferableOutcomeConfig(insightType);
+    if (!config) continue;
+
+    const shownAtMs = new Date(shownOrTapped.created_at).getTime();
+    if (Number.isNaN(shownAtMs)) continue;
+
+    const resolvedBy = insightEvents.find((event) =>
+      event.event_type === 'acted'
+      || event.event_type === 'dismissed'
+      || event.event_type === 'not_helpful'
+    ) || null;
+
+    const expiresAtMs = shownAtMs + (config.windowDays * 24 * 60 * 60 * 1000);
+    const status = resolvedBy
+      ? 'resolved'
+      : nowMs > expiresAtMs
+        ? 'expired_no_action'
+        : 'pending';
+
+    windows.push({
+      insight_id: insightId,
+      insight_type: insightType,
+      source_event_type: shownOrTapped.event_type,
+      shown_at: shownOrTapped.created_at,
+      expires_at: new Date(expiresAtMs).toISOString(),
+      outcome_type: config.outcomeType,
+      window_days: config.windowDays,
+      status,
+      resolved_event_type: resolvedBy?.event_type || null,
+      scope: shownOrTapped?.metadata?.scope || null,
+      maturity: shownOrTapped?.metadata?.maturity || null,
+      type: shownOrTapped?.metadata?.type || shownOrTapped?.metadata?.insight_type || insightType,
+    });
+  }
+
+  return windows.sort((a, b) => new Date(b.shown_at) - new Date(a.shown_at));
+}
+
 function parseGroupKeyFromInsight(event = {}) {
   const insightType = `${event?.metadata?.insight_type || event?.metadata?.type || ''}`.trim()
     || `${event?.insight_id || ''}`.trim().split(':')[0];
@@ -509,6 +570,7 @@ async function inferOutcomeEventsForUser({ user, events = [] }) {
 
 module.exports = {
   inferableOutcomeConfig,
+  summarizeOutcomeWindows,
   parseGroupKeyFromInsight,
   parseProjectionContextFromInsight,
   findCategorizedExpenseAfterShown,

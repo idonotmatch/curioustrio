@@ -961,6 +961,35 @@ describe('GET /insights/feedback-summary', () => {
   });
 });
 
+describe('GET /insights/preferences', () => {
+  it('returns the learned preference summary and outcome window counts', async () => {
+    await db.query(
+      `INSERT INTO insight_events (user_id, insight_id, event_type, metadata)
+       VALUES
+       ($1, 'item_merchant_variance:personal:milk', 'shown', '{"type":"item_merchant_variance","scope":"personal","maturity":"developing"}'::jsonb),
+       ($1, 'item_merchant_variance:personal:milk', 'helpful', '{"type":"item_merchant_variance","scope":"personal","maturity":"developing"}'::jsonb),
+       ($1, 'budget_too_low:household:2026-04', 'shown', '{"type":"budget_too_low","scope":"household","maturity":"mature"}'::jsonb),
+       ($1, 'budget_too_low:household:2026-04', 'dismissed', '{"type":"budget_too_low","scope":"household","maturity":"mature"}'::jsonb)`,
+      [userId]
+    );
+
+    const res = await request(app).get('/insights/preferences');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      user_id: userId,
+      preferences: expect.objectContaining({
+        preferred_scope: 'personal',
+      }),
+      outcome_windows: expect.objectContaining({
+        pending: expect.any(Number),
+        expired_no_action: expect.any(Number),
+        resolved: expect.any(Number),
+        recent: expect.any(Array),
+      }),
+    });
+  });
+});
+
 describe('POST /insights/dispatch-push', () => {
   it('sends push notifications for eligible unsent insight types and dedupes them', async () => {
     await db.query(

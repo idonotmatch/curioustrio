@@ -4,11 +4,12 @@ const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
 const BudgetSetting = require('../models/budgetSetting');
-const { inferOutcomeEventsForUser } = require('./insightOutcomeInference');
+const { inferOutcomeEventsForUser, summarizeOutcomeWindows } = require('./insightOutcomeInference');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
 const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight, normalizeLineageKey } = require('./insightFeedbackSummary');
+const { buildInsightPreferenceSummary, preferenceAdjustmentForInsight } = require('./insightPreferenceSummary');
 const {
   USAGE_INSIGHT_THRESHOLDS,
   buildEarlyUsageInsights,
@@ -758,8 +759,43 @@ function buildProjectionInsights(projection, scope) {
   return insights;
 }
 
-function insightRankScore(insight, feedbackSummary = new Map()) {
-  return severityRank(insight.severity) * 100 + feedbackAdjustmentForInsight(insight, feedbackSummary);
+function insightRankScore(insight, feedbackSummary = new Map(), preferenceSummary = {}) {
+  return severityRank(insight.severity) * 100
+    + feedbackAdjustmentForInsight(insight, feedbackSummary)
+    + preferenceAdjustmentForInsight(insight, preferenceSummary);
+}
+
+function knownTypeShownCount(typePreferences = [], insightType = '') {
+  const type = `${insightType || ''}`.trim();
+  if (!type) return 0;
+  const match = typePreferences.find((entry) => entry.key === type);
+  return Number(match?.shown || 0);
+}
+
+function promoteExplorationCandidate(ranked = [], preferenceSummary = {}, limit = 10) {
+  if (!Array.isArray(ranked) || ranked.length <= 1 || limit < 3) return ranked;
+
+  const topWindow = ranked.slice(0, limit);
+  if (!topWindow.length) return ranked;
+
+  const hasLowHistoryTypeInWindow = topWindow.some((insight) => (
+    knownTypeShownCount(preferenceSummary.type_preferences, insight?.type) < 2
+  ));
+  if (hasLowHistoryTypeInWindow) return ranked;
+
+  const windowTypes = new Set(topWindow.map((insight) => `${insight?.type || ''}`.trim()).filter(Boolean));
+  const candidateIndex = ranked.findIndex((insight, index) => (
+    index >= limit
+    && knownTypeShownCount(preferenceSummary.type_preferences, insight?.type) < 2
+    && !windowTypes.has(`${insight?.type || ''}`.trim())
+  ));
+
+  if (candidateIndex < 0) return ranked;
+
+  const candidate = ranked[candidateIndex];
+  const reordered = ranked.filter((_, index) => index !== candidateIndex);
+  reordered.splice(Math.max(0, limit - 1), 0, candidate);
+  return reordered;
 }
 
 function scopeHierarchyAdjustment(insight) {
@@ -1246,7 +1282,10 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
   ]);
   const stateMap = await InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id));
   const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
-  const feedbackSummary = summarizeFeedbackEvents([...recentEvents, ...inferredEvents]);
+  const allEvents = [...recentEvents, ...inferredEvents];
+  const feedbackSummary = summarizeFeedbackEvents(allEvents);
+  const outcomeWindows = summarizeOutcomeWindows(allEvents);
+  const preferenceSummary = buildInsightPreferenceSummary(allEvents, { outcomeWindows });
 
   return {
     user_id: user.id,
@@ -1260,6 +1299,36 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
       inferred_event_count: inferredEvents.length,
       suppressed_raw_count: rawInsights.filter((insight) => shouldSuppressInsight(insight, feedbackSummary)).length,
       dismissed_raw_count: rawInsights.filter((insight) => stateMap.get(insight.id)?.status === 'dismissed').length,
+      pending_outcome_window_count: outcomeWindows.filter((window) => window.status === 'pending').length,
+      expired_outcome_window_count: outcomeWindows.filter((window) => window.status === 'expired_no_action').length,
+    },
+    preferences: preferenceSummary,
+    outcome_windows: outcomeWindows.slice(0, 20),
+  };
+}
+
+async function buildInsightPreferencesForUser({ user, limit = 500 }) {
+  if (!user?.id) return null;
+  const recentEvents = await InsightEvent.getRecentByUser(
+    user.id,
+    Math.max(25, Math.min(Number(limit) || 500, 1000))
+  );
+  const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
+  const allEvents = [...recentEvents, ...inferredEvents];
+  const outcomeWindows = summarizeOutcomeWindows(allEvents);
+  const preferenceSummary = buildInsightPreferenceSummary(allEvents, { outcomeWindows });
+
+  return {
+    user_id: user.id,
+    event_count: allEvents.length,
+    direct_event_count: recentEvents.length,
+    inferred_event_count: inferredEvents.length,
+    preferences: preferenceSummary,
+    outcome_windows: {
+      pending: outcomeWindows.filter((window) => window.status === 'pending').length,
+      expired_no_action: outcomeWindows.filter((window) => window.status === 'expired_no_action').length,
+      resolved: outcomeWindows.filter((window) => window.status === 'resolved').length,
+      recent: outcomeWindows.slice(0, 20),
     },
   };
 }
@@ -1658,7 +1727,10 @@ async function buildInsightsForUser({ user, limit = 10 }) {
     InsightEvent.getRecentByUser(user.id, 500),
   ]);
   const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
-  const feedbackSummary = summarizeFeedbackEvents([...recentEvents, ...inferredEvents]);
+  const allEvents = [...recentEvents, ...inferredEvents];
+  const feedbackSummary = summarizeFeedbackEvents(allEvents);
+  const outcomeWindows = summarizeOutcomeWindows(allEvents);
+  const preferenceSummary = buildInsightPreferenceSummary(allEvents, { outcomeWindows });
 
   const ranked = rawInsights
     .map((insight) => {
@@ -1674,14 +1746,16 @@ async function buildInsightsForUser({ user, limit = 10 }) {
     .filter((insight) => insight.state?.status !== 'dismissed')
     .filter((insight) => !shouldSuppressInsight(insight, feedbackSummary))
     .sort((a, b) => {
-      const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
+      const scoreDiff = insightRankScore(b, feedbackSummary, preferenceSummary) - insightRankScore(a, feedbackSummary, preferenceSummary);
       if (scoreDiff !== 0) return scoreDiff;
       return new Date(b.created_at) - new Date(a.created_at);
     });
 
-  let supplementedRanked = ranked;
-  if (shouldSupplementWithUsageFallback(ranked)) {
-    const fallbackScope = determineUsageFallbackScope(ranked, user);
+  const explorationRanked = promoteExplorationCandidate(ranked, preferenceSummary, limit);
+
+  let supplementedRanked = explorationRanked;
+  if (shouldSupplementWithUsageFallback(explorationRanked)) {
+    const fallbackScope = determineUsageFallbackScope(explorationRanked, user);
     const [fallbackProjection, fallbackBudgetSettings] = await Promise.all([
       analyzeSpendProjection({ user, scope: fallbackScope }),
       fallbackScope === 'household' && user.household_id
@@ -1697,13 +1771,14 @@ async function buildInsightsForUser({ user, limit = 10 }) {
       context: 'quiet_period',
     });
 
-    supplementedRanked = resolveInsightCompetition(dedupeInsights([...ranked, ...fallbackInsights]))
+    supplementedRanked = resolveInsightCompetition(dedupeInsights([...explorationRanked, ...fallbackInsights]))
       .map(annotateInsightScopeLineage)
       .sort((a, b) => {
-      const scoreDiff = insightRankScore(b, feedbackSummary) - insightRankScore(a, feedbackSummary);
-      if (scoreDiff !== 0) return scoreDiff;
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
+        const scoreDiff = insightRankScore(b, feedbackSummary, preferenceSummary) - insightRankScore(a, feedbackSummary, preferenceSummary);
+        if (scoreDiff !== 0) return scoreDiff;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+    supplementedRanked = promoteExplorationCandidate(supplementedRanked, preferenceSummary, limit);
   }
 
   return orchestrateInsightPortfolio(supplementedRanked, feedbackSummary, limit);
@@ -1714,6 +1789,7 @@ module.exports = {
   buildInsights,
   buildInsightsForUser,
   buildInsightDebugForUser,
+  buildInsightPreferencesForUser,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
   summarizeExpenseRows,
@@ -1729,6 +1805,7 @@ module.exports = {
   determineUsageFallbackScope,
   insightRankScore,
   scopeHierarchyAdjustment,
+  promoteExplorationCandidate,
   insightDestinationAdjustment,
   portfolioRole,
   portfolioFamily,

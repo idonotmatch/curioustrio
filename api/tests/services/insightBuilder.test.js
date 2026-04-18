@@ -19,6 +19,7 @@ const {
   insightDestinationAdjustment,
   portfolioRole,
   scopeHierarchyAdjustment,
+  promoteExplorationCandidate,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -178,6 +179,44 @@ describe('insightBuilder orchestration', () => {
     ], new Map(), 1);
 
     expect(selected[0].id).toBe('personal-explain');
+  });
+
+  it('promotes one low-history insight type into the candidate window to keep learning fresh', () => {
+    const ranked = [
+      buildInsight({ id: 'known-1', type: 'projected_month_end_over_budget' }),
+      buildInsight({ id: 'known-2', type: 'top_category_driver' }),
+      buildInsight({ id: 'known-3', type: 'item_merchant_variance' }),
+      buildInsight({ id: 'new-1', type: 'buy_soon_better_price' }),
+    ];
+
+    const reordered = promoteExplorationCandidate(ranked, {
+      type_preferences: [
+        { key: 'projected_month_end_over_budget', shown: 4, score: 1 },
+        { key: 'top_category_driver', shown: 5, score: 0.5 },
+        { key: 'item_merchant_variance', shown: 3, score: 0.5 },
+      ],
+    }, 3);
+
+    expect(reordered.slice(0, 3).map((insight) => insight.id)).toEqual(['known-1', 'known-2', 'new-1']);
+  });
+
+  it('does not reshuffle the window when a low-history type is already present', () => {
+    const ranked = [
+      buildInsight({ id: 'known-1', type: 'projected_month_end_over_budget' }),
+      buildInsight({ id: 'new-1', type: 'buy_soon_better_price' }),
+      buildInsight({ id: 'known-2', type: 'top_category_driver' }),
+      buildInsight({ id: 'known-3', type: 'item_merchant_variance' }),
+    ];
+
+    const reordered = promoteExplorationCandidate(ranked, {
+      type_preferences: [
+        { key: 'projected_month_end_over_budget', shown: 4, score: 1 },
+        { key: 'top_category_driver', shown: 5, score: 0.5 },
+        { key: 'item_merchant_variance', shown: 3, score: 0.5 },
+      ],
+    }, 3);
+
+    expect(reordered).toEqual(ranked);
   });
 
   it('annotates household-only insights as rollups from personal activity', () => {

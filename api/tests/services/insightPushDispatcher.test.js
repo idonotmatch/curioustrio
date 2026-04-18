@@ -7,6 +7,10 @@ jest.mock('../../src/models/insightNotification', () => ({
   createBatch: jest.fn(),
 }));
 
+jest.mock('../../src/models/insightEvent', () => ({
+  getRecentByUser: jest.fn(),
+}));
+
 jest.mock('../../src/services/pushService', () => ({
   sendNotifications: jest.fn(),
 }));
@@ -17,6 +21,7 @@ jest.mock('../../src/services/insightBuilder', () => ({
 
 const PushToken = require('../../src/models/pushToken');
 const InsightNotification = require('../../src/models/insightNotification');
+const InsightEvent = require('../../src/models/insightEvent');
 const { sendNotifications } = require('../../src/services/pushService');
 const { buildInsightsForUser } = require('../../src/services/insightBuilder');
 const { dispatchInsightPushesForUser, PUSHABLE_INSIGHT_TYPES, pushCopyForInsight } = require('../../src/services/insightPushDispatcher');
@@ -25,8 +30,10 @@ beforeEach(() => {
   PushToken.findByUser.mockReset();
   InsightNotification.findSentIds.mockReset();
   InsightNotification.createBatch.mockReset();
+  InsightEvent.getRecentByUser.mockReset();
   sendNotifications.mockReset();
   buildInsightsForUser.mockReset();
+  InsightEvent.getRecentByUser.mockResolvedValue([]);
 });
 
 describe('PUSHABLE_INSIGHT_TYPES', () => {
@@ -112,6 +119,46 @@ describe('dispatchInsightPushesForUser', () => {
     });
 
     expect(PushToken.findByUser).not.toHaveBeenCalled();
+    expect(sendNotifications).not.toHaveBeenCalled();
+    expect(result).toEqual({ sent: 0, considered: 0 });
+  });
+
+  it('suppresses pushes for insight types with strongly negative learned preference', async () => {
+    PushToken.findByUser.mockResolvedValueOnce([{ token: 'expo-token-1' }]);
+    InsightEvent.getRecentByUser.mockResolvedValueOnce([
+      {
+        insight_id: 'buy_soon_better_price:product:abc:target:2026-04-01',
+        event_type: 'shown',
+        metadata: { type: 'buy_soon_better_price', scope: 'personal', maturity: 'mature' },
+      },
+      {
+        insight_id: 'buy_soon_better_price:product:abc:target:2026-04-01',
+        event_type: 'dismissed',
+        metadata: { type: 'buy_soon_better_price', scope: 'personal', maturity: 'mature' },
+      },
+      {
+        insight_id: 'buy_soon_better_price:product:def:target:2026-04-02',
+        event_type: 'shown',
+        metadata: { type: 'buy_soon_better_price', scope: 'personal', maturity: 'mature' },
+      },
+      {
+        insight_id: 'buy_soon_better_price:product:def:target:2026-04-02',
+        event_type: 'not_helpful',
+        metadata: { type: 'buy_soon_better_price', scope: 'personal', maturity: 'mature' },
+      },
+    ]);
+    buildInsightsForUser.mockResolvedValueOnce([{
+      id: 'buy_soon_better_price:product:ghi:target:2026-04-04',
+      type: 'buy_soon_better_price',
+      title: 'Pampers Pure is cheaper right now',
+      body: 'Target is 7% below your usual price.',
+      entity_type: 'item',
+      entity_id: 'product:ghi',
+      metadata: { group_key: 'product:ghi', scope: 'personal', maturity: 'mature' },
+    }]);
+
+    const result = await dispatchInsightPushesForUser({ id: 'user-1' });
+
     expect(sendNotifications).not.toHaveBeenCalled();
     expect(result).toEqual({ sent: 0, considered: 0 });
   });

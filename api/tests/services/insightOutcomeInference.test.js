@@ -5,6 +5,7 @@ jest.mock('../../src/db', () => ({
 const db = require('../../src/db');
 const {
   inferableOutcomeConfig,
+  summarizeOutcomeWindows,
   parseGroupKeyFromInsight,
   parseProjectionContextFromInsight,
   inferOutcomeEventsForUser,
@@ -271,5 +272,52 @@ describe('inferOutcomeEventsForUser', () => {
         }),
       }),
     ]);
+  });
+});
+
+describe('summarizeOutcomeWindows', () => {
+  it('marks inferable insights as expired when their action window closes without resolution', () => {
+    const windows = summarizeOutcomeWindows([
+      {
+        insight_id: 'recurring_restock_window:product:abc:2026-04',
+        event_type: 'shown',
+        metadata: {
+          type: 'recurring_restock_window',
+          scope: 'personal',
+          maturity: 'mature',
+        },
+        created_at: '2026-04-01T10:00:00Z',
+      },
+    ], '2026-04-20T10:00:00Z');
+
+    expect(windows).toEqual([
+      expect.objectContaining({
+        insight_id: 'recurring_restock_window:product:abc:2026-04',
+        insight_type: 'recurring_restock_window',
+        status: 'expired_no_action',
+        outcome_type: 'restocked_item',
+      }),
+    ]);
+  });
+
+  it('marks inferable insights as pending while the action window is still open', () => {
+    const windows = summarizeOutcomeWindows([
+      {
+        insight_id: 'projected_under_budget:personal:2026-04',
+        event_type: 'tapped',
+        metadata: {
+          type: 'projected_month_end_under_budget',
+          scope: 'personal',
+          maturity: 'mature',
+        },
+        created_at: '2026-04-01T10:00:00Z',
+      },
+    ], '2026-04-05T10:00:00Z');
+
+    expect(windows[0]).toMatchObject({
+      insight_id: 'projected_under_budget:personal:2026-04',
+      status: 'pending',
+      outcome_type: 'used_budget_headroom',
+    });
   });
 });

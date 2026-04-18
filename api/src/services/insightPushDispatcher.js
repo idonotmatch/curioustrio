@@ -3,6 +3,9 @@ const InsightNotification = require('../models/insightNotification');
 const { sendNotifications } = require('./pushService');
 const { buildInsightsForUser } = require('./insightBuilder');
 const { pushNotificationsEnabled } = require('./pushPreferences');
+const InsightEvent = require('../models/insightEvent');
+const { inferOutcomeEventsForUser, summarizeOutcomeWindows } = require('./insightOutcomeInference');
+const { buildInsightPreferenceSummary, shouldSendPushForInsight } = require('./insightPreferenceSummary');
 
 const PUSHABLE_INSIGHT_TYPES = new Set([
   'recurring_repurchase_due',
@@ -85,11 +88,20 @@ async function dispatchInsightPushesForUser(user) {
   const tokens = await PushToken.findByUser(user.id);
   if (!tokens.length) return { sent: 0, considered: 0 };
 
-  const insights = await buildInsightsForUser({ user, limit: 10 });
+  const [insights, recentEvents] = await Promise.all([
+    buildInsightsForUser({ user, limit: 10 }),
+    InsightEvent.getRecentByUser(user.id, 500),
+  ]);
+  const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
+  const allEvents = [...recentEvents, ...inferredEvents];
+  const preferenceSummary = buildInsightPreferenceSummary(allEvents, {
+    outcomeWindows: summarizeOutcomeWindows(allEvents),
+  });
   const candidates = insights.filter((insight) => (
     PUSHABLE_INSIGHT_TYPES.has(insight.type) &&
     insight.state?.status !== 'seen' &&
-    insight.state?.status !== 'dismissed'
+    insight.state?.status !== 'dismissed' &&
+    shouldSendPushForInsight(insight, preferenceSummary)
   ));
   if (!candidates.length) return { sent: 0, considered: 0 };
 

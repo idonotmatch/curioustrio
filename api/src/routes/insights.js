@@ -4,7 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
-const { buildInsightsForUser, buildInsightDebugForUser } = require('../services/insightBuilder');
+const { buildInsightsForUser, buildInsightDebugForUser, buildInsightPreferencesForUser } = require('../services/insightBuilder');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 const { buildFeedbackDebugSummary } = require('../services/insightFeedbackSummary');
 const { inferOutcomeEventsForUser } = require('../services/insightOutcomeInference');
@@ -92,6 +92,18 @@ router.get('/debug', async (req, res, next) => {
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
     const debug = await buildInsightDebugForUser({ user, limit });
     res.json(debug);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/preferences', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const limit = Math.max(25, Math.min(Number(req.query.limit) || 500, 1000));
+    const summary = await buildInsightPreferencesForUser({ user, limit });
+    res.json(summary);
   } catch (err) {
     next(err);
   }
