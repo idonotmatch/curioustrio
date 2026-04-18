@@ -16,10 +16,21 @@ const REQUIRED_COLUMNS = [
   ['oauth_tokens', 'last_sync_error'],
   ['oauth_tokens', 'last_sync_source'],
   ['oauth_tokens', 'last_sync_status'],
+  ['users', 'push_gmail_review_enabled'],
+  ['users', 'push_insights_enabled'],
+  ['users', 'push_recurring_enabled'],
+  ['expense_items', 'product_id'],
+  ['expense_items', 'comparable_key'],
+  ['expense_items', 'product_match_confidence'],
+  ['expense_items', 'estimated_unit_price'],
+  ['expense_items', 'normalized_total_size_value'],
+  ['expense_items', 'normalized_total_size_unit'],
+  ['expense_items', 'item_type'],
 ];
 
 const REQUIRED_TABLES = [
   'email_import_feedback',
+  'products',
 ];
 
 const OPTIONAL_TABLES = [

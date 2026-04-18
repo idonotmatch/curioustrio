@@ -275,6 +275,30 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
   return insights;
 }
 
+async function loadItemHistoryInsightsBestEffort(ownerId, {
+  scope = 'household',
+  minOccurrences = 3,
+  limit = 8,
+} = {}) {
+  if (!ownerId) return [];
+  try {
+    const histories = await listItemHistorySummaries(ownerId, {
+      scope,
+      minOccurrences,
+      limit,
+    });
+    return buildItemHistoryInsights(histories, scope);
+  } catch (err) {
+    console.error('[insightBuilder] item history insights skipped:', {
+      owner_id: ownerId,
+      scope,
+      message: err?.message || String(err || 'unknown_error'),
+      code: err?.code || null,
+    });
+    return [];
+  }
+}
+
 function remainingDaysInPeriod(projection) {
   const daysInPeriod = Number(projection?.period?.days_in_period || 0);
   const dayIndex = Number(projection?.period?.day_index || 0);
@@ -1410,12 +1434,11 @@ async function buildInsights({ user, limit = 10 }) {
   const hasMultipleHouseholdMembers = householdMembers.length > 1;
 
   if (user?.household_id) {
-    const householdItemHistory = await listItemHistorySummaries(user.household_id, {
+    insightSets.push(await loadItemHistoryInsightsBestEffort(user.household_id, {
       scope: 'household',
       minOccurrences: 3,
       limit: 8,
-    });
-    insightSets.push(buildItemHistoryInsights(householdItemHistory, 'household'));
+    }));
 
     recurringSignals = await detectRecurringItemSignals(user.household_id);
     insightSets.push(recurringSignals.map((signal) => toInsight(signal, 'household')));
@@ -1487,12 +1510,11 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   if (user?.id) {
-    const personalItemHistory = await listItemHistorySummaries(user.id, {
+    insightSets.push(await loadItemHistoryInsightsBestEffort(user.id, {
       scope: 'personal',
       minOccurrences: 3,
       limit: 8,
-    });
-    insightSets.push(buildItemHistoryInsights(personalItemHistory, 'personal'));
+    }));
 
     const personalRecurringSignals = await detectRecurringItemSignals(user.id, { scope: 'personal' });
     insightSets.push(personalRecurringSignals.map((signal) => toInsight(signal, 'personal')));

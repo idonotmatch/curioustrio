@@ -5,22 +5,18 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
-import { invalidateCache } from '../../services/cache';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { recurring, loading: recurringLoading, refresh: refreshRecurring } = useRecurring();
-  const { user } = useCurrentUser();
 
   const [budgetLimit, setBudgetLimit] = useState('');
   const [currentBudget, setCurrentBudget] = useState(null);
@@ -28,11 +24,6 @@ export default function SettingsScreen() {
   const [budgetMsg, setBudgetMsg] = useState('');
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
-  const [pushGmailReviewEnabled, setPushGmailReviewEnabled] = useState(true);
-  const [pushInsightsEnabled, setPushInsightsEnabled] = useState(true);
-  const [pushRecurringEnabled, setPushRecurringEnabled] = useState(true);
-  const [pushSavingKey, setPushSavingKey] = useState('');
-  const [pushMessage, setPushMessage] = useState('');
 
   const loadBudget = useCallback(async () => {
     try {
@@ -51,17 +42,6 @@ export default function SettingsScreen() {
       .then(d => setPendingSuggestionsCount(d.pending_suggestions_count || 0))
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    setPushGmailReviewEnabled(user.push_gmail_review_enabled !== false);
-    setPushInsightsEnabled(user.push_insights_enabled !== false);
-    setPushRecurringEnabled(user.push_recurring_enabled !== false);
-  }, [
-    user?.push_gmail_review_enabled,
-    user?.push_insights_enabled,
-    user?.push_recurring_enabled,
-  ]);
 
   async function saveBudget() {
     const val = parseFloat(budgetLimit);
@@ -91,26 +71,6 @@ export default function SettingsScreen() {
       await api.delete(`/recurring/${id}`);
       refreshRecurring();
     } catch { /* ignore */ }
-  }
-
-  async function savePushSetting(field, value, setter) {
-    const previous = field === 'push_gmail_review_enabled'
-      ? pushGmailReviewEnabled
-      : field === 'push_insights_enabled'
-        ? pushInsightsEnabled
-        : pushRecurringEnabled;
-    setter(value);
-    setPushSavingKey(field);
-    setPushMessage('');
-    try {
-      await api.patch('/users/settings', { [field]: value });
-      await invalidateCache('cache:current-user');
-    } catch (e) {
-      setter(previous);
-      setPushMessage(e.message || 'Could not update notification preferences');
-    } finally {
-      setPushSavingKey('');
-    }
   }
 
   return (
@@ -195,51 +155,13 @@ export default function SettingsScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
-        <Text style={styles.sectionIntro}>Choose which nudges are worth interrupting you for.</Text>
-
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleCopy}>
-            <Text style={styles.navRowText}>Gmail review queue</Text>
-            <Text style={styles.navRowSub}>When new imports are waiting for your confirmation</Text>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/notifications')}>
+          <View>
+            <Text style={styles.navRowText}>Manage notifications</Text>
+            <Text style={styles.navRowSub}>Choose which nudges are worth interrupting you for</Text>
           </View>
-          <Switch
-            value={pushGmailReviewEnabled}
-            onValueChange={(value) => savePushSetting('push_gmail_review_enabled', value, setPushGmailReviewEnabled)}
-            disabled={pushSavingKey === 'push_gmail_review_enabled'}
-            trackColor={{ false: '#2a2a2a', true: '#3a7a4a' }}
-            thumbColor="#f5f5f5"
-          />
-        </View>
-
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleCopy}>
-            <Text style={styles.navRowText}>Insights</Text>
-            <Text style={styles.navRowSub}>For price drops, recurring shifts, and timely nudges</Text>
-          </View>
-          <Switch
-            value={pushInsightsEnabled}
-            onValueChange={(value) => savePushSetting('push_insights_enabled', value, setPushInsightsEnabled)}
-            disabled={pushSavingKey === 'push_insights_enabled'}
-            trackColor={{ false: '#2a2a2a', true: '#3a7a4a' }}
-            thumbColor="#f5f5f5"
-          />
-        </View>
-
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleCopy}>
-            <Text style={styles.navRowText}>Recurring reminders</Text>
-            <Text style={styles.navRowSub}>When a usual expense looks due again soon</Text>
-          </View>
-          <Switch
-            value={pushRecurringEnabled}
-            onValueChange={(value) => savePushSetting('push_recurring_enabled', value, setPushRecurringEnabled)}
-            disabled={pushSavingKey === 'push_recurring_enabled'}
-            trackColor={{ false: '#2a2a2a', true: '#3a7a4a' }}
-            thumbColor="#f5f5f5"
-          />
-        </View>
-
-        {pushMessage ? <Text style={styles.msgError}>{pushMessage}</Text> : null}
+          <Ionicons name="chevron-forward" size={16} color="#888" />
+        </TouchableOpacity>
       </View>
 
       {/* Categories */}
@@ -263,7 +185,6 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
   sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  sectionIntro: { color: '#666', fontSize: 13, marginBottom: 12 },
   subText: { color: '#666', fontSize: 13, marginBottom: 12 },
   budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   budgetRowLeft: { flex: 1, paddingRight: 4 },
@@ -283,8 +204,6 @@ const styles = StyleSheet.create({
   rowSub: { color: '#999', fontSize: 14, marginTop: 2 },
   removeText: { color: '#e44', fontSize: 14 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  toggleCopy: { flex: 1, paddingRight: 10 },
   navRowText: { color: '#f5f5f5', fontSize: 15 },
   navRowSub: { color: '#666', fontSize: 13, marginTop: 2 },
   navRowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },

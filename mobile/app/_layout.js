@@ -297,6 +297,7 @@ function AppNavigator() {
       <Stack.Screen name="budget-period" options={{ title: 'Budget Period', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="categories" options={{ title: 'Category Details', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="accounts" options={{ title: 'Accounts', headerBackTitle: 'Settings' }} />
+      <Stack.Screen name="notifications" options={{ title: 'Notifications', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="gmail-import" options={{ title: 'Gmail Import', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="review-queue" options={{ title: 'Your review queue', headerBackTitle: 'Transactions' }} />
       <Stack.Screen name="payment-methods" options={{ title: 'Saved Card Labels', headerBackTitle: 'Settings' }} />
