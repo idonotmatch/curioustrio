@@ -133,6 +133,42 @@ describe('emailParser', () => {
     expect(result.extractionText).toContain('Snippet with merchant');
   });
 
+  it('preserves line structure in extraction text for itemized emails', () => {
+    const emailBody = `Order summary
+Subtotal (4 items)
+Protein Bars
+Sparkling Water
+Estimated shipping
+Estimated tax
+Estimated total
+$22.00
+$14.99
+$8.49
+$0.00
+$1.20
+$24.19`;
+    const result = selectRelevantEmailText(emailBody, 'Estimated total $24.19');
+    expect(result.extractionText).toContain('Protein Bars\nSparkling Water');
+    expect(result.extractionText).toContain('Estimated total\n$22.00');
+  });
+
+  it('sends structured extraction text to the parser prompt', async () => {
+    complete.mockResolvedValue('null');
+    await parseEmailExpense(
+      `Order summary
+Protein Bars
+Sparkling Water
+Estimated total
+$24.19`,
+      'Order Confirmation',
+      'orders@example.com',
+      '2026-03-21'
+    );
+    const calledWith = complete.mock.calls[0][0];
+    expect(calledWith.messages[0].content).toContain('Protein Bars\nSparkling Water');
+    expect(calledWith.messages[0].content).toContain('Estimated total\n$24.19');
+  });
+
   it('clamps future parsed dates to the latest allowed charge date', () => {
     expect(clampExpenseDate('2026-04-07', '2026-04-03')).toBe('2026-04-03');
     expect(clampExpenseDate('2026-04-01', '2026-04-03')).toBe('2026-04-01');

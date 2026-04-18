@@ -35,6 +35,16 @@ function cleanText(value) {
   return (value || '').replace(/\s+/g, ' ').trim();
 }
 
+function cleanStructuredText(value) {
+  return (value || '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
 function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
   const senderLooksTransactional = /@(amazon|walmart|target|uber|lyft|lyftmail|ubereats|instacart|doordash|stripe|shopify|square|paypal|apple|google|expedia|delta|united|airbnb|booking|hilton|marriott|costco|bestbuy|etsy|ebay|wayfair|chewy|seamless|grubhub)\./i.test(fromAddress);
@@ -97,17 +107,21 @@ function extractEmailLocationCandidate(subject = '', fromAddress = '', emailBody
 
 function selectRelevantEmailText(emailBody, snippet = '') {
   const cleaned = cleanText(emailBody);
+  const structured = cleanStructuredText(emailBody);
   const normalizedSnippet = cleanText(snippet);
+  const structuredSnippet = cleanStructuredText(snippet);
   if (!cleaned) return { classifierText: '', extractionText: '' };
 
   const top = cleaned.slice(0, 1200);
   const bottom = cleaned.length > 1200 ? cleaned.slice(-1200) : '';
-  const keywordLines = cleaned
-    .split(/[\r\n]+/)
+  const topStructured = structured.slice(0, 1600);
+  const bottomStructured = structured.length > 1600 ? structured.slice(-1600) : '';
+  const keywordLines = structured
+    .split(/\n+/)
     .map(line => line.trim())
     .filter(Boolean)
     .filter(line => /(total|charged|amount|payment|receipt|refund|return|order total|tax|shipping|service fee)/i.test(line))
-    .slice(0, 12)
+    .slice(0, 24)
     .join('\n');
 
   const classifierText = [normalizedSnippet, top, bottom && bottom !== top ? bottom : '']
@@ -115,10 +129,10 @@ function selectRelevantEmailText(emailBody, snippet = '') {
     .join('\n...\n')
     .slice(0, 2600);
 
-  const extractionText = [normalizedSnippet, top, keywordLines, bottom && bottom !== top ? bottom : '']
+  const extractionText = [structuredSnippet, topStructured, keywordLines, bottomStructured && bottomStructured !== topStructured ? bottomStructured : '']
     .filter(Boolean)
     .join('\n...\n')
-    .slice(0, 3600);
+    .slice(0, 5200);
 
   return { classifierText, extractionText };
 }
