@@ -361,6 +361,86 @@ describe('GET /insights', () => {
     );
   });
 
+  it('records shown exposure snapshots when insights are returned', async () => {
+    const month = currentPeriod(1);
+    const prior1 = shiftPeriod(month, -1);
+    const prior2 = shiftPeriod(month, -2);
+    const prior3 = shiftPeriod(month, -3);
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 500)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+       VALUES
+       ($1, $2, 'Trader Joe''s', 120, ($3 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 70, ($3 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 50, ($3 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 50, ($4 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($4 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($4 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 40, ($5 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 35, ($5 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($5 || '-05')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 35, ($6 || '-01')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 30, ($6 || '-03')::date, 'manual', 'confirmed'),
+       ($1, $2, 'Trader Joe''s', 25, ($6 || '-05')::date, 'manual', 'confirmed')`,
+      [userId, householdId, month, prior1, prior2, prior3]
+    );
+
+    const res = await request(app).get('/insights?limit=5');
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+
+    const shownEvents = await db.query(
+      `SELECT insight_id, event_type, metadata
+       FROM insight_events
+       WHERE user_id = $1 AND event_type = 'shown'
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+    expect(shownEvents.rows.length).toBeGreaterThan(0);
+    expect(shownEvents.rows[0]).toMatchObject({
+      event_type: 'shown',
+      metadata: expect.objectContaining({
+        source: 'insights_index',
+        rank: 1,
+        returned_limit: 5,
+        type: expect.any(String),
+      }),
+    });
+  });
+
+  it('does not duplicate shown snapshots on immediate refresh', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 7.09, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 9.49, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 9.49, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const first = await request(app).get('/insights?limit=5');
+    expect(first.status).toBe(200);
+    const second = await request(app).get('/insights?limit=5');
+    expect(second.status).toBe(200);
+
+    const shownEvents = await db.query(
+      `SELECT COUNT(*)::int AS count
+       FROM insight_events
+       WHERE user_id = $1 AND event_type = 'shown'`,
+      [userId]
+    );
+    expect(shownEvents.rows[0].count).toBe(first.body.length);
+  });
+
   it('returns projection insights for projected over-budget, one-off skew, and category surge', async () => {
     const month = currentPeriod(1);
     const prior1 = shiftPeriod(month, -1);

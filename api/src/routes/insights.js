@@ -15,12 +15,52 @@ async function getUser(req) {
   return User.findByProviderUid(req.userId);
 }
 
+function toExposureMetadata(insight, index, limit) {
+  const metadata = insight?.metadata || {};
+  return {
+    source: 'insights_index',
+    rank: index + 1,
+    returned_limit: limit,
+    type: insight?.type || null,
+    severity: insight?.severity || null,
+    entity_type: insight?.entity_type || null,
+    entity_id: insight?.entity_id || null,
+    scope: metadata.scope || null,
+    maturity: metadata.maturity || null,
+    confidence: metadata.confidence || null,
+    hierarchy_level: metadata.hierarchy_level || null,
+    scope_origin: metadata.scope_origin || null,
+    scope_relationship: metadata.scope_relationship || null,
+    continuity_key: metadata.continuity_key || null,
+    comparison_type: metadata.comparison_type || null,
+  };
+}
+
+async function recordInsightExposures(userId, insights, limit) {
+  if (!userId || !Array.isArray(insights) || !insights.length) return;
+  const recentShownMap = await InsightEvent.getRecentShownMap(
+    userId,
+    insights.map((insight) => insight.id),
+    6
+  );
+  const events = insights
+    .filter((insight) => insight?.id && !recentShownMap.has(insight.id))
+    .map((insight, index) => ({
+      insight_id: insight.id,
+      event_type: 'shown',
+      metadata: toExposureMetadata(insight, index, limit),
+    }));
+  if (!events.length) return;
+  await InsightEvent.createBatch(userId, events);
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
     const insights = await buildInsightsForUser({ user, limit });
+    await recordInsightExposures(user.id, insights, limit);
     res.json(insights);
   } catch (err) {
     next(err);

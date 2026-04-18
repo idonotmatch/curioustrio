@@ -20,6 +20,22 @@ class InsightEvent {
     return result.rows;
   }
 
+  static async getRecentShownMap(userId, insightIds = [], windowHours = 6) {
+    if (!insightIds.length) return new Map();
+    const safeWindowHours = Math.max(1, Math.min(Number(windowHours) || 6, 24 * 30));
+    const result = await db.query(
+      `SELECT insight_id, MAX(created_at) AS created_at
+       FROM insight_events
+       WHERE user_id = $1
+         AND insight_id = ANY($2::text[])
+         AND event_type = 'shown'
+         AND created_at >= NOW() - ($3::int * INTERVAL '1 hour')
+       GROUP BY insight_id`,
+      [userId, insightIds, safeWindowHours]
+    );
+    return new Map(result.rows.map((row) => [row.insight_id, row]));
+  }
+
   static async createBatch(userId, events = []) {
     const clean = events
       .map((event) => ({
