@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { supabase } from '../lib/supabase';
 
 // Use 127.0.0.1 (not localhost) as the local fallback to force IPv4.
@@ -7,12 +8,32 @@ const EXPLICIT_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL || ''}`.trim() || n
 const LOCAL_BASE_URLS = ['http://127.0.0.1:3001', 'http://127.0.0.1:3002'];
 let activeBaseUrl = EXPLICIT_BASE_URL;
 
+function deriveExpoHostBaseUrls() {
+  const candidates = [
+    Constants.expoConfig?.hostUri,
+    Constants.expoGoConfig?.developer?.tool,
+    Constants.manifest2?.extra?.expoGo?.developer?.tool,
+    Constants.manifest?.debuggerHost,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const raw = `${candidate || ''}`.trim();
+    const host = raw.split('://').pop()?.split('/')[0]?.split(':')[0];
+    if (!host || host === '127.0.0.1' || host === 'localhost') continue;
+    return [`http://${host}:3001`, `http://${host}:3002`];
+  }
+
+  return [];
+}
+
 function candidateBaseUrls() {
   if (EXPLICIT_BASE_URL) return [EXPLICIT_BASE_URL];
-  if (activeBaseUrl && LOCAL_BASE_URLS.includes(activeBaseUrl)) {
-    return [activeBaseUrl, ...LOCAL_BASE_URLS.filter((url) => url !== activeBaseUrl)];
+  const derivedBaseUrls = deriveExpoHostBaseUrls();
+  const allLocalBaseUrls = [...derivedBaseUrls, ...LOCAL_BASE_URLS].filter((url, index, arr) => arr.indexOf(url) === index);
+  if (activeBaseUrl && allLocalBaseUrls.includes(activeBaseUrl)) {
+    return [activeBaseUrl, ...allLocalBaseUrls.filter((url) => url !== activeBaseUrl)];
   }
-  return LOCAL_BASE_URLS;
+  return allLocalBaseUrls;
 }
 
 async function getToken() {

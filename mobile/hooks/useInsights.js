@@ -5,14 +5,16 @@ import { invalidateCacheByPrefix, loadWithCache } from '../services/cache';
 export function useInsights(limit = 5) {
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const cacheKey = `cache:insights:v2:${limit}`;
 
   const refresh = useCallback(async () => {
+    setError(null);
     await loadWithCache(
       cacheKey,
       () => api.get(`/insights?limit=${limit}`),
-      (data) => { setInsights(data || []); setLoading(false); },
-      () => { setInsights([]); setLoading(false); },
+      (data) => { setInsights(data || []); setLoading(false); setError(null); },
+      (err) => { setInsights([]); setLoading(false); setError(err?.message || 'Could not load insights'); },
     );
   }, [cacheKey, limit]);
 
@@ -54,5 +56,5 @@ export function useInsights(limit = 5) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  return { insights, loading, refresh, markSeen, dismiss, logEvents };
+  return { insights, loading, error, refresh, markSeen, dismiss, logEvents };
 }

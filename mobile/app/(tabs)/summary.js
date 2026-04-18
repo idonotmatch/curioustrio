@@ -133,7 +133,14 @@ export default function SummaryScreen() {
   const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
   const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { enabled: isMultiMember });
   const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
-  const { insights, refresh: refreshInsights, markSeen, dismiss: dismissInsight, logEvents } = useInsights(3);
+  const {
+    insights,
+    error: insightsError,
+    refresh: refreshInsights,
+    markSeen,
+    dismiss: dismissInsight,
+    logEvents,
+  } = useInsights(3);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [entryMode, setEntryMode] = useState('add');
   const [input, setInput] = useState('');
@@ -147,7 +154,11 @@ export default function SummaryScreen() {
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
   const displayGmailImportSummary = gmailImportSummary || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
-  const gmailRefreshTimestamp = displayGmailImportSummary?.last_synced_at || displayGmailImportSummary?.last_imported_at || null;
+  const gmailRefreshTimestamp = displayGmailImportSummary?.last_synced_at
+    || displayGmailImportSummary?.last_sync_attempted_at
+    || displayGmailImportSummary?.last_imported_at
+    || null;
+  const gmailRefreshVerb = displayGmailImportSummary?.last_synced_at ? 'synced' : 'checked';
   const hasMultipleInsights = displayInsights.length > 1;
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
@@ -241,6 +252,7 @@ export default function SummaryScreen() {
         pathname: '/recurring-item',
         params: {
           group_key: insight.metadata.group_key,
+          scope: insight.metadata.scope || 'personal',
           title: insight.metadata.item_name || insight.title,
           insight_id: insight.id,
           insight_type: insight.type,
@@ -628,7 +640,7 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {displayInsights.length > 0 && (
+      {(displayInsights.length > 0 || insightsError) && (
         <View style={styles.insightsSection}>
           <View style={styles.insightsHeading}>
             <Text style={styles.sectionLabel}>Insights</Text>
@@ -636,6 +648,13 @@ export default function SummaryScreen() {
               <Text style={styles.insightsHint}>Swipe for more</Text>
             ) : null}
           </View>
+          {insightsError ? (
+            <TouchableOpacity style={styles.insightsErrorCard} onPress={refreshInsights} activeOpacity={0.85}>
+              <Text style={styles.insightsErrorTitle}>Couldn’t load insights</Text>
+              <Text style={styles.insightsErrorBody}>{insightsError}</Text>
+              <Text style={styles.insightsErrorAction}>Tap to retry</Text>
+            </TouchableOpacity>
+          ) : null}
           <ScrollView
             horizontal
             scrollEnabled={hasMultipleInsights}
@@ -665,7 +684,7 @@ export default function SummaryScreen() {
             <Text style={styles.sectionLabelCompact}>Recent</Text>
             <Text style={styles.recentMeta}>
               {`${pendingExpenses.length} pending`}
-              {gmailRefreshTimestamp ? ` · Gmail synced ${formatRelativeTime(gmailRefreshTimestamp)}` : ''}
+              {gmailRefreshTimestamp ? ` · Gmail ${gmailRefreshVerb} ${formatRelativeTime(gmailRefreshTimestamp)}` : ''}
             </Text>
           </View>
           <TouchableOpacity onPress={() => router.navigate('/')}>
@@ -755,6 +774,19 @@ const styles = StyleSheet.create({
   insightsSection: { marginBottom: 32 },
   insightsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   insightsHint: { fontSize: 12, color: '#666' },
+  insightsErrorCard: {
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#262626',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+    gap: 4,
+  },
+  insightsErrorTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
+  insightsErrorBody: { color: '#a3a3a3', fontSize: 13, lineHeight: 18 },
+  insightsErrorAction: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
   quickAdd: { marginTop: 18, marginBottom: 32 },
