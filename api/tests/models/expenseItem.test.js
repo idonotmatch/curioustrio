@@ -84,6 +84,16 @@ describe('ExpenseItem.createBulk', () => {
     expect(Number(rows[0].estimated_unit_price)).toBeCloseTo(0.0624, 4);
     expect(rows[0].comparable_key).toBe('sparkling water|brand:water co|size:12oz|pack:8');
   });
+
+  it('stores stable normalized names when descriptions include merchant or package noise', async () => {
+    const rows = await ExpenseItem.createBulk(expenseId, [{
+      description: 'Nike Running Shoes from Dicks Sporting Goods 1 pack',
+      amount: 122.24,
+    }]);
+
+    expect(rows[0].normalized_name).toBe('nike running shoe');
+    expect(rows[0].comparable_key).toBe('nike running shoe');
+  });
 });
 
 describe('ExpenseItem.findByExpenseId', () => {

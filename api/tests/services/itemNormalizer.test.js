@@ -1,4 +1,9 @@
-const { normalizeItemMetadata, normalizeUnit, parsePackSize } = require('../../src/services/itemNormalizer');
+const {
+  normalizeItemMetadata,
+  normalizeUnit,
+  parsePackSize,
+  normalizeComparableDescription,
+} = require('../../src/services/itemNormalizer');
 
 describe('itemNormalizer', () => {
   it('normalizes units and derives comparable item metadata', () => {
@@ -24,6 +29,19 @@ describe('itemNormalizer', () => {
     });
   });
 
+  it('strips embedded size and pack noise from comparable item names', () => {
+    const normalized = normalizeItemMetadata({
+      description: 'Sparkling Water Lime 12 oz 8 pack',
+      brand: 'Water Co.',
+      product_size: '12 oz',
+      pack_size: '8 pack',
+      unit: 'ounces',
+    });
+
+    expect(normalized.normalized_name).toBe('sparkling water lime');
+    expect(normalized.comparable_key).toBe('sparkling water lime|brand:water co|size:12oz|pack:8');
+  });
+
   it('derives total size and unit price when amount is present', () => {
     const normalized = normalizeItemMetadata({
       description: 'Protein Bars',
@@ -45,10 +63,15 @@ describe('itemNormalizer', () => {
       brand: null,
     });
 
-    expect(normalized.comparable_key).toBe('organic bananas');
+    expect(normalized.comparable_key).toBe('organic banana');
     expect(normalized.normalized_size_value).toBeNull();
     expect(normalized.normalized_pack_size).toBeNull();
     expect(normalized.normalized_quantity).toBe(1);
+  });
+
+  it('removes trailing merchant phrases from comparable descriptions', () => {
+    expect(normalizeComparableDescription('Nike Running Shoes from Dicks Sporting Goods')).toBe('nike running shoe');
+    expect(normalizeComparableDescription('Organic Bananas at Whole Foods')).toBe('organic banana');
   });
 
   it('normalizes common unit aliases', () => {

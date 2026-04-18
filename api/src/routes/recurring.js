@@ -58,10 +58,15 @@ router.post('/detect-item-signals', async (req, res, next) => {
 router.get('/item-history', async (req, res, next) => {
   try {
     const user = await getUser(req);
-    if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const groupKey = `${req.query.group_key || ''}`.trim();
+    const scope = `${req.query.scope || ''}`.trim() === 'personal' ? 'personal' : 'household';
     if (!groupKey) return res.status(400).json({ error: 'group_key is required' });
-    const history = await getRecurringItemHistory(user.household_id, groupKey);
+    if (scope === 'household' && !user?.household_id) {
+      return res.status(403).json({ error: 'Must be in a household' });
+    }
+    const ownerId = scope === 'personal' ? user.id : user.household_id;
+    const history = await getRecurringItemHistory(ownerId, groupKey, { scope });
     if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
     res.json(history);
   } catch (err) { next(err); }

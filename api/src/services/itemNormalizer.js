@@ -1,6 +1,7 @@
 function normalizeText(value) {
   return (value || '')
     .toLowerCase()
+    .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -66,8 +67,42 @@ function deriveEstimatedUnitPrice(amount, normalizedTotalSizeValue) {
   return Number((Number(amount) / normalizedTotalSizeValue).toFixed(4));
 }
 
+function singularizeToken(token = '') {
+  if (!token || token.length <= 3) return token;
+  if (/(ss|us)$/.test(token)) return token;
+  if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (token.endsWith('s')) return token.slice(0, -1);
+  return token;
+}
+
+function normalizeComparableDescription(description = '', brand = '') {
+  let text = normalizeText(description);
+  if (!text) return '';
+
+  text = text
+    .replace(/\b(?:bought|ordered|purchased)\s+(?:from|at)\s+[a-z0-9 ]+$/, ' ')
+    .replace(/\b(?:from|at|via)\s+[a-z0-9 ]+$/, ' ')
+    .replace(/\b\d+(?:\.\d+)?\s*(?:x|ct|count|pack|pk)\b/g, ' ')
+    .replace(/\b\d+(?:\.\d+)?\s*(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters|fl oz|ea|each)\b/g, ' ')
+    .replace(/\b(?:pack|pk|count|ct|size)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const normalizedBrand = normalizeText(brand);
+  if (normalizedBrand && text.startsWith(`${normalizedBrand} `)) {
+    text = text.slice(normalizedBrand.length + 1).trim();
+  }
+
+  const tokens = text
+    .split(' ')
+    .filter(Boolean)
+    .map(singularizeToken);
+
+  return tokens.join(' ').trim();
+}
+
 function buildComparableKey({ description, brand, normalizedSizeValue, normalizedSizeUnit, normalizedPackSize }) {
-  const name = normalizeText(description);
+  const name = normalizeComparableDescription(description, brand);
   if (!name) return null;
   const parts = [name];
   const normalizedBrand = normalizeText(brand);
@@ -78,7 +113,7 @@ function buildComparableKey({ description, brand, normalizedSizeValue, normalize
 }
 
 function normalizeItemMetadata(item = {}) {
-  const normalizedName = normalizeText(item.description);
+  const normalizedName = normalizeComparableDescription(item.description, item.brand) || normalizeText(item.description);
   const normalizedBrand = normalizeText(item.brand);
   const { normalizedSizeValue, normalizedSizeUnit } = normalizeSizeValue(item.product_size, item.unit);
   const normalizedPackSize = parsePackSize(item.pack_size);
@@ -119,5 +154,6 @@ module.exports = {
   normalizeText,
   normalizeUnit,
   normalizeItemMetadata,
+  normalizeComparableDescription,
   parsePackSize,
 };

@@ -110,6 +110,36 @@ describe('productResolver', () => {
     expect(productId).toBeNull();
   });
 
+  it('matches merchant-backed variants when the description includes trailing merchant text', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue({
+      id: 'product-900',
+      name: 'Nike Running Shoes',
+      merchant: 'Dicks Sporting Goods',
+    });
+    Product.update.mockResolvedValue({});
+
+    const resolution = await resolveProductMatch({
+      description: 'Nike Running Shoes from Dicks Sporting Goods',
+      amount: 122.24,
+    }, 'Dicks Sporting Goods');
+
+    expect(Product.findByNormalizedDetails).toHaveBeenCalledWith({
+      name: 'Nike Running Shoes from Dicks Sporting Goods',
+      merchant: 'Dicks Sporting Goods',
+      brand: undefined,
+      productSize: undefined,
+      packSize: undefined,
+      unit: undefined,
+    });
+    expect(resolution).toEqual({
+      product_id: 'product-900',
+      confidence: 'medium',
+      reason: 'normalized_match',
+    });
+  });
+
   it('skips product resolution for fee-like imported rows', async () => {
     const resolution = await resolveProductMatch({
       description: 'Delivery Fee',

@@ -215,6 +215,45 @@ describe('GET /recurring/item-history', () => {
     expect(historyRes.body.purchases).toHaveLength(3);
   });
 
+  it('returns personal recurring item history without requiring household scope', async () => {
+    const dates = [36, 24, 12].map((daysAgo) => {
+      const date = new Date();
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    });
+
+    const expenseIds = [];
+    for (const date of dates) {
+      const result = await db.query(
+        `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+         VALUES ($1, $2, 'Target', 14.99, $3, 'manual', 'confirmed')
+         RETURNING id`,
+        [userId, householdId, date]
+      );
+      expenseIds.push(result.rows[0].id);
+    }
+
+    for (const expenseId of expenseIds) {
+      await db.query(
+        `INSERT INTO expense_items (
+          expense_id, description, amount, brand, comparable_key
+        ) VALUES ($1, 'Paper Towels', 14.99, 'Bounty', 'paper towel|brand:bounty')`,
+        [expenseId]
+      );
+    }
+
+    const historyRes = await request(app)
+      .get('/recurring/item-history')
+      .query({ group_key: 'comparable:paper towel|brand:bounty', scope: 'personal' });
+
+    expect(historyRes.status).toBe(200);
+    expect(historyRes.body).toMatchObject({
+      kind: 'item_history',
+      item_name: 'Paper Towels',
+      occurrence_count: 3,
+    });
+  });
+
   it('returns 400 when group_key is missing', async () => {
     const res = await request(app).get('/recurring/item-history');
     expect(res.status).toBe(400);
