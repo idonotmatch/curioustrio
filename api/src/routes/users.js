@@ -47,17 +47,47 @@ router.patch('/settings', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const { budget_start_day } = req.body;
+    const {
+      budget_start_day,
+      push_gmail_review_enabled,
+      push_insights_enabled,
+      push_recurring_enabled,
+    } = req.body || {};
+
     if (budget_start_day !== undefined) {
       const day = parseInt(budget_start_day, 10);
       if (isNaN(day) || day < 1 || day > 28) {
         return res.status(400).json({ error: 'budget_start_day must be between 1 and 28' });
       }
-      const updated = await User.updateSettings(user.id, { budgetStartDay: day });
+    }
+
+    const booleanFields = [
+      ['push_gmail_review_enabled', push_gmail_review_enabled],
+      ['push_insights_enabled', push_insights_enabled],
+      ['push_recurring_enabled', push_recurring_enabled],
+    ];
+    for (const [field, value] of booleanFields) {
+      if (value !== undefined && typeof value !== 'boolean') {
+        return res.status(400).json({ error: `${field} must be a boolean` });
+      }
+    }
+
+    if (
+      budget_start_day !== undefined
+      || push_gmail_review_enabled !== undefined
+      || push_insights_enabled !== undefined
+      || push_recurring_enabled !== undefined
+    ) {
+      const updated = await User.updateSettings(user.id, {
+        budgetStartDay: budget_start_day !== undefined ? parseInt(budget_start_day, 10) : undefined,
+        pushGmailReviewEnabled: push_gmail_review_enabled,
+        pushInsightsEnabled: push_insights_enabled,
+        pushRecurringEnabled: push_recurring_enabled,
+      });
       return res.json(updated);
     }
 
-    res.json(user);
+    return res.json(user);
   } catch (err) {
     next(err);
   }

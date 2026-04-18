@@ -5,6 +5,7 @@ const User = require('../models/user');
 const PushToken = require('../models/pushToken');
 const { sendNotifications } = require('../services/pushService');
 const RecurringExpense = require('../models/recurringExpense');
+const { pushNotificationsEnabled } = require('../services/pushPreferences');
 
 router.post('/register', authenticate, async (req, res, next) => {
   try {
@@ -21,6 +22,7 @@ router.post('/notify-pending', authenticate, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    if (!pushNotificationsEnabled(user, 'push_recurring_enabled')) return res.json({ sent: 0 });
 
     const tokens = await PushToken.findByUser(user.id);
     if (!tokens.length) return res.json({ sent: 0 });
@@ -30,9 +32,11 @@ router.post('/notify-pending', authenticate, async (req, res, next) => {
 
     const messages = tokens.map(t => ({
       to: t.token,
-      title: 'Upcoming recurring expense',
-      body: `${due[0].merchant} expected in the next few days`,
-      data: { type: 'recurring', count: due.length },
+      title: due.length === 1 ? 'A recurring expense is coming up' : `${due.length} recurring expenses are coming up`,
+      body: due.length === 1
+        ? `${due[0].merchant} is likely due in the next few days.`
+        : `${due[0].merchant} and ${due.length - 1} more are likely due soon.`,
+      data: { type: 'recurring', route: '/watching-plans', count: due.length },
     }));
 
     await sendNotifications(messages);

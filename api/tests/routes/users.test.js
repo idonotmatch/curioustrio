@@ -102,3 +102,41 @@ describe('GET /users/me', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('PATCH /users/settings', () => {
+  beforeEach(cleanup);
+
+  it('updates push notification preferences', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({
+        push_gmail_review_enabled: false,
+        push_insights_enabled: true,
+        push_recurring_enabled: false,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.push_gmail_review_enabled).toBe(false);
+    expect(res.body.push_insights_enabled).toBe(true);
+    expect(res.body.push_recurring_enabled).toBe(false);
+  });
+
+  it('returns 400 for non-boolean push settings', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({ push_insights_enabled: 'yes' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/push_insights_enabled must be a boolean/i);
+  });
+});

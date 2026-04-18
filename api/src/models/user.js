@@ -1,6 +1,7 @@
 const db = require('../db');
 
-const COLS = 'id, provider_uid, name, email, household_id, budget_start_day, created_at';
+const COLS = `id, provider_uid, name, email, household_id, budget_start_day,
+  push_gmail_review_enabled, push_insights_enabled, push_recurring_enabled, created_at`;
 
 // Upsert by provider_uid.
 async function findOrCreateByProviderUid({ providerUid, name, email }) {
@@ -57,10 +58,27 @@ async function setHouseholdId(userId, householdId) {
   return result.rows[0] || null;
 }
 
-async function updateSettings(userId, { budgetStartDay }) {
+async function updateSettings(userId, {
+  budgetStartDay,
+  pushGmailReviewEnabled,
+  pushInsightsEnabled,
+  pushRecurringEnabled,
+}) {
   const result = await db.query(
-    `UPDATE users SET budget_start_day = $1 WHERE id = $2 RETURNING ${COLS}`,
-    [budgetStartDay, userId]
+    `UPDATE users
+     SET budget_start_day = COALESCE($1, budget_start_day),
+         push_gmail_review_enabled = COALESCE($2, push_gmail_review_enabled),
+         push_insights_enabled = COALESCE($3, push_insights_enabled),
+         push_recurring_enabled = COALESCE($4, push_recurring_enabled)
+     WHERE id = $5
+     RETURNING ${COLS}`,
+    [
+      budgetStartDay ?? null,
+      pushGmailReviewEnabled ?? null,
+      pushInsightsEnabled ?? null,
+      pushRecurringEnabled ?? null,
+      userId,
+    ]
   );
   return result.rows[0] || null;
 }
