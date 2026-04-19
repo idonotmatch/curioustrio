@@ -759,10 +759,213 @@ function buildProjectionInsights(projection, scope) {
   return insights;
 }
 
+function confidenceComponentScore(insight) {
+  const confidence = `${insight?.metadata?.confidence || ''}`.trim();
+  if (confidence === 'comparative') return 12;
+  if (confidence === 'descriptive') return 8;
+  if (confidence === 'observed') return 10;
+  return 0;
+}
+
+function historicalEvidenceScore(insight) {
+  const count = Number(insight?.metadata?.historical_period_count || 0);
+  if (count >= 6) return 24;
+  if (count >= 4) return 20;
+  if (count >= 3) return 16;
+  if (count >= 2) return 10;
+  if (count >= 1) return 4;
+  return 0;
+}
+
+function numericEvidenceScore(insight) {
+  const metadata = insight?.metadata || {};
+  const absoluteValues = [
+    Math.abs(Number(metadata.projected_budget_delta || 0)),
+    Math.abs(Number(metadata.projected_headroom_amount || 0)),
+    Math.abs(Number(metadata.projected_over_under || 0)),
+    Math.abs(Number(metadata.delta_amount || 0)),
+    Math.abs(Number(metadata.one_off_delta_amount || 0)),
+    Math.abs(Number(metadata.total_delta_amount || 0)),
+    Math.abs(Number(metadata.current_spend_to_date || 0)),
+    Math.abs(Number(metadata.current_spend || 0)),
+  ];
+  const strongestAmount = Math.max(...absoluteValues);
+  const strongestPercent = Math.max(
+    Math.abs(Number(metadata.delta_percent || 0)),
+    Math.abs(Number(metadata.share_of_spend || 0)),
+    Math.abs(Number(metadata.budget_used_percent || 0)),
+    Math.abs(Number(metadata.discount_percent || 0))
+  );
+
+  let score = 0;
+
+  if (strongestAmount >= 200) score += 18;
+  else if (strongestAmount >= 100) score += 14;
+  else if (strongestAmount >= 50) score += 10;
+  else if (strongestAmount >= 20) score += 6;
+
+  if (strongestPercent >= 30) score += 14;
+  else if (strongestPercent >= 15) score += 10;
+  else if (strongestPercent >= 8) score += 6;
+
+  const expenseCount = Number(metadata.expense_count || metadata.merchant_count || metadata.occurrence_count || 0);
+  if (expenseCount >= 5) score += 8;
+  else if (expenseCount >= 3) score += 5;
+  else if (expenseCount >= 1) score += 2;
+
+  return Math.min(score, 36);
+}
+
+function evidenceStrengthScore(insight) {
+  return historicalEvidenceScore(insight) + confidenceComponentScore(insight) + numericEvidenceScore(insight);
+}
+
+function scopeRelevanceScore(insight) {
+  if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 14;
+  if (insight?.metadata?.scope === 'personal') return 16;
+  if (insight?.metadata?.scope === 'household') return 6;
+  return 4;
+}
+
+function noveltyScore(insight, preferenceSummary = {}) {
+  const shownCount = knownTypeShownCount(preferenceSummary.type_preferences, insight?.type);
+  if (shownCount === 0) return 18;
+  if (shownCount === 1) return 14;
+  if (shownCount === 2) return 8;
+  if (shownCount <= 4) return 4;
+  return 0;
+}
+
+function severityComponentScore(insight) {
+  const severity = `${insight?.severity || ''}`.trim();
+  if (severity === 'high') return 120;
+  if (severity === 'medium') return 90;
+  return 60;
+}
+
+function maturityComponentScore(insight) {
+  const maturity = `${insight?.metadata?.maturity || ''}`.trim();
+  if (maturity === 'mature') return 35;
+  if (maturity === 'developing') return 25;
+  if (maturity === 'early') return 18;
+  return 12;
+}
+
+function actionabilityScore(insight) {
+  const role = portfolioRole(insight);
+  if (role === 'act') return 42;
+  if (role === 'plan') return 36;
+  if (role === 'setup') return 28;
+  if (role === 'explain') return 18;
+  return 10;
+}
+
+function minimumSurfaceThreshold(insight) {
+  const maturity = `${insight?.metadata?.maturity || ''}`.trim() || 'unknown';
+  const role = portfolioRole(insight);
+
+  if (maturity === 'mature') {
+    if (role === 'act' || role === 'plan') return 170;
+    if (role === 'setup') return 158;
+    if (role === 'explain') return 160;
+    return 150;
+  }
+
+  if (maturity === 'developing') {
+    if (role === 'act' || role === 'plan') return 148;
+    if (role === 'setup') return 138;
+    if (role === 'explain') return 140;
+    return 132;
+  }
+
+  if (maturity === 'early') {
+    if (role === 'setup') return 126;
+    if (role === 'act' || role === 'plan') return 132;
+    if (role === 'explain') return 130;
+    return 124;
+  }
+
+  return 145;
+}
+
+function surfaceGuardReasons(insight, preferenceSummary = {}) {
+  const metadata = insight?.metadata || {};
+  const reasons = [];
+  const role = portfolioRole(insight);
+  const maturity = `${metadata.maturity || ''}`.trim();
+  const shownCount = knownTypeShownCount(preferenceSummary.type_preferences, insight?.type);
+  const evidenceScore = evidenceStrengthScore(insight);
+
+  if ((metadata.merchant_key === 'unknown' || metadata.merchant_name === 'Unknown merchant') && metadata.merchant_key) {
+    reasons.push('unknown_merchant_anchor');
+  }
+
+  if (role === 'explain' && evidenceScore < 18) {
+    reasons.push('thin_explanatory_evidence');
+  }
+
+  if (maturity === 'early' && role === 'explain') {
+    const hasAnchor = Boolean(
+      metadata.category_key
+      || metadata.merchant_key
+      || metadata.delta_amount
+      || metadata.current_spend_to_date
+      || metadata.expense_count
+      || metadata.merchant_count
+      || metadata.uncategorized_count
+    );
+    if (!hasAnchor) reasons.push('early_signal_missing_anchor');
+  }
+
+  if (shownCount >= 6 && severityRank(insight?.severity) <= 1 && evidenceScore < 24) {
+    reasons.push('stale_low_signal');
+  }
+
+  return reasons;
+}
+
+function scoreInsightCandidate(insight, feedbackSummary = new Map(), preferenceSummary = {}) {
+  const components = {
+    severity: severityComponentScore(insight),
+    maturity: maturityComponentScore(insight),
+    actionability: actionabilityScore(insight),
+    evidence: evidenceStrengthScore(insight),
+    scope_relevance: scopeRelevanceScore(insight),
+    destination: insightDestinationAdjustment(insight) * 4,
+    novelty: noveltyScore(insight, preferenceSummary),
+  };
+  const adjustments = {
+    feedback: feedbackAdjustmentForInsight(insight, feedbackSummary),
+    preference: preferenceAdjustmentForInsight(insight, preferenceSummary),
+    scope_hierarchy: scopeHierarchyAdjustment(insight),
+  };
+  const baseScore = Object.values(components).reduce((sum, value) => sum + Number(value || 0), 0);
+  const adjustmentScore = Object.values(adjustments).reduce((sum, value) => sum + Number(value || 0), 0);
+  const surfaceScore = baseScore + adjustmentScore;
+  const threshold = minimumSurfaceThreshold(insight);
+  const guardReasons = surfaceGuardReasons(insight, preferenceSummary);
+
+  return {
+    components,
+    adjustments,
+    base_score: baseScore,
+    adjustment_score: adjustmentScore,
+    surface_score: surfaceScore,
+    threshold,
+    eligible: guardReasons.length === 0 && surfaceScore >= threshold,
+    suppression_reasons: [
+      ...guardReasons,
+      ...(surfaceScore >= threshold ? [] : ['below_surface_threshold']),
+    ],
+  };
+}
+
 function insightRankScore(insight, feedbackSummary = new Map(), preferenceSummary = {}) {
-  return severityRank(insight.severity) * 100
-    + feedbackAdjustmentForInsight(insight, feedbackSummary)
-    + preferenceAdjustmentForInsight(insight, preferenceSummary);
+  return scoreInsightCandidate(insight, feedbackSummary, preferenceSummary).surface_score;
+}
+
+function insightSurfaceDecision(insight, feedbackSummary = new Map(), preferenceSummary = {}) {
+  return scoreInsightCandidate(insight, feedbackSummary, preferenceSummary);
 }
 
 function knownTypeShownCount(typePreferences = [], insightType = '') {
@@ -1133,7 +1336,7 @@ function orchestrationNarrativeRoleAdjustment(insight, candidates = [], selected
   return score;
 }
 
-function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limit = 10) {
+function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limit = 10, preferenceSummary = {}) {
   const remaining = [...insights];
   const selected = [];
   const portfolioFeedback = aggregatePortfolioFeedback(feedbackSummary);
@@ -1144,10 +1347,8 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
 
     for (let i = 0; i < remaining.length; i += 1) {
       const insight = remaining[i];
-      const score = insightRankScore(insight, feedbackSummary)
+      const score = insightRankScore(insight, feedbackSummary, preferenceSummary)
         + portfolioOutcomeAdjustment(insight, portfolioFeedback)
-        + insightDestinationAdjustment(insight)
-        + scopeHierarchyAdjustment(insight)
         + orchestrationRoleMixAdjustment(insight, selected)
         + orchestrationNarrativeRoleAdjustment(insight, remaining, selected)
         - orchestrationPenalty(insight, selected);
@@ -1251,7 +1452,7 @@ function summarizeInsightList(insights = []) {
   };
 }
 
-function insightDebugRows(insights = []) {
+function insightDebugRows(insights = [], feedbackSummary = new Map(), preferenceSummary = {}) {
   return (insights || []).map((insight) => ({
     id: insight.id,
     type: insight.type,
@@ -1269,7 +1470,108 @@ function insightDebugRows(insights = []) {
     scope_relationship: insight.metadata?.scope_relationship || null,
     continuity_key: insightContinuityKey(insight),
     state: insight.state?.status || null,
+    scoring: insightSurfaceDecision(insight, feedbackSummary, preferenceSummary),
   }));
+}
+
+function summarizeSurfaceDecisions(decisions = []) {
+  const summary = {
+    total: Array.isArray(decisions) ? decisions.length : 0,
+    eligible: 0,
+    suppressed: 0,
+    by_reason: {},
+    by_maturity: {},
+    by_role: {},
+  };
+
+  for (const entry of decisions || []) {
+    const scoring = entry?.scoring || {};
+    const insight = entry?.insight || {};
+    const maturity = `${insight?.metadata?.maturity || 'unknown'}`;
+    const role = portfolioRole(insight);
+
+    summary.by_maturity[maturity] = summary.by_maturity[maturity] || { eligible: 0, suppressed: 0 };
+    summary.by_role[role] = summary.by_role[role] || { eligible: 0, suppressed: 0 };
+
+    if (scoring.eligible) {
+      summary.eligible += 1;
+      summary.by_maturity[maturity].eligible += 1;
+      summary.by_role[role].eligible += 1;
+      continue;
+    }
+
+    summary.suppressed += 1;
+    summary.by_maturity[maturity].suppressed += 1;
+    summary.by_role[role].suppressed += 1;
+    for (const reason of scoring.suppression_reasons || []) {
+      summary.by_reason[reason] = (summary.by_reason[reason] || 0) + 1;
+    }
+  }
+
+  return summary;
+}
+
+function compareRankingStrategies(insights = [], feedbackSummary = new Map(), preferenceSummary = {}, limit = 10) {
+  const scored = (insights || []).map((insight) => {
+    const scoring = insightSurfaceDecision(insight, feedbackSummary, preferenceSummary);
+    return {
+      insight,
+      scoring,
+      legacy_rank_score: severityRank(insight?.severity) * 100
+        + feedbackAdjustmentForInsight(insight, feedbackSummary)
+        + preferenceAdjustmentForInsight(insight, preferenceSummary),
+    };
+  });
+
+  const legacyTop = [...scored]
+    .sort((a, b) => {
+      const diff = b.legacy_rank_score - a.legacy_rank_score;
+      if (diff !== 0) return diff;
+      return new Date(b.insight?.created_at || 0) - new Date(a.insight?.created_at || 0);
+    })
+    .slice(0, limit)
+    .map((entry) => ({
+      id: entry.insight?.id,
+      type: entry.insight?.type,
+      title: entry.insight?.title,
+      legacy_rank_score: entry.legacy_rank_score,
+      surface_score: entry.scoring?.surface_score,
+      eligible: entry.scoring?.eligible,
+    }));
+
+  const thresholdEligible = scored
+    .filter((entry) => entry.scoring?.eligible)
+    .sort((a, b) => {
+      const diff = b.scoring.surface_score - a.scoring.surface_score;
+      if (diff !== 0) return diff;
+      return new Date(b.insight?.created_at || 0) - new Date(a.insight?.created_at || 0);
+    })
+    .slice(0, limit)
+    .map((entry) => ({
+      id: entry.insight?.id,
+      type: entry.insight?.type,
+      title: entry.insight?.title,
+      surface_score: entry.scoring?.surface_score,
+      threshold: entry.scoring?.threshold,
+    }));
+
+  const suppressed = scored
+    .filter((entry) => !entry.scoring?.eligible)
+    .sort((a, b) => b.scoring.surface_score - a.scoring.surface_score)
+    .map((entry) => ({
+      id: entry.insight?.id,
+      type: entry.insight?.type,
+      title: entry.insight?.title,
+      surface_score: entry.scoring?.surface_score,
+      threshold: entry.scoring?.threshold,
+      suppression_reasons: entry.scoring?.suppression_reasons || [],
+    }));
+
+  return {
+    legacy_top: legacyTop,
+    threshold_top: thresholdEligible,
+    suppressed_candidates: suppressed,
+  };
 }
 
 async function buildInsightDebugForUser({ user, limit = 10 }) {
@@ -1326,6 +1628,13 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
   const feedbackSummary = summarizeFeedbackEvents(allEvents);
   const outcomeWindows = summarizeOutcomeWindows(allEvents);
   const preferenceSummary = buildInsightPreferenceSummary(allEvents, { outcomeWindows });
+  const surfaceDecisions = rawInsights.map((insight) => ({
+    id: insight.id,
+    type: insight.type,
+    title: insight.title,
+    insight,
+    scoring: insightSurfaceDecision(insight, feedbackSummary, preferenceSummary),
+  }));
 
   return {
     user_id: user.id,
@@ -1333,17 +1642,21 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
     scopes: scopeReports,
     raw: summarizeInsightList(rawInsights),
     final: summarizeInsightList(finalInsights),
-    final_insights: insightDebugRows(finalInsights),
+    final_insights: insightDebugRows(finalInsights, feedbackSummary, preferenceSummary),
     feedback: {
       event_count: recentEvents.length + inferredEvents.length,
       inferred_event_count: inferredEvents.length,
       suppressed_raw_count: rawInsights.filter((insight) => shouldSuppressInsight(insight, feedbackSummary)).length,
+      below_threshold_raw_count: surfaceDecisions.filter((entry) => !entry.scoring?.eligible).length,
       dismissed_raw_count: rawInsights.filter((insight) => stateMap.get(insight.id)?.status === 'dismissed').length,
       pending_outcome_window_count: outcomeWindows.filter((window) => window.status === 'pending').length,
       expired_outcome_window_count: outcomeWindows.filter((window) => window.status === 'expired_no_action').length,
     },
     preferences: preferenceSummary,
     outcome_windows: outcomeWindows.slice(0, 20),
+    surface_summary: summarizeSurfaceDecisions(surfaceDecisions),
+    ranking_comparison: compareRankingStrategies(rawInsights, feedbackSummary, preferenceSummary, limit),
+    surface_decisions: surfaceDecisions,
   };
 }
 
@@ -1785,6 +2098,18 @@ async function buildInsightsForUser({ user, limit = 10 }) {
     })
     .filter((insight) => insight.state?.status !== 'dismissed')
     .filter((insight) => !shouldSuppressInsight(insight, feedbackSummary))
+    .map((insight) => ({
+      insight,
+      scoring: insightSurfaceDecision(insight, feedbackSummary, preferenceSummary),
+    }))
+    .filter(({ scoring }) => scoring.eligible)
+    .map(({ insight, scoring }) => ({
+      ...insight,
+      metadata: {
+        ...(insight.metadata || {}),
+        scoring,
+      },
+    }))
     .sort((a, b) => {
       const scoreDiff = insightRankScore(b, feedbackSummary, preferenceSummary) - insightRankScore(a, feedbackSummary, preferenceSummary);
       if (scoreDiff !== 0) return scoreDiff;
@@ -1813,6 +2138,14 @@ async function buildInsightsForUser({ user, limit = 10 }) {
 
     supplementedRanked = resolveInsightCompetition(dedupeInsights([...explorationRanked, ...fallbackInsights]))
       .map(annotateInsightScopeLineage)
+      .map((insight) => ({
+        ...insight,
+        metadata: {
+          ...(insight.metadata || {}),
+          scoring: insightSurfaceDecision(insight, feedbackSummary, preferenceSummary),
+        },
+      }))
+      .filter((insight) => insight.metadata?.scoring?.eligible)
       .sort((a, b) => {
         const scoreDiff = insightRankScore(b, feedbackSummary, preferenceSummary) - insightRankScore(a, feedbackSummary, preferenceSummary);
         if (scoreDiff !== 0) return scoreDiff;
@@ -1821,7 +2154,7 @@ async function buildInsightsForUser({ user, limit = 10 }) {
     supplementedRanked = promoteExplorationCandidate(supplementedRanked, preferenceSummary, limit);
   }
 
-  return orchestrateInsightPortfolio(supplementedRanked, feedbackSummary, limit);
+  return orchestrateInsightPortfolio(supplementedRanked, feedbackSummary, limit, preferenceSummary);
 }
 
 module.exports = {
@@ -1843,6 +2176,10 @@ module.exports = {
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
+  scoreInsightCandidate,
+  insightSurfaceDecision,
+  summarizeSurfaceDecisions,
+  compareRankingStrategies,
   insightRankScore,
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,

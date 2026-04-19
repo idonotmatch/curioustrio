@@ -3,6 +3,8 @@ import { ActivityIndicator, View, Text, StyleSheet, ScrollView, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
+import { loadWithCache } from '../services/cache';
+import { selectInsightEvidence } from '../services/insightEvidence';
 import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../services/insightPresentation';
 
 const FEEDBACK_REASONS = [
@@ -42,23 +44,6 @@ function formatShortDate(value) {
   const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
   if (Number.isNaN(date.getTime())) return `${value}`.slice(0, 10);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function normalizeMerchant(value) {
-  return `${value || ''}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
-}
-
-function isUnknownMerchantValue(value) {
-  const normalized = normalizeMerchant(value);
-  return !normalized || normalized === 'unknown' || normalized === 'unknownmerchant';
-}
-
-function expenseMatchesMerchant(expense, metadata = {}) {
-  const merchantKey = normalizeMerchant(metadata.merchant_key || metadata.merchant_name);
-  if (!merchantKey) return false;
-  const expenseMerchant = normalizeMerchant(expense?.merchant);
-  if (!expenseMerchant || isUnknownMerchantValue(expense?.merchant)) return false;
-  return expenseMerchant.includes(merchantKey) || merchantKey.includes(expenseMerchant);
 }
 
 function metadataHighlights(metadata = {}) {
@@ -243,6 +228,17 @@ function purchaseHistoryRows(metadata = {}) {
     }));
 }
 
+function parseJsonParam(value, fallback = null) {
+  if (!value) return fallback;
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(`${raw}`);
+  } catch {
+    return fallback;
+  }
+}
+
 export default function InsightDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -254,22 +250,18 @@ export default function InsightDetailScreen() {
   const entityType = firstParam(params.entity_type);
   const entityId = firstParam(params.entity_id);
   const metadataParam = firstParam(params.metadata);
+  const preloadEvidenceParam = firstParam(params.preload_evidence);
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
-  const [evidenceRows, setEvidenceRows] = useState([]);
-  const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
-  const metadata = useMemo(() => {
-    if (!metadataParam) return {};
-    try {
-      return JSON.parse(`${metadataParam}`);
-    } catch {
-      return {};
-    }
-  }, [metadataParam]);
+  const metadata = useMemo(() => parseJsonParam(metadataParam, {}), [metadataParam]);
+  const preloadedEvidence = useMemo(() => {
+    const rows = parseJsonParam(preloadEvidenceParam, []);
+    return Array.isArray(rows) ? rows : [];
+  }, [preloadEvidenceParam]);
 
   const insight = useMemo(() => ({
     id: `${insightId}`,
@@ -300,6 +292,16 @@ export default function InsightDetailScreen() {
   const nextStep = nextStepCopy(descriptor, primaryAction);
   const merchantComparisons = merchantComparisonRows(metadata);
   const purchaseHistory = purchaseHistoryRows(metadata);
+  const [evidenceRows, setEvidenceRows] = useState(() => {
+    if (evidenceMode === 'largest_expense') {
+      return metadata.largest_expense ? [metadata.largest_expense] : [];
+    }
+    return preloadedEvidence;
+  });
+  const [evidenceLoading, setEvidenceLoading] = useState(() => {
+    if (!evidenceMode || evidenceMode === 'largest_expense') return false;
+    return !preloadedEvidence.length;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -318,31 +320,49 @@ export default function InsightDetailScreen() {
       }
 
       try {
-        setEvidenceLoading(true);
-        const endpoint = metadata.scope === 'household' ? '/expenses/household' : '/expenses';
-        const params = new URLSearchParams({ month: `${metadata.month}` });
-        if (evidenceMode === 'category' && metadata.category_key) {
-          params.set('category_id', `${metadata.category_key}`);
-        }
-        if (evidenceMode === 'cleanup') {
-          params.set('category_id', 'uncategorized');
-        }
-        const rows = await api.get(`${endpoint}?${params.toString()}`);
-        const cleanRows = Array.isArray(rows) ? rows : [];
-        const filtered = evidenceMode === 'merchant'
-          ? cleanRows.filter((row) => expenseMatchesMerchant(row, metadata))
-          : cleanRows;
-        if (!cancelled) setEvidenceRows(filtered.slice(0, 5));
+        if (!preloadedEvidence.length) setEvidenceLoading(true);
+        const cacheKey = `cache:insight-evidence:${metadata.scope === 'household' ? 'household' : 'personal'}:${metadata.month}:${evidenceMode}:${metadata.category_key || metadata.merchant_key || metadata.merchant_name || insightType}`;
+        await loadWithCache(
+          cacheKey,
+          async () => {
+            const endpoint = metadata.scope === 'household' ? '/expenses/household' : '/expenses';
+            const params = new URLSearchParams({ month: `${metadata.month}` });
+            if (evidenceMode === 'category' && metadata.category_key) {
+              params.set('category_id', `${metadata.category_key}`);
+            }
+            if (evidenceMode === 'cleanup') {
+              params.set('category_id', 'uncategorized');
+            }
+            const rows = await api.get(`${endpoint}?${params.toString()}`);
+            const cleanRows = Array.isArray(rows) ? rows : [];
+            return selectInsightEvidence(cleanRows, evidenceMode, metadata, 5);
+          },
+          (rows) => {
+            if (!cancelled) {
+              setEvidenceRows(Array.isArray(rows) ? rows : []);
+              setEvidenceLoading(false);
+            }
+          },
+          () => {
+            if (!cancelled) {
+              if (!preloadedEvidence.length) setEvidenceRows([]);
+              setEvidenceLoading(false);
+            }
+          }
+        );
       } catch {
-        if (!cancelled) setEvidenceRows([]);
+        if (!cancelled) {
+          if (!preloadedEvidence.length) setEvidenceRows([]);
+          setEvidenceLoading(false);
+        }
       } finally {
-        if (!cancelled) setEvidenceLoading(false);
+        if (!cancelled && preloadedEvidence.length) setEvidenceLoading(false);
       }
     }
 
     loadEvidence();
     return () => { cancelled = true; };
-  }, [evidenceMode, metadata]);
+  }, [evidenceMode, metadata, insightType, preloadedEvidence]);
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;

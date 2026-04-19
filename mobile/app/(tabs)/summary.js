@@ -16,6 +16,7 @@ import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { InsightCard } from '../../components/InsightCard';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 import { toLocalDateString } from '../../services/date';
+import { selectInsightEvidence } from '../../services/insightEvidence';
 import { buildMockInsights } from '../../fixtures/mockInsights';
 import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
 
@@ -130,9 +131,27 @@ function buildPreloadedCategoryExpenses(insight, personalExpenses = [], househol
     ? householdExpenses
     : personalExpenses;
 
-  return source
-    .filter((expense) => `${expense?.category_id || ''}` === categoryKey && `${expense?.date || ''}`.slice(0, 7) === month)
-    .slice(0, 8);
+  const monthRows = source.filter((expense) => `${expense?.date || ''}`.slice(0, 7) === month);
+  return selectInsightEvidence(monthRows, 'category', insight?.metadata || {}, 8);
+}
+
+function buildPreloadedInsightEvidence(insight, personalExpenses = [], householdExpenses = []) {
+  const metadata = insight?.metadata || {};
+  const month = `${metadata.month || ''}`.trim();
+  if (!month) return [];
+
+  const source = `${metadata.scope || 'personal'}` === 'household'
+    ? householdExpenses
+    : personalExpenses;
+  const monthRows = source.filter((expense) => `${expense?.date || ''}`.slice(0, 7) === month);
+  const mode = `${insight?.type || ''}` === 'early_cleanup'
+    ? 'cleanup'
+    : metadata.category_key
+      ? 'category'
+      : (metadata.merchant_key || metadata.merchant_name)
+        ? 'merchant'
+        : null;
+  return selectInsightEvidence(monthRows, mode, metadata, 5);
 }
 
 export default function SummaryScreen() {
@@ -380,6 +399,7 @@ export default function SummaryScreen() {
     ]);
 
     if (earlyDevelopingInsightTypes.has(insight?.type)) {
+      const preloadedEvidence = buildPreloadedInsightEvidence(insight, expenses, householdExpenses);
       router.push({
         pathname: '/insight-detail',
         params: {
@@ -391,6 +411,7 @@ export default function SummaryScreen() {
           entity_type: insight.entity_type || '',
           entity_id: insight.entity_id || '',
           metadata: JSON.stringify(insight.metadata || {}),
+          preload_evidence: JSON.stringify(preloadedEvidence),
         },
       });
       return;

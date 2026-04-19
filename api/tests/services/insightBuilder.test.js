@@ -16,6 +16,10 @@ const {
   buildUsageFallbackInsights,
   shouldSupplementWithUsageFallback,
   determineUsageFallbackScope,
+  scoreInsightCandidate,
+  insightSurfaceDecision,
+  summarizeSurfaceDecisions,
+  compareRankingStrategies,
   insightDestinationAdjustment,
   portfolioRole,
   scopeHierarchyAdjustment,
@@ -48,6 +52,138 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioRole(buildInsight({ type: 'projected_month_end_over_budget' }))).toBe('act');
     expect(portfolioRole(buildInsight({ type: 'projected_month_end_under_budget' }))).toBe('plan');
     expect(portfolioRole(buildInsight({ type: 'top_category_driver' }))).toBe('explain');
+  });
+
+  it('scores mature personal action insights above early household explanation insights', () => {
+    const matureAct = buildInsight({
+      type: 'projected_month_end_over_budget',
+      severity: 'high',
+      metadata: {
+        scope: 'personal',
+        month: '2026-04',
+        maturity: 'mature',
+        confidence: 'comparative',
+        projected_budget_delta: 140,
+        historical_period_count: 5,
+      },
+    });
+    const earlyExplain = buildInsight({
+      type: 'early_logging_momentum',
+      severity: 'low',
+      metadata: {
+        scope: 'household',
+        month: '2026-04',
+        maturity: 'early',
+        confidence: 'descriptive',
+        expense_count: 2,
+      },
+    });
+
+    expect(scoreInsightCandidate(matureAct).surface_score).toBeGreaterThan(scoreInsightCandidate(earlyExplain).surface_score);
+  });
+
+  it('suppresses thin low-signal insights that do not clear the surface threshold', () => {
+    const decision = insightSurfaceDecision(buildInsight({
+      type: 'early_logging_momentum',
+      severity: 'low',
+      metadata: {
+        scope: 'household',
+        month: '2026-04',
+        maturity: 'early',
+      },
+    }), new Map(), {
+      type_preferences: [
+        { key: 'early_logging_momentum', shown: 7, score: 0 },
+      ],
+    });
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.suppression_reasons).toContain('below_surface_threshold');
+  });
+
+  it('keeps strong early anchored insights eligible even with lower maturity', () => {
+    const decision = insightSurfaceDecision(buildInsight({
+      type: 'early_top_category',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        month: '2026-04',
+        maturity: 'early',
+        confidence: 'descriptive',
+        category_key: 'groceries',
+        category_name: 'Groceries',
+        current_spend_to_date: 142,
+        expense_count: 4,
+      },
+    }));
+
+    expect(decision.eligible).toBe(true);
+    expect(decision.surface_score).toBeGreaterThanOrEqual(decision.threshold);
+  });
+
+  it('summarizes surface decisions by eligibility and suppression reason', () => {
+    const decisions = [
+      {
+        insight: buildInsight({
+          type: 'projected_month_end_over_budget',
+          metadata: { maturity: 'mature', scope: 'personal', month: '2026-04' },
+        }),
+        scoring: { eligible: true, suppression_reasons: [] },
+      },
+      {
+        insight: buildInsight({
+          type: 'early_logging_momentum',
+          metadata: { maturity: 'early', scope: 'household', month: '2026-04' },
+        }),
+        scoring: { eligible: false, suppression_reasons: ['below_surface_threshold', 'stale_low_signal'] },
+      },
+    ];
+
+    const summary = summarizeSurfaceDecisions(decisions);
+    expect(summary.total).toBe(2);
+    expect(summary.eligible).toBe(1);
+    expect(summary.suppressed).toBe(1);
+    expect(summary.by_reason.below_surface_threshold).toBe(1);
+    expect(summary.by_reason.stale_low_signal).toBe(1);
+    expect(summary.by_maturity.mature.eligible).toBe(1);
+    expect(summary.by_maturity.early.suppressed).toBe(1);
+  });
+
+  it('compares legacy ranking with threshold-eligible ranking', () => {
+    const insights = [
+      buildInsight({
+        id: 'eligible-1',
+        type: 'projected_month_end_over_budget',
+        severity: 'high',
+        metadata: {
+          scope: 'personal',
+          month: '2026-04',
+          maturity: 'mature',
+          confidence: 'comparative',
+          projected_budget_delta: 120,
+          historical_period_count: 5,
+        },
+      }),
+      buildInsight({
+        id: 'suppressed-1',
+        type: 'early_logging_momentum',
+        severity: 'low',
+        metadata: {
+          scope: 'household',
+          month: '2026-04',
+          maturity: 'early',
+        },
+      }),
+    ];
+
+    const comparison = compareRankingStrategies(insights, new Map(), {
+      type_preferences: [{ key: 'early_logging_momentum', shown: 7, score: 0 }],
+    }, 2);
+
+    expect(comparison.legacy_top.map((row) => row.id)).toContain('suppressed-1');
+    expect(comparison.threshold_top.map((row) => row.id)).toEqual(['eligible-1']);
+    expect(comparison.suppressed_candidates[0].id).toBe('suppressed-1');
+    expect(comparison.suppressed_candidates[0].suppression_reasons).toContain('below_surface_threshold');
   });
 
   it('groups related insights into narrative clusters', () => {

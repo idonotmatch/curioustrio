@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insightEvidence';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 
 const FEEDBACK_REASONS = [
@@ -590,6 +591,11 @@ export default function TrendDetailScreen() {
     () => trend?.pace?.variance_breakdown?.top_one_off_merchants || [],
     [trend]
   );
+  const categoryEvidenceMetadata = useMemo(() => ({
+    category_key: `${categoryKey || ''}`,
+    category_name: highlightedCategoryProjection?.category_name || highlightedDriver?.category_name || insightMetadata?.category_name || '',
+    latest_date: insightMetadata?.latest_date || '',
+  }), [categoryKey, highlightedCategoryProjection, highlightedDriver, insightMetadata]);
   const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
   const supportsCategoryReview = ['top_category_driver', 'projected_category_surge', 'projected_category_under_baseline'].includes(`${insightType}`);
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
@@ -654,7 +660,7 @@ export default function TrendDetailScreen() {
       }
       if (`${mock}` === '1') {
         setCategoryExpensesLoading(false);
-        setCategoryExpenses(buildMockCategoryExpenses(categoryKey));
+        setCategoryExpenses(selectInsightEvidence(buildMockCategoryExpenses(categoryKey), 'category', categoryEvidenceMetadata, 8));
         return;
       }
       try {
@@ -672,7 +678,7 @@ export default function TrendDetailScreen() {
           },
           (rows) => {
             if (!cancelled) {
-              setCategoryExpenses(Array.isArray(rows) ? rows.slice(0, 8) : []);
+              setCategoryExpenses(selectInsightEvidence(Array.isArray(rows) ? rows : [], 'category', categoryEvidenceMetadata, 8));
               setCategoryExpensesLoading(false);
             }
           },
@@ -695,10 +701,11 @@ export default function TrendDetailScreen() {
 
     loadCategoryExpenses();
     return () => { cancelled = true; };
-  }, [categoryKey, month, mock, scope, supportsCategoryReview, preloadedCategoryExpenses]);
+  }, [categoryKey, month, mock, scope, supportsCategoryReview, preloadedCategoryExpenses, categoryEvidenceMetadata]);
   const categoryMerchantSummary = useMemo(() => {
     const totals = new Map();
     for (const expense of categoryExpenses) {
+      if (isUnknownMerchantValue(expense?.merchant)) continue;
       const merchant = `${expense.merchant || 'Unknown merchant'}`.trim() || 'Unknown merchant';
       const current = totals.get(merchant) || { merchant, amount: 0, count: 0 };
       current.amount += Number(expense.amount || 0);
