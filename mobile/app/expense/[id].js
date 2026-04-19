@@ -14,170 +14,23 @@ import { removePendingExpense } from '../../hooks/usePendingExpenses';
 import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
+import { PendingExpenseReviewPanel } from '../../components/PendingExpenseReviewPanel';
 import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
-
-function formatImportedAt(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function formatEmailSnippet(value) {
-  const cleaned = `${value || ''}`.replace(/\s+/g, ' ').trim();
-  return cleaned || null;
-}
-
-function formatCurrency(value) {
-  if (value == null || Number.isNaN(Number(value))) return null;
-  return `$${Number(value).toFixed(2)}`;
-}
-
-function formatShortDate(value) {
-  if (!value) return null;
-  const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function labelLikelyField(field = '') {
-  switch (`${field}`) {
-    case 'amount': return 'amount';
-    case 'date': return 'date';
-    case 'merchant': return 'merchant';
-    case 'category_id': return 'category';
-    case 'items': return 'items';
-    default: return `${field}`.replace(/^items_/, '').replace(/_/g, ' ');
-  }
-}
-
-function buildReviewFocusSummary(gmailReviewHint = {}) {
-  const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields)
-    ? gmailReviewHint.likely_changed_fields.filter(Boolean)
-    : [];
-  const namedFields = likelyFields.map(labelLikelyField);
-
-  if (gmailReviewHint?.review_mode === 'items_first') {
-    return {
-      title: 'Most likely to need attention',
-      body: namedFields.length
-        ? `Start with the items, then confirm ${namedFields.slice(0, 2).join(' and ')}.`
-        : 'Start with the items, then confirm the final total.',
-    };
-  }
-
-  if (namedFields.length >= 2) {
-    return {
-      title: 'Most likely to need attention',
-      body: `Double-check ${namedFields.slice(0, 2).join(' and ')} before approving.`,
-    };
-  }
-
-  if (namedFields.length === 1) {
-    return {
-      title: 'Most likely to need attention',
-      body: `Double-check the ${namedFields[0]} before approving.`,
-    };
-  }
-
-  return {
-    title: 'Most likely to need attention',
-    body: gmailReviewHint?.review_mode === 'quick_check'
-      ? 'A quick confirmation of the core facts should be enough here.'
-      : 'Confirm the core facts before approving this import.',
-  };
-}
-
-function buildReviewDecisionFacts({ expense, gmailReviewHint, formattedDate, importedAtLabel, categoryLabel }) {
-  const facts = [
-    { label: 'Total', value: formatCurrency(Math.abs(Number(expense?.amount || 0))) },
-    { label: 'Date', value: formattedDate || null },
-    { label: 'Merchant', value: expense?.merchant || null },
-    { label: 'Sender', value: gmailReviewHint?.from_address || null },
-  ];
-
-  if (!facts.some((entry) => entry.label === 'Date' && entry.value) && importedAtLabel) {
-    facts.push({ label: 'Imported', value: importedAtLabel });
-  }
-  if (categoryLabel && categoryLabel !== 'Uncategorized') {
-    facts.push({ label: 'Category', value: categoryLabel });
-  }
-
-  return facts.filter((entry) => entry.value).slice(0, 4);
-}
-
-function buildTreatmentSuggestionSummary(treatmentSuggestion = null) {
-  if (!treatmentSuggestion?.summary) return null;
-
-  const bits = [];
-  if (treatmentSuggestion.suggested_track_only) bits.push('track only');
-  if (treatmentSuggestion.suggested_private) bits.push('private');
-  if (treatmentSuggestion.suggested_category_name) bits.push(treatmentSuggestion.suggested_category_name);
-
-  if (!bits.length) {
-    return treatmentSuggestion.summary;
-  }
-
-  return `Usually handled as ${bits.join(' · ')}.`;
-}
-
-function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
-  const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
-  const likelySet = new Set(likelyFields);
-  const isItemsFirst = gmailReviewHint?.review_mode === 'items_first';
-  const itemCount = Array.isArray(expense?.items) ? expense.items.length : 0;
-  const itemSignals = Array.isArray(gmailReviewHint?.item_top_signals) ? gmailReviewHint.item_top_signals : [];
-  const itemSignalSummary = itemSignals.length
-    ? itemSignals.map((entry) => `${entry.field}`.replace(/^items_/, '').replace(/_/g, ' ')).join(', ')
-    : null;
-  const itemHistoryReason = (itemSignalSummary ? `This sender often needs item cleanup around ${itemSignalSummary}.` : null)
-    || gmailReviewHint?.item_reliability_message
-    || 'This sender often needs item cleanup before approval.';
-  const candidates = [
-    ...(isItemsFirst ? [{
-      key: 'items',
-      label: 'Items',
-      value: itemCount ? `${itemCount} extracted ${itemCount === 1 ? 'item' : 'items'}` : 'Review extracted items',
-      reason: itemHistoryReason,
-      weight: 110,
-    }] : []),
-    {
-      key: 'amount',
-      label: 'Amount',
-      value: `$${Math.abs(Number(expense?.amount || 0)).toFixed(2)}`,
-      reason: gmailReviewHint?.amount_evidence || 'Confirm the final charged total.',
-      weight: likelySet.has('amount') ? 100 : (isItemsFirst ? 50 : 60),
-    },
-    {
-      key: 'date',
-      label: 'Date',
-      value: formattedDate,
-      reason: gmailReviewHint?.date_evidence || 'Confirm the purchase date you want to track.',
-      weight: likelySet.has('date') ? 95 : (isItemsFirst ? 40 : 55),
-    },
-    {
-      key: 'merchant',
-      label: 'Merchant',
-      value: expense?.merchant || '—',
-      reason: gmailReviewHint?.merchant_evidence || 'Confirm the merchant name.',
-      weight: likelySet.has('merchant') ? 90 : (isItemsFirst ? 35 : 50),
-    },
-    {
-      key: 'category',
-      label: 'Category',
-      value: categoryLabel,
-      reason: likelySet.has('category_id')
-        ? 'This sender often needs a category correction.'
-        : 'Check this if the purchase type looks off.',
-      weight: likelySet.has('category_id') ? 85 : 35,
-    },
-  ];
-
-  return candidates
-    .sort((a, b) => b.weight - a.weight)
-    .slice(0, 4);
-}
+import {
+  formatImportedAt,
+  formatEmailSnippet,
+  formatCurrency,
+  formatShortDate,
+  buildReviewFocusSummary,
+  buildReviewDecisionFacts,
+  buildTreatmentSuggestionSummary,
+  buildPriorityReviewFields,
+  formatItemStructuredMeta,
+  itemMatchLabel,
+  itemSubmeta,
+  summarizeItemSignals,
+} from '../../services/expenseDetailPresentation';
 
 function parseExpenseParam(value) {
   if (!value || typeof value !== 'string') return null;
@@ -186,38 +39,6 @@ function parseExpenseParam(value) {
   } catch {
     return null;
   }
-}
-
-function formatItemStructuredMeta(item = {}) {
-  const bits = [item.brand, item.product_size || item.pack_size].filter(Boolean);
-  return bits.length ? bits.join(' • ') : null;
-}
-
-function itemMatchLabel(item = {}) {
-  if (item.product_id) return 'Matched product';
-  if (item.estimated_unit_price != null) return 'Unit priced';
-  if (item.comparable_key) return 'Comparable item';
-  return null;
-}
-
-function itemSubmeta(item = {}) {
-  const parts = [];
-  if (item.estimated_unit_price != null) {
-    parts.push(`${formatCurrency(item.estimated_unit_price)} per ${item.unit || 'unit'}`);
-  }
-  if (item.product_match_reason) {
-    parts.push(`${item.product_match_reason}`.replace(/_/g, ' '));
-  }
-  return parts.length ? parts.join(' • ') : null;
-}
-
-function summarizeItemSignals(items = []) {
-  return items.reduce((summary, item) => {
-    if (item.product_id) summary.matched += 1;
-    if (item.estimated_unit_price != null) summary.unitPriced += 1;
-    if (item.item_type && item.item_type !== 'product') summary.nonProduct += 1;
-    return summary;
-  }, { matched: 0, unitPriced: 0, nonProduct: 0 });
 }
 
 const TRACK_ONLY_REASONS = [
@@ -791,10 +612,39 @@ export default function ExpenseDetailScreen() {
         )}
       </View>
 
-      {reviewState ? (
+      {isPendingEmailReview ? (
+        <PendingExpenseReviewPanel
+          styles={styles}
+          activeReviewField={activeReviewField}
+          subjectLine={subjectLine}
+          expenseMerchant={expense?.merchant}
+          reviewDecisionFacts={reviewDecisionFacts}
+          reviewFocusSummary={reviewFocusSummary}
+          treatmentSuggestion={treatmentSuggestion}
+          treatmentSuggestionSummary={treatmentSuggestionSummary}
+          importMetaBits={importMetaBits}
+          emailSnippet={emailSnippet}
+          priorityReviewFields={priorityReviewFields}
+          isItemsFirstReview={isItemsFirstReview}
+          editing={editing}
+          activateReviewField={activateReviewField}
+          applyTreatmentSuggestion={applyTreatmentSuggestion}
+          isPrivate={isPrivate}
+          excludeFromBudget={excludeFromBudget}
+          canAdjustReviewControls={canAdjustReviewControls}
+          handleTogglePrivate={handleTogglePrivate}
+          handleToggleTrackOnly={handleToggleTrackOnly}
+          handleSelectBudgetExclusionReason={handleSelectBudgetExclusionReason}
+          savingControls={savingControls}
+          trackOnlyReasons={TRACK_ONLY_REASONS}
+          budgetExclusionReason={budgetExclusionReason}
+          secondaryDetailsExpanded={secondaryDetailsExpanded}
+          setSecondaryDetailsExpanded={setSecondaryDetailsExpanded}
+        />
+      ) : reviewState ? (
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerEyebrow}>
-            {isItemsFirstReview ? 'Items first' : isQuickCheckReview ? 'Quick check' : 'Gmail import'}
+            {isQuickCheckReview ? 'Quick check' : 'Gmail import'}
           </Text>
           <Text style={styles.reviewBannerTitle}>
             {subjectLine || expense?.merchant || 'Gmail import awaiting review'}
@@ -812,150 +662,6 @@ export default function ExpenseDetailScreen() {
               ))}
             </View>
           ) : null}
-          <View style={styles.reviewFocusBlock}>
-            <Text style={styles.reviewFocusTitle}>{reviewFocusSummary.title}</Text>
-            <Text style={styles.reviewFocusBody}>{reviewFocusSummary.body}</Text>
-          </View>
-          {treatmentSuggestionSummary ? (
-            <View style={styles.reviewPatternBlock}>
-              <Text style={styles.reviewPatternLabel}>Usually for similar expenses</Text>
-              <Text style={styles.reviewPatternBody}>{treatmentSuggestionSummary}</Text>
-            </View>
-          ) : null}
-          {importMetaBits.length || emailSnippet ? (
-            <View style={styles.reviewBannerEmailContext}>
-              {importMetaBits.length ? (
-                <Text style={styles.reviewBannerMeta}>{importMetaBits.join('  ·  ')}</Text>
-              ) : null}
-              {emailSnippet ? (
-                <>
-                  <Text style={styles.reviewBannerEmailLabel}>Email preview</Text>
-                  <Text style={styles.reviewBannerEmailSnippet} numberOfLines={2}>{emailSnippet}</Text>
-                </>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {isPendingEmailReview ? (
-        <View style={styles.priorityFieldsCard}>
-          <View style={styles.priorityFieldsHeader}>
-            <View>
-              <Text style={styles.priorityFieldsEyebrow}>Check these details</Text>
-              <Text style={styles.priorityFieldsTitle}>
-                {isItemsFirstReview ? 'Start with the items, then confirm the basics' : 'Confirm the key facts before approving'}
-              </Text>
-            </View>
-            {!editing ? (
-              <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
-                <Text style={styles.priorityFieldsAction}>Edit</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          {priorityReviewFields.map((field) => (
-            <TouchableOpacity
-              key={field.key}
-              style={[styles.priorityFieldRow, activeReviewField === field.key && styles.priorityFieldRowActive]}
-              onPress={() => activateReviewField(field.key)}
-              activeOpacity={0.82}
-            >
-              <View style={styles.priorityFieldTop}>
-                <Text style={styles.priorityFieldLabel}>{field.label}</Text>
-                <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
-              </View>
-              <Text style={styles.priorityFieldValue}>{field.value}</Text>
-              <Text style={styles.priorityFieldReason}>{field.reason}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
-
-      {isPendingEmailReview ? (
-        <View style={styles.reviewControlsCard}>
-          <Text style={styles.reviewControlsEyebrow}>Review options</Text>
-          <Text style={styles.reviewControlsTitle}>Decide how this should be counted before you approve it</Text>
-
-          {treatmentSuggestion ? (
-            <View style={styles.reviewSuggestionCard}>
-              <View style={styles.reviewSuggestionHeader}>
-                <View style={styles.reviewSuggestionCopy}>
-                  <Text style={styles.reviewSuggestionEyebrow}>Apply the usual handling</Text>
-                  <Text style={styles.reviewSuggestionTitle}>{treatmentSuggestionSummary || treatmentSuggestion.summary}</Text>
-                  <Text style={styles.reviewSuggestionDetail}>{treatmentSuggestion.detail}</Text>
-                  {treatmentSuggestion.suggested_category_name ? (
-                    <Text style={styles.reviewSuggestionMeta}>
-                      Usually categorized as {treatmentSuggestion.suggested_category_name}
-                    </Text>
-                  ) : null}
-                  {treatmentSuggestion.suggested_payment_method ? (
-                    <Text style={styles.reviewSuggestionMeta}>
-                      Usually paid with {treatmentSuggestion.suggested_payment_method}
-                      {treatmentSuggestion.suggested_card_label ? ` · ${treatmentSuggestion.suggested_card_label}` : ''}
-                      {treatmentSuggestion.suggested_card_last4 ? ` ····${treatmentSuggestion.suggested_card_last4}` : ''}
-                    </Text>
-                  ) : null}
-                </View>
-                <TouchableOpacity style={styles.reviewSuggestionAction} onPress={applyTreatmentSuggestion} activeOpacity={0.82}>
-                  <Text style={styles.reviewSuggestionActionText}>Use this</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : null}
-
-          <View style={[styles.row, { paddingVertical: 12 }]}>
-            <Text style={styles.label}>Private</Text>
-            <Switch
-              value={isPrivate}
-              onValueChange={canAdjustReviewControls ? handleTogglePrivate : undefined}
-              disabled={!canAdjustReviewControls || savingControls}
-              trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
-              thumbColor={isPrivate ? '#fff' : '#555'}
-            />
-          </View>
-
-          <View style={[styles.row, { paddingVertical: 12 }]}>
-            <View style={styles.trackOnlyTextWrap}>
-              <Text style={styles.label}>Track only</Text>
-              <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
-            </View>
-            <Switch
-              value={excludeFromBudget}
-              onValueChange={canAdjustReviewControls ? handleToggleTrackOnly : undefined}
-              disabled={!canAdjustReviewControls || savingControls}
-              trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
-              thumbColor={excludeFromBudget ? '#fff' : '#555'}
-            />
-          </View>
-
-          {excludeFromBudget ? (
-            <View style={styles.trackOnlyReasonBlock}>
-              <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
-              <View style={styles.reasonChipWrap}>
-                {TRACK_ONLY_REASONS.map((reason) => {
-                  const selected = budgetExclusionReason === reason.value;
-                  return (
-                    <TouchableOpacity
-                    key={reason.value}
-                    style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                    onPress={() => canAdjustReviewControls ? handleSelectBudgetExclusionReason(reason.value) : undefined}
-                    activeOpacity={0.82}
-                    disabled={!canAdjustReviewControls || savingControls}
-                  >
-                      <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {isPendingEmailReview ? (
-        <View style={styles.reviewFieldsHeader}>
-          <Text style={styles.reviewFieldsEyebrow}>Expense details</Text>
-          <Text style={styles.reviewFieldsTitle}>These are the details that will be saved</Text>
         </View>
       ) : null}
 
@@ -1167,22 +873,6 @@ export default function ExpenseDetailScreen() {
           </>
         ) : null}
       </View>
-
-      {isPendingEmailReview ? (
-        <TouchableOpacity
-          style={styles.secondaryDetailsToggle}
-          onPress={() => setSecondaryDetailsExpanded((value) => !value)}
-          activeOpacity={0.8}
-        >
-          <View>
-            <Text style={styles.secondaryDetailsEyebrow}>Other details</Text>
-            <Text style={styles.secondaryDetailsTitle}>
-              {secondaryDetailsExpanded ? 'Hide payment, notes, location, and other details' : 'Show payment, notes, location, and other details'}
-            </Text>
-          </View>
-          <Ionicons name={secondaryDetailsExpanded ? 'chevron-up' : 'chevron-forward'} size={16} color="#7d7d7d" />
-        </TouchableOpacity>
-      ) : null}
 
       {showSecondaryDetails && ((editing && canEdit) || locationData || expense.place_name || expense.address) ? (
         <View style={styles.locationSection}>

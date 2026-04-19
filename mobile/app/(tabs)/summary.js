@@ -76,6 +76,7 @@ function insightEventMetadata(insight, surface = 'summary') {
     entity_id: insight?.entity_id || null,
     category_key: insight?.metadata?.category_key || null,
     merchant_key: insight?.metadata?.merchant_key || null,
+    continuity_key: insight?.metadata?.continuity_key || null,
     scope_relationship: insight?.metadata?.scope_relationship || null,
     consolidated_scopes: insight?.metadata?.consolidated_scopes || null,
     related_insight_ids: insight?.metadata?.related_insight_ids || null,
@@ -203,7 +204,7 @@ export default function SummaryScreen() {
     markSeen,
     dismiss: dismissInsight,
     logEvents,
-  } = useInsights(3);
+  } = useInsights(1);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [entryMode, setEntryMode] = useState('add');
   const [input, setInput] = useState('');
