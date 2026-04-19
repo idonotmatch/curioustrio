@@ -111,11 +111,10 @@ describe('insightBuilder orchestration', () => {
 
     const selected = orchestrateInsightPortfolio(insights, new Map(), 3);
     expect(selected.map((insight) => insight.id)).toEqual(
-      expect.arrayContaining(['warn-1', 'explain-1', 'opp-1'])
+      expect.arrayContaining(['warn-1', 'opp-1'])
     );
-    expect(selected.map((insight) => insight.id)).not.toEqual(
-      expect.arrayContaining(['warn-1', 'warn-2', 'explain-1', 'opp-1'])
-    );
+    expect(selected.map((insight) => insight.id)).not.toContain('warn-2');
+    expect(new Set(selected.map((insight) => portfolioFamily(insight))).size).toBeGreaterThanOrEqual(3);
   });
 
   it('avoids stacking multiple cards from the same narrative cluster too early', () => {
@@ -260,6 +259,50 @@ describe('insightBuilder orchestration', () => {
     const selected = orchestrateInsightPortfolio(insights, new Map(), 2);
     expect(selected.map((insight) => insight.id)).toContain('setup-1');
     expect(selected.filter((insight) => portfolioRole(insight) === 'explain')).toHaveLength(1);
+  });
+
+  it('prefers an action card over an explanation card in the same narrative cluster', () => {
+    const selected = orchestrateInsightPortfolio([
+      buildInsight({
+        id: 'act-1',
+        type: 'projected_month_end_over_budget',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'explain-1',
+        type: 'one_off_expense_skewing_projection',
+        severity: 'medium',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+    ], new Map(), 1);
+
+    expect(selected[0].id).toBe('act-1');
+  });
+
+  it('avoids selecting a sibling explanation card after the cluster action is already chosen', () => {
+    const selected = orchestrateInsightPortfolio([
+      buildInsight({
+        id: 'act-1',
+        type: 'projected_month_end_over_budget',
+        severity: 'high',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'explain-1',
+        type: 'one_off_expense_skewing_projection',
+        severity: 'medium',
+        metadata: { scope: 'personal', month: '2026-04' },
+      }),
+      buildInsight({
+        id: 'plan-1',
+        type: 'top_category_driver',
+        severity: 'medium',
+        metadata: { scope: 'personal', month: '2026-04', category_key: 'groceries' },
+      }),
+    ], new Map(), 2);
+
+    expect(selected.map((insight) => insight.id)).toEqual(['act-1', 'plan-1']);
   });
 
   it('boosts families and themes that have stronger acted history', () => {

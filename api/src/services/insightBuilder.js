@@ -1094,6 +1094,45 @@ function orchestrationRoleMixAdjustment(insight, selected = []) {
   return score;
 }
 
+function orchestrationNarrativeRoleAdjustment(insight, candidates = [], selected = []) {
+  const role = portfolioRole(insight);
+  const clusterKey = narrativeClusterKey(insight);
+  const themeKey = narrativeTheme(insight);
+  const peers = candidates.filter((candidate) => candidate.id !== insight.id);
+  const clusterPeers = peers.filter((candidate) => narrativeClusterKey(candidate) === clusterKey);
+  const themePeers = peers.filter((candidate) => narrativeTheme(candidate) === themeKey);
+  const clusterHasActionablePeer = clusterPeers.some((candidate) => {
+    const candidateRole = portfolioRole(candidate);
+    return candidateRole === 'act' || candidateRole === 'plan' || candidateRole === 'setup';
+  });
+  const themeHasActionablePeer = themePeers.some((candidate) => {
+    const candidateRole = portfolioRole(candidate);
+    return candidateRole === 'act' || candidateRole === 'plan' || candidateRole === 'setup';
+  });
+  const clusterHasExplainPeer = clusterPeers.some((candidate) => portfolioRole(candidate) === 'explain');
+  const themeHasExplainPeer = themePeers.some((candidate) => portfolioRole(candidate) === 'explain');
+  const selectedClusterHasActionable = selected.some((candidate) => {
+    const candidateRole = portfolioRole(candidate);
+    return narrativeClusterKey(candidate) === clusterKey
+      && (candidateRole === 'act' || candidateRole === 'plan' || candidateRole === 'setup');
+  });
+
+  let score = 0;
+
+  if (role === 'act' || role === 'plan' || role === 'setup') {
+    if (clusterHasExplainPeer) score += 28;
+    else if (themeHasExplainPeer) score += 10;
+  }
+
+  if (role === 'explain') {
+    if (selectedClusterHasActionable) score -= 22;
+    else if (clusterHasActionablePeer) score -= 30;
+    else if (themeHasActionablePeer) score -= 12;
+  }
+
+  return score;
+}
+
 function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limit = 10) {
   const remaining = [...insights];
   const selected = [];
@@ -1110,6 +1149,7 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
         + insightDestinationAdjustment(insight)
         + scopeHierarchyAdjustment(insight)
         + orchestrationRoleMixAdjustment(insight, selected)
+        + orchestrationNarrativeRoleAdjustment(insight, remaining, selected)
         - orchestrationPenalty(insight, selected);
       if (score > bestScore) {
         bestScore = score;
