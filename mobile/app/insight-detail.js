@@ -399,7 +399,7 @@ export default function InsightDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen options={{ title: 'Insight detail' }} />
+      <Stack.Screen options={{ title: 'Insight detail', headerBackTitle: 'Summary' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.hero}>
           <View style={styles.chipRow}>

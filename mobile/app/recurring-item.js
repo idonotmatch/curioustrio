@@ -178,7 +178,7 @@ export default function RecurringItemScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <Stack.Screen options={{ title: title || 'Recurring item' }} />
+      <Stack.Screen options={{ title: title || 'Recurring item', headerBackTitle: 'Summary' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
           <View style={styles.center}>
