@@ -21,6 +21,31 @@ let householdUserId;
 
 beforeAll(async () => {
   await db.query(
+    `CREATE TABLE IF NOT EXISTS scenario_memory (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      household_id UUID REFERENCES households(id) ON DELETE SET NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('personal', 'household')),
+      label TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+      month TEXT NOT NULL,
+      timing_mode TEXT NOT NULL DEFAULT 'now',
+      last_recommended_timing_mode TEXT
+        CHECK (last_recommended_timing_mode IS NULL OR last_recommended_timing_mode IN ('now', 'next_period', 'spread_3_periods')),
+      last_choice_followed_recommendation BOOLEAN,
+      last_choice_source TEXT
+        CHECK (last_choice_source IS NULL OR last_choice_source IN ('initial', 'compare_option', 'recent_plan')),
+      memory_state TEXT NOT NULL DEFAULT 'ephemeral',
+      last_affordability_status TEXT,
+      last_can_absorb BOOLEAN,
+      last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  );
+
+  await db.query(
     `CREATE TABLE IF NOT EXISTS insight_events (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -118,6 +143,8 @@ afterEach(async () => {
   await db.query(`DELETE FROM insight_state WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [householdUserId]);
+  await db.query(`DELETE FROM scenario_memory WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM scenario_memory WHERE user_id = $1`, [householdUserId]);
   await db.query(
     `DELETE FROM expense_items
      WHERE expense_id IN (SELECT id FROM expenses WHERE household_id = $1)`,
@@ -136,6 +163,8 @@ afterAll(async () => {
   await db.query(`DELETE FROM insight_events WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM budget_settings WHERE user_id = $1`, [householdUserId]);
+  await db.query(`DELETE FROM scenario_memory WHERE user_id = $1`, [userId]);
+  await db.query(`DELETE FROM scenario_memory WHERE user_id = $1`, [householdUserId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-user'`);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-insights-housemate'`);
   await db.query(`DELETE FROM users WHERE id = $1`, [userId]);
@@ -203,6 +232,24 @@ describe('GET /insights', () => {
       `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
       [userId]
     );
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         timing_mode,
+         last_choice_source,
+         last_choice_followed_recommendation,
+         last_recommended_timing_mode
+       )
+       VALUES
+       ($1, 'personal', 'Diapers', 39.29, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period'),
+       ($1, 'personal', 'Paper goods', 22.00, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period'),
+       ($1, 'personal', 'Snacks', 18.00, '2026-04', 'next_period', 'initial', TRUE, 'next_period')`,
+      [userId]
+    );
 
     const today = new Date();
     const d1 = new Date(today); d1.setDate(d1.getDate() - 52);
@@ -245,6 +292,8 @@ describe('GET /insights', () => {
     expect(restock).toBeTruthy();
     expect(restock.metadata.projected_headroom_amount).toBeGreaterThan(0);
     expect(restock.metadata.group_key).toBeTruthy();
+    expect(restock.metadata.planner_timing_note).toBe('You usually wait for the next period unless the need is immediate.');
+    expect(restock.body).toContain('You usually wait for the next period unless the need is immediate.');
   });
 
   it('hides dismissed insights for the user', async () => {

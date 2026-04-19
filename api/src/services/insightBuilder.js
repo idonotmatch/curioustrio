@@ -8,6 +8,7 @@ const { inferOutcomeEventsForUser, summarizeOutcomeWindows } = require('./insigh
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
+const ScenarioMemory = require('../models/scenarioMemory');
 const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight, normalizeLineageKey } = require('./insightFeedbackSummary');
 const { buildInsightPreferenceSummary, preferenceAdjustmentForInsight } = require('./insightPreferenceSummary');
 const {
@@ -938,6 +939,7 @@ function scoreInsightCandidate(insight, feedbackSummary = new Map(), preferenceS
     feedback: feedbackAdjustmentForInsight(insight, feedbackSummary),
     preference: preferenceAdjustmentForInsight(insight, preferenceSummary),
     scope_hierarchy: scopeHierarchyAdjustment(insight),
+    planner_timing: Number(insight?.metadata?.planner_timing_adjustment || 0),
   };
   const baseScore = Object.values(components).reduce((sum, value) => sum + Number(value || 0), 0);
   const adjustmentScore = Object.values(adjustments).reduce((sum, value) => sum + Number(value || 0), 0);
@@ -1006,6 +1008,78 @@ function scopeHierarchyAdjustment(insight) {
   if (scope === 'personal') return 18;
   if (scope === 'household') return 4;
   return 0;
+}
+
+function plannerTimingPreferenceStats(mode, timingPreferences = {}) {
+  const stats = timingPreferences?.[mode];
+  if (!stats) return null;
+  const total = Number(stats.total || 0);
+  const compareOptionCount = Number(stats.compare_option_count || 0);
+  const followRate = Number(stats.follow_rate || 0);
+  const netSignal = Number(stats.net_signal || 0);
+  if (total < 3 || compareOptionCount < 2 || followRate < 0.75 || netSignal < 2) return null;
+  return { total, compareOptionCount, followRate, netSignal };
+}
+
+function plannerTimingAdjustmentForInsight(insight, timingPreferences = {}) {
+  const type = `${insight?.type || ''}`.trim();
+  const scope = `${insight?.metadata?.scope || ''}`.trim();
+  if (scope !== 'personal') return 0;
+
+  if (type === 'recurring_restock_window') {
+    const prefersNow = plannerTimingPreferenceStats('now', timingPreferences);
+    const prefersNextPeriod = plannerTimingPreferenceStats('next_period', timingPreferences);
+    const prefersSpread = plannerTimingPreferenceStats('spread_3_periods', timingPreferences);
+    const daysUntilDue = Number(insight?.metadata?.days_until_due || 0);
+    const severity = `${insight?.severity || ''}`.trim();
+
+    if (prefersNow) return 10;
+    if ((prefersNextPeriod || prefersSpread) && severity === 'low' && daysUntilDue > 2) return -12;
+    if ((prefersNextPeriod || prefersSpread) && daysUntilDue > 0) return -6;
+  }
+
+  return 0;
+}
+
+function plannerTimingNoteForInsight(insight, timingPreferences = {}) {
+  const type = `${insight?.type || ''}`.trim();
+  const scope = `${insight?.metadata?.scope || ''}`.trim();
+  if (scope !== 'personal') return null;
+
+  if (type === 'recurring_restock_window') {
+    if (plannerTimingPreferenceStats('next_period', timingPreferences)) {
+      return 'You usually wait for the next period unless the need is immediate.';
+    }
+    if (plannerTimingPreferenceStats('spread_3_periods', timingPreferences)) {
+      return 'You usually prefer spacing purchases out when the month is close.';
+    }
+    if (plannerTimingPreferenceStats('now', timingPreferences)) {
+      return 'You usually act in the current period when something still fits cleanly.';
+    }
+  }
+
+  return null;
+}
+
+function annotateInsightWithPlannerTiming(insight, timingPreferences = {}) {
+  if (!insight) return insight;
+  const timingAdjustment = plannerTimingAdjustmentForInsight(insight, timingPreferences);
+  const timingNote = plannerTimingNoteForInsight(insight, timingPreferences);
+  if (!timingAdjustment && !timingNote) return insight;
+
+  const body = timingNote && !`${insight.body || ''}`.includes(timingNote)
+    ? `${insight.body} ${timingNote}`.trim()
+    : insight.body;
+
+  return {
+    ...insight,
+    body,
+    metadata: {
+      ...(insight.metadata || {}),
+      planner_timing_adjustment: timingAdjustment,
+      planner_timing_note: timingNote,
+    },
+  };
 }
 
 function portfolioRole(insight) {
@@ -1854,6 +1928,9 @@ async function buildInsights({ user, limit = 10 }) {
   let householdWatchCandidates = [];
   const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
   const hasMultipleHouseholdMembers = householdMembers.length > 1;
+  const timingPreferences = user?.id
+    ? await ScenarioMemory.summarizeTimingPreferences(user.id).catch(() => ({}))
+    : {};
 
   if (user?.household_id) {
     insightSets.push(await loadItemHistoryInsightsBestEffort(user.household_id, {
@@ -2066,6 +2143,7 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   return resolveInsightCompetition(deduped)
+    .map((insight) => annotateInsightWithPlannerTiming(insight, timingPreferences))
     .map(annotateInsightScopeLineage)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
