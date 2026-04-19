@@ -293,6 +293,41 @@ function whyItMattersCopy({ insightType, trend, categoryKey, scope }) {
   }
 }
 
+function supportingDetailSummary(trend, { categoryKey = '' } = {}) {
+  if (!trend) return 'Budget, projection, and anomaly detail.';
+
+  const summaryBits = [];
+  const projectedDelta = Number(trend?.projection?.overall?.projected_budget_delta || 0);
+  const oneOffDelta = Number(trend?.pace?.variance_breakdown?.one_off_delta_amount || 0);
+  const recurringDelta = Number(trend?.pace?.variance_breakdown?.recurring_delta_amount || 0);
+  const confidence = trend?.projection?.overall?.confidence || null;
+  const highlightedCategory = (trend?.projection?.categories || []).find((category) => category.category_key === categoryKey)
+    || null;
+
+  if (projectedDelta > 0) {
+    summaryBits.push(`${formatCurrency(projectedDelta)} over budget`);
+  } else if (projectedDelta < 0) {
+    summaryBits.push(`${formatCurrency(Math.abs(projectedDelta))} under budget`);
+  }
+
+  if (oneOffDelta > 0 && oneOffDelta >= recurringDelta) {
+    summaryBits.push(`one-offs ${formatCurrency(oneOffDelta)}`);
+  } else if (recurringDelta > 0) {
+    summaryBits.push(`recurring ${formatCurrency(recurringDelta)}`);
+  }
+
+  if (highlightedCategory && Number(highlightedCategory.adjusted_projected_total || 0) > 0) {
+    summaryBits.push(`${highlightedCategory.category_name} highlighted`);
+  }
+
+  if (confidence) {
+    summaryBits.push(`${confidence} confidence`);
+  }
+
+  if (!summaryBits.length) return 'Budget, projection, and anomaly detail.';
+  return summaryBits.slice(0, 4).join(' · ');
+}
+
 export default function TrendDetailScreen() {
   const router = useRouter();
   const {
@@ -998,7 +1033,9 @@ export default function TrendDetailScreen() {
                 <Text style={styles.supportingToggle}>{showSupportingDetail ? 'Hide' : 'Show'}</Text>
               </TouchableOpacity>
               <Text style={styles.feedbackCopy}>
-                Open this if you want the deeper budget, projection, and anomaly context behind the card.
+                {showSupportingDetail
+                  ? 'Open this if you want the deeper budget, projection, and anomaly context behind the card.'
+                  : supportingDetailSummary(trend, { categoryKey: `${categoryKey}` })}
               </Text>
 
               {showSupportingDetail ? (

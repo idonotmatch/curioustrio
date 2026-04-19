@@ -21,6 +21,13 @@ function formatPercent(value) {
   return `${Math.abs(Number(value)).toFixed(0)}%`;
 }
 
+function formatShortDate(value) {
+  if (!value) return '—';
+  const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return `${value}`.slice(0, 10);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function parseMetadata(value) {
   if (!value || typeof value !== 'string') return {};
   try {
@@ -217,9 +224,20 @@ export default function RecurringItemScreen() {
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>Timing</Text>
               <Text style={styles.cardTitle}>Cadence and coverage</Text>
-              <Text style={styles.rowText}>Last purchased: {history.last_purchased_at || '—'}</Text>
-              <Text style={styles.rowText}>Next expected: {history.next_expected_date || '—'}</Text>
-              <Text style={styles.rowText}>Merchants: {(history.merchants || []).join(', ') || '—'}</Text>
+              <View style={styles.metricList}>
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>Last purchased</Text>
+                  <Text style={styles.metricValue}>{formatShortDate(history.last_purchased_at)}</Text>
+                </View>
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>Next expected</Text>
+                  <Text style={styles.metricValue}>{formatShortDate(history.next_expected_date)}</Text>
+                </View>
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>Merchants</Text>
+                  <Text style={styles.metricValue}>{(history.merchants || []).join(', ') || '—'}</Text>
+                </View>
+              </View>
             </View>
 
             {merchantPriceHistory.length > 0 ? (
@@ -377,7 +395,18 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '700' },
   detailTitle: { fontSize: 18, color: '#f5f5f5', fontWeight: '700', lineHeight: 24 },
   cardCopy: { fontSize: 14, color: '#b5b5b5', lineHeight: 20 },
-  rowText: { fontSize: 14, color: '#e5e5e5' },
+  metricList: { gap: 0 },
+  metricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+    paddingTop: 10,
+  },
+  metricLabel: { fontSize: 13, color: '#8e8e93', flexShrink: 0 },
+  metricValue: { fontSize: 14, color: '#e5e5e5', textAlign: 'right', flexShrink: 1 },
   purchaseRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

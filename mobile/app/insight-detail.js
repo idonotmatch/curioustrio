@@ -92,6 +92,23 @@ function transparencyRows(metadata = {}) {
     .filter((row) => row.value != null);
 }
 
+function transparencySummary(metadata = {}) {
+  const parts = [];
+
+  if (metadata.maturity) parts.push(formatLabel(metadata.maturity));
+  if (metadata.confidence) parts.push(`${formatLabel(metadata.confidence)} confidence`);
+  if (metadata.scope_relationship === 'personal_household_overlap') {
+    parts.push('Personal + household overlap');
+  } else if (metadata.scope) {
+    parts.push(formatLabel(metadata.scope));
+  }
+  if (metadata.category_name) parts.push(metadata.category_name);
+  else if (metadata.merchant_name) parts.push(metadata.merchant_name);
+
+  if (!parts.length) return 'Scoring context and hierarchy for this card.';
+  return parts.slice(0, 4).join(' • ');
+}
+
 function whatChangedCopy(metadata = {}, body = '') {
   const headline = body || 'This signal stands out in your recent activity.';
   const facts = [];
@@ -533,7 +550,11 @@ export default function InsightDetailScreen() {
               </View>
               <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Hide' : 'Show'}</Text>
             </TouchableOpacity>
-            <Text style={styles.cardCopy}>Open this if you want the scoring context and hierarchy behind the card.</Text>
+            <Text style={styles.cardCopy}>
+              {showTechnicalDetails
+                ? 'Open this if you want the scoring context and hierarchy behind the card.'
+                : transparencySummary(metadata)}
+            </Text>
             {showTechnicalDetails ? (
               <View style={styles.metricList}>
                 {technicalRows.map((row) => (
