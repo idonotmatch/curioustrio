@@ -505,6 +505,49 @@ describe('insightBuilder orchestration', () => {
     ]));
   });
 
+  it('does not surface unknown as an early repeated merchant insight', () => {
+    const insights = buildEarlyUsageInsights({
+      projection: {
+        month: '2026-04',
+        period: { day_index: 4, days_in_period: 30 },
+        overall: {
+          current_spend_to_date: 88,
+          historical_period_count: 0,
+          history_stage: 'none',
+        },
+        current_activity: {
+          expense_count: 4,
+          active_day_count: 3,
+          total_spend: 88,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 52, count: 2 },
+          ],
+          top_merchants: [
+            { merchant_key: 'unknown', merchant_name: 'Unknown', spend: 44, count: 2 },
+            { merchant_key: 'amazon', merchant_name: 'Amazon', spend: 32, count: 2 },
+          ],
+          largest_expense: {
+            id: 'expense-1',
+            merchant: 'Amazon',
+            amount: 32,
+            date: '2026-04-02',
+            category_key: 'shopping',
+            category_name: 'Shopping',
+            share_of_spend: 0.3636,
+          },
+          uncategorized_count: 0,
+        },
+      },
+      budgetLimit: 500,
+      scope: 'personal',
+    });
+
+    const repeatedMerchant = insights.find((insight) => insight.type === 'early_repeated_merchant');
+    expect(repeatedMerchant).toBeTruthy();
+    expect(repeatedMerchant.metadata.merchant_key).toBe('amazon');
+    expect(repeatedMerchant.metadata.merchant_name).toBe('Amazon');
+  });
+
   it('does not build early insights once mature history exists', () => {
     const insights = buildEarlyUsageInsights({
       projection: {
@@ -640,6 +683,53 @@ describe('insightBuilder orchestration', () => {
     ]));
     expect(insights.every((insight) => insight.metadata.maturity === 'developing')).toBe(true);
     expect(insights.every((insight) => insight.metadata.confidence === 'directional')).toBe(true);
+  });
+
+  it('does not surface unknown as a developing repeated merchant insight', () => {
+    const insights = buildDevelopingUsageInsights({
+      rollingActivity: {
+        scope: 'personal',
+        days: 7,
+        current_window: {
+          from: '2026-04-04',
+          to: '2026-04-11',
+          expense_count: 5,
+          active_day_count: 3,
+          total_spend: 142,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 72, count: 3 },
+          ],
+          top_merchants: [
+            { merchant_key: 'unknown', merchant_name: 'Unknown', spend: 58, count: 2 },
+            { merchant_key: 'amazon', merchant_name: 'Amazon', spend: 44, count: 2 },
+          ],
+        },
+        previous_window: {
+          from: '2026-03-28',
+          to: '2026-04-04',
+          expense_count: 3,
+          active_day_count: 2,
+          total_spend: 78,
+          top_categories: [
+            { category_key: 'shopping', category_name: 'Shopping', spend: 28, count: 1 },
+          ],
+          top_merchants: [
+            { merchant_key: 'amazon', merchant_name: 'Amazon', spend: 18, count: 1 },
+          ],
+        },
+      },
+      projection: {
+        overall: {
+          historical_period_count: 0,
+        },
+      },
+      scope: 'personal',
+    });
+
+    const repeatedMerchant = insights.find((insight) => insight.type === 'developing_repeated_merchant');
+    expect(repeatedMerchant).toBeTruthy();
+    expect(repeatedMerchant.metadata.merchant_key).toBe('amazon');
+    expect(repeatedMerchant.metadata.merchant_name).toBe('Amazon');
   });
 
   it('opens developing insights with three rolling expenses across two days', () => {

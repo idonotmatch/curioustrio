@@ -80,6 +80,12 @@ function addDays(date, days) {
   return next;
 }
 
+function isUnknownMerchant(merchant = {}) {
+  const merchantKey = `${merchant?.merchant_key || ''}`.trim().toLowerCase();
+  const merchantName = `${merchant?.merchant_name || ''}`.trim().toLowerCase();
+  return merchantKey === 'unknown' || merchantName === 'unknown';
+}
+
 function earlyInsightMetadata(projection, scopeLabel, extra = {}) {
   return {
     scope: scopeLabel,
@@ -115,7 +121,9 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
   const activeDayCount = Number(activity.active_day_count || 0);
   const topCategory = activity.top_categories?.[0];
   const topMerchant = activity.top_merchants?.find((merchant) =>
-    Number(merchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.minCount
+    !isUnknownMerchant(merchant)
+    && Number(merchant.spend || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.minSpend
+    && Number(merchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.minCount
   );
   const largestExpense = activity.largest_expense;
 
@@ -180,7 +188,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     });
   }
 
-  if (topMerchant && Number(topMerchant.spend || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.minSpend) {
+  if (topMerchant) {
     insights.push({
       id: `early_repeated_merchant:${scopeLabel}:${projection.month}:${topMerchant.merchant_key}:${topMerchant.count}`,
       type: 'early_repeated_merchant',
@@ -544,8 +552,9 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
   }
 
   const repeatedMerchant = current.top_merchants?.find((merchant) =>
-    Number(merchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.minCount
+    !isUnknownMerchant(merchant)
     && Number(merchant.spend || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.minSpend
+    && Number(merchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.minCount
   );
   if (repeatedMerchant) {
     const previousMerchant = previous.top_merchants?.find((merchant) => merchant.merchant_key === repeatedMerchant.merchant_key);
