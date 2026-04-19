@@ -36,6 +36,28 @@ function toExposureMetadata(insight, index, limit) {
   };
 }
 
+function buildCalibrationDebugResponse(debug = {}) {
+  const comparison = debug?.ranking_comparison || {};
+  const legacyTop = Array.isArray(comparison.legacy_top) ? comparison.legacy_top : [];
+  const thresholdTop = Array.isArray(comparison.threshold_top) ? comparison.threshold_top : [];
+  const suppressed = Array.isArray(comparison.suppressed_candidates) ? comparison.suppressed_candidates : [];
+
+  return {
+    user_id: debug.user_id,
+    limit: debug.limit,
+    raw_count: debug.raw?.count || 0,
+    final_count: debug.final?.count || 0,
+    surface_summary: debug.surface_summary || null,
+    ranking_comparison: {
+      legacy_top,
+      threshold_top: thresholdTop,
+      newly_dropped_from_legacy_top: legacyTop.filter((legacy) => !thresholdTop.some((next) => next.id === legacy.id)),
+      newly_added_to_threshold_top: thresholdTop.filter((next) => !legacyTop.some((legacy) => legacy.id === next.id)),
+    },
+    top_suppressed_candidates: suppressed.slice(0, Math.max(10, Number(debug.limit || 10))),
+  };
+}
+
 async function recordInsightExposures(userId, insights, limit) {
   if (!userId || !Array.isArray(insights) || !insights.length) return;
   const recentShownMap = await InsightEvent.getRecentShownMap(
@@ -91,6 +113,9 @@ router.get('/debug', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
     const debug = await buildInsightDebugForUser({ user, limit });
+    if (`${req.query.view || ''}`.trim() === 'calibration') {
+      return res.json(buildCalibrationDebugResponse(debug));
+    }
     res.json(debug);
   } catch (err) {
     next(err);

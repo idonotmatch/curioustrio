@@ -501,6 +501,42 @@ describe('GET /insights', () => {
     );
   });
 
+  it('returns a compact calibration debug view', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 7.09, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 9.49, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 9.49, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const res = await request(app).get('/insights/debug?view=calibration&limit=5');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      user_id: userId,
+      limit: 5,
+      raw_count: expect.any(Number),
+      final_count: expect.any(Number),
+      surface_summary: expect.objectContaining({
+        total: expect.any(Number),
+        eligible: expect.any(Number),
+        suppressed: expect.any(Number),
+      }),
+      ranking_comparison: expect.objectContaining({
+        legacy_top: expect.any(Array),
+        threshold_top: expect.any(Array),
+        newly_dropped_from_legacy_top: expect.any(Array),
+        newly_added_to_threshold_top: expect.any(Array),
+      }),
+      top_suppressed_candidates: expect.any(Array),
+    });
+  });
+
   it('returns an under-budget projection insight with projected headroom', async () => {
     const month = currentPeriod(1);
     const prior1 = shiftPeriod(month, -1);
