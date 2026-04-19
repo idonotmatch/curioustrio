@@ -209,6 +209,25 @@ describe('GET /insights', () => {
   });
 
   it('returns recurring repurchase due insights for items entering the watch window', async () => {
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         timing_mode,
+         last_choice_source,
+         last_choice_followed_recommendation,
+         last_recommended_timing_mode
+       )
+       VALUES
+       ($1, 'personal', 'Diapers', 39.29, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period'),
+       ($1, 'personal', 'Wipes', 18.00, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period'),
+       ($1, 'personal', 'Soap', 11.00, '2026-04', 'next_period', 'initial', TRUE, 'next_period')`,
+      [userId]
+    );
+
     const today = new Date();
     const d1 = new Date(today); d1.setDate(d1.getDate() - 52);
     const d2 = new Date(today); d2.setDate(d2.getDate() - 34);
@@ -224,7 +243,10 @@ describe('GET /insights', () => {
 
     const res = await request(app).get('/insights?limit=10');
     expect(res.status).toBe(200);
-    expect(res.body.map((insight) => insight.type)).toContain('recurring_repurchase_due');
+    const due = res.body.find((insight) => insight.type === 'recurring_repurchase_due');
+    expect(due).toBeTruthy();
+    expect(due.body).toContain('You usually wait a bit longer unless the item is due right away.');
+    expect(due.metadata?.planner_timing_note).toBe('You usually wait a bit longer unless the item is due right away.');
   });
 
   it('returns a recurring restock window insight when headroom can absorb a due-soon item', async () => {
@@ -832,6 +854,25 @@ describe('GET /insights', () => {
   });
 
   it('returns a combined item-history insight when staple and merchant variance tell the same story', async () => {
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         timing_mode,
+         last_choice_source,
+         last_choice_followed_recommendation,
+         last_recommended_timing_mode
+       )
+       VALUES
+       ($1, 'personal', 'Paper Towels', 12.99, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period'),
+       ($1, 'personal', 'Paper Goods', 14.50, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period'),
+       ($1, 'personal', 'Pantry', 18.00, '2026-04', 'next_period', 'initial', TRUE, 'next_period')`,
+      [userId]
+    );
+
     const today = new Date();
     const d1 = new Date(today); d1.setDate(d1.getDate() - 40);
     const d2 = new Date(today); d2.setDate(d2.getDate() - 24);
@@ -854,6 +895,8 @@ describe('GET /insights', () => {
     const combined = res.body.find((insight) => insight.type === 'item_staple_merchant_opportunity');
     expect(combined).toBeTruthy();
     expect(combined.metadata.cheaper_merchant).toBe('Target');
+    expect(combined.body).toContain('You usually wait for a cleaner budget window before stocking up.');
+    expect(combined.metadata?.planner_timing_note).toBe('You usually wait for a cleaner budget window before stocking up.');
     expect(res.body.find((insight) => insight.type === 'item_staple_emerging')).toBeFalsy();
     expect(res.body.find((insight) => insight.type === 'item_merchant_variance')).toBeFalsy();
   });

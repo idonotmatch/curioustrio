@@ -1038,6 +1038,26 @@ function plannerTimingAdjustmentForInsight(insight, timingPreferences = {}) {
     if ((prefersNextPeriod || prefersSpread) && daysUntilDue > 0) return -6;
   }
 
+  if (type === 'recurring_repurchase_due') {
+    const prefersNow = plannerTimingPreferenceStats('now', timingPreferences);
+    const prefersNextPeriod = plannerTimingPreferenceStats('next_period', timingPreferences);
+    const daysUntilDue = Number(insight?.metadata?.days_until_due || 0);
+    const severity = `${insight?.severity || ''}`.trim();
+
+    if (prefersNow && daysUntilDue <= 1) return 10;
+    if (prefersNextPeriod && severity !== 'high' && daysUntilDue > 1) return -8;
+  }
+
+  if (type === 'buy_soon_better_price' || type === 'item_staple_merchant_opportunity') {
+    const prefersNow = plannerTimingPreferenceStats('now', timingPreferences);
+    const prefersNextPeriod = plannerTimingPreferenceStats('next_period', timingPreferences);
+    const prefersSpread = plannerTimingPreferenceStats('spread_3_periods', timingPreferences);
+    const daysUntilDue = Number(insight?.metadata?.days_until_due || 0);
+
+    if (prefersNow && daysUntilDue >= 0 && daysUntilDue <= 3) return 8;
+    if ((prefersNextPeriod || prefersSpread) && daysUntilDue > 3) return -6;
+  }
+
   return 0;
 }
 
@@ -1055,6 +1075,24 @@ function plannerTimingNoteForInsight(insight, timingPreferences = {}) {
     }
     if (plannerTimingPreferenceStats('now', timingPreferences)) {
       return 'You usually act in the current period when something still fits cleanly.';
+    }
+  }
+
+  if (type === 'recurring_repurchase_due') {
+    if (plannerTimingPreferenceStats('next_period', timingPreferences)) {
+      return 'You usually wait a bit longer unless the item is due right away.';
+    }
+    if (plannerTimingPreferenceStats('now', timingPreferences)) {
+      return 'You usually handle due-soon staples in the current period.';
+    }
+  }
+
+  if (type === 'buy_soon_better_price' || type === 'item_staple_merchant_opportunity') {
+    if (plannerTimingPreferenceStats('next_period', timingPreferences)) {
+      return 'You usually wait for a cleaner budget window before stocking up.';
+    }
+    if (plannerTimingPreferenceStats('now', timingPreferences)) {
+      return 'You usually act on good timing when a staple is already in range.';
     }
   }
 
