@@ -252,6 +252,47 @@ function summaryCopy({ insightType, trend, categoryKey, scope }) {
   }
 }
 
+function whyItMattersCopy({ insightType, trend, categoryKey, scope }) {
+  const pace = trend?.pace;
+  const projection = trend?.projection?.overall;
+  const highlightedDriver = trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey);
+  const highlightedCategoryProjection = (trend?.projection?.categories || []).find((category) => category.category_key === categoryKey);
+
+  switch (`${insightType || ''}`) {
+    case 'spend_pace_ahead':
+      return 'This matters because the month is tightening faster than usual, which means the remaining room can disappear earlier than you expect.';
+    case 'spend_pace_behind':
+      return 'This matters because you may have more room than usual right now, but it is worth checking whether that room is broad-based or just coming from one gap in spending.';
+    case 'budget_too_low':
+      return 'This matters because the issue may not just be this month. If the same target keeps failing, the budget itself may need to move.';
+    case 'budget_too_high':
+      return 'This matters because a budget that is consistently too loose can make the app less useful for planning and less honest about real pressure.';
+    case 'top_category_driver':
+      return highlightedDriver
+        ? `${highlightedDriver.category_name} is doing enough of the work that understanding this one category may explain most of the overall shift.`
+        : 'This matters because one category appears to be doing more of the work than the rest.';
+    case 'one_offs_driving_variance':
+    case 'one_off_expense_skewing_projection':
+      return 'This matters because the month may look worse than your true baseline. If the pressure is mostly one-off, you should not treat it like a lasting behavior change.';
+    case 'projected_month_end_over_budget':
+      return 'This matters because the current pace is enough to change the likely month-end outcome, not just create a temporary mid-month wobble.';
+    case 'projected_month_end_under_budget':
+      return 'This matters because the remaining room may be real enough to plan with, instead of waiting and guessing later in the month.';
+    case 'projected_category_surge':
+      return highlightedCategoryProjection
+        ? `${highlightedCategoryProjection.category_name} is large enough to affect the overall month shape if it keeps tracking this way.`
+        : 'This matters because a single category may be shaping the forecast more than the rest of the budget.';
+    case 'projected_category_under_baseline':
+      return highlightedCategoryProjection
+        ? `${highlightedCategoryProjection.category_name} is leaving more room than usual, which may create flexibility elsewhere if that holds.`
+        : 'This matters because one category may be creating more room than usual in the period.';
+    case 'recurring_cost_pressure':
+      return `This matters because repeated price increases can quietly become part of your normal ${`${scope}` === 'household' ? 'shared' : 'monthly'} pressure if they keep showing up.`;
+    default:
+      return 'This matters because it changes how your period is likely to feel by the time the month closes.';
+  }
+}
+
 export default function TrendDetailScreen() {
   const router = useRouter();
   const {
@@ -274,6 +315,7 @@ export default function TrendDetailScreen() {
   const [unusualReviewStatus, setUnusualReviewStatus] = useState('');
   const [categoryReviewStatus, setCategoryReviewStatus] = useState('');
   const [recurringReviewStatus, setRecurringReviewStatus] = useState('');
+  const [showSupportingDetail, setShowSupportingDetail] = useState(false);
   const [categoryExpenses, setCategoryExpenses] = useState([]);
   const [categoryExpensesLoading, setCategoryExpensesLoading] = useState(false);
   const primaryAction = useMemo(
@@ -613,9 +655,16 @@ export default function TrendDetailScreen() {
               <Text style={styles.heroContext}>{sharedContextCopy(scope)}</Text>
             </View>
 
+            <View style={styles.card}>
+              <Text style={styles.cardEyebrow}>Why it matters</Text>
+              <Text style={styles.detailCardTitle}>What deserves attention</Text>
+              <Text style={styles.metricRow}>{whyItMattersCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
+            </View>
+
             {`${scope}` === 'household' ? (
               <View style={styles.sharedContextCard}>
-                <Text style={styles.cardTitle}>Shared context</Text>
+                <Text style={styles.cardEyebrow}>Shared context</Text>
+                <Text style={styles.detailCardTitle}>How this rolls up</Text>
                 <Text style={styles.metricRow}>
                   This insight is about the household&apos;s combined spending pattern, not just one person&apos;s activity.
                 </Text>
@@ -625,7 +674,7 @@ export default function TrendDetailScreen() {
             {primaryAction ? (
               <View style={styles.actionCard}>
                 <View style={styles.actionText}>
-                  <Text style={styles.cardTitle}>What to do next</Text>
+                  <Text style={styles.cardEyebrow}>Next step</Text>
                   <Text style={styles.actionTitle}>{primaryAction.title}</Text>
                   <Text style={styles.actionBody}>{primaryAction.body}</Text>
                 </View>
@@ -642,7 +691,8 @@ export default function TrendDetailScreen() {
 
             {supportsUnusualReview ? (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Review this unusual spend</Text>
+                <Text style={styles.cardEyebrow}>Feedback</Text>
+                <Text style={styles.detailCardTitle}>Review this unusual spend</Text>
                 <Text style={styles.feedbackCopy}>
                   Help Adlo learn whether this really was a one-off, something expected, or a new normal to learn from.
                 </Text>
@@ -743,7 +793,8 @@ export default function TrendDetailScreen() {
 
             {supportsCategoryReview ? (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Review this category shift</Text>
+                <Text style={styles.cardEyebrow}>Feedback</Text>
+                <Text style={styles.detailCardTitle}>Review this category shift</Text>
                 <Text style={styles.feedbackCopy}>
                   Help Adlo learn whether this category move feels temporary, expected, or like a real spending pattern shift.
                 </Text>
@@ -834,7 +885,8 @@ export default function TrendDetailScreen() {
 
             {supportsRecurringReview ? (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Review this recurring pressure</Text>
+                <Text style={styles.cardEyebrow}>Feedback</Text>
+                <Text style={styles.detailCardTitle}>Review this recurring pressure</Text>
                 <Text style={styles.feedbackCopy}>
                   Help Adlo learn whether this looks like a temporary recurring price spike, an expected cost, or a real new pressure to keep watching.
                 </Text>
@@ -898,63 +950,8 @@ export default function TrendDetailScreen() {
             ) : null}
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Period snapshot</Text>
-              <Text style={styles.metricRow}>Current spend to date: {formatCurrency(trend.pace?.current_spend_to_date)}</Text>
-              <Text style={styles.metricRow}>Historical average to date: {formatCurrency(trend.pace?.historical_spend_to_date_avg)}</Text>
-              <Text style={styles.metricRow}>Delta: {formatCurrency(trend.pace?.delta_amount)} · {formatPercent(trend.pace?.delta_percent)}</Text>
-              <Text style={styles.metricRow}>Projected period total: {formatCurrency(trend.pace?.projected_period_total)}</Text>
-              <Text style={styles.metricRow}>Historical periods used: {trend.pace?.historical_period_count ?? 0}</Text>
-              <Text style={styles.metricRow}>Data start: {trend.period?.data_start_date || '—'}</Text>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Budget context</Text>
-              <Text style={styles.metricRow}>Budget limit: {formatCurrency(trend.budget_adherence?.budget_limit)}</Text>
-              <Text style={styles.metricRow}>Projected over / under: {formatCurrency(trend.budget_adherence?.projected_over_under)}</Text>
-              <Text style={styles.metricRow}>Budget fit: {trend.budget_adherence?.budget_fit || '—'}</Text>
-              <Text style={styles.metricRow}>Historical periods used: {trend.budget_adherence?.historical_period_count ?? 0}</Text>
-            </View>
-
-            {trend.projection?.overall ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Month-end projection</Text>
-                <Text style={styles.metricRow}>Adjusted projection: {formatCurrency(trend.projection.overall.adjusted_projected_total)}</Text>
-                <Text style={styles.metricRow}>Baseline projection: {formatCurrency(trend.projection.overall.baseline_projected_total)}</Text>
-                <Text style={styles.metricRow}>Unusual spend to date: {formatCurrency(trend.projection.overall.unusual_spend_to_date)}</Text>
-                <Text style={styles.metricRow}>Normal spend to date: {formatCurrency(trend.projection.overall.normal_spend_to_date)}</Text>
-                <Text style={styles.metricRow}>Projected budget delta: {formatCurrency(trend.projection.overall.projected_budget_delta)}</Text>
-                <Text style={styles.metricRow}>Historical spend share by today: {formatPercent((Number(trend.projection.overall.historical_expected_share_by_day || 0) * 100) - 0)}</Text>
-                <Text style={styles.metricRow}>Projection confidence: {trend.projection.overall.confidence || '—'}</Text>
-              </View>
-            ) : null}
-
-            {(trend.projection?.categories || []).length ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Projected category finish</Text>
-                {trend.projection.categories.map((category) => (
-                  <View
-                    key={category.category_key}
-                    style={[
-                      styles.driverRow,
-                      `${categoryKey}` && category.category_key === `${categoryKey}` && styles.driverRowHighlight,
-                    ]}
-                  >
-                    <View style={styles.driverText}>
-                      <Text style={styles.driverName}>{category.category_name}</Text>
-                      <Text style={styles.driverMeta}>
-                        Baseline {formatCurrency(category.baseline_projected_total)} · Adjusted {formatCurrency(category.adjusted_projected_total)}
-                      </Text>
-                    </View>
-                    <Text style={styles.driverDelta}>
-                      {formatCurrency(Number(category.adjusted_projected_total || 0) - Number(category.baseline_projected_total || 0))}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Top drivers</Text>
+              <Text style={styles.cardEyebrow}>Drivers</Text>
+              <Text style={styles.detailCardTitle}>What is moving this</Text>
               {(trend.pace?.top_drivers || []).length ? (
                 trend.pace.top_drivers.map((driver) => (
                   <View
@@ -977,46 +974,10 @@ export default function TrendDetailScreen() {
               )}
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>One-offs vs recurring</Text>
-              <Text style={styles.metricRow}>One-off delta: {formatCurrency(trend.pace?.variance_breakdown?.one_off_delta_amount)}</Text>
-              <Text style={styles.metricRow}>Recurring delta: {formatCurrency(trend.pace?.variance_breakdown?.recurring_delta_amount)}</Text>
-              {(trend.pace?.variance_breakdown?.top_one_off_merchants || []).length ? (
-                <View style={styles.oneOffList}>
-                  {trend.pace.variance_breakdown.top_one_off_merchants.map((merchant) => (
-                    <Text key={merchant.merchant_key} style={styles.oneOffRow}>
-                      {merchant.merchant_name}: {formatCurrency(merchant.delta_amount)}
-                    </Text>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>No notable one-off merchants in this period.</Text>
-              )}
-            </View>
-
-            {trend.projection?.overall?.top_unusual_expenses?.length ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Top unusual expenses</Text>
-                {trend.projection.overall.top_unusual_expenses.map((expense) => (
-                  <View key={expense.id || `${expense.merchant}:${expense.date}`} style={styles.driverRow}>
-                    <View style={styles.driverText}>
-                      <Text style={styles.driverName}>{expense.merchant}</Text>
-                      <Text style={styles.driverMeta}>
-                        {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
-                      </Text>
-                    </View>
-                    <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                  </View>
-                ))}
-                <Text style={styles.emptyText}>
-                  Baseline projection excludes these from the forward run-rate, while adjusted projection counts what has already happened this month.
-                </Text>
-              </View>
-            ) : null}
-
             {highlightedDriver ? (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Why this category matters</Text>
+                <Text style={styles.cardEyebrow}>Why it matters</Text>
+                <Text style={styles.detailCardTitle}>This category&apos;s effect</Text>
                 <Text style={styles.metricRow}>
                   {highlightedDriver.category_name} is contributing {formatCurrency(Math.abs(highlightedDriver.delta_amount))}{' '}
                   {Number(highlightedDriver.delta_amount) >= 0 ? 'above' : 'below'} your usual pace.
@@ -1024,21 +985,136 @@ export default function TrendDetailScreen() {
               </View>
             ) : null}
 
-            {highlightedCategoryProjection ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Category projection detail</Text>
-                <Text style={styles.metricRow}>Category: {highlightedCategoryProjection.category_name}</Text>
-                <Text style={styles.metricRow}>Current spend to date: {formatCurrency(highlightedCategoryProjection.current_spend_to_date)}</Text>
-                <Text style={styles.metricRow}>Baseline finish: {formatCurrency(highlightedCategoryProjection.baseline_projected_total)}</Text>
-                <Text style={styles.metricRow}>Adjusted finish: {formatCurrency(highlightedCategoryProjection.adjusted_projected_total)}</Text>
-                <Text style={styles.metricRow}>Unusual spend to date: {formatCurrency(highlightedCategoryProjection.unusual_spend_to_date)}</Text>
-                <Text style={styles.metricRow}>Confidence: {highlightedCategoryProjection.confidence || '—'}</Text>
-              </View>
-            ) : null}
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.supportingHeader}
+                onPress={() => setShowSupportingDetail((value) => !value)}
+                activeOpacity={0.75}
+              >
+                <View style={styles.supportingHeaderText}>
+                  <Text style={styles.cardEyebrow}>Supporting detail</Text>
+                  <Text style={styles.detailCardTitle}>More numbers behind this read</Text>
+                </View>
+                <Text style={styles.supportingToggle}>{showSupportingDetail ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.feedbackCopy}>
+                Open this if you want the deeper budget, projection, and anomaly context behind the card.
+              </Text>
+
+              {showSupportingDetail ? (
+                <View style={styles.supportingDetailStack}>
+                  <View style={styles.supportingSection}>
+                    <Text style={styles.supportingSectionTitle}>Period snapshot</Text>
+                    <Text style={styles.metricRow}>Current spend to date: {formatCurrency(trend.pace?.current_spend_to_date)}</Text>
+                    <Text style={styles.metricRow}>Historical average to date: {formatCurrency(trend.pace?.historical_spend_to_date_avg)}</Text>
+                    <Text style={styles.metricRow}>Delta: {formatCurrency(trend.pace?.delta_amount)} · {formatPercent(trend.pace?.delta_percent)}</Text>
+                    <Text style={styles.metricRow}>Projected period total: {formatCurrency(trend.pace?.projected_period_total)}</Text>
+                    <Text style={styles.metricRow}>Historical periods used: {trend.pace?.historical_period_count ?? 0}</Text>
+                    <Text style={styles.metricRow}>Data start: {trend.period?.data_start_date || '—'}</Text>
+                  </View>
+
+                  <View style={styles.supportingSection}>
+                    <Text style={styles.supportingSectionTitle}>Budget context</Text>
+                    <Text style={styles.metricRow}>Budget limit: {formatCurrency(trend.budget_adherence?.budget_limit)}</Text>
+                    <Text style={styles.metricRow}>Projected over / under: {formatCurrency(trend.budget_adherence?.projected_over_under)}</Text>
+                    <Text style={styles.metricRow}>Budget fit: {trend.budget_adherence?.budget_fit || '—'}</Text>
+                    <Text style={styles.metricRow}>Historical periods used: {trend.budget_adherence?.historical_period_count ?? 0}</Text>
+                  </View>
+
+                  {trend.projection?.overall ? (
+                    <View style={styles.supportingSection}>
+                      <Text style={styles.supportingSectionTitle}>Month-end outlook</Text>
+                      <Text style={styles.metricRow}>Adjusted projection: {formatCurrency(trend.projection.overall.adjusted_projected_total)}</Text>
+                      <Text style={styles.metricRow}>Baseline projection: {formatCurrency(trend.projection.overall.baseline_projected_total)}</Text>
+                      <Text style={styles.metricRow}>Unusual spend to date: {formatCurrency(trend.projection.overall.unusual_spend_to_date)}</Text>
+                      <Text style={styles.metricRow}>Normal spend to date: {formatCurrency(trend.projection.overall.normal_spend_to_date)}</Text>
+                      <Text style={styles.metricRow}>Projected budget delta: {formatCurrency(trend.projection.overall.projected_budget_delta)}</Text>
+                      <Text style={styles.metricRow}>Historical spend share by today: {formatPercent((Number(trend.projection.overall.historical_expected_share_by_day || 0) * 100) - 0)}</Text>
+                      <Text style={styles.metricRow}>Projection confidence: {trend.projection.overall.confidence || '—'}</Text>
+                    </View>
+                  ) : null}
+
+                  {(trend.projection?.categories || []).length ? (
+                    <View style={styles.supportingSection}>
+                      <Text style={styles.supportingSectionTitle}>Projected category finish</Text>
+                      {trend.projection.categories.map((category) => (
+                        <View
+                          key={category.category_key}
+                          style={[
+                            styles.driverRow,
+                            `${categoryKey}` && category.category_key === `${categoryKey}` && styles.driverRowHighlight,
+                          ]}
+                        >
+                          <View style={styles.driverText}>
+                            <Text style={styles.driverName}>{category.category_name}</Text>
+                            <Text style={styles.driverMeta}>
+                              Baseline {formatCurrency(category.baseline_projected_total)} · Adjusted {formatCurrency(category.adjusted_projected_total)}
+                            </Text>
+                          </View>
+                          <Text style={styles.driverDelta}>
+                            {formatCurrency(Number(category.adjusted_projected_total || 0) - Number(category.baseline_projected_total || 0))}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  <View style={styles.supportingSection}>
+                    <Text style={styles.supportingSectionTitle}>One-offs vs recurring</Text>
+                    <Text style={styles.metricRow}>One-off delta: {formatCurrency(trend.pace?.variance_breakdown?.one_off_delta_amount)}</Text>
+                    <Text style={styles.metricRow}>Recurring delta: {formatCurrency(trend.pace?.variance_breakdown?.recurring_delta_amount)}</Text>
+                    {(trend.pace?.variance_breakdown?.top_one_off_merchants || []).length ? (
+                      <View style={styles.oneOffList}>
+                        {trend.pace.variance_breakdown.top_one_off_merchants.map((merchant) => (
+                          <Text key={merchant.merchant_key} style={styles.oneOffRow}>
+                            {merchant.merchant_name}: {formatCurrency(merchant.delta_amount)}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.emptyText}>No notable one-off merchants in this period.</Text>
+                    )}
+                  </View>
+
+                  {trend.projection?.overall?.top_unusual_expenses?.length ? (
+                    <View style={styles.supportingSection}>
+                      <Text style={styles.supportingSectionTitle}>Purchases shaping the forecast</Text>
+                      {trend.projection.overall.top_unusual_expenses.map((expense) => (
+                        <View key={expense.id || `${expense.merchant}:${expense.date}`} style={styles.driverRow}>
+                          <View style={styles.driverText}>
+                            <Text style={styles.driverName}>{expense.merchant}</Text>
+                            <Text style={styles.driverMeta}>
+                              {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+                            </Text>
+                          </View>
+                          <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+                        </View>
+                      ))}
+                      <Text style={styles.emptyText}>
+                        Baseline projection excludes these from the forward run-rate, while adjusted projection counts what has already happened this month.
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {highlightedCategoryProjection ? (
+                    <View style={styles.supportingSection}>
+                      <Text style={styles.supportingSectionTitle}>Category projection detail</Text>
+                      <Text style={styles.metricRow}>Category: {highlightedCategoryProjection.category_name}</Text>
+                      <Text style={styles.metricRow}>Current spend to date: {formatCurrency(highlightedCategoryProjection.current_spend_to_date)}</Text>
+                      <Text style={styles.metricRow}>Baseline finish: {formatCurrency(highlightedCategoryProjection.baseline_projected_total)}</Text>
+                      <Text style={styles.metricRow}>Adjusted finish: {formatCurrency(highlightedCategoryProjection.adjusted_projected_total)}</Text>
+                      <Text style={styles.metricRow}>Unusual spend to date: {formatCurrency(highlightedCategoryProjection.unusual_spend_to_date)}</Text>
+                      <Text style={styles.metricRow}>Confidence: {highlightedCategoryProjection.confidence || '—'}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
 
             {insightId ? (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Was this helpful?</Text>
+                <Text style={styles.cardEyebrow}>Feedback</Text>
+                <Text style={styles.detailCardTitle}>Was this helpful?</Text>
                 <Text style={styles.feedbackCopy}>
                   Your feedback helps Adlo learn which kinds of {`${scope}` === 'household' ? 'shared' : 'personal'} insights are actually useful.
                 </Text>
@@ -1170,6 +1246,12 @@ const styles = StyleSheet.create({
   actionText: { gap: 6 },
   actionTitle: { fontSize: 18, color: '#eef5fb', fontWeight: '600' },
   actionBody: { fontSize: 14, color: '#9eb1c5', lineHeight: 20 },
+  supportingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  supportingHeaderText: { flex: 1, gap: 4 },
+  supportingToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
+  supportingDetailStack: { gap: 14, marginTop: 2 },
+  supportingSection: { gap: 8 },
+  supportingSectionTitle: { fontSize: 13, color: '#d8dde3', fontWeight: '700' },
   actionButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#f5f5f5',
@@ -1186,6 +1268,8 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
+  cardEyebrow: { color: '#8e8e93', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
+  detailCardTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '700' },
   cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
   metricRow: { fontSize: 14, color: '#e5e5e5' },
   driverRow: {

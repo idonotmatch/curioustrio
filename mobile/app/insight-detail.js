@@ -417,7 +417,8 @@ export default function InsightDetailScreen() {
 
         {consolidationNote ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Combined read</Text>
+            <Text style={styles.cardEyebrow}>Combined read</Text>
+            <Text style={styles.cardTitle}>How this rolls up</Text>
             <Text style={styles.cardCopy}>{consolidationNote}</Text>
             {consolidationRows.length > 0 ? (
               <View style={styles.foldedList}>
@@ -576,6 +577,7 @@ export default function InsightDetailScreen() {
         ) : null}
 
         <View style={styles.card}>
+          <Text style={styles.cardEyebrow}>Feedback</Text>
           <Text style={styles.cardTitle}>Was this useful?</Text>
           <Text style={styles.cardCopy}>Your feedback helps Adlo learn whether early signals are useful now or should wait until they are more specific.</Text>
           <View style={styles.feedbackRow}>

@@ -415,10 +415,10 @@ function buildTrendInsights(trend, scope) {
     insights.push({
       id: `${type}:${scopeLabel}:${trend.month}`,
       type,
-      title: deltaPercent >= 0 ? 'You are spending faster than usual' : 'You are spending slower than usual',
+      title: deltaPercent >= 0 ? 'You are ahead of your usual pace' : 'You are below your usual pace',
       body: deltaPercent >= 0
-        ? `You are ${Math.abs(deltaPercent)}% ahead of your usual ${scopeLabel} pace for this point in the period.`
-        : `You are ${Math.abs(deltaPercent)}% below your usual ${scopeLabel} pace for this point in the period.`,
+        ? `You are ${Math.abs(deltaPercent)}% ahead of your usual ${scopeLabel} pace for this point in the period, so this month is tightening faster than normal.`
+        : `You are ${Math.abs(deltaPercent)}% below your usual ${scopeLabel} pace for this point in the period, which is leaving more room than normal so far.`,
       severity: severityForTrend(type, deltaPercent),
       entity_type: 'budget_period',
       entity_id: `${scopeLabel}:${trend.month}`,
@@ -447,10 +447,10 @@ function buildTrendInsights(trend, scope) {
     insights.push({
       id: `top_driver:${scopeLabel}:${trend.month}:${topDriver.category_key}`,
       type: 'top_category_driver',
-      title: `${topDriver.category_name} is driving the difference`,
+      title: `${topDriver.category_name} is the clearest driver right now`,
       body: Number(topDriver.delta_amount) >= 0
-        ? `${topDriver.category_name} is running $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} higher than your usual ${scopeLabel} pace so far this period.`
-        : `${topDriver.category_name} is running $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} lower than your usual ${scopeLabel} pace so far this period.`,
+        ? `${topDriver.category_name} is already running about $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} above its usual ${scopeLabel} pace, making it the biggest contributor to the shift this period.`
+        : `${topDriver.category_name} is running about $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} below its usual ${scopeLabel} pace, which is creating some of the extra room this period.`,
       severity: severityForTrend('top_category_driver', topDriver.delta_percent || topDriver.delta_amount),
       entity_type: 'category',
       entity_id: topDriver.category_key,
@@ -482,10 +482,10 @@ function buildTrendInsights(trend, scope) {
     insights.push({
       id: `one_offs:${scopeLabel}:${trend.month}:${merchantNames.join('|') || 'variance'}`,
       type: 'one_offs_driving_variance',
-      title: 'One-off purchases are driving the difference',
+      title: 'A few unusual purchases are doing most of the damage',
       body: merchantNames.length
-        ? `${merchantNames.join(' and ')} are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period.`
-        : `A few unusual purchases are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period.`,
+        ? `${merchantNames.join(' and ')} are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period, so the pressure is less broad-based than it first looks.`
+        : `A few unusual purchases are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period, so the pressure is less broad-based than it first looks.`,
       severity: oneOffDeltaAmount >= 100 ? 'high' : 'medium',
       entity_type: 'budget_period',
       entity_id: `${scopeLabel}:${trend.month}`,
@@ -512,11 +512,11 @@ function buildTrendInsights(trend, scope) {
       id: `${budgetFit}:${scopeLabel}:${trend.month}`,
       type: `budget_${budgetFit}`,
       title: budgetFit === 'too_low'
-        ? `Your ${scopeLabel} budget may be too low`
-        : `Your ${scopeLabel} budget may be higher than you need`,
+        ? `Your ${scopeLabel} budget is probably set too tight`
+        : `Your ${scopeLabel} budget may be looser than you need`,
       body: budgetFit === 'too_low'
-        ? `You have gone over this ${scopeLabel} budget in ${trend.budget_adherence.over_budget_periods_last_6} of the last ${budgetHistoryCount} periods.`
-        : `You have stayed well under this ${scopeLabel} budget in ${trend.budget_adherence.under_budget_periods_last_6} of the last ${budgetHistoryCount} periods.`,
+        ? `You have gone over this ${scopeLabel} budget in ${trend.budget_adherence.over_budget_periods_last_6} of the last ${budgetHistoryCount} periods, which suggests the target itself may need to move.`
+        : `You have stayed well under this ${scopeLabel} budget in ${trend.budget_adherence.under_budget_periods_last_6} of the last ${budgetHistoryCount} periods, so this target may be higher than it needs to be.`,
       severity: severityForTrend(`budget_${budgetFit}`, deltaPercentBudget),
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -565,8 +565,8 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projected_over_budget:${scopeLabel}:${projection.month}`,
       type: 'projected_month_end_over_budget',
-      title: `Your ${scopeLabel} spending is projected to finish high`,
-      body: `Based on your historical spend shape so far this period, you are on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} above budget by month end.`,
+      title: `You are on track to finish over budget`,
+      body: `At the current pace, your ${scopeLabel} spending is on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} above budget by month end.`,
       severity: projectedBudgetDelta >= 125 ? 'high' : 'medium',
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -596,8 +596,8 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projected_under_budget:${scopeLabel}:${projection.month}`,
       type: 'projected_month_end_under_budget',
-      title: `Your ${scopeLabel} spending has room this period`,
-      body: `Based on your historical spend shape so far this period, you are on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} under budget by month end.`,
+      title: `You still have room left this period`,
+      body: `At the current pace, your ${scopeLabel} spending is on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} under budget by month end.`,
       severity: Math.abs(projectedBudgetDelta) >= 100 ? 'medium' : 'low',
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -629,8 +629,8 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projection_one_off:${scopeLabel}:${projection.month}:${topExpense.id || topExpense.merchant}`,
       type: 'one_off_expense_skewing_projection',
-      title: 'One unusual purchase is skewing the projection',
-      body: `${topExpense.merchant} is contributing a meaningful share of this month’s projected overage, so your baseline spend is more normal than the all-in projection suggests.`,
+      title: 'One unusual purchase is distorting the forecast',
+      body: `${topExpense.merchant} is contributing a meaningful share of this month’s projected overage, so your baseline spend is more normal than the all-in forecast suggests.`,
       severity: unusualSpendShare >= 0.55 ? 'high' : 'medium',
       entity_type: 'expense',
       entity_id: topExpense.id || `${scopeLabel}:${projection.month}:${topExpense.merchant}`,
@@ -675,8 +675,8 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projected_category_surge:${scopeLabel}:${projection.month}:${topCategoryProjection.category_key}`,
       type: 'projected_category_surge',
-      title: `${topCategoryProjection.category_name} is projected to finish high`,
-      body: `${topCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(topCategoryProjection.delta_amount || 0)).toFixed(0)} above its baseline pace for this period.`,
+      title: `${topCategoryProjection.category_name} is likely to finish high`,
+      body: `${topCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(topCategoryProjection.delta_amount || 0)).toFixed(0)} above its usual level for this period.`,
       severity: Number(topCategoryProjection.delta_amount || 0) >= 60 ? 'high' : 'medium',
       entity_type: 'category',
       entity_id: topCategoryProjection.category_key,
@@ -729,8 +729,8 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projected_category_under:${scopeLabel}:${projection.month}:${lowestCategoryProjection.category_key}`,
       type: 'projected_category_under_baseline',
-      title: `${lowestCategoryProjection.category_name} has room this period`,
-      body: `${lowestCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(lowestCategoryProjection.delta_amount || 0)).toFixed(0)} below its usual finish this period.`,
+      title: `${lowestCategoryProjection.category_name} still has room left`,
+      body: `${lowestCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(lowestCategoryProjection.delta_amount || 0)).toFixed(0)} below its usual level this period.`,
       severity: Math.abs(Number(lowestCategoryProjection.delta_amount || 0)) >= 40 ? 'medium' : 'low',
       entity_type: 'category',
       entity_id: lowestCategoryProjection.category_key,

@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getInsightActionDescriptor } from '../services/insightPresentation';
+import { getInsightActionDescriptor, getInsightPrimaryMetric } from '../services/insightPresentation';
 
 const INSIGHT_CARD_MIN_HEIGHT = 174;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
@@ -84,8 +84,24 @@ function insightToneStyles(insight) {
   };
 }
 
+function normalizeMetricText(value) {
+  return `${value || ''}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function shouldShowPrimaryMetric(insight, primaryMetric) {
+  if (!primaryMetric?.value) return false;
+  const body = normalizeMetricText(insight?.body);
+  const metricValue = normalizeMetricText(primaryMetric.value);
+  if (!body || !metricValue) return false;
+  return !body.includes(metricValue);
+}
+
 export function InsightCard({ insight, width, onPress, onDismiss }) {
   const tone = insightToneStyles(insight);
+  const primaryMetric = getInsightPrimaryMetric(insight);
+  const showPrimaryMetric = shouldShowPrimaryMetric(insight, primaryMetric);
 
   return (
     <TouchableOpacity
@@ -117,6 +133,14 @@ export function InsightCard({ insight, width, onPress, onDismiss }) {
           </TouchableOpacity>
         </View>
         <Text style={styles.insightTitle} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{insight.title}</Text>
+        <View style={styles.insightMetricSlot}>
+          {showPrimaryMetric ? (
+            <View style={styles.insightMetricRow}>
+              <Text style={styles.insightMetricValue} numberOfLines={1}>{primaryMetric.value}</Text>
+              <Text style={styles.insightMetricLabel} numberOfLines={1}>{primaryMetric.label}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
       <View style={styles.insightContent}>
         <Text style={styles.insightBody} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{insight.body}</Text>
@@ -177,6 +201,31 @@ const styles = StyleSheet.create({
   insightRoleTextLearning: { color: '#a9e0b3' },
   insightRoleTextExplain: { color: '#b6c1cc' },
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
+  insightMetricSlot: {
+    minHeight: 20,
+    justifyContent: 'flex-end',
+  },
+  insightMetricRow: {
+    marginTop: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  insightMetricValue: {
+    fontSize: 18,
+    lineHeight: 22,
+    color: '#d5dde6',
+    fontWeight: '500',
+  },
+  insightMetricLabel: {
+    fontSize: 10,
+    lineHeight: 13,
+    color: '#7f8994',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    flexShrink: 1,
+  },
   insightContent: { flex: 1, justifyContent: 'flex-start', marginTop: 8 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
   insightFooter: {

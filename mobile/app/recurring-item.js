@@ -210,6 +210,7 @@ export default function RecurringItemScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>Next step</Text>
+              <Text style={styles.cardTitle}>What to do next</Text>
               <Text style={styles.cardCopy}>{summary.nextStep}</Text>
             </View>
 
@@ -263,6 +264,7 @@ export default function RecurringItemScreen() {
 
             {insightId ? (
               <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Feedback</Text>
                 <Text style={styles.cardTitle}>Was this helpful?</Text>
                 <Text style={styles.feedbackCopy}>
                   Your feedback helps Adlo learn which recurring signals are worth surfacing for you.

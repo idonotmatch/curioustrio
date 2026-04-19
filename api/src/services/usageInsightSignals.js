@@ -128,10 +128,10 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     insights.push({
       id: `early_budget_pace:${scopeLabel}:${projection.month}:${Math.round(totalSpend)}:${Math.round(Number(budgetLimit))}`,
       type: 'early_budget_pace',
-      title: `Early ${scopeLabel} budget read`,
+      title: scope === 'household' ? 'Shared spending is moving quickly early' : 'You are using budget room quickly early',
       body: daysRemaining == null
-        ? `You have used ${budgetUsedPercent}% of your ${scopeLabel} budget so far.`
-        : `You have used ${budgetUsedPercent}% of your ${scopeLabel} budget with ${daysRemaining} days left in this period.`,
+        ? `You have already used ${budgetUsedPercent}% of your ${scopeLabel} budget.`
+        : `You have already used ${budgetUsedPercent}% of your ${scopeLabel} budget with ${daysRemaining} days left in this period.`,
       severity: paceIsTight ? 'medium' : 'low',
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -161,8 +161,8 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     insights.push({
       id: `early_top_category:${scopeLabel}:${projection.month}:${topCategory.category_key}:${Math.round(Number(topCategory.spend || 0))}`,
       type: 'early_top_category',
-      title: `${topCategory.category_name} is leading so far`,
-      body: `${topCategory.category_name} accounts for ${share}% of your ${scopeLabel} spending in this period so far.`,
+      title: `${topCategory.category_name} is taking the biggest share so far`,
+      body: `${topCategory.category_name} is already ${share}% of your ${scopeLabel} spending this period, so it is likely to shape where the rest of the month has room.`,
       severity: share >= USAGE_INSIGHT_THRESHOLDS.earlyTopCategory.mediumSharePercent ? 'medium' : 'low',
       entity_type: 'category',
       entity_id: topCategory.category_key,
@@ -184,8 +184,8 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     insights.push({
       id: `early_repeated_merchant:${scopeLabel}:${projection.month}:${topMerchant.merchant_key}:${topMerchant.count}`,
       type: 'early_repeated_merchant',
-      title: `${topMerchant.merchant_name} is showing up repeatedly`,
-      body: `${topMerchant.merchant_name} has appeared ${topMerchant.count} times in your ${scopeLabel} spending this period.`,
+      title: `${topMerchant.merchant_name} is already becoming a pattern`,
+      body: `${topMerchant.merchant_name} has shown up ${topMerchant.count} times in your ${scopeLabel} spending this period, which makes it worth watching before it becomes a bigger habit.`,
       severity: Number(topMerchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.earlyRepeatedMerchant.mediumCount ? 'medium' : 'low',
       entity_type: 'merchant',
       entity_id: topMerchant.merchant_key,
@@ -212,8 +212,8 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     insights.push({
       id: `early_spend_concentration:${scopeLabel}:${projection.month}:${largestExpense.id || largestExpense.merchant}:${Math.round(Number(largestExpense.amount || 0))}`,
       type: 'early_spend_concentration',
-      title: 'One purchase is shaping the early read',
-      body: `${largestExpense.merchant} accounts for ${share}% of your ${scopeLabel} spending so far this period.`,
+      title: 'One purchase is doing a lot of the work so far',
+      body: `${largestExpense.merchant} already accounts for ${share}% of your ${scopeLabel} spending this period, so the current month read is more concentrated than usual.`,
       severity: share >= USAGE_INSIGHT_THRESHOLDS.earlySpendConcentration.mediumSharePercent ? 'medium' : 'low',
       entity_type: 'expense',
       entity_id: largestExpense.id || `${scopeLabel}:${projection.month}:${largestExpense.merchant}`,
@@ -231,8 +231,8 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     insights.push({
       id: `early_cleanup:${scopeLabel}:${projection.month}:uncategorized:${activity.uncategorized_count}`,
       type: 'early_cleanup',
-      title: 'A little cleanup will sharpen guidance',
-      body: `${activity.uncategorized_count} expenses are uncategorized, which makes early guidance less specific.`,
+      title: 'A little cleanup will make these reads sharper',
+      body: `${activity.uncategorized_count} expenses are still uncategorized, which is blocking more specific guidance about where your spending is actually moving.`,
       severity: 'low',
       entity_type: 'category',
       entity_id: 'uncategorized',
@@ -252,8 +252,8 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
     insights.push({
       id: `early_logging_momentum:${scopeLabel}:${projection.month}:${activeDayCount}:${expenseCount}`,
       type: 'early_logging_momentum',
-      title: 'Your baseline is starting to form',
-      body: `You have logged ${expenseCount} expenses across ${activeDayCount} days this period. The next insights can get more tailored from here.`,
+      title: 'You have enough activity for better reads to start forming',
+      body: `You have logged ${expenseCount} expenses across ${activeDayCount} days this period, which is enough for the next round of insights to get more specific.`,
       severity: 'low',
       entity_type: 'budget_period',
       entity_id: `${scopeLabel}:${projection.month}`,
@@ -479,10 +479,10 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
       insights.push({
         id: `developing_weekly_spend_change:${scopeLabel}:${current.from}:${Math.round(currentSpend)}:${Math.round(previousSpend)}`,
         type: 'developing_weekly_spend_change',
-        title: increased ? 'This week is starting heavier' : 'This week is starting lighter',
+        title: increased ? 'This week is running heavier than the last one' : 'This week is running lighter than the last one',
         body: increased
-          ? `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} higher than the prior ${rollingActivity.days} days.`
-          : `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} lower than the prior ${rollingActivity.days} days.`,
+          ? `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} higher than the prior ${rollingActivity.days}-day window, so this period may be picking up speed.`
+          : `Your ${scopeLabel} spending in the last ${rollingActivity.days} days is about $${Math.abs(deltaAmount).toFixed(0)} lower than the prior ${rollingActivity.days}-day window, which is leaving a little more room than last week.`,
         severity: increased && Math.abs(deltaPercent) >= USAGE_INSIGHT_THRESHOLDS.developingWeeklySpendChange.mediumDeltaPercent ? 'medium' : 'low',
         entity_type: 'budget_period',
         entity_id: `${scopeLabel}:rolling:${current.from}`,
@@ -522,8 +522,8 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
       insights.push({
         id: `developing_category_shift:${scopeLabel}:${current.from}:${topCategory.category_key}:${Math.round(Number(topCategory.spend || 0))}`,
         type: 'developing_category_shift',
-        title: `${topCategory.category_name} is becoming the week’s center`,
-        body: `${topCategory.category_name} is ${share}% of your ${scopeLabel} spending over the last ${rollingActivity.days} days.`,
+        title: `${topCategory.category_name} is becoming the center of recent spending`,
+        body: `${topCategory.category_name} is ${share}% of your ${scopeLabel} spending over the last ${rollingActivity.days} days, so it is becoming the clearest short-term driver.`,
         severity: share >= USAGE_INSIGHT_THRESHOLDS.developingCategoryShift.mediumSharePercent ? 'medium' : 'low',
         entity_type: 'category',
         entity_id: topCategory.category_key,
@@ -552,8 +552,8 @@ function buildDevelopingUsageInsights({ rollingActivity, projection = null, scop
     insights.push({
       id: `developing_repeated_merchant:${scopeLabel}:${current.from}:${repeatedMerchant.merchant_key}:${repeatedMerchant.count}`,
       type: 'developing_repeated_merchant',
-      title: `${repeatedMerchant.merchant_name} is forming a short-term pattern`,
-      body: `${repeatedMerchant.merchant_name} has appeared ${repeatedMerchant.count} times in the last ${rollingActivity.days} days.`,
+      title: `${repeatedMerchant.merchant_name} is turning into a short-term pattern`,
+      body: `${repeatedMerchant.merchant_name} has appeared ${repeatedMerchant.count} times in the last ${rollingActivity.days} days, which makes it one of the clearest near-term habits to review.`,
       severity: Number(repeatedMerchant.count || 0) >= USAGE_INSIGHT_THRESHOLDS.developingRepeatedMerchant.mediumCount ? 'medium' : 'low',
       entity_type: 'merchant',
       entity_id: repeatedMerchant.merchant_key,
