@@ -333,11 +333,11 @@ export default function SummaryScreen() {
     lockInsightNavigation(insight.id);
     const isMockInsight = __DEV__ && insights.length === 0;
     if (!isMockInsight) {
-      await logEvents([{
+      logEvents([{
         insight_id: insight.id,
         event_type: 'tapped',
         metadata: insightEventMetadata(insight),
-      }]);
+      }]).catch(() => {});
     }
 
     if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
