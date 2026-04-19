@@ -34,10 +34,11 @@ export function useInsights(limit = 5) {
 
   const dismiss = useCallback(async (id, metadata = null) => {
     if (!id) return;
+    setInsights((current) => current.filter((insight) => insight.id !== id));
     await api.post(`/insights/${encodeURIComponent(id)}/dismiss`, metadata ? { metadata } : {});
     await invalidateCacheByPrefix('cache:insights:');
-    setInsights((current) => current.filter((insight) => insight.id !== id));
-  }, []);
+    await refresh();
+  }, [refresh]);
 
   const logEvents = useCallback(async (events = []) => {
     const clean = events
