@@ -62,6 +62,35 @@ export async function loadCacheOnly(key, fetcher, onData, onError) {
   }
 }
 
+/**
+ * Network-first with cache fallback:
+ * 1. Try to fetch fresh data first.
+ * 2. If fetch succeeds, serve it and overwrite cache.
+ * 3. If fetch fails, fall back to cached data if present.
+ * 4. Only call onError if both network and cache miss/fail.
+ */
+export async function loadFreshWithCacheFallback(key, fetcher, onData, onError) {
+  try {
+    const fresh = await fetcher();
+    onData(fresh);
+    AsyncStorage.setItem(key, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+    return;
+  } catch (networkErr) {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (raw) {
+        const { data } = JSON.parse(raw);
+        onData(data);
+        return;
+      }
+    } catch {
+      // cache read failure is non-fatal
+    }
+
+    if (onError) onError(networkErr);
+  }
+}
+
 /** Remove a single cache entry (e.g. after a mutation). */
 export async function invalidateCache(key) {
   try { await AsyncStorage.removeItem(key); } catch {}
