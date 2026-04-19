@@ -61,6 +61,16 @@ function serializeSyncStatus(token, email = null) {
   };
 }
 
+function sanitizeErrorDetail(err) {
+  const value = `${err?.message || ''}`.trim();
+  if (!value) return null;
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\bhttps?:\/\/\S+/gi, '[redacted-link]')
+    .replace(/\b\d{12,}\b/g, '[redacted-number]')
+    .slice(0, 180);
+}
+
 // GET /gmail/auth — redirect to Google OAuth (requires auth to get user id for state param)
 router.get('/auth', authenticate, async (req, res, next) => {
   try {
@@ -138,13 +148,13 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
     if (user?.id) {
       await OAuthToken.markSyncFailure(user.id, {
         source: 'manual',
-        error: err?.message ? `${err.message}`.slice(0, 500) : classified.message,
+        error: sanitizeErrorDetail(err) || classified.message,
       });
     }
     console.error('[gmail import] top-level failure:', {
-      user_provider_uid: req.userId,
+      user_id: user?.id || null,
       status: classified.status,
-      message: err?.message || null,
+      error: sanitizeErrorDetail(err),
     });
     res.status(classified.status).json({ error: classified.message });
   }
@@ -177,7 +187,8 @@ router.get('/import-log', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-    const logs = await EmailImportLog.listByUser(user.id, limit);
+    const detail = `${req.query.detail || 'compact'}`.trim().toLowerCase() === 'full' ? 'full' : 'compact';
+    const logs = await EmailImportLog.listByUser(user.id, limit, { detail });
     res.json(logs);
   } catch (err) { next(err); }
 });

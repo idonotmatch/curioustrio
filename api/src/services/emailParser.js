@@ -45,6 +45,94 @@ function cleanStructuredText(value) {
     .trim();
 }
 
+function redactSensitiveText(value) {
+  return (value || '')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\bhttps?:\/\/\S+/gi, '[redacted-link]')
+    .replace(/\b\d{12,}\b/g, '[redacted-number]')
+    .replace(/\b\d{2,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\s(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place)\b/gi, '[redacted-address]');
+}
+
+function selectKeywordLines(structured = '', limit = 16) {
+  return structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(line => /(total|charged|amount|payment|receipt|refund|return|order total|tax|shipping|service fee|subtotal|items|estimated total|seller|merchant|card)/i.test(line))
+    .slice(0, limit);
+}
+
+function uniqueLines(lines = [], limit = 24) {
+  const seen = new Set();
+  const result = [];
+  for (const rawLine of lines) {
+    const line = `${rawLine || ''}`.trim();
+    if (!line) continue;
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(line);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function selectBottomStructuredLines(structured = '', limit = 14) {
+  return uniqueLines(
+    structured
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-Math.max(limit * 2, 24))
+      .reverse(),
+    limit,
+  ).reverse();
+}
+
+function selectItemLikeLines(structured = '', limit = 18) {
+  return uniqueLines(
+    structured
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => {
+        if (/(total|subtotal|tax|shipping|service fee|delivery fee|tip|discount|savings|reward|charged|amount paid|order summary|receipt|merchant|seller|card)/i.test(line)) {
+          return false;
+        }
+        if (/^\$?\s?-?\d+(?:\.\d{2})?$/.test(line)) return false;
+        if (line.length < 3 || line.length > 80) return false;
+        return /[a-z]/i.test(line);
+      }),
+    limit,
+  );
+}
+
+function selectMoneyContextLines(structured = '', limit = 24) {
+  const lines = structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const selected = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!/(total|subtotal|tax|shipping|service fee|delivery fee|tip|discount|savings|charged|amount paid|order total|grand total|estimated total|refund total|refund amount)/i.test(line)) {
+      continue;
+    }
+    selected.push(line);
+    if (lines[index - 1] && /^\$?\s?-?\d+(?:\.\d{2})?$/.test(lines[index - 1])) {
+      selected.push(lines[index - 1]);
+    }
+    for (let offset = 1; offset <= 5; offset += 1) {
+      const nextLine = lines[index + offset];
+      if (!nextLine || !/^\$?\s?-?\d+(?:\.\d{2})?$/.test(nextLine)) break;
+      selected.push(nextLine);
+    }
+  }
+
+  return uniqueLines(selected, limit);
+}
+
 function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
   const senderLooksTransactional = /@(amazon|walmart|target|uber|lyft|lyftmail|ubereats|instacart|doordash|stripe|shopify|square|paypal|apple|google|expedia|delta|united|airbnb|booking|hilton|marriott|costco|bestbuy|etsy|ebay|wayfair|chewy|seamless|grubhub)\./i.test(fromAddress);
@@ -106,33 +194,29 @@ function extractEmailLocationCandidate(subject = '', fromAddress = '', emailBody
 }
 
 function selectRelevantEmailText(emailBody, snippet = '') {
-  const cleaned = cleanText(emailBody);
-  const structured = cleanStructuredText(emailBody);
-  const normalizedSnippet = cleanText(snippet);
-  const structuredSnippet = cleanStructuredText(snippet);
+  const cleaned = cleanText(redactSensitiveText(emailBody));
+  const structured = cleanStructuredText(redactSensitiveText(emailBody));
+  const normalizedSnippet = cleanText(redactSensitiveText(snippet));
+  const structuredSnippet = cleanStructuredText(redactSensitiveText(snippet));
   if (!cleaned) return { classifierText: '', extractionText: '' };
 
-  const top = cleaned.slice(0, 1200);
-  const bottom = cleaned.length > 1200 ? cleaned.slice(-1200) : '';
-  const topStructured = structured.slice(0, 1600);
-  const bottomStructured = structured.length > 1600 ? structured.slice(-1600) : '';
-  const keywordLines = structured
-    .split(/\n+/)
-    .map(line => line.trim())
+  const topStructured = structured.slice(0, 1200);
+  const bottomStructured = selectBottomStructuredLines(structured, 14).join('\n');
+  const keywordLines = uniqueLines([
+    ...selectKeywordLines(structured, 16),
+    ...selectMoneyContextLines(structured, 24),
+  ], 24).join('\n');
+  const itemLines = selectItemLikeLines(structured, 18).join('\n');
+  const focusedSummary = [normalizedSnippet, keywordLines, bottomStructured, topStructured]
     .filter(Boolean)
-    .filter(line => /(total|charged|amount|payment|receipt|refund|return|order total|tax|shipping|service fee)/i.test(line))
-    .slice(0, 24)
-    .join('\n');
+    .join('\n...\n');
 
-  const classifierText = [normalizedSnippet, top, bottom && bottom !== top ? bottom : '']
+  const classifierText = focusedSummary.slice(0, 1800);
+
+  const extractionText = [structuredSnippet, keywordLines, itemLines, bottomStructured, topStructured]
     .filter(Boolean)
     .join('\n...\n')
-    .slice(0, 2600);
-
-  const extractionText = [structuredSnippet, topStructured, keywordLines, bottomStructured && bottomStructured !== topStructured ? bottomStructured : '']
-    .filter(Boolean)
-    .join('\n...\n')
-    .slice(0, 5200);
+    .slice(0, 3600);
 
   return { classifierText, extractionText };
 }

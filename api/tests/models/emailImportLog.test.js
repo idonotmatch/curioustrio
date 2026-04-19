@@ -52,6 +52,22 @@ describe('EmailImportLog.create', () => {
     expect(log.imported_at).toBeDefined();
   });
 
+  it('stores a shortened redacted snippet preview', async () => {
+    const log = await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-001-sanitized-snippet',
+      expenseId: null,
+      status: 'imported',
+      snippet: 'Reach me at shopper@example.com or visit https://example.com/orders/1234567890 for order 1234567890 and 9876543210.',
+    });
+
+    expect(log).toBeDefined();
+    expect(log.snippet).toContain('[redacted-email]');
+    expect(log.snippet).toContain('[redacted-link]');
+    expect(log.snippet).toContain('[redacted-number]');
+    expect(log.snippet.length).toBeLessThanOrEqual(120);
+  });
+
   it('returns null on conflict (idempotent)', async () => {
     await EmailImportLog.create({
       userId: testUserId,
@@ -196,6 +212,17 @@ describe('EmailImportLog.listByUser', () => {
     expect(row.review_required).toBe(true);
     expect(row.review_mode).toBe('quick_check');
     expect(row.review_source).toBe('gmail');
+  });
+
+  it('returns a compact payload by default', async () => {
+    const logs = await EmailImportLog.listByUser(testUserId, 10);
+    const row = logs[0];
+
+    expect(row).toBeTruthy();
+    expect(row).toHaveProperty('snippet', null);
+    expect(row).toHaveProperty('notes', null);
+    expect(row).not.toHaveProperty('user_id');
+    expect(row).not.toHaveProperty('message_id');
   });
 });
 

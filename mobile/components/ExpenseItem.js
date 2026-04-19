@@ -6,7 +6,9 @@ import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
-import { loadExpenseItemsSnapshot, loadExpenseSnapshot, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
+import { loadExpenseItemsSnapshot, loadExpenseSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
+
+const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
 
 const CATEGORY_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316'];
 
@@ -148,10 +150,16 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
     }
     setItemsLoading(true);
     try {
-      const cachedItems = await loadExpenseItemsSnapshot(localExpense.id);
-      if (cachedItems) {
-        setItems(cachedItems);
+      const cached = await loadExpenseItemsSnapshot(localExpense.id, {
+        maxAgeMs: ITEM_CACHE_FRESH_MS,
+        includeMeta: true,
+      });
+      if (cached?.items) {
+        setItems(cached.items);
         setItemsLoading(false);
+        if (cached.isFresh) {
+          return;
+        }
       }
       const detail = await api.get(`/expenses/${localExpense.id}`);
       const nextItems = Array.isArray(detail.items) ? detail.items : [];
@@ -197,12 +205,14 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
         category_name: category.name,
         category_parent_name: category.parent_name || null,
       }));
-      saveExpenseSnapshot({
+      const updatedExpense = {
         ...localExpense,
         category_id: category.id,
         category_name: category.name,
         category_parent_name: category.parent_name || null,
-      });
+      };
+      saveExpenseSnapshot(updatedExpense);
+      patchExpenseInCachedLists(updatedExpense);
       setCategoryPickerOpen(false);
     } catch {
       // Preserve the current row state if the update fails.
@@ -217,6 +227,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       onPress={async () => {
         try {
           await api.delete(`/expenses/${localExpense.id}`);
+          await removeExpenseFromCachedLists(localExpense.id);
           await removeExpenseSnapshot(localExpense.id);
           await Promise.all([
             invalidateCacheByPrefix('cache:expenses:'),

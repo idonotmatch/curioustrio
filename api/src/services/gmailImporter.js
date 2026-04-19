@@ -105,23 +105,23 @@ function buildGmailImportPushPayload(imported, outcomes = {}) {
   };
 }
 
-function buildReviewNotes({ subject = '', snippet = '', body = '', reason = 'needs review' }) {
-  const cleanedSubject = (subject || '').trim();
-  const cleanedSnippet = (snippet || '').replace(/\s+/g, ' ').trim();
-  const fallbackDetail = cleanedSnippet
-    || body
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 160);
+function buildReviewNotes({ reason = 'needs review' } = {}) {
+  const normalizedReason = `${reason || ''}`.trim().toLowerCase();
+  if (!normalizedReason || normalizedReason === 'imported from gmail') {
+    return 'Imported from Gmail';
+  }
+  return `Imported from Gmail (${normalizedReason})`;
+}
 
-  const context = [cleanedSubject, fallbackDetail]
-    .filter(Boolean)
-    .join(' — ')
-    .slice(0, 220);
-
-  return context
-    ? `${context} (${reason})`
-    : `Imported from Gmail (${reason})`;
+function summarizeImportFailure(err) {
+  const message = `${err?.message || ''}`.toLowerCase();
+  if (err?.code) return `${err.code}`.slice(0, 80);
+  if (message.includes('invalid_grant') || message.includes('invalid credentials')) return 'gmail_auth_expired';
+  if (message.includes('network request failed') || message.includes('fetch failed')) return 'network_error';
+  if (message.includes('timeout')) return 'timeout';
+  if (message.includes('rate limit')) return 'rate_limited';
+  if (message.includes('amount')) return 'amount_parse_failed';
+  return 'import_failed';
 }
 
 function shouldSoftenSkipBehavior(senderQuality = {}) {
@@ -289,7 +289,7 @@ async function processMessageImport(user, msgId, {
         merchant: parsed?.merchant || classification.merchant || guessMerchant(subject, from),
         amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
         date: clampExpenseDate(parsed?.date, maxExpenseDate),
-        notes: parsed?.notes || buildReviewNotes({ subject, snippet, body, reason: 'needs review' }),
+        notes: parsed?.notes || buildReviewNotes({ reason: 'needs review' }),
         items: Array.isArray(parsed?.items) ? parsed.items : null,
       };
       importedAsPendingReview = true;
@@ -307,14 +307,11 @@ async function processMessageImport(user, msgId, {
     }
     if (!parsed.notes || /needs review/i.test(parsed.notes)) {
       parsed.notes = buildReviewNotes({
-        subject,
-        snippet,
-        body,
         reason: importedAsPendingReview ? 'needs review' : 'imported from gmail',
       });
     }
     if (senderQuality.level === 'noisy' && !/needs review/i.test(parsed.notes || '')) {
-      parsed.notes = buildReviewNotes({ subject, snippet, body, reason: 'needs review' });
+      parsed.notes = buildReviewNotes({ reason: 'needs review' });
       importedAsPendingReview = true;
     }
 
@@ -430,11 +427,16 @@ async function processMessageImport(user, msgId, {
     outcomes.imported_pending_review++;
     return { imported: 1, skipped: 0, failed: 0, expense };
   } catch (e) {
-    console.error(`[gmail import] user=${user.id} msg=${msgId}:`, e.message);
-    increment(outcomes.failed_reasons, e.code || e.message || 'unknown_error');
+    const failureReason = summarizeImportFailure(e);
+    console.error('[gmail import] message failed', {
+      user_id: user.id,
+      message_id: msgId,
+      reason: failureReason,
+    });
+    increment(outcomes.failed_reasons, failureReason);
     await EmailImportLog.upsertResult({
       userId: user.id, messageId: msgId, status: 'failed',
-      subject: msgSubject, fromAddress: msgFrom, skipReason: e.message, snippet: msgSnippet,
+      subject: msgSubject, fromAddress: msgFrom, skipReason: failureReason, snippet: msgSnippet,
     });
     return { imported: 0, skipped: 0, failed: 1, error: e };
   }
@@ -479,7 +481,10 @@ async function importForUser(user) {
         }
       }
     } catch (e) {
-      console.error(`[gmail import] push notification failed user=${user.id}:`, e.message);
+      console.error('[gmail import] push notification failed', {
+        user_id: user.id,
+        reason: summarizeImportFailure(e),
+      });
     }
   }
 

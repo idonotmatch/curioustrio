@@ -14,7 +14,7 @@ import { removePendingExpense } from '../../hooks/usePendingExpenses';
 import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
-import { findExpenseSnapshotInCaches, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
+import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 
 function formatImportedAt(value) {
@@ -41,6 +41,87 @@ function formatShortDate(value) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function labelLikelyField(field = '') {
+  switch (`${field}`) {
+    case 'amount': return 'amount';
+    case 'date': return 'date';
+    case 'merchant': return 'merchant';
+    case 'category_id': return 'category';
+    case 'items': return 'items';
+    default: return `${field}`.replace(/^items_/, '').replace(/_/g, ' ');
+  }
+}
+
+function buildReviewFocusSummary(gmailReviewHint = {}) {
+  const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields)
+    ? gmailReviewHint.likely_changed_fields.filter(Boolean)
+    : [];
+  const namedFields = likelyFields.map(labelLikelyField);
+
+  if (gmailReviewHint?.review_mode === 'items_first') {
+    return {
+      title: 'Most likely to need attention',
+      body: namedFields.length
+        ? `Start with the items, then confirm ${namedFields.slice(0, 2).join(' and ')}.`
+        : 'Start with the items, then confirm the final total.',
+    };
+  }
+
+  if (namedFields.length >= 2) {
+    return {
+      title: 'Most likely to need attention',
+      body: `Double-check ${namedFields.slice(0, 2).join(' and ')} before approving.`,
+    };
+  }
+
+  if (namedFields.length === 1) {
+    return {
+      title: 'Most likely to need attention',
+      body: `Double-check the ${namedFields[0]} before approving.`,
+    };
+  }
+
+  return {
+    title: 'Most likely to need attention',
+    body: gmailReviewHint?.review_mode === 'quick_check'
+      ? 'A quick confirmation of the core facts should be enough here.'
+      : 'Confirm the core facts before approving this import.',
+  };
+}
+
+function buildReviewDecisionFacts({ expense, gmailReviewHint, formattedDate, importedAtLabel, categoryLabel }) {
+  const facts = [
+    { label: 'Total', value: formatCurrency(Math.abs(Number(expense?.amount || 0))) },
+    { label: 'Date', value: formattedDate || null },
+    { label: 'Merchant', value: expense?.merchant || null },
+    { label: 'Sender', value: gmailReviewHint?.from_address || null },
+  ];
+
+  if (!facts.some((entry) => entry.label === 'Date' && entry.value) && importedAtLabel) {
+    facts.push({ label: 'Imported', value: importedAtLabel });
+  }
+  if (categoryLabel && categoryLabel !== 'Uncategorized') {
+    facts.push({ label: 'Category', value: categoryLabel });
+  }
+
+  return facts.filter((entry) => entry.value).slice(0, 4);
+}
+
+function buildTreatmentSuggestionSummary(treatmentSuggestion = null) {
+  if (!treatmentSuggestion?.summary) return null;
+
+  const bits = [];
+  if (treatmentSuggestion.suggested_track_only) bits.push('track only');
+  if (treatmentSuggestion.suggested_private) bits.push('private');
+  if (treatmentSuggestion.suggested_category_name) bits.push(treatmentSuggestion.suggested_category_name);
+
+  if (!bits.length) {
+    return treatmentSuggestion.summary;
+  }
+
+  return `Usually handled as ${bits.join(' · ')}.`;
+}
+
 function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
   const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
   const likelySet = new Set(likelyFields);
@@ -65,21 +146,21 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
       key: 'amount',
       label: 'Amount',
       value: `$${Math.abs(Number(expense?.amount || 0)).toFixed(2)}`,
-      reason: 'Confirm the final charged total.',
+      reason: gmailReviewHint?.amount_evidence || 'Confirm the final charged total.',
       weight: likelySet.has('amount') ? 100 : (isItemsFirst ? 50 : 60),
     },
     {
       key: 'date',
       label: 'Date',
       value: formattedDate,
-      reason: 'Confirm the purchase date you want to track.',
+      reason: gmailReviewHint?.date_evidence || 'Confirm the purchase date you want to track.',
       weight: likelySet.has('date') ? 95 : (isItemsFirst ? 40 : 55),
     },
     {
       key: 'merchant',
       label: 'Merchant',
       value: expense?.merchant || '—',
-      reason: 'Confirm the merchant name.',
+      reason: gmailReviewHint?.merchant_evidence || 'Confirm the merchant name.',
       weight: likelySet.has('merchant') ? 90 : (isItemsFirst ? 35 : 50),
     },
     {
@@ -196,6 +277,8 @@ function applyExpenseToState(record, setters) {
   })));
 }
 
+const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
+
 export default function ExpenseDetailScreen() {
   const { id, expense: expenseParam } = useLocalSearchParams();
   const router = useRouter();
@@ -256,8 +339,19 @@ export default function ExpenseDetailScreen() {
         setItemsEdits,
       };
       const bootstrapped = routeExpense || await findExpenseSnapshotInCaches(id);
-      if (active && bootstrapped) {
-        applyExpenseToState(bootstrapped, setters);
+      const cachedItems = await loadExpenseItemsSnapshot(id, {
+        maxAgeMs: ITEM_CACHE_FRESH_MS,
+        includeMeta: true,
+      });
+      const bootstrappedWithItems = bootstrapped && cachedItems?.items && !Array.isArray(bootstrapped.items)
+        ? {
+            ...bootstrapped,
+            items: cachedItems.items,
+            item_count: cachedItems.items.length,
+          }
+        : bootstrapped;
+      if (active && bootstrappedWithItems) {
+        applyExpenseToState(bootstrappedWithItems, setters);
         setLoading(false);
       }
 
@@ -342,6 +436,7 @@ export default function ExpenseDetailScreen() {
       const refreshed = await api.get(`/expenses/${id}`);
       setExpense(refreshed);
       saveExpenseSnapshot(refreshed);
+      patchExpenseInCachedLists(refreshed);
       setEditing(false);
       setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({
         ...it,
@@ -391,6 +486,7 @@ export default function ExpenseDetailScreen() {
       });
       setExpense(refreshed);
       saveExpenseSnapshot(refreshed);
+      patchExpenseInCachedLists(refreshed);
       return refreshed;
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save review options');
@@ -419,6 +515,7 @@ export default function ExpenseDetailScreen() {
       setExcludeFromBudget(Boolean(refreshed.exclude_from_budget));
       setBudgetExclusionReason(refreshed.budget_exclusion_reason || null);
       saveExpenseSnapshot(refreshed);
+      patchExpenseInCachedLists(refreshed);
       await Promise.all([
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
@@ -503,6 +600,7 @@ export default function ExpenseDetailScreen() {
           setDeleting(true);
           try {
             await api.delete(`/expenses/${id}`);
+            await removeExpenseFromCachedLists(id);
             await removeExpenseSnapshot(id);
             await Promise.all([
               invalidateCacheByPrefix('cache:expenses:'),
@@ -560,6 +658,7 @@ export default function ExpenseDetailScreen() {
     setActioning(true);
     try {
       await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
+      await removeExpenseFromCachedLists(id);
       await removeExpenseSnapshot(id);
       const { invalidateCache } = await import('../../services/cache');
       await invalidateCache('cache:expenses:pending');
@@ -594,6 +693,15 @@ export default function ExpenseDetailScreen() {
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
   const importMetaBits = [gmailReviewHint?.from_address, importedAtLabel].filter(Boolean);
+  const treatmentSuggestionSummary = buildTreatmentSuggestionSummary(treatmentSuggestion);
+  const reviewFocusSummary = buildReviewFocusSummary(gmailReviewHint);
+  const reviewDecisionFacts = buildReviewDecisionFacts({
+    expense,
+    gmailReviewHint,
+    formattedDate,
+    importedAtLabel,
+    categoryLabel,
+  });
   const priorityReviewFields = isPendingEmailReview
     ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
     : [];
@@ -689,29 +797,42 @@ export default function ExpenseDetailScreen() {
             {isItemsFirstReview ? 'Items first' : isQuickCheckReview ? 'Quick check' : 'Gmail import'}
           </Text>
           <Text style={styles.reviewBannerTitle}>
-            {isPendingEmailReview
-              ? 'Confirm this import before adding it'
-              : 'Check this Gmail import before it is counted'}
+            {subjectLine || expense?.merchant || 'Gmail import awaiting review'}
           </Text>
-          <Text style={styles.reviewBannerText}>
-            {isPendingEmailReview
-              ? (isItemsFirstReview
-                ? 'Start with the extracted items, then confirm the total.'
-                : isQuickCheckReview
-                  ? 'A quick check of merchant, amount, and date is usually enough.'
-                  : 'Confirm the core details before approving this expense.')
-              : 'This import was surfaced for review before it is counted in your confirmed expenses.'}
-          </Text>
-          {importMetaBits.length ? (
-            <Text style={styles.reviewBannerMeta}>{importMetaBits.join('  ·  ')}</Text>
+          {expense?.merchant && subjectLine && subjectLine.toLowerCase() !== `${expense.merchant}`.toLowerCase() ? (
+            <Text style={styles.reviewBannerText}>{expense.merchant}</Text>
           ) : null}
-          {subjectLine ? (
-            <Text style={styles.reviewBannerSubject} numberOfLines={2}>{subjectLine}</Text>
+          {reviewDecisionFacts.length ? (
+            <View style={styles.reviewFactGrid}>
+              {reviewDecisionFacts.map((fact) => (
+                <View key={`${fact.label}:${fact.value}`} style={styles.reviewFactChip}>
+                  <Text style={styles.reviewFactLabel}>{fact.label}</Text>
+                  <Text style={styles.reviewFactValue} numberOfLines={1}>{fact.value}</Text>
+                </View>
+              ))}
+            </View>
           ) : null}
-          {emailSnippet ? (
+          <View style={styles.reviewFocusBlock}>
+            <Text style={styles.reviewFocusTitle}>{reviewFocusSummary.title}</Text>
+            <Text style={styles.reviewFocusBody}>{reviewFocusSummary.body}</Text>
+          </View>
+          {treatmentSuggestionSummary ? (
+            <View style={styles.reviewPatternBlock}>
+              <Text style={styles.reviewPatternLabel}>Usually for similar expenses</Text>
+              <Text style={styles.reviewPatternBody}>{treatmentSuggestionSummary}</Text>
+            </View>
+          ) : null}
+          {importMetaBits.length || emailSnippet ? (
             <View style={styles.reviewBannerEmailContext}>
-              <Text style={styles.reviewBannerEmailLabel}>From the email</Text>
-              <Text style={styles.reviewBannerEmailSnippet} numberOfLines={3}>{emailSnippet}</Text>
+              {importMetaBits.length ? (
+                <Text style={styles.reviewBannerMeta}>{importMetaBits.join('  ·  ')}</Text>
+              ) : null}
+              {emailSnippet ? (
+                <>
+                  <Text style={styles.reviewBannerEmailLabel}>Email preview</Text>
+                  <Text style={styles.reviewBannerEmailSnippet} numberOfLines={2}>{emailSnippet}</Text>
+                </>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -759,8 +880,8 @@ export default function ExpenseDetailScreen() {
             <View style={styles.reviewSuggestionCard}>
               <View style={styles.reviewSuggestionHeader}>
                 <View style={styles.reviewSuggestionCopy}>
-                  <Text style={styles.reviewSuggestionEyebrow}>Based on similar expenses</Text>
-                  <Text style={styles.reviewSuggestionTitle}>{treatmentSuggestion.summary}</Text>
+                  <Text style={styles.reviewSuggestionEyebrow}>Apply the usual handling</Text>
+                  <Text style={styles.reviewSuggestionTitle}>{treatmentSuggestionSummary || treatmentSuggestion.summary}</Text>
                   <Text style={styles.reviewSuggestionDetail}>{treatmentSuggestion.detail}</Text>
                   {treatmentSuggestion.suggested_category_name ? (
                     <Text style={styles.reviewSuggestionMeta}>
@@ -1263,7 +1384,10 @@ export default function ExpenseDetailScreen() {
                     ? 'quick_check'
                     : 'full_review';
                 const approved = await api.post(`/expenses/${id}/approve`, { review_context: reviewContext });
-                if (approved?.id) await saveExpenseSnapshot(approved);
+                if (approved?.id) {
+                  await saveExpenseSnapshot(approved);
+                  await patchExpenseInCachedLists(approved);
+                }
                 const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
                 await Promise.all([
                   invalidateCache('cache:expenses:pending'),
@@ -1404,10 +1528,44 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   reviewBannerEyebrow: { color: '#cbb37c', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
-  reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  reviewBannerText: { color: '#9a9076', fontSize: 12, lineHeight: 17 },
-  reviewBannerMeta: { color: '#7f7766', fontSize: 11, lineHeight: 16, marginTop: 8 },
-  reviewBannerSubject: { color: '#9a9a9a', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  reviewBannerText: { color: '#b8aa86', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  reviewFactGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  reviewFactChip: {
+    minWidth: 100,
+    maxWidth: '48%',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a2112',
+    backgroundColor: '#110e08',
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  reviewFactLabel: { color: '#8f8468', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+  reviewFactValue: { color: '#f1eadc', fontSize: 12, fontWeight: '600' },
+  reviewFocusBlock: {
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#302614',
+    backgroundColor: '#120f09',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  reviewFocusTitle: { color: '#f5f0e2', fontSize: 12, fontWeight: '600', marginBottom: 3 },
+  reviewFocusBody: { color: '#c8bda3', fontSize: 12, lineHeight: 17 },
+  reviewPatternBlock: {
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1f3a2c',
+    backgroundColor: '#0d1511',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  reviewPatternLabel: { color: '#86efac', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+  reviewPatternBody: { color: '#d8f3e1', fontSize: 12, lineHeight: 17 },
+  reviewBannerMeta: { color: '#7f7766', fontSize: 11, lineHeight: 16, marginBottom: 6 },
   reviewBannerEmailContext: {
     marginTop: 10,
     paddingTop: 10,

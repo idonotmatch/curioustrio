@@ -73,6 +73,21 @@ function isQuickCheckPending(item = {}) {
   return likelyChangedFields.length <= 1;
 }
 
+function reviewHeadline(item = {}) {
+  const subject = `${item?.gmail_review_hint?.message_subject || ''}`.trim();
+  if (subject) return subject;
+  return item.merchant || item.description || '—';
+}
+
+function reviewSubline(item = {}) {
+  const parts = [];
+  if (item?.merchant && item?.gmail_review_hint?.message_subject) parts.push(item.merchant);
+  if (item?.gmail_review_hint?.from_address) parts.push(item.gmail_review_hint.from_address);
+  const date = formatDate(item?.date);
+  if (date) parts.push(date);
+  return parts.join('  ·  ');
+}
+
 export function reviewQueueGuidance(item = {}) {
   return reviewModePresentation(item.gmail_review_hint).guidance;
 }
@@ -124,7 +139,7 @@ export function ReviewQueueItem({
         <TouchableOpacity style={isPreview ? styles.previewRow : styles.row} onPress={() => onOpen(item)} activeOpacity={0.85}>
           <View style={isPreview ? styles.previewRowMain : styles.rowMain}>
             <Text style={isPreview ? styles.previewMerchant : styles.merchant} numberOfLines={1}>
-              {item.merchant || item.description || '—'}
+              {reviewHeadline(item)}
             </Text>
             {isPreview ? (
               <>
@@ -134,14 +149,16 @@ export function ReviewQueueItem({
             ) : (
               <>
                 <View style={styles.metaRow}>
-                  <Text style={styles.date}>{formatDate(item.date)}</Text>
+                  {!item.gmail_review_hint?.message_subject ? (
+                    <Text style={styles.date}>{formatDate(item.date)}</Text>
+                  ) : null}
                   <View style={[styles.sourceChip, source.accent]}>
                     <Ionicons name={source.icon} size={11} color={source.accentText.color} />
                     <Text style={[styles.sourceChipText, source.accentText]}>{source.label}</Text>
                   </View>
                 </View>
                 {item.gmail_review_hint?.message_subject ? (
-                  <Text style={styles.emailSubject} numberOfLines={1}>{item.gmail_review_hint.message_subject}</Text>
+                  <Text style={styles.emailSubject} numberOfLines={1}>{reviewSubline(item)}</Text>
                 ) : null}
                 {item.gmail_review_hint ? (
                   <View style={styles.hintWrap}>

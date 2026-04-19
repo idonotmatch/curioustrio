@@ -6,7 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
-import { saveExpenseSnapshot } from '../services/expenseLocalStore';
+import { insertExpenseIntoCachedLists, patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { LocationPicker } from '../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCategories } from '../hooks/useCategories';
@@ -397,6 +397,8 @@ export default function ConfirmScreen() {
       });
       if (result?.expense?.id) {
         await saveExpenseSnapshot(result.expense);
+        await insertExpenseIntoCachedLists(result.expense);
+        await patchExpenseInCachedLists(result.expense);
       }
       if (parsed?.scenario_memory_id) {
         try {

@@ -12,14 +12,27 @@ function isMissingSnippetError(err) {
   return err?.code === '42703' && /snippet/i.test(`${err?.message || ''}`);
 }
 
+function sanitizeSnippet(snippet) {
+  const value = `${snippet || ''}`.trim();
+  if (!value) return null;
+
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\bhttps?:\/\/\S+/gi, '[redacted-link]')
+    .replace(/\b\d{5,}\b/g, '[redacted-number]')
+    .slice(0, 120);
+}
+
 async function create({ userId, messageId, expenseId, status = 'imported', subject, fromAddress, skipReason, snippet }) {
+  const safeSnippet = sanitizeSnippet(snippet);
   try {
     const result = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
-      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, snippet || null]
+      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet]
     );
     return result.rows[0] || null;
   } catch (err) {
@@ -156,14 +169,19 @@ async function findByMessageId(userId, messageId) {
   }
 }
 
-async function listByUser(userId, limit = 100) {
+async function listByUser(userId, limit = 100, { detail = 'compact' } = {}) {
+  const fullDetail = detail === 'full';
   try {
     const result = await db.query(
-      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
+      `SELECT l.id,
+              ${fullDetail ? 'l.user_id,' : ''}
+              ${fullDetail ? 'l.message_id,' : ''}
+              l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              ${fullDetail ? 'l.snippet,' : 'NULL::text AS snippet,'}
               l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
-              e.notes,
+              ${fullDetail ? 'e.notes,' : 'NULL::text AS notes,'}
               e.review_required,
               e.review_mode,
               e.review_source
@@ -179,7 +197,10 @@ async function listByUser(userId, limit = 100) {
   } catch (err) {
     if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
     const fallback = await db.query(
-      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+      `SELECT l.id,
+              ${fullDetail ? 'l.user_id,' : ''}
+              ${fullDetail ? 'l.message_id,' : ''}
+              l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
               l.user_feedback, l.user_feedback_at,
               NULL::timestamptz AS reviewed_at,
@@ -187,7 +208,7 @@ async function listByUser(userId, limit = 100) {
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
               e.status AS expense_status,
-              e.notes,
+              ${fullDetail ? 'e.notes,' : 'NULL::text AS notes,'}
               FALSE AS review_required,
               NULL::text AS review_mode,
               NULL::text AS review_source
@@ -263,6 +284,7 @@ async function listFailedByUser(userId, limit = 25) {
 }
 
 async function upsertResult({ userId, messageId, expenseId = null, status = 'imported', subject, fromAddress, skipReason, snippet }) {
+  const safeSnippet = sanitizeSnippet(snippet);
   try {
     const result = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet)
@@ -276,7 +298,7 @@ async function upsertResult({ userId, messageId, expenseId = null, status = 'imp
          snippet = EXCLUDED.snippet,
          imported_at = NOW()
        RETURNING *`,
-      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, snippet || null]
+      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet]
     );
     return result.rows[0] || null;
   } catch (err) {
@@ -605,5 +627,6 @@ module.exports = {
   listQualitySignalsByUser,
   listDecisionFeedbackByUser,
   listTemplateSignalsByUser,
+  sanitizeSnippet,
   upsertResult,
 };

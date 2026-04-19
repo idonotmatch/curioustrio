@@ -16,7 +16,7 @@ import { ExpenseItem } from '../../components/ExpenseItem';
 import { ReviewQueueItem } from '../../components/ReviewQueueItem';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
-import { removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expenseLocalStore';
+import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expenseLocalStore';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -256,6 +256,7 @@ export default function FeedScreen() {
     }
     try {
       await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
+      await removeExpenseFromCachedLists(id);
       await removeExpenseSnapshot(id);
       removePendingExpense(id);
       setDismissingId(null);
@@ -273,7 +274,10 @@ export default function FeedScreen() {
     }
     try {
       const approved = await api.post(`/expenses/${id}/approve`);
-      if (approved?.id) await saveExpenseSnapshot(approved);
+      if (approved?.id) {
+        await saveExpenseSnapshot(approved);
+        await patchExpenseInCachedLists(approved);
+      }
       removePendingExpense(id);
       setNotice('Approved and added to your expenses');
       const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');

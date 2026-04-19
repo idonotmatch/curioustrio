@@ -152,6 +152,43 @@ $24.19`;
     expect(result.extractionText).toContain('Estimated total\n$22.00');
   });
 
+  it('preserves bottom receipt totals when they appear later in the email', () => {
+    const emailBody = `Thanks for your order
+Marketing banner
+Recommended items
+Still shopping?
+---
+Order summary
+Protein Bars
+Sparkling Water
+Shipping
+Tax
+Grand total
+$14.99
+$8.49
+$0.00
+$1.20
+$24.68`;
+    const result = selectRelevantEmailText(emailBody, 'Grand total $24.68');
+    expect(result.classifierText).toContain('Grand total');
+    expect(result.classifierText).toContain('$24.68');
+    expect(result.extractionText).toContain('Grand total');
+    expect(result.extractionText).toContain('$24.68');
+  });
+
+  it('keeps likely item rows alongside total lines in extraction text', () => {
+    const emailBody = `Order summary
+Nike running shoes
+Water bottle
+Discount
+Estimated total
+$122.24`;
+    const result = selectRelevantEmailText(emailBody, 'Estimated total $122.24');
+    expect(result.extractionText).toContain('Nike running shoes');
+    expect(result.extractionText).toContain('Water bottle');
+    expect(result.extractionText).toContain('Estimated total\n$122.24');
+  });
+
   it('sends structured extraction text to the parser prompt', async () => {
     complete.mockResolvedValue('null');
     await parseEmailExpense(

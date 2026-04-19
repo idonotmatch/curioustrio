@@ -381,7 +381,7 @@ function syncErrorMessage(status = {}, summary = {}) {
   async function loadImportLog() {
     setImportLogLoading(true);
     try {
-      const data = await api.get('/gmail/import-log?limit=50');
+      const data = await api.get('/gmail/import-log?limit=50&detail=compact');
       setImportLog(data);
     } catch {
       // Non-fatal

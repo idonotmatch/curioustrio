@@ -580,7 +580,7 @@ $396.32`,
     const expense = await db.query(`SELECT merchant, amount, notes FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
     expect(expense.rows[0].merchant).toBe('Example');
     expect(Number(expense.rows[0].amount)).toBe(41.22);
-    expect(expense.rows[0].notes).toMatch(/Your order details/i);
+    expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
     expect(expense.rows[0].notes).toMatch(/needs review/i);
   });
 

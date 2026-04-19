@@ -8,7 +8,7 @@ import { usePendingExpenses, removePendingExpense } from '../hooks/usePendingExp
 import { ReviewQueueItem } from '../components/ReviewQueueItem';
 import { api } from '../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
-import { removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
+import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
 
 export default function ReviewQueueScreen() {
   const router = useRouter();
@@ -43,6 +43,7 @@ export default function ReviewQueueScreen() {
     }
     try {
       await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
+      await removeExpenseFromCachedLists(id);
       await removeExpenseSnapshot(id);
       await invalidateCache('cache:expenses:pending');
       remove(id);
@@ -66,7 +67,10 @@ export default function ReviewQueueScreen() {
         ? 'quick_check'
         : null;
       const approved = await api.post(`/expenses/${id}/approve`, reviewContext ? { review_context: reviewContext } : {});
-      if (approved?.id) await saveExpenseSnapshot(approved);
+      if (approved?.id) {
+        await saveExpenseSnapshot(approved);
+        await patchExpenseInCachedLists(approved);
+      }
       await Promise.all([
         invalidateCache('cache:expenses:pending'),
         invalidateCacheByPrefix('cache:expenses:'),
