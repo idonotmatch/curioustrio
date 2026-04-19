@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -109,10 +110,16 @@ export default function RecurringItemScreen() {
     body = '',
     metadata: metadataParam = '',
     preload_history: preloadHistoryParam = '',
+    payload_key: payloadKeyParam = '',
   } = useLocalSearchParams();
+  const navPayload = useMemo(
+    () => consumeNavigationPayload(Array.isArray(payloadKeyParam) ? payloadKeyParam[0] : payloadKeyParam, null),
+    [payloadKeyParam]
+  );
   const preloadHistory = useMemo(
-    () => parsePayload(Array.isArray(preloadHistoryParam) ? preloadHistoryParam[0] : preloadHistoryParam, null),
-    [preloadHistoryParam]
+    () => navPayload?.preloadHistory
+      || parsePayload(Array.isArray(preloadHistoryParam) ? preloadHistoryParam[0] : preloadHistoryParam, null),
+    [navPayload, preloadHistoryParam]
   );
   const [history, setHistory] = useState(preloadHistory || null);
   const [loading, setLoading] = useState(!preloadHistory);
@@ -121,7 +128,10 @@ export default function RecurringItemScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
-  const metadata = useMemo(() => parseMetadata(Array.isArray(metadataParam) ? metadataParam[0] : metadataParam), [metadataParam]);
+  const metadata = useMemo(
+    () => navPayload?.metadata || parseMetadata(Array.isArray(metadataParam) ? metadataParam[0] : metadataParam),
+    [metadataParam, navPayload]
+  );
   const summary = useMemo(
     () => signalSummary(Array.isArray(insightType) ? insightType[0] : insightType, metadata, history, Array.isArray(body) ? body[0] : body),
     [body, history, insightType, metadata]

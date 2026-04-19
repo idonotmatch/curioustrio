@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insightEvidence';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 
@@ -486,15 +487,23 @@ export default function TrendDetailScreen() {
     category_key: categoryKey = '',
     insight_metadata: insightMetadataParam = '',
     preload_category_expenses: preloadCategoryExpensesParam = '',
+    payload_key: payloadKeyParam = '',
     title,
     insight_id: insightId = '',
     mock = '',
   } = useLocalSearchParams();
-  const insightMetadata = useMemo(() => parseJsonParam(insightMetadataParam, {}), [insightMetadataParam]);
+  const navPayload = useMemo(
+    () => consumeNavigationPayload(Array.isArray(payloadKeyParam) ? payloadKeyParam[0] : payloadKeyParam, null),
+    [payloadKeyParam]
+  );
+  const insightMetadata = useMemo(
+    () => navPayload?.insightMetadata || parseJsonParam(insightMetadataParam, {}),
+    [insightMetadataParam, navPayload]
+  );
   const preloadedCategoryExpenses = useMemo(() => {
-    const rows = parseJsonParam(preloadCategoryExpensesParam, []);
+    const rows = navPayload?.preloadedCategoryExpenses || parseJsonParam(preloadCategoryExpensesParam, []);
     return Array.isArray(rows) ? rows : [];
-  }, [preloadCategoryExpensesParam]);
+  }, [navPayload, preloadCategoryExpensesParam]);
   const fallbackTrend = useMemo(
     () => buildTrendFromInsightMetadata(insightMetadata, `${scope}`, `${month}`),
     [insightMetadata, scope, month]

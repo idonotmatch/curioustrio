@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { selectInsightEvidence } from '../services/insightEvidence';
 import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../services/insightPresentation';
+import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -242,6 +243,8 @@ function parseJsonParam(value, fallback = null) {
 export default function InsightDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const payloadKey = firstParam(params.payload_key);
+  const navPayload = useMemo(() => consumeNavigationPayload(payloadKey, null), [payloadKey]);
   const insightId = firstParam(params.insight_id);
   const insightType = firstParam(params.insight_type);
   const title = firstParam(params.title, 'Insight detail');
@@ -257,11 +260,11 @@ export default function InsightDetailScreen() {
   const [feedbackNote, setFeedbackNote] = useState('');
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
-  const metadata = useMemo(() => parseJsonParam(metadataParam, {}), [metadataParam]);
+  const metadata = useMemo(() => navPayload?.metadata || parseJsonParam(metadataParam, {}), [metadataParam, navPayload]);
   const preloadedEvidence = useMemo(() => {
-    const rows = parseJsonParam(preloadEvidenceParam, []);
+    const rows = navPayload?.preloadEvidence || parseJsonParam(preloadEvidenceParam, []);
     return Array.isArray(rows) ? rows : [];
-  }, [preloadEvidenceParam]);
+  }, [navPayload, preloadEvidenceParam]);
 
   const insight = useMemo(() => ({
     id: `${insightId}`,

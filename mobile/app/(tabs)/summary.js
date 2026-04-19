@@ -17,6 +17,7 @@ import { InsightCard } from '../../components/InsightCard';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 import { toLocalDateString } from '../../services/date';
 import { selectInsightEvidence } from '../../services/insightEvidence';
+import { stashNavigationPayload } from '../../services/navigationPayloadStore';
 import { buildMockInsights } from '../../fixtures/mockInsights';
 import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
 
@@ -342,6 +343,10 @@ export default function SummaryScreen() {
 
     if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
       const preloadHistory = buildRecurringItemPreload(insight);
+      const payloadKey = stashNavigationPayload({
+        metadata: insight.metadata || {},
+        preloadHistory,
+      }, 'recurring-item');
       router.push({
         pathname: '/recurring-item',
         params: {
@@ -351,8 +356,7 @@ export default function SummaryScreen() {
           insight_id: insight.id,
           insight_type: insight.type,
           body: insight.body,
-          metadata: JSON.stringify(insight.metadata || {}),
-          preload_history: JSON.stringify(preloadHistory),
+          payload_key: payloadKey,
         },
       });
       return;
@@ -401,6 +405,10 @@ export default function SummaryScreen() {
 
     if (trendInsightTypes.has(insight?.type) && insight?.metadata?.month) {
       const preloadedCategoryExpenses = buildPreloadedCategoryExpenses(insight, expenses, householdExpenses);
+      const payloadKey = stashNavigationPayload({
+        insightMetadata: insight.metadata || {},
+        preloadedCategoryExpenses,
+      }, 'trend-detail');
       router.push({
         pathname: '/trend-detail',
         params: {
@@ -408,8 +416,7 @@ export default function SummaryScreen() {
           month: insight.metadata?.month,
           insight_type: insight.type,
           category_key: insight.metadata?.category_key || '',
-          insight_metadata: JSON.stringify(insight.metadata || {}),
-          preload_category_expenses: JSON.stringify(preloadedCategoryExpenses),
+          payload_key: payloadKey,
           title: insight.title,
           insight_id: insight.id,
           mock: isMockInsight ? '1' : '',
@@ -432,6 +439,10 @@ export default function SummaryScreen() {
 
     if (earlyDevelopingInsightTypes.has(insight?.type)) {
       const preloadedEvidence = buildPreloadedInsightEvidence(insight, expenses, householdExpenses);
+      const payloadKey = stashNavigationPayload({
+        metadata: insight.metadata || {},
+        preloadEvidence: preloadedEvidence,
+      }, 'insight-detail');
       router.push({
         pathname: '/insight-detail',
         params: {
@@ -442,8 +453,7 @@ export default function SummaryScreen() {
           severity: insight.severity || 'low',
           entity_type: insight.entity_type || '',
           entity_id: insight.entity_id || '',
-          metadata: JSON.stringify(insight.metadata || {}),
-          preload_evidence: JSON.stringify(preloadedEvidence),
+          payload_key: payloadKey,
         },
       });
       return;
