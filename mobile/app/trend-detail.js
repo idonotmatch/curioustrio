@@ -672,11 +672,11 @@ export default function TrendDetailScreen() {
             ) : null}
 
             {primaryAction ? (
-              <View style={styles.actionCard}>
+              <View style={styles.card}>
                 <View style={styles.actionText}>
                   <Text style={styles.cardEyebrow}>Next step</Text>
-                  <Text style={styles.actionTitle}>{primaryAction.title}</Text>
-                  <Text style={styles.actionBody}>{primaryAction.body}</Text>
+                  <Text style={styles.detailCardTitle}>{primaryAction.title}</Text>
+                  <Text style={styles.cardCopy}>{primaryAction.body}</Text>
                 </View>
                 {primaryAction.route ? (
                   <TouchableOpacity
@@ -1235,17 +1235,7 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
   },
-  actionCard: {
-    backgroundColor: '#12161b',
-    borderWidth: 1,
-    borderColor: '#253140',
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
-  },
-  actionText: { gap: 6 },
-  actionTitle: { fontSize: 18, color: '#eef5fb', fontWeight: '600' },
-  actionBody: { fontSize: 14, color: '#9eb1c5', lineHeight: 20 },
+  actionText: { gap: 4 },
   supportingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   supportingHeaderText: { flex: 1, gap: 4 },
   supportingToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
