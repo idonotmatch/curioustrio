@@ -33,6 +33,11 @@ beforeAll(async () => {
        last_projected_headroom_amount NUMERIC(12,2),
        last_risk_adjusted_headroom_amount NUMERIC(12,2),
        last_recurring_pressure_amount NUMERIC(12,2),
+       last_recommended_timing_mode TEXT
+         CHECK (last_recommended_timing_mode IS NULL OR last_recommended_timing_mode IN ('now', 'next_period', 'spread_3_periods')),
+       last_choice_followed_recommendation BOOLEAN,
+       last_choice_source TEXT
+         CHECK (last_choice_source IS NULL OR last_choice_source IN ('initial', 'compare_option', 'recent_plan')),
        last_material_change TEXT
          CHECK (last_material_change IN ('improved', 'worsened', 'unchanged')),
        watch_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -62,7 +67,10 @@ beforeAll(async () => {
        ADD COLUMN IF NOT EXISTS resolved_expense_id UUID,
        ADD COLUMN IF NOT EXISTS deferred_until_month TEXT,
        ADD COLUMN IF NOT EXISTS previous_affordability_status TEXT,
-       ADD COLUMN IF NOT EXISTS previous_risk_adjusted_headroom_amount NUMERIC(12,2)`
+       ADD COLUMN IF NOT EXISTS previous_risk_adjusted_headroom_amount NUMERIC(12,2),
+       ADD COLUMN IF NOT EXISTS last_recommended_timing_mode TEXT,
+       ADD COLUMN IF NOT EXISTS last_choice_followed_recommendation BOOLEAN,
+       ADD COLUMN IF NOT EXISTS last_choice_source TEXT`
   );
   await db.query(`ALTER TABLE scenario_memory DROP CONSTRAINT IF EXISTS scenario_memory_memory_state_check`);
   await db.query(
@@ -75,6 +83,18 @@ beforeAll(async () => {
     `ALTER TABLE scenario_memory
        ADD CONSTRAINT scenario_memory_resolution_action_check
        CHECK (resolution_action IS NULL OR resolution_action IN ('bought', 'not_buying', 'revisit_next_month'))`
+  );
+  await db.query(`ALTER TABLE scenario_memory DROP CONSTRAINT IF EXISTS scenario_memory_last_recommended_timing_mode_check`);
+  await db.query(
+    `ALTER TABLE scenario_memory
+       ADD CONSTRAINT scenario_memory_last_recommended_timing_mode_check
+       CHECK (last_recommended_timing_mode IS NULL OR last_recommended_timing_mode IN ('now', 'next_period', 'spread_3_periods'))`
+  );
+  await db.query(`ALTER TABLE scenario_memory DROP CONSTRAINT IF EXISTS scenario_memory_last_choice_source_check`);
+  await db.query(
+    `ALTER TABLE scenario_memory
+       ADD CONSTRAINT scenario_memory_last_choice_source_check
+       CHECK (last_choice_source IS NULL OR last_choice_source IN ('initial', 'compare_option', 'recent_plan'))`
   );
 
   const userResult = await db.query(
@@ -327,6 +347,13 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.scenario.label).toBe('Standing desk');
     expect(res.body.scenario.proposed_amount).toBe(75);
     expect(typeof res.body.scenario.can_absorb).toBe('boolean');
+    expect(Array.isArray(res.body.scenario.options)).toBe(true);
+    expect(res.body.scenario.options.map((option) => option.timing_mode)).toEqual([
+      'now',
+      'next_period',
+      'spread_3_periods',
+    ]);
+    expect(res.body.scenario.options.find((option) => option.is_selected)?.timing_mode).toBe('now');
     expect(res.body.scenario_memory).toBeTruthy();
     expect(res.body.scenario_memory.memory_state).toBe('ephemeral');
     expect(res.body.scenario_memory.intent_signal).toBeNull();
@@ -453,6 +480,166 @@ describe('POST /trends/scenario-check', () => {
     expect(res.body.scenario.recommendation).toBeTruthy();
     expect(res.body.scenario.recommendation.timing_mode).toBe('next_period');
     expect(res.body.scenario.recommendation.headline).toBe('Better next period');
+    expect(res.body.scenario.options.find((option) => option.timing_mode === 'next_period')?.is_recommended).toBe(true);
+    expect(res.body.scenario.options.find((option) => option.timing_mode === 'next_period')?.tradeoff).toBeTruthy();
+  });
+
+  it('adds a subtle personalization note when timing preference evidence is strong', async () => {
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         timing_mode,
+         last_choice_source,
+         last_choice_followed_recommendation,
+         last_recommended_timing_mode,
+         last_affordability_status,
+         last_can_absorb
+       )
+       VALUES
+       ($1, 'personal', 'Desk', 75, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period', 'absorbable', TRUE),
+       ($1, 'personal', 'Lamp', 40, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period', 'absorbable', TRUE),
+       ($1, 'personal', 'Shoes', 80, '2026-04', 'next_period', 'initial', TRUE, 'next_period', 'tight', TRUE)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 300)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 240, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 50, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-02-05', 'manual', 'confirmed'),
+       ($1, 45, '2026-01-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-01-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-01-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const res = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 80,
+        label: 'Shoes',
+        timing_mode: 'now',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scenario.recommendation?.timing_mode).toBe('next_period');
+    expect(res.body.scenario.recommendation?.personalization_note).toBe(
+      'You usually prefer waiting when it clearly creates more room.'
+    );
+  });
+
+  it('updates the same scenario memory when comparing a different timing mode', async () => {
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO expenses (user_id, amount, date, source, status)
+       VALUES
+       ($1, 40, '2026-04-01', 'manual', 'confirmed'),
+       ($1, 20, '2026-04-02', 'manual', 'confirmed'),
+       ($1, 60, '2026-03-01', 'manual', 'confirmed'),
+       ($1, 40, '2026-03-03', 'manual', 'confirmed'),
+       ($1, 30, '2026-03-05', 'manual', 'confirmed'),
+       ($1, 55, '2026-02-01', 'manual', 'confirmed'),
+       ($1, 35, '2026-02-03', 'manual', 'confirmed'),
+       ($1, 25, '2026-02-05', 'manual', 'confirmed'),
+       ($1, 50, '2026-01-01', 'manual', 'confirmed'),
+       ($1, 30, '2026-01-03', 'manual', 'confirmed'),
+       ($1, 20, '2026-01-05', 'manual', 'confirmed')`,
+      [userId]
+    );
+
+    const initial = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 75,
+        label: 'Standing desk',
+        timing_mode: 'now',
+      });
+
+    expect(initial.status).toBe(200);
+
+    const followUp = await request(app)
+      .post('/trends/scenario-check')
+      .send({
+        scope: 'personal',
+        month: '2026-04',
+        proposed_amount: 75,
+        label: 'Standing desk',
+        timing_mode: 'next_period',
+        scenario_memory_id: initial.body.scenario_memory.id,
+        choice_source: 'compare_option',
+        followed_recommendation: true,
+      });
+
+    expect(followUp.status).toBe(200);
+    expect(followUp.body.scenario_memory.id).toBe(initial.body.scenario_memory.id);
+    expect(followUp.body.scenario_memory.timing_mode).toBe('next_period');
+    expect(followUp.body.scenario_memory.last_choice_source).toBe('compare_option');
+    expect(followUp.body.scenario_memory.last_choice_followed_recommendation).toBe(true);
+
+    const count = await db.query(
+      `SELECT COUNT(*)::int AS count
+       FROM scenario_memory
+       WHERE user_id = $1
+         AND label = 'Standing desk'`,
+      [userId]
+    );
+    expect(count.rows[0].count).toBe(1);
+  });
+
+  it('summarizes planner choice feedback for the user', async () => {
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         timing_mode,
+         last_choice_source,
+         last_choice_followed_recommendation,
+         last_recommended_timing_mode,
+         last_affordability_status,
+         last_can_absorb
+       )
+       VALUES
+       ($1, 'personal', 'Desk', 75, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period', 'absorbable', TRUE),
+       ($1, 'personal', 'Lamp', 40, '2026-04', 'now', 'compare_option', FALSE, 'next_period', 'tight', TRUE),
+       ($1, 'personal', 'Chair', 120, '2026-04', 'now', 'initial', NULL, NULL, 'absorbable', TRUE)`,
+      [userId]
+    );
+
+    const res = await request(app).get('/trends/planner-feedback-summary');
+    expect(res.status).toBe(200);
+    expect(res.body.summary.total_choices).toBe(3);
+    expect(res.body.summary.followed_recommendation_count).toBe(1);
+    expect(res.body.summary.deviated_from_recommendation_count).toBe(1);
+    expect(res.body.summary.by_source.compare_option).toBe(2);
+    expect(res.body.summary.by_source.initial).toBe(1);
+    expect(res.body.timing_preferences.next_period.followed).toBe(1);
+    expect(res.body.timing_preferences.next_period.follow_rate).toBe(1);
+    expect(res.body.timing_preferences.next_period.compare_option_count).toBe(1);
   });
 
   it('records user intent for a scenario memory', async () => {
@@ -704,14 +891,38 @@ describe('POST /trends/scenario-check', () => {
          watch_started_at,
          last_affordability_status,
          last_can_absorb,
+         timing_mode,
+         last_recommended_timing_mode,
+         last_choice_followed_recommendation,
+         last_choice_source,
          last_evaluated_at,
          expires_at,
          deferred_until_month
        )
        VALUES
-       ($1, NULL, 'personal', 'Running shoes', 180, '2026-04', 'considering', 'considering', TRUE, NOW(), 'absorbable', true, NOW(), NOW() + INTERVAL '14 days', NULL),
-       ($1, NULL, 'household', 'Air fryer', 240, '2026-04', 'considering', 'considering', TRUE, NOW(), 'tight', false, NOW() - INTERVAL '1 day', NOW() + INTERVAL '14 days', NULL),
-       ($1, NULL, 'personal', 'Patio chairs', 260, '2026-04', 'deferred', 'not_right_now', FALSE, NULL, 'tight', false, NOW() - INTERVAL '2 days', NOW() + INTERVAL '30 days', '2026-05')`,
+       ($1, NULL, 'personal', 'Running shoes', 180, '2026-04', 'considering', 'considering', TRUE, NOW(), 'absorbable', true, 'next_period', 'next_period', TRUE, 'compare_option', NOW(), NOW() + INTERVAL '14 days', NULL),
+       ($1, NULL, 'household', 'Air fryer', 240, '2026-04', 'considering', 'considering', TRUE, NOW(), 'tight', false, 'now', NULL, NULL, NULL, NOW() - INTERVAL '1 day', NOW() + INTERVAL '14 days', NULL),
+       ($1, NULL, 'personal', 'Patio chairs', 260, '2026-04', 'deferred', 'not_right_now', FALSE, NULL, 'tight', false, 'next_period', 'next_period', TRUE, 'compare_option', NOW() - INTERVAL '2 days', NOW() + INTERVAL '30 days', '2026-05')`,
+      [userId]
+    );
+
+    await db.query(
+      `INSERT INTO scenario_memory (
+         user_id,
+         scope,
+         label,
+         amount,
+         month,
+         timing_mode,
+         last_choice_source,
+         last_choice_followed_recommendation,
+         last_recommended_timing_mode,
+         last_affordability_status,
+         last_can_absorb
+       )
+       VALUES
+       ($1, 'personal', 'Desk', 75, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period', 'absorbable', TRUE),
+       ($1, 'personal', 'Lamp', 40, '2026-04', 'next_period', 'compare_option', TRUE, 'next_period', 'absorbable', TRUE)`,
       [userId]
     );
 
@@ -721,9 +932,15 @@ describe('POST /trends/scenario-check', () => {
     expect(Array.isArray(res.body.items)).toBe(true);
     expect(res.body.items).toHaveLength(2);
     expect(res.body.items.every((item) => item.watch_enabled)).toBe(true);
+    expect(res.body.items.find((item) => item.label === 'Running shoes')?.timing_preference_note).toBe(
+      'You usually revisit these in the next period when room opens up.'
+    );
     expect(Array.isArray(res.body.deferred_items)).toBe(true);
     expect(res.body.deferred_items).toHaveLength(1);
     expect(res.body.deferred_items[0].label).toBe('Patio chairs');
     expect(res.body.deferred_items[0].deferred_until_month).toBe('2026-05');
+    expect(res.body.deferred_items[0].timing_preference_note).toBe(
+      'You usually revisit these in the next period when room opens up.'
+    );
   });
 });

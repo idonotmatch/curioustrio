@@ -26,11 +26,15 @@ const REQUIRED_COLUMNS = [
   ['expense_items', 'normalized_total_size_value'],
   ['expense_items', 'normalized_total_size_unit'],
   ['expense_items', 'item_type'],
+  ['scenario_memory', 'last_recommended_timing_mode'],
+  ['scenario_memory', 'last_choice_followed_recommendation'],
+  ['scenario_memory', 'last_choice_source'],
 ];
 
 const REQUIRED_TABLES = [
   'email_import_feedback',
   'products',
+  'scenario_memory',
 ];
 
 const OPTIONAL_TABLES = [

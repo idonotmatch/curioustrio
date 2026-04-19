@@ -5,7 +5,7 @@ const User = require('../models/user');
 const ScenarioMemory = require('../models/scenarioMemory');
 const { analyzeSpendingTrend } = require('../services/spendingTrendAnalyzer');
 const { analyzeSpendProjection, evaluateScenarioAffordability } = require('../services/spendProjectionAnalyzer');
-const { refreshConsideringScenarios } = require('../services/scenarioMemoryService');
+const { refreshConsideringScenarios, decoratePlansWithTimingPreference } = require('../services/scenarioMemoryService');
 
 router.use(authenticate);
 
@@ -60,6 +60,12 @@ router.post('/scenario-check', async (req, res, next) => {
     const timingMode = ['now', 'next_period', 'spread_3_periods'].includes(req.body.timing_mode)
       ? req.body.timing_mode
       : 'now';
+    const choiceSource = ['initial', 'compare_option', 'recent_plan'].includes(req.body.choice_source)
+      ? req.body.choice_source
+      : null;
+    const choiceFollowedRecommendation = typeof req.body.followed_recommendation === 'boolean'
+      ? req.body.followed_recommendation
+      : null;
 
     const result = await evaluateScenarioAffordability({
       user,
@@ -72,8 +78,7 @@ router.post('/scenario-check', async (req, res, next) => {
 
     let memory = null;
     try {
-      memory = await ScenarioMemory.create({
-        userId: user.id,
+      const memoryPayload = {
         householdId: requestedScope === 'household' ? user.household_id : null,
         scope: result.scope,
         label: result.scenario?.label || req.body.label || 'purchase',
@@ -81,7 +86,23 @@ router.post('/scenario-check', async (req, res, next) => {
         month: result.month,
         timingMode,
         scenario: result.scenario,
-      });
+        recommendedTimingMode: result.scenario?.recommendation?.timing_mode || null,
+        choiceFollowedRecommendation,
+        choiceSource,
+      };
+      if (req.body.scenario_memory_id) {
+        memory = await ScenarioMemory.refreshScenario(
+          req.body.scenario_memory_id,
+          user.id,
+          memoryPayload
+        );
+      }
+      if (!memory) {
+        memory = await ScenarioMemory.create({
+          userId: user.id,
+          ...memoryPayload,
+        });
+      }
     } catch (memoryErr) {
       console.error('[scenario memory] create failed (non-fatal):', memoryErr.message);
     }
@@ -207,6 +228,7 @@ router.get('/scenario-memory/recent', async (req, res, next) => {
       items = await ScenarioMemory.listRecentActiveByUser(user.id, {
         limit: req.query.limit || 3,
       });
+      items = await decoratePlansWithTimingPreference(user.id, items);
     } catch (listErr) {
       console.error('[scenario memory] recent list failed (non-fatal):', listErr.message);
       items = [];
@@ -240,6 +262,8 @@ router.get('/scenario-memory/watching', async (req, res, next) => {
       deferredItems = await ScenarioMemory.listDeferredByUser(user.id, {
         limit: req.query.limit || 10,
       });
+      items = await decoratePlansWithTimingPreference(user.id, items);
+      deferredItems = await decoratePlansWithTimingPreference(user.id, deferredItems);
     } catch (listErr) {
       console.error('[scenario memory] watched list failed (non-fatal):', listErr.message);
       items = [];
@@ -247,6 +271,38 @@ router.get('/scenario-memory/watching', async (req, res, next) => {
     }
 
     res.json({ items, deferred_items: deferredItems });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/planner-feedback-summary', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+
+    let summary = null;
+    let timingPreferences = {};
+    try {
+      summary = await ScenarioMemory.summarizeChoiceFeedback(user.id);
+      timingPreferences = await ScenarioMemory.summarizeTimingPreferences(user.id);
+    } catch (summaryErr) {
+      console.error('[scenario memory] planner feedback summary failed (non-fatal):', summaryErr.message);
+      summary = {
+        total_choices: 0,
+        followed_recommendation_count: 0,
+        deviated_from_recommendation_count: 0,
+        follow_rate: null,
+        by_source: {
+          initial: 0,
+          compare_option: 0,
+          recent_plan: 0,
+        },
+      };
+      timingPreferences = {};
+    }
+
+    res.json({ summary, timing_preferences: timingPreferences });
   } catch (err) {
     next(err);
   }

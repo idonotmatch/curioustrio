@@ -66,6 +66,10 @@ function whyChangedCopy(plan) {
   return '';
 }
 
+function timingPreferenceCopy(plan) {
+  return `${plan?.timing_preference_note || ''}`.trim();
+}
+
 function sortPlans(items) {
   const priority = {
     worsened: 0,
@@ -192,10 +196,13 @@ export default function WatchingPlansScreen() {
                 <Text style={styles.sectionLabel}>Coming back next month</Text>
                 {deferredItems.map((plan) => (
                   <View key={plan.id} style={styles.deferredCard}>
-                    <View style={styles.rowTop}>
-                      <View style={styles.textCol}>
-                        <Text style={styles.label}>{plan.label}</Text>
-                        <Text style={styles.meta}>{scopeLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
+                      <View style={styles.rowTop}>
+                        <View style={styles.textCol}>
+                          <Text style={styles.label}>{plan.label}</Text>
+                          <Text style={styles.meta}>{scopeLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
+                          {timingPreferenceCopy(plan) ? (
+                            <Text style={styles.preferenceNote}>{timingPreferenceCopy(plan)}</Text>
+                          ) : null}
                       </View>
                       <View style={styles.rightCol}>
                         <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
@@ -258,6 +265,9 @@ export default function WatchingPlansScreen() {
                                 <Text style={styles.meta}>{scopeLabel(plan.scope)} · {scopeContextLabel(plan.scope)} · Watching</Text>
                                 {change ? <Text style={styles.change}>{change}</Text> : null}
                                 {why ? <Text style={styles.why}>{why}</Text> : null}
+                                {timingPreferenceCopy(plan) ? (
+                                  <Text style={styles.preferenceNote}>{timingPreferenceCopy(plan)}</Text>
+                                ) : null}
                               </View>
                               <View style={styles.rightCol}>
                                 <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
@@ -339,6 +349,9 @@ export default function WatchingPlansScreen() {
                         <View style={styles.textCol}>
                           <Text style={styles.label}>{plan.label}</Text>
                           <Text style={styles.meta}>{scopeLabel(plan.scope)} · {scopeContextLabel(plan.scope)} · Returns in {monthLabel(plan.deferred_until_month)}</Text>
+                          {timingPreferenceCopy(plan) ? (
+                            <Text style={styles.preferenceNote}>{timingPreferenceCopy(plan)}</Text>
+                          ) : null}
                         </View>
                         <View style={styles.rightCol}>
                           <Text style={styles.status}>{statusLabel(plan.last_affordability_status)}</Text>
@@ -400,6 +413,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#e3ebf3', fontSize: 17, fontWeight: '600' },
   emptyBody: { color: '#8fa0b2', fontSize: 14, lineHeight: 20 },
+  preferenceNote: { color: '#9cc3de', fontSize: 12, lineHeight: 17, marginTop: 3 },
   scopeSection: { gap: 12 },
   scopeHeader: { gap: 4 },
   scopeTitle: { color: '#f0f4f8', fontSize: 20, fontWeight: '600', letterSpacing: -0.4 },

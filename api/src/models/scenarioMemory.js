@@ -22,6 +22,9 @@ async function create({
   month,
   timingMode = 'now',
   scenario,
+  recommendedTimingMode = null,
+  choiceFollowedRecommendation = null,
+  choiceSource = null,
 }) {
   const result = await db.query(
     `INSERT INTO scenario_memory (
@@ -38,13 +41,16 @@ async function create({
        last_projected_headroom_amount,
        last_risk_adjusted_headroom_amount,
        last_recurring_pressure_amount,
+       last_recommended_timing_mode,
+       last_choice_followed_recommendation,
+       last_choice_source,
        last_evaluated_at,
        expires_at
      )
      VALUES (
        $1, $2, $3, $4, $5, $6, $7,
        'ephemeral',
-       $8, $9, $10, $11, $12,
+       $8, $9, $10, $11, $12, $13, $14, $15,
        NOW(),
        NOW() + INTERVAL '7 days'
      )
@@ -62,6 +68,9 @@ async function create({
       scenario?.projected_headroom_amount ?? null,
       scenario?.risk_adjusted_headroom_amount ?? null,
       scenario?.recurring_pressure_amount ?? null,
+      recommendedTimingMode,
+      choiceFollowedRecommendation,
+      choiceSource,
     ]
   );
   return normalize(result.rows[0] || null);
@@ -281,6 +290,128 @@ async function updateEvaluation(id, userId, scenario, materialChange = 'unchange
   return normalize(result.rows[0] || null);
 }
 
+async function summarizeChoiceFeedback(userId) {
+  const result = await db.query(
+    `SELECT
+       COUNT(*)::int AS total_choices,
+       COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS TRUE)::int AS followed_recommendation_count,
+       COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS FALSE)::int AS deviated_from_recommendation_count,
+       COUNT(*) FILTER (WHERE last_choice_source = 'compare_option')::int AS compare_option_count,
+       COUNT(*) FILTER (WHERE last_choice_source = 'recent_plan')::int AS recent_plan_count,
+       COUNT(*) FILTER (WHERE last_choice_source = 'initial')::int AS initial_count
+     FROM scenario_memory
+     WHERE user_id = $1
+       AND last_choice_source IS NOT NULL`,
+    [userId]
+  );
+  const row = result.rows[0] || {};
+  const totalChoices = Number(row.total_choices || 0);
+  return {
+    total_choices: totalChoices,
+    followed_recommendation_count: Number(row.followed_recommendation_count || 0),
+    deviated_from_recommendation_count: Number(row.deviated_from_recommendation_count || 0),
+    follow_rate: totalChoices > 0
+      ? Number((Number(row.followed_recommendation_count || 0) / totalChoices).toFixed(3))
+      : null,
+    by_source: {
+      initial: Number(row.initial_count || 0),
+      compare_option: Number(row.compare_option_count || 0),
+      recent_plan: Number(row.recent_plan_count || 0),
+    },
+  };
+}
+
+async function summarizeTimingPreferences(userId) {
+  const result = await db.query(
+    `SELECT
+       last_recommended_timing_mode AS timing_mode,
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS TRUE)::int AS followed,
+       COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS FALSE)::int AS deviated,
+       COUNT(*) FILTER (WHERE last_choice_source = 'compare_option')::int AS compare_option_count
+     FROM scenario_memory
+     WHERE user_id = $1
+       AND last_recommended_timing_mode IS NOT NULL
+     GROUP BY last_recommended_timing_mode`,
+    [userId]
+  );
+
+  return result.rows.reduce((acc, row) => {
+    const total = Number(row.total || 0);
+    const followed = Number(row.followed || 0);
+    const deviated = Number(row.deviated || 0);
+    acc[row.timing_mode] = {
+      total,
+      followed,
+      deviated,
+      compare_option_count: Number(row.compare_option_count || 0),
+      follow_rate: total > 0 ? Number((followed / total).toFixed(3)) : null,
+      deviation_rate: total > 0 ? Number((deviated / total).toFixed(3)) : null,
+      net_signal: followed - deviated,
+    };
+    return acc;
+  }, {});
+}
+
+async function refreshScenario(
+  id,
+  userId,
+  {
+    householdId = null,
+    scope = 'personal',
+    label,
+    amount,
+    month,
+    timingMode = 'now',
+    scenario,
+    recommendedTimingMode = null,
+    choiceFollowedRecommendation = null,
+    choiceSource = null,
+  }
+) {
+  const result = await db.query(
+    `UPDATE scenario_memory
+     SET household_id = $3,
+         scope = $4,
+         label = $5,
+         amount = $6,
+         month = $7,
+         timing_mode = $8,
+         last_affordability_status = $9,
+         last_can_absorb = $10,
+         last_projected_headroom_amount = $11,
+         last_risk_adjusted_headroom_amount = $12,
+         last_recurring_pressure_amount = $13,
+         last_recommended_timing_mode = $14,
+         last_choice_followed_recommendation = $15,
+         last_choice_source = $16,
+         last_evaluated_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1
+       AND user_id = $2
+     RETURNING *`,
+    [
+      id,
+      userId,
+      householdId || null,
+      scope,
+      label,
+      amount,
+      month,
+      timingMode,
+      scenario?.status || null,
+      scenario?.can_absorb ?? null,
+      scenario?.projected_headroom_amount ?? null,
+      scenario?.risk_adjusted_headroom_amount ?? null,
+      scenario?.recurring_pressure_amount ?? null,
+      recommendedTimingMode,
+      choiceFollowedRecommendation,
+      choiceSource,
+    ]
+  );
+  return normalize(result.rows[0] || null);
+}
+
 module.exports = {
   create,
   findByIdForUser,
@@ -293,4 +424,7 @@ module.exports = {
   listWatchedByUser,
   listDeferredByUser,
   updateEvaluation,
+  refreshScenario,
+  summarizeChoiceFeedback,
+  summarizeTimingPreferences,
 };

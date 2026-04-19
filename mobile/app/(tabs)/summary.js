@@ -183,6 +183,7 @@ export default function SummaryScreen() {
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
   const watchedHouseholdCount = watchedPlans.filter((plan) => plan.scope === 'household').length;
   const watchedPersonalCount = watchedPlans.filter((plan) => plan.scope !== 'household').length;
+  const watchedPreferenceNote = watchedPlans.find((plan) => plan?.timing_preference_note)?.timing_preference_note || '';
   const displayInsights = __DEV__ && insights.length === 0
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
@@ -700,6 +701,9 @@ export default function SummaryScreen() {
                 ? ` ${watchedHouseholdCount > 0 ? `${watchedHouseholdCount} shared` : ''}${watchedHouseholdCount > 0 && watchedPersonalCount > 0 ? ' · ' : ''}${watchedPersonalCount > 0 ? `${watchedPersonalCount} personal` : ''}.`
                 : ''}
             </Text>
+            {watchedPreferenceNote ? (
+              <Text style={styles.watchingNote}>{watchedPreferenceNote}</Text>
+            ) : null}
           </View>
           <View style={styles.watchingCTA}>
             <Text style={styles.watchingCTAText}>See plans</Text>
@@ -875,6 +879,7 @@ const styles = StyleSheet.create({
   watchingTitle: { color: '#dde8f2', fontSize: 16, fontWeight: '700' },
   watchingMeta: { color: '#8fa0b2', fontSize: 13 },
   watchingBody: { color: '#afc0d5', fontSize: 14, lineHeight: 19, marginTop: 4 },
+  watchingNote: { color: '#9cc3de', fontSize: 12, lineHeight: 17, marginTop: 4 },
   watchingCTA: {
     backgroundColor: '#f5f5f5',
     borderRadius: 999,

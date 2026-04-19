@@ -129,6 +129,20 @@ function recommendationButtonLabel(mode) {
   }
 }
 
+function optionMetricCopy(option) {
+  const room = Number(option?.risk_adjusted_headroom_amount || 0);
+  if (!Number.isFinite(room)) return 'Room still building';
+  if (room > 0) return `${formatCurrency(room)} left`;
+  return 'No room left';
+}
+
+function optionTradeoffCopy(option) {
+  const delta = Number(option?.tradeoff?.risk_adjusted_headroom_delta || 0);
+  if (!Number.isFinite(delta) || Math.abs(delta) < 1) return 'About the same room';
+  if (delta > 0) return `${formatCurrency(delta)} more room than current`;
+  return `${formatCurrency(Math.abs(delta))} less room than current`;
+}
+
 function projectionDeltaCopy(value) {
   if (value == null || !Number.isFinite(Number(value))) return 'Projection still building';
   const amount = Number(value);
@@ -202,12 +216,13 @@ export default function ScenarioCheckScreen() {
   const [showComposer, setShowComposer] = useState(false);
   const autoRanRef = useRef(false);
   const bootstrappedInitialResultRef = useRef(false);
-  const isAutoRunning = `${params.auto_run}` === '1' && !scenario && loading;
 
   const parsedAmount = Number(amount);
   const canSubmit = Number.isFinite(parsedAmount) && parsedAmount > 0 && !loading;
   const scenario = result?.scenario || null;
+  const isAutoRunning = `${params.auto_run}` === '1' && !scenario && loading;
   const projection = result?.projection?.overall || null;
+  const timingOptions = Array.isArray(scenario?.options) ? scenario.options : [];
   const currentHeadroom = Number(scenario?.projected_headroom_amount || 0);
   const postPurchaseHeadroom = Number(scenario?.post_purchase_headroom_amount || 0);
   const recurringPressure = Number(scenario?.recurring_pressure_amount || 0);
@@ -265,12 +280,16 @@ export default function ScenarioCheckScreen() {
     try {
       setLoading(true);
       setError('');
+      const selectedOption = timingOptions.find((option) => option.timing_mode === nextTimingMode) || null;
       const data = await api.post('/trends/scenario-check', {
         scope,
         month: targetMonth,
         proposed_amount: parsedAmount,
         label: label.trim() || 'purchase',
         timing_mode: nextTimingMode,
+        scenario_memory_id: scenarioMemory?.id || null,
+        choice_source: scenarioMemory?.id ? 'compare_option' : 'initial',
+        followed_recommendation: selectedOption ? Boolean(selectedOption.is_recommended) : null,
       });
       setResult(data);
       setScenarioMemory(data?.scenario_memory || null);
@@ -302,6 +321,8 @@ export default function ScenarioCheckScreen() {
         proposed_amount: nextAmount,
         label: nextLabel,
         timing_mode: nextPlan.timing_mode || 'now',
+        scenario_memory_id: nextPlan.id || null,
+        choice_source: 'recent_plan',
       });
       setResult(data);
       setScenarioMemory(data?.scenario_memory || null);
@@ -356,7 +377,7 @@ export default function ScenarioCheckScreen() {
     }
   }
 
-  async function applyRecommendation(mode) {
+  async function applyTimingOption(mode) {
     if (!mode || loading) return;
     await handleSubmit(mode);
     loadRecentPlans();
@@ -464,26 +485,64 @@ export default function ScenarioCheckScreen() {
               ) : null}
             </View>
 
-            {scenario.recommendation ? (
-              <View style={styles.recommendationCard}>
-                <View style={styles.recommendationText}>
-                  <Text style={styles.recommendationEyebrow}>Suggested timing</Text>
-                  <Text style={styles.recommendationTitle}>{scenario.recommendation.headline}</Text>
-                  <Text style={styles.recommendationCopy}>{scenario.recommendation.reason}</Text>
+            {timingOptions.length > 0 ? (
+              <View style={styles.card}>
+                <View style={styles.composerHeader}>
+                  <Text style={styles.cardTitle}>Compare timing</Text>
+                  <Text style={styles.composerMeta}>Same purchase, different landing points.</Text>
+                  {scenario?.recommendation?.personalization_note ? (
+                    <Text style={styles.preferenceNote}>{scenario.recommendation.personalization_note}</Text>
+                  ) : null}
                 </View>
-                <TouchableOpacity
-                  style={styles.recommendationButton}
-                  onPress={() => applyRecommendation(scenario.recommendation.timing_mode)}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#000" size="small" />
-                  ) : (
-                    <Text style={styles.recommendationButtonText}>
-                      {recommendationButtonLabel(scenario.recommendation.timing_mode)}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.optionsList}>
+                  {timingOptions.map((option) => (
+                    <View
+                      key={option.timing_mode}
+                      style={[
+                        styles.optionCard,
+                        option.is_selected && styles.optionCardSelected,
+                        option.is_recommended && !option.is_selected && styles.optionCardRecommended,
+                      ]}
+                    >
+                      <View style={styles.optionTopRow}>
+                        <View style={styles.optionTitleWrap}>
+                          <Text style={styles.optionTitle}>{option.timing_label}</Text>
+                          <Text style={styles.optionStatus}>
+                            {option.status_label}
+                            {option.is_selected ? ' · Current' : option.is_recommended ? ' · Best bet' : ''}
+                          </Text>
+                        </View>
+                        <Text style={styles.optionMetric}>{optionMetricCopy(option)}</Text>
+                      </View>
+                      <Text style={styles.optionHeadline}>{option.headline}</Text>
+                      <Text style={styles.optionReason}>{option.reason}</Text>
+                      {!option.is_selected ? (
+                        <Text style={styles.optionTradeoff}>{optionTradeoffCopy(option)}</Text>
+                      ) : null}
+                      <TouchableOpacity
+                        style={[
+                          styles.optionButton,
+                          option.is_selected && styles.optionButtonSelected,
+                        ]}
+                        onPress={() => applyTimingOption(option.timing_mode)}
+                        disabled={loading || option.is_selected}
+                      >
+                        {loading && !option.is_selected ? (
+                          <ActivityIndicator color="#000" size="small" />
+                        ) : (
+                          <Text
+                            style={[
+                              styles.optionButtonText,
+                              option.is_selected && styles.optionButtonTextSelected,
+                            ]}
+                          >
+                            {option.is_selected ? 'Selected' : recommendationButtonLabel(option.timing_mode)}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
               </View>
             ) : null}
 
@@ -787,6 +846,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
   composerHeader: { gap: 4 },
   composerMeta: { color: '#777', fontSize: 12, lineHeight: 16 },
+  preferenceNote: { color: '#9cc3de', fontSize: 12, lineHeight: 17 },
   composerRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   amountPill: {
     minWidth: 94,
@@ -827,6 +887,53 @@ const styles = StyleSheet.create({
   },
   composerControls: { flex: 1, gap: 10 },
   considerationsList: { gap: 0 },
+  optionsList: { gap: 10 },
+  optionCard: {
+    backgroundColor: '#151515',
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  optionCardSelected: {
+    borderColor: '#40607a',
+    backgroundColor: '#141a1f',
+  },
+  optionCardRecommended: {
+    borderColor: '#2c3e2a',
+    backgroundColor: '#131914',
+  },
+  optionTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  optionTitleWrap: { flex: 1, gap: 2 },
+  optionTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
+  optionStatus: { color: '#8ca7bf', fontSize: 12 },
+  optionMetric: { color: '#dfefff', fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  optionHeadline: { color: '#f3f3f3', fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  optionReason: { color: '#a5a5a5', fontSize: 13, lineHeight: 18 },
+  optionTradeoff: { color: '#8ca7bf', fontSize: 12, lineHeight: 17 },
+  optionButton: {
+    alignSelf: 'flex-start',
+    minWidth: 138,
+    backgroundColor: '#d9e9f8',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionButtonSelected: {
+    backgroundColor: '#202a31',
+    borderWidth: 1,
+    borderColor: '#32414e',
+  },
+  optionButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
+  optionButtonTextSelected: { color: '#dfefff' },
   considerationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

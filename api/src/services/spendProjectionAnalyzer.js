@@ -1,6 +1,7 @@
 const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
+const ScenarioMemory = require('../models/scenarioMemory');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -612,7 +613,148 @@ function buildRecommendationReason({ currentScenario, suggestedScenario }) {
   return `This looks a little easier than ${timingModeLabel(currentScenario?.timing_mode || 'now').toLowerCase()}.`;
 }
 
-function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {} }) {
+function plannerPreferenceAdjustment(mode, timingPreferences = {}) {
+  const stats = timingPreferences?.[mode];
+  if (!stats) return 0;
+  const total = Number(stats.total || 0);
+  const compareOptionCount = Number(stats.compare_option_count || 0);
+  if (total < 2 || compareOptionCount < 1) return 0;
+
+  const followRate = Number(stats.follow_rate || 0);
+  const netSignal = Number(stats.net_signal || 0);
+  let adjustment = 0;
+
+  if (followRate >= 0.75 && netSignal >= 1) adjustment += 12;
+  else if (followRate >= 0.6 && netSignal >= 1) adjustment += 6;
+
+  if (followRate <= 0.25 && netSignal <= -1) adjustment -= 12;
+  else if (followRate <= 0.4 && netSignal <= -1) adjustment -= 6;
+
+  return adjustment;
+}
+
+function plannerPreferenceNote(mode, timingPreferences = {}) {
+  const stats = timingPreferences?.[mode];
+  if (!stats) return null;
+
+  const total = Number(stats.total || 0);
+  const compareOptionCount = Number(stats.compare_option_count || 0);
+  const followRate = Number(stats.follow_rate || 0);
+  const netSignal = Number(stats.net_signal || 0);
+  if (total < 3 || compareOptionCount < 2) return null;
+
+  if (followRate >= 0.75 && netSignal >= 2) {
+    switch (mode) {
+      case 'next_period':
+        return 'You usually prefer waiting when it clearly creates more room.';
+      case 'spread_3_periods':
+        return 'You usually prefer spreading purchases out when the pressure is close.';
+      default:
+        return 'You usually prefer keeping purchases in the current period when they still fit cleanly.';
+    }
+  }
+
+  return null;
+}
+
+function scenarioOptionHeadline({ mode, scenario }) {
+  const label = scenario?.label || 'purchase';
+  switch (scenario?.status) {
+    case 'comfortable':
+      return mode === 'now'
+        ? `${label} fits comfortably now`
+        : `${label} looks comfortable ${timingModeLabel(mode).toLowerCase()}`;
+    case 'absorbable':
+      return mode === 'now'
+        ? `${label} fits this period`
+        : `${label} fits ${timingModeLabel(mode).toLowerCase()}`;
+    case 'tight':
+      return mode === 'now'
+        ? `${label} is possible, but tight now`
+        : `${label} gets tight ${timingModeLabel(mode).toLowerCase()}`;
+    case 'risky':
+      return mode === 'now'
+        ? `${label} looks risky this period`
+        : `${label} still looks risky ${timingModeLabel(mode).toLowerCase()}`;
+    case 'not_absorbable':
+      return mode === 'now'
+        ? `${label} does not fit this period`
+        : `${label} still does not fit ${timingModeLabel(mode).toLowerCase()}`;
+    default:
+      return `More history needed for ${timingModeLabel(mode).toLowerCase()}`;
+  }
+}
+
+function scenarioOptionReason({ mode, scenario }) {
+  const room = Number(scenario?.risk_adjusted_headroom_amount || 0);
+  const recurringPressure = Number(scenario?.recurring_pressure_amount || 0);
+
+  switch (scenario?.reason) {
+    case 'projected_headroom_remains':
+      return `${formatCurrency(room)} of risk-adjusted room is still left after expected recurring spend.`;
+    case 'limited_but_positive_headroom':
+      return `${formatCurrency(room)} of room is left, so this fits with less margin.`;
+    case 'limited_headroom_after_recurring_pressure':
+      return recurringPressure > 0
+        ? `${formatCurrency(recurringPressure)} of recurring pressure keeps this horizon tight.`
+        : `${formatCurrency(room)} of room is left after this lands.`;
+    case 'headroom_consumed':
+      return 'This would likely use the remaining room and make the rest of the period harder to absorb.';
+    case 'projected_over_budget_after_purchase':
+      return 'This would likely push the projection over budget by period end.';
+    case 'insufficient_history':
+      return 'Adlo needs a little more history before it can compare this timing confidently.';
+    default:
+      if (mode === 'spread_3_periods') {
+        return 'This assumes the cost is split evenly across three budget periods.';
+      }
+      if (mode === 'next_period') {
+        return 'This checks whether waiting until the next budget period creates more room.';
+      }
+      return 'This uses your current budget projection and expected recurring pressure.';
+  }
+}
+
+function buildScenarioOption({
+  mode,
+  scenario,
+  selectedScenario,
+  selectedMode,
+  recommendationMode,
+}) {
+  if (!scenario) return null;
+  const selectedRiskAdjusted = Number(selectedScenario?.risk_adjusted_headroom_amount || 0);
+  const selectedProjected = Number(selectedScenario?.projected_headroom_amount || 0);
+  const riskAdjustedDelta = Number(scenario?.risk_adjusted_headroom_amount || 0) - selectedRiskAdjusted;
+  const projectedDelta = Number(scenario?.projected_headroom_amount || 0) - selectedProjected;
+  const statusDelta = statusRank(selectedScenario?.status) - statusRank(scenario?.status);
+
+  return {
+    timing_mode: mode,
+    timing_label: timingModeLabel(mode),
+    status: scenario.status,
+    status_label: statusLabel(scenario.status),
+    can_absorb: scenario.can_absorb,
+    headline: scenarioOptionHeadline({ mode, scenario }),
+    reason: scenarioOptionReason({ mode, scenario }),
+    projected_headroom_amount: scenario.projected_headroom_amount ?? null,
+    post_purchase_headroom_amount: scenario.post_purchase_headroom_amount ?? null,
+    risk_adjusted_headroom_amount: scenario.risk_adjusted_headroom_amount ?? null,
+    recurring_pressure_amount: scenario.recurring_pressure_amount ?? null,
+    projection_confidence: scenario.projection_confidence ?? null,
+    history_stage: scenario.history_stage ?? null,
+    horizon_periods: scenario.horizon_periods || [],
+    tradeoff: {
+      risk_adjusted_headroom_delta: Number(riskAdjustedDelta.toFixed(2)),
+      projected_headroom_delta: Number(projectedDelta.toFixed(2)),
+      status_delta: statusDelta,
+    },
+    is_selected: mode === selectedMode,
+    is_recommended: mode === recommendationMode,
+  };
+}
+
+function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {}, timingPreferences = {} }) {
   const currentScenario = scenariosByMode[selectedMode];
   if (!currentScenario || currentScenario.status === 'unknown') return null;
 
@@ -623,18 +765,29 @@ function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {} }) {
       const rankGain = currentRank - statusRank(scenario.status);
       const absorbFlip = currentScenario.can_absorb === false && scenario.can_absorb === true;
       const roomDelta = Number(scenario.risk_adjusted_headroom_amount || 0) - Number(currentScenario.risk_adjusted_headroom_amount || 0);
+      const preferenceAdjustment = plannerPreferenceAdjustment(mode, timingPreferences);
       const material =
         absorbFlip ||
         rankGain >= 2 ||
         (rankGain >= 1 && roomDelta >= 40) ||
         (currentRank >= statusRank('tight') && rankGain >= 1);
 
-      return { mode, scenario, rankGain, absorbFlip, roomDelta, material };
+      return {
+        mode,
+        scenario,
+        rankGain,
+        absorbFlip,
+        roomDelta,
+        preferenceAdjustment,
+        adjustedScore: (absorbFlip ? 200 : 0) + (rankGain * 100) + roomDelta + preferenceAdjustment,
+        material,
+      };
     })
     .filter((candidate) => candidate.material)
     .sort((a, b) => {
       if (Number(b.absorbFlip) !== Number(a.absorbFlip)) return Number(b.absorbFlip) - Number(a.absorbFlip);
       if (b.rankGain !== a.rankGain) return b.rankGain - a.rankGain;
+      if (b.adjustedScore !== a.adjustedScore) return b.adjustedScore - a.adjustedScore;
       return b.roomDelta - a.roomDelta;
     });
 
@@ -652,6 +805,7 @@ function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {} }) {
       suggestedScenario: { ...best.scenario, timing_mode: best.mode },
     }),
     risk_adjusted_headroom_delta: Number(best.roomDelta.toFixed(2)),
+    personalization_note: plannerPreferenceNote(best.mode, timingPreferences),
   };
 }
 
@@ -1177,6 +1331,7 @@ async function evaluateScenarioAffordability({
   const recurringItems = (scope === 'household' && user?.household_id)
     ? await detectRecurringItems(user.household_id)
     : [];
+  const timingPreferences = await ScenarioMemory.summarizeTimingPreferences(user.id).catch(() => ({}));
   const projectionCache = new Map();
 
   async function getProjection(targetMonth) {
@@ -1241,7 +1396,18 @@ async function evaluateScenarioAffordability({
   const recommendation = chooseScenarioRecommendation({
     selectedMode: normalizedTimingMode,
     scenariosByMode,
+    timingPreferences,
   });
+  const selectedScenario = scenariosByMode[normalizedTimingMode];
+  const options = ['now', 'next_period', 'spread_3_periods']
+    .map((mode) => buildScenarioOption({
+      mode,
+      scenario: scenariosByMode[mode],
+      selectedScenario,
+      selectedMode: normalizedTimingMode,
+      recommendationMode: recommendation?.timing_mode || null,
+    }))
+    .filter(Boolean);
 
   return {
     scope: primary.projection.scope,
@@ -1250,6 +1416,7 @@ async function evaluateScenarioAffordability({
     projection: primary.projection,
     scenario: {
       ...scenariosByMode[normalizedTimingMode],
+      options,
       recommendation,
     },
   };
