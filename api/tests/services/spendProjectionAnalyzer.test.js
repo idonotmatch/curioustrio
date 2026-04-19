@@ -369,6 +369,41 @@ describe('spendProjectionAnalyzer', () => {
     expect(result.post_purchase_projected_delta).toBe(50);
   });
 
+  it('returns an early directional scenario when history is still thin', () => {
+    const result = evaluateScenarioAgainstProjection({
+      projection: {
+        overall: {
+          budget_limit: 500,
+          current_spend_to_date: 260,
+          projected_budget_delta: null,
+          confidence: null,
+          historical_period_count: 1,
+          historical_expected_share_by_day: 0.42,
+        },
+      },
+      proposedAmount: 80,
+      label: 'Running shoes',
+      recurringPressure: {
+        count: 1,
+        total_expected_amount: 40,
+        candidates: [{ item_name: 'Detergent', median_amount: 40, next_expected_date: '2026-04-21' }],
+      },
+    });
+
+    expect(result.status).toBe('absorbable');
+    expect(result.can_absorb).toBe(true);
+    expect(result.projection_confidence).toBe('very_low');
+    expect(result.history_stage).toBe('early');
+    expect(result.projected_headroom_amount).toBe(240);
+    expect(result.post_purchase_headroom_amount).toBe(160);
+    expect(result.risk_adjusted_headroom_amount).toBe(120);
+    expect(result.caveats).toEqual(expect.arrayContaining([
+      'Only 1 completed budget period so far.',
+      'Upcoming recurring purchases could still tighten the month.',
+      'Directional read using current spend and about 42% of typical period progress.',
+    ]));
+  });
+
   it('filters completed historical periods based on first expense date and activity', () => {
     const periods = getCompletedHistoricalPeriods({
       targetMonth: '2026-04',

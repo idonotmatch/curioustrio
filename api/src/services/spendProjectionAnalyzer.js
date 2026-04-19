@@ -1,7 +1,7 @@
 const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
-const ScenarioMemory = require('../models/scenarioMemory');
+const { loadTimingPreferences, plannerRecommendationNote } = require('./planningProfileService');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -487,6 +487,98 @@ function buildScenarioCaveats({ overall, recurringPressure }) {
   return caveats;
 }
 
+function currentBudgetHeadroom(overall) {
+  const budgetLimit = Number(overall?.budget_limit || 0);
+  const currentSpend = Number(overall?.current_spend_to_date || 0);
+  if (!(budgetLimit > 0)) return null;
+  return budgetLimit - currentSpend;
+}
+
+function earlyDirectionalScenario({
+  overall,
+  proposedAmount,
+  label,
+  recurringPressureAmount,
+  recurringCandidates,
+  caveats = [],
+}) {
+  const budgetHeadroom = currentBudgetHeadroom(overall);
+  if (budgetHeadroom == null) {
+    return {
+      label,
+      proposed_amount: proposedAmount,
+      status: 'unknown',
+      can_absorb: null,
+      reason: 'insufficient_history',
+      projection_confidence: overall?.confidence ?? null,
+      history_stage: historyStage(overall?.historical_period_count || 0),
+      historical_period_count: Number(overall?.historical_period_count || 0),
+      caveats,
+      projected_headroom_amount: null,
+      post_purchase_projected_delta: null,
+      post_purchase_headroom_amount: null,
+      risk_adjusted_headroom_amount: null,
+      recurring_pressure_count: Number(recurringCandidates?.length || 0),
+      recurring_pressure_amount: recurringPressureAmount,
+      recurring_candidates: recurringCandidates || [],
+    };
+  }
+
+  const projectedHeadroomAmount = Math.max(0, budgetHeadroom);
+  const postPurchaseHeadroomAmount = Math.max(0, projectedHeadroomAmount - proposedAmount);
+  const remainingAfterPurchase = budgetHeadroom - proposedAmount;
+  const riskAdjustedHeadroomAmount = Math.max(0, postPurchaseHeadroomAmount - recurringPressureAmount);
+  const progressShare = Number(overall?.historical_expected_share_by_day || 0);
+
+  let status = 'tight';
+  let canAbsorb = true;
+  let reason = 'early_directional_tight';
+
+  if (remainingAfterPurchase < -75) {
+    status = 'not_absorbable';
+    canAbsorb = false;
+    reason = 'early_directional_over_budget';
+  } else if (remainingAfterPurchase < 0) {
+    status = 'risky';
+    canAbsorb = false;
+    reason = 'early_directional_over_budget';
+  } else if (riskAdjustedHeadroomAmount >= Math.max(50, proposedAmount * 0.35)) {
+    status = 'absorbable';
+    canAbsorb = true;
+    reason = 'early_directional_room_left';
+  } else {
+    status = 'tight';
+    canAbsorb = true;
+    reason = recurringPressureAmount > 0 ? 'early_directional_recurring_pressure' : 'early_directional_tight';
+  }
+
+  const earlyCaveats = [...caveats];
+  earlyCaveats.push(
+    progressShare > 0
+      ? `Directional read using current spend and about ${(progressShare * 100).toFixed(0)}% of typical period progress.`
+      : 'Directional read using current spend and remaining budget room.'
+  );
+
+  return {
+    label,
+    proposed_amount: proposedAmount,
+    status,
+    can_absorb: canAbsorb,
+    reason,
+    projection_confidence: overall?.confidence ?? 'very_low',
+    history_stage: historyStage(overall?.historical_period_count || 0),
+    historical_period_count: Number(overall?.historical_period_count || 0),
+    caveats: earlyCaveats,
+    projected_headroom_amount: projectedHeadroomAmount,
+    post_purchase_projected_delta: remainingAfterPurchase,
+    post_purchase_headroom_amount: postPurchaseHeadroomAmount,
+    risk_adjusted_headroom_amount: riskAdjustedHeadroomAmount,
+    recurring_pressure_count: Number(recurringCandidates?.length || 0),
+    recurring_pressure_amount: recurringPressureAmount,
+    recurring_candidates: recurringCandidates || [],
+  };
+}
+
 function estimateRemainingRecurringPressure({ candidates = [], periodEnd }) {
   const periodEndDate = parseDateOnly(periodEnd);
   const dueCandidates = (candidates || [])
@@ -631,30 +723,6 @@ function plannerPreferenceAdjustment(mode, timingPreferences = {}) {
   else if (followRate <= 0.4 && netSignal <= -1) adjustment -= 6;
 
   return adjustment;
-}
-
-function plannerPreferenceNote(mode, timingPreferences = {}) {
-  const stats = timingPreferences?.[mode];
-  if (!stats) return null;
-
-  const total = Number(stats.total || 0);
-  const compareOptionCount = Number(stats.compare_option_count || 0);
-  const followRate = Number(stats.follow_rate || 0);
-  const netSignal = Number(stats.net_signal || 0);
-  if (total < 3 || compareOptionCount < 2) return null;
-
-  if (followRate >= 0.75 && netSignal >= 2) {
-    switch (mode) {
-      case 'next_period':
-        return 'You usually prefer waiting when it clearly creates more room.';
-      case 'spread_3_periods':
-        return 'You usually prefer spreading purchases out when the pressure is close.';
-      default:
-        return 'You usually prefer keeping purchases in the current period when they still fit cleanly.';
-    }
-  }
-
-  return null;
 }
 
 function scenarioOptionHeadline({ mode, scenario }) {
@@ -805,7 +873,7 @@ function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {}, timi
       suggestedScenario: { ...best.scenario, timing_mode: best.mode },
     }),
     risk_adjusted_headroom_delta: Number(best.roomDelta.toFixed(2)),
-    personalization_note: plannerPreferenceNote(best.mode, timingPreferences),
+    personalization_note: plannerRecommendationNote(best.mode, timingPreferences),
   };
 }
 
@@ -844,9 +912,14 @@ function evaluateScenarioAgainstProjection({
   const caveats = buildScenarioCaveats({ overall, recurringPressure });
 
   if (projectedBudgetDelta == null || confidence == null) {
-    status = 'unknown';
-    canAbsorb = null;
-    reason = 'insufficient_history';
+    return earlyDirectionalScenario({
+      overall,
+      proposedAmount: amount,
+      label,
+      recurringPressureAmount,
+      recurringCandidates: recurringPressure?.candidates || [],
+      caveats,
+    });
   } else if (postPurchaseProjectedDelta > 75) {
     status = 'not_absorbable';
     canAbsorb = false;
@@ -965,6 +1038,7 @@ function projectOverallSpend({
   const totalDays = diffDays(bounds.fromDate, bounds.toDate);
   if (historicalPeriods.length === 0) {
     return {
+      budget_limit: budgetLimit,
       current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
       normal_spend_to_date: null,
       unusual_spend_to_date: null,
@@ -987,6 +1061,7 @@ function projectOverallSpend({
 
   if (historicalPeriods.length < 3) {
     return {
+      budget_limit: budgetLimit,
       current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
       normal_spend_to_date: split.normal_spend_to_date,
       unusual_spend_to_date: split.unusual_spend_to_date,
@@ -1005,6 +1080,7 @@ function projectOverallSpend({
 
   if (!expectedShare || expectedShare < 0.05) {
     return {
+      budget_limit: budgetLimit,
       current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
       normal_spend_to_date: split.normal_spend_to_date,
       unusual_spend_to_date: split.unusual_spend_to_date,
@@ -1037,6 +1113,7 @@ function projectOverallSpend({
   });
 
   return {
+    budget_limit: budgetLimit,
     current_spend_to_date: currentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
     normal_spend_to_date: split.normal_spend_to_date,
     unusual_spend_to_date: split.unusual_spend_to_date,
@@ -1331,7 +1408,7 @@ async function evaluateScenarioAffordability({
   const recurringItems = (scope === 'household' && user?.household_id)
     ? await detectRecurringItems(user.household_id)
     : [];
-  const timingPreferences = await ScenarioMemory.summarizeTimingPreferences(user.id).catch(() => ({}));
+  const timingPreferences = await loadTimingPreferences(user.id);
   const projectionCache = new Map();
 
   async function getProjection(targetMonth) {

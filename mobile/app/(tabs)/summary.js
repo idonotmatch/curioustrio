@@ -81,6 +81,35 @@ function insightEventMetadata(insight, surface = 'summary') {
   };
 }
 
+function buildRecurringItemPreload(insight) {
+  const metadata = insight?.metadata || {};
+  const merchantBreakdown = Array.isArray(metadata.merchant_breakdown) ? metadata.merchant_breakdown : [];
+  const merchants = Array.isArray(metadata.merchants)
+    ? metadata.merchants.filter(Boolean)
+    : merchantBreakdown.map((entry) => entry?.merchant).filter(Boolean);
+  const fallbackMerchant = metadata.latest_merchant || metadata.merchant || null;
+
+  return {
+    group_key: metadata.group_key || null,
+    item_name: metadata.item_name || insight?.title || 'Recurring item',
+    brand: metadata.brand || null,
+    average_gap_days: metadata.average_gap_days ?? null,
+    occurrence_count: metadata.occurrence_count ?? metadata.expense_count ?? null,
+    median_amount: metadata.median_amount ?? metadata.average_amount ?? null,
+    median_unit_price: metadata.median_unit_price ?? null,
+    last_purchased_at: metadata.last_purchased_at || metadata.last_seen_at || null,
+    next_expected_date: metadata.next_expected_date || null,
+    merchants: merchants.length ? merchants : (fallbackMerchant ? [fallbackMerchant] : []),
+    merchant_price_history: merchantBreakdown.map((entry) => ({
+      merchant: entry?.merchant || 'Unknown merchant',
+      occurrence_count: entry?.occurrence_count ?? entry?.count ?? 1,
+      median_amount: entry?.median_amount ?? entry?.average_amount ?? entry?.amount ?? null,
+      median_unit_price: entry?.median_unit_price ?? null,
+    })),
+    purchases: Array.isArray(metadata.purchases) ? metadata.purchases : [],
+  };
+}
+
 function parseScenarioInput(raw, { allowHousehold = false } = {}) {
   const trimmed = `${raw || ''}`.trim();
   if (!trimmed) return null;
@@ -215,7 +244,7 @@ export default function SummaryScreen() {
     insightNavigationResetRef.current = setTimeout(() => {
       insightNavigationResetRef.current = null;
       setOpeningInsightId('');
-    }, 1500);
+    }, 4000);
   }, []);
 
   const loadGmailImportSummary = useCallback(async () => {
@@ -312,6 +341,7 @@ export default function SummaryScreen() {
     }
 
     if (insight?.entity_type === 'item' && insight?.metadata?.group_key) {
+      const preloadHistory = buildRecurringItemPreload(insight);
       router.push({
         pathname: '/recurring-item',
         params: {
@@ -322,6 +352,7 @@ export default function SummaryScreen() {
           insight_type: insight.type,
           body: insight.body,
           metadata: JSON.stringify(insight.metadata || {}),
+          preload_history: JSON.stringify(preloadHistory),
         },
       });
       return;

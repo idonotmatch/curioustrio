@@ -1,5 +1,6 @@
 const ScenarioMemory = require('../models/scenarioMemory');
 const { evaluateScenarioAffordability } = require('./spendProjectionAnalyzer');
+const { loadTimingPreferences, watchTimingPreferenceNote } = require('./planningProfileService');
 
 const STATUS_SCORE = {
   unknown: 0,
@@ -24,31 +25,12 @@ function detectMaterialChange(memory, scenario) {
   return 'unchanged';
 }
 
-function timingPreferenceNoteForMode(mode, timingPreferences = {}) {
-  const stats = timingPreferences?.[mode];
-  if (!stats) return null;
-  const total = Number(stats.total || 0);
-  const compareOptionCount = Number(stats.compare_option_count || 0);
-  const followRate = Number(stats.follow_rate || 0);
-  const netSignal = Number(stats.net_signal || 0);
-  if (total < 3 || compareOptionCount < 2 || followRate < 0.75 || netSignal < 2) return null;
-
-  switch (mode) {
-    case 'next_period':
-      return 'You usually revisit these in the next period when room opens up.';
-    case 'spread_3_periods':
-      return 'You usually prefer spacing these out when the month is close.';
-    default:
-      return 'You usually keep these in the current period when they still fit cleanly.';
-  }
-}
-
 async function decoratePlansWithTimingPreference(userId, items = []) {
   if (!Array.isArray(items) || items.length === 0) return [];
-  const timingPreferences = await ScenarioMemory.summarizeTimingPreferences(userId).catch(() => ({}));
+  const timingPreferences = await loadTimingPreferences(userId);
   return items.map((item) => ({
     ...item,
-    timing_preference_note: timingPreferenceNoteForMode(item?.timing_mode || 'now', timingPreferences),
+    timing_preference_note: watchTimingPreferenceNote(item?.timing_mode || 'now', timingPreferences),
   }));
 }
 
@@ -74,7 +56,6 @@ async function refreshConsideringScenarios(user, { limit = 5 } = {}) {
 
 module.exports = {
   detectMaterialChange,
-  timingPreferenceNoteForMode,
   decoratePlansWithTimingPreference,
   refreshConsideringScenarios,
 };

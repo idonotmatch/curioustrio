@@ -8,7 +8,7 @@ const { inferOutcomeEventsForUser, summarizeOutcomeWindows } = require('./insigh
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
 const Household = require('../models/household');
-const ScenarioMemory = require('../models/scenarioMemory');
+const { loadTimingPreferences, strongTimingPreferenceStats, insightTimingPreferenceNote } = require('./planningProfileService');
 const { summarizeFeedbackEvents, feedbackAdjustmentForInsight, shouldSuppressInsight, normalizeLineageKey } = require('./insightFeedbackSummary');
 const { buildInsightPreferenceSummary, preferenceAdjustmentForInsight } = require('./insightPreferenceSummary');
 const {
@@ -1010,26 +1010,15 @@ function scopeHierarchyAdjustment(insight) {
   return 0;
 }
 
-function plannerTimingPreferenceStats(mode, timingPreferences = {}) {
-  const stats = timingPreferences?.[mode];
-  if (!stats) return null;
-  const total = Number(stats.total || 0);
-  const compareOptionCount = Number(stats.compare_option_count || 0);
-  const followRate = Number(stats.follow_rate || 0);
-  const netSignal = Number(stats.net_signal || 0);
-  if (total < 3 || compareOptionCount < 2 || followRate < 0.75 || netSignal < 2) return null;
-  return { total, compareOptionCount, followRate, netSignal };
-}
-
 function plannerTimingAdjustmentForInsight(insight, timingPreferences = {}) {
   const type = `${insight?.type || ''}`.trim();
   const scope = `${insight?.metadata?.scope || ''}`.trim();
   if (scope !== 'personal') return 0;
 
   if (type === 'recurring_restock_window') {
-    const prefersNow = plannerTimingPreferenceStats('now', timingPreferences);
-    const prefersNextPeriod = plannerTimingPreferenceStats('next_period', timingPreferences);
-    const prefersSpread = plannerTimingPreferenceStats('spread_3_periods', timingPreferences);
+    const prefersNow = strongTimingPreferenceStats('now', timingPreferences);
+    const prefersNextPeriod = strongTimingPreferenceStats('next_period', timingPreferences);
+    const prefersSpread = strongTimingPreferenceStats('spread_3_periods', timingPreferences);
     const daysUntilDue = Number(insight?.metadata?.days_until_due || 0);
     const severity = `${insight?.severity || ''}`.trim();
 
@@ -1039,8 +1028,8 @@ function plannerTimingAdjustmentForInsight(insight, timingPreferences = {}) {
   }
 
   if (type === 'recurring_repurchase_due') {
-    const prefersNow = plannerTimingPreferenceStats('now', timingPreferences);
-    const prefersNextPeriod = plannerTimingPreferenceStats('next_period', timingPreferences);
+    const prefersNow = strongTimingPreferenceStats('now', timingPreferences);
+    const prefersNextPeriod = strongTimingPreferenceStats('next_period', timingPreferences);
     const daysUntilDue = Number(insight?.metadata?.days_until_due || 0);
     const severity = `${insight?.severity || ''}`.trim();
 
@@ -1049,9 +1038,9 @@ function plannerTimingAdjustmentForInsight(insight, timingPreferences = {}) {
   }
 
   if (type === 'buy_soon_better_price' || type === 'item_staple_merchant_opportunity') {
-    const prefersNow = plannerTimingPreferenceStats('now', timingPreferences);
-    const prefersNextPeriod = plannerTimingPreferenceStats('next_period', timingPreferences);
-    const prefersSpread = plannerTimingPreferenceStats('spread_3_periods', timingPreferences);
+    const prefersNow = strongTimingPreferenceStats('now', timingPreferences);
+    const prefersNextPeriod = strongTimingPreferenceStats('next_period', timingPreferences);
+    const prefersSpread = strongTimingPreferenceStats('spread_3_periods', timingPreferences);
     const daysUntilDue = Number(insight?.metadata?.days_until_due || 0);
 
     if (prefersNow && daysUntilDue >= 0 && daysUntilDue <= 3) return 8;
@@ -1065,38 +1054,7 @@ function plannerTimingNoteForInsight(insight, timingPreferences = {}) {
   const type = `${insight?.type || ''}`.trim();
   const scope = `${insight?.metadata?.scope || ''}`.trim();
   if (scope !== 'personal') return null;
-
-  if (type === 'recurring_restock_window') {
-    if (plannerTimingPreferenceStats('next_period', timingPreferences)) {
-      return 'You usually wait for the next period unless the need is immediate.';
-    }
-    if (plannerTimingPreferenceStats('spread_3_periods', timingPreferences)) {
-      return 'You usually prefer spacing purchases out when the month is close.';
-    }
-    if (plannerTimingPreferenceStats('now', timingPreferences)) {
-      return 'You usually act in the current period when something still fits cleanly.';
-    }
-  }
-
-  if (type === 'recurring_repurchase_due') {
-    if (plannerTimingPreferenceStats('next_period', timingPreferences)) {
-      return 'You usually wait a bit longer unless the item is due right away.';
-    }
-    if (plannerTimingPreferenceStats('now', timingPreferences)) {
-      return 'You usually handle due-soon staples in the current period.';
-    }
-  }
-
-  if (type === 'buy_soon_better_price' || type === 'item_staple_merchant_opportunity') {
-    if (plannerTimingPreferenceStats('next_period', timingPreferences)) {
-      return 'You usually wait for a cleaner budget window before stocking up.';
-    }
-    if (plannerTimingPreferenceStats('now', timingPreferences)) {
-      return 'You usually act on good timing when a staple is already in range.';
-    }
-  }
-
-  return null;
+  return insightTimingPreferenceNote(type, timingPreferences);
 }
 
 function annotateInsightWithPlannerTiming(insight, timingPreferences = {}) {
@@ -1966,9 +1924,7 @@ async function buildInsights({ user, limit = 10 }) {
   let householdWatchCandidates = [];
   const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
   const hasMultipleHouseholdMembers = householdMembers.length > 1;
-  const timingPreferences = user?.id
-    ? await ScenarioMemory.summarizeTimingPreferences(user.id).catch(() => ({}))
-    : {};
+  const timingPreferences = await loadTimingPreferences(user?.id);
 
   if (user?.household_id) {
     insightSets.push(await loadItemHistoryInsightsBestEffort(user.household_id, {

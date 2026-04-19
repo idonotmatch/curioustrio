@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { api } from '../services/api';
+import { loadWithCache } from '../services/cache';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -34,6 +35,15 @@ function parseMetadata(value) {
     return JSON.parse(value);
   } catch {
     return {};
+  }
+}
+
+function parsePayload(value, fallback = null) {
+  if (!value || typeof value !== 'string') return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
   }
 }
 
@@ -98,9 +108,14 @@ export default function RecurringItemScreen() {
     insight_type: insightType = '',
     body = '',
     metadata: metadataParam = '',
+    preload_history: preloadHistoryParam = '',
   } = useLocalSearchParams();
-  const [history, setHistory] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const preloadHistory = useMemo(
+    () => parsePayload(Array.isArray(preloadHistoryParam) ? preloadHistoryParam[0] : preloadHistoryParam, null),
+    [preloadHistoryParam]
+  );
+  const [history, setHistory] = useState(preloadHistory || null);
+  const [loading, setLoading] = useState(!preloadHistory);
   const [error, setError] = useState('');
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
@@ -122,23 +137,34 @@ export default function RecurringItemScreen() {
         setLoading(false);
         return;
       }
+      const normalizedScope = `${Array.isArray(scope) ? scope[0] : scope}` === 'personal' ? 'personal' : 'household';
+      const cacheKey = `cache:recurring-item:${normalizedScope}:${groupKey}`;
       try {
-        setLoading(true);
-        const normalizedScope = `${Array.isArray(scope) ? scope[0] : scope}` === 'personal' ? 'personal' : 'household';
-        const data = await api.get(`/recurring/item-history?group_key=${encodeURIComponent(groupKey)}&scope=${encodeURIComponent(normalizedScope)}`);
-        if (!cancelled) {
-          setHistory(data);
-          setError('');
-        }
+        if (!cancelled && !preloadHistory) setLoading(true);
+        await loadWithCache(
+          cacheKey,
+          () => api.get(`/recurring/item-history?group_key=${encodeURIComponent(groupKey)}&scope=${encodeURIComponent(normalizedScope)}`),
+          (data) => {
+            if (cancelled) return;
+            setHistory(data);
+            setError('');
+            setLoading(false);
+          },
+          (err) => {
+            if (cancelled) return;
+            setError(err?.message || 'Could not load recurring item history');
+            setLoading(false);
+          }
+        );
       } catch (err) {
         if (!cancelled) setError(err.message || 'Could not load recurring item history');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && preloadHistory) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [groupKey]);
+  }, [groupKey, preloadHistory, scope]);
 
   async function submitFeedback(eventType) {
     if (!insightId || !eventType || feedbackStatus === eventType) return;
