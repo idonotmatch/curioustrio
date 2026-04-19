@@ -121,6 +121,20 @@ function parseScenarioInput(raw, { allowHousehold = false } = {}) {
   };
 }
 
+function buildPreloadedCategoryExpenses(insight, personalExpenses = [], householdExpenses = []) {
+  const categoryKey = `${insight?.metadata?.category_key || ''}`.trim();
+  const month = `${insight?.metadata?.month || ''}`.trim();
+  if (!categoryKey || !month) return [];
+
+  const source = `${insight?.metadata?.scope || 'personal'}` === 'household'
+    ? householdExpenses
+    : personalExpenses;
+
+  return source
+    .filter((expense) => `${expense?.category_id || ''}` === categoryKey && `${expense?.date || ''}`.slice(0, 7) === month)
+    .slice(0, 8);
+}
+
 export default function SummaryScreen() {
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
@@ -164,6 +178,25 @@ export default function SummaryScreen() {
     ? Math.max(0, windowWidth - 40)
     : Math.max(280, windowWidth - 88);
   const loggedShownInsightIds = useRef(new Set());
+  const insightNavigationResetRef = useRef(null);
+  const [openingInsightId, setOpeningInsightId] = useState('');
+
+  const releaseInsightNavigationLock = useCallback(() => {
+    if (insightNavigationResetRef.current) {
+      clearTimeout(insightNavigationResetRef.current);
+      insightNavigationResetRef.current = null;
+    }
+    setOpeningInsightId('');
+  }, []);
+
+  const lockInsightNavigation = useCallback((insightId) => {
+    setOpeningInsightId(insightId);
+    if (insightNavigationResetRef.current) clearTimeout(insightNavigationResetRef.current);
+    insightNavigationResetRef.current = setTimeout(() => {
+      insightNavigationResetRef.current = null;
+      setOpeningInsightId('');
+    }, 1500);
+  }, []);
 
   const loadGmailImportSummary = useCallback(async () => {
     try {
@@ -184,6 +217,7 @@ export default function SummaryScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    releaseInsightNavigationLock();
     refreshExpenses();
     refreshPersonalBudget();
     if (isMultiMember) refreshHouseholdExpenses();
@@ -202,7 +236,15 @@ export default function SummaryScreen() {
     loadWatchedPlans,
     refreshInsights,
     isMultiMember,
+    releaseInsightNavigationLock,
   ]));
+
+  useEffect(() => () => {
+    if (insightNavigationResetRef.current) {
+      clearTimeout(insightNavigationResetRef.current);
+      insightNavigationResetRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (__DEV__ && insights.length === 0) return;
@@ -238,6 +280,8 @@ export default function SummaryScreen() {
 
   async function handlePressInsight(insight) {
     if (!insight?.id) return;
+    if (openingInsightId) return;
+    lockInsightNavigation(insight.id);
     const isMockInsight = __DEV__ && insights.length === 0;
     if (!isMockInsight) {
       await logEvents([{
@@ -305,6 +349,7 @@ export default function SummaryScreen() {
     ]);
 
     if (trendInsightTypes.has(insight?.type) && insight?.metadata?.month) {
+      const preloadedCategoryExpenses = buildPreloadedCategoryExpenses(insight, expenses, householdExpenses);
       router.push({
         pathname: '/trend-detail',
         params: {
@@ -313,6 +358,7 @@ export default function SummaryScreen() {
           insight_type: insight.type,
           category_key: insight.metadata?.category_key || '',
           insight_metadata: JSON.stringify(insight.metadata || {}),
+          preload_category_expenses: JSON.stringify(preloadedCategoryExpenses),
           title: insight.title,
           insight_id: insight.id,
           mock: isMockInsight ? '1' : '',
@@ -671,6 +717,7 @@ export default function SummaryScreen() {
                 width={insightCardWidth}
                 onPress={handlePressInsight}
                 onDismiss={handleDismissInsight}
+                disabled={Boolean(openingInsightId)}
               />
             ))}
           </ScrollView>

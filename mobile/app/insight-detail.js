@@ -48,10 +48,17 @@ function normalizeMerchant(value) {
   return `${value || ''}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function isUnknownMerchantValue(value) {
+  const normalized = normalizeMerchant(value);
+  return !normalized || normalized === 'unknown' || normalized === 'unknownmerchant';
+}
+
 function expenseMatchesMerchant(expense, metadata = {}) {
   const merchantKey = normalizeMerchant(metadata.merchant_key || metadata.merchant_name);
   if (!merchantKey) return false;
-  return normalizeMerchant(expense?.merchant).includes(merchantKey) || merchantKey.includes(normalizeMerchant(expense?.merchant));
+  const expenseMerchant = normalizeMerchant(expense?.merchant);
+  if (!expenseMerchant || isUnknownMerchantValue(expense?.merchant)) return false;
+  return expenseMerchant.includes(merchantKey) || merchantKey.includes(expenseMerchant);
 }
 
 function metadataHighlights(metadata = {}) {

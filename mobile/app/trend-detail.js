@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
+import { loadWithCache } from '../services/cache';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 
 const FEEDBACK_REASONS = [
@@ -328,6 +329,153 @@ function supportingDetailSummary(trend, { categoryKey = '' } = {}) {
   return summaryBits.slice(0, 4).join(' · ');
 }
 
+function parseJsonParam(value, fallback = null) {
+  if (!value) return fallback;
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(`${raw}`);
+  } catch {
+    return fallback;
+  }
+}
+
+function buildTrendFromInsightMetadata(metadata = {}, scope = 'personal', month = '') {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const resolvedMonth = metadata.month || month || null;
+  const resolvedScope = metadata.scope || scope || 'personal';
+  const hasProjection =
+    metadata.adjusted_projected_total != null
+    || metadata.baseline_projected_total != null
+    || metadata.projected_budget_delta != null
+    || metadata.unusual_spend_to_date != null
+    || metadata.top_unusual_expense;
+  const hasPace =
+    metadata.current_spend_to_date != null
+    || metadata.historical_spend_to_date_avg != null
+    || metadata.delta_amount != null
+    || metadata.delta_percent != null
+    || metadata.projected_period_total != null
+    || metadata.one_off_delta_amount != null
+    || metadata.recurring_delta_amount != null;
+  const hasBudget =
+    metadata.projected_over_under != null
+    || metadata.budget_limit != null
+    || metadata.average_actual_spend_last_6 != null
+    || metadata.budget_fit;
+  const hasCategory =
+    metadata.category_key
+    || metadata.category_name;
+
+  if (!resolvedMonth || (!hasProjection && !hasPace && !hasBudget && !hasCategory)) return null;
+
+  const categoryProjection = hasCategory ? {
+    category_key: metadata.category_key || '',
+    category_name: metadata.category_name || 'Category',
+    adjusted_projected_total: Number(metadata.adjusted_projected_total || 0),
+    baseline_projected_total: Number(metadata.baseline_projected_total || 0),
+    historical_average_total: Number(
+      metadata.historical_average_total
+      ?? metadata.baseline_projected_total
+      ?? 0
+    ),
+    unusual_spend_to_date: Number(metadata.unusual_spend_to_date || 0),
+    delta_amount: Number(metadata.delta_amount || 0),
+    delta_percent: Number(metadata.delta_percent || 0),
+    confidence: metadata.confidence || null,
+    historical_period_count: Number(metadata.historical_period_count || 0),
+  } : null;
+
+  const topDriver = hasCategory ? {
+    category_key: metadata.category_key || '',
+    category_name: metadata.category_name || 'Category',
+    current_spend_to_date: Number(
+      metadata.current_spend_to_date
+      ?? metadata.current_spend
+      ?? 0
+    ),
+    historical_spend_to_date_avg: Number(metadata.historical_spend_to_date_avg || 0),
+    delta_amount: Number(metadata.delta_amount || 0),
+    delta_percent: Number(metadata.delta_percent || 0),
+  } : null;
+
+  const topUnusualExpenses = [];
+  if (metadata.top_unusual_expense) topUnusualExpenses.push(metadata.top_unusual_expense);
+  if (Array.isArray(metadata.top_unusual_expenses)) topUnusualExpenses.push(...metadata.top_unusual_expenses);
+
+  return {
+    period: {
+      month: resolvedMonth,
+    },
+    pace: {
+      current_spend_to_date: Number(
+        metadata.current_spend_to_date
+        ?? metadata.current_spend
+        ?? 0
+      ),
+      historical_spend_to_date_avg: Number(metadata.historical_spend_to_date_avg || 0),
+      delta_amount: Number(metadata.delta_amount || 0),
+      delta_percent: Number(metadata.delta_percent || 0),
+      projected_period_total: Number(
+        metadata.projected_period_total
+        ?? metadata.adjusted_projected_total
+        ?? 0
+      ),
+      historical_period_count: Number(metadata.historical_period_count || 0),
+      top_drivers: topDriver ? [topDriver] : [],
+      variance_breakdown: {
+        one_off_delta_amount: Number(metadata.one_off_delta_amount || 0),
+        recurring_delta_amount: Number(metadata.recurring_delta_amount || 0),
+        top_one_off_merchants: Array.isArray(metadata.top_one_off_merchants) ? metadata.top_one_off_merchants : [],
+      },
+    },
+    budget_adherence: {
+      budget_limit: metadata.budget_limit != null ? Number(metadata.budget_limit) : null,
+      projected_over_under: metadata.projected_over_under != null
+        ? Number(metadata.projected_over_under)
+        : metadata.projected_budget_delta != null
+          ? Number(metadata.projected_budget_delta)
+          : null,
+      budget_fit: metadata.budget_fit || null,
+      historical_period_count: Number(metadata.historical_period_count || 0),
+      average_actual_spend_last_6: metadata.average_actual_spend_last_6 != null
+        ? Number(metadata.average_actual_spend_last_6)
+        : null,
+      over_budget_periods_last_6: metadata.over_budget_periods_last_6 != null
+        ? Number(metadata.over_budget_periods_last_6)
+        : null,
+      under_budget_periods_last_6: metadata.under_budget_periods_last_6 != null
+        ? Number(metadata.under_budget_periods_last_6)
+        : null,
+    },
+    projection: {
+      overall: {
+        current_spend_to_date: Number(
+          metadata.current_spend_to_date
+          ?? metadata.current_spend
+          ?? 0
+        ),
+        normal_spend_to_date: metadata.normal_spend_to_date != null ? Number(metadata.normal_spend_to_date) : null,
+        unusual_spend_to_date: Number(metadata.unusual_spend_to_date || 0),
+        historical_expected_share_by_day: metadata.historical_expected_share_by_day != null
+          ? Number(metadata.historical_expected_share_by_day)
+          : null,
+        baseline_projected_total: Number(metadata.baseline_projected_total || 0),
+        adjusted_projected_total: Number(metadata.adjusted_projected_total || 0),
+        projection_excluding_unusuals: metadata.projection_excluding_unusuals != null
+          ? Number(metadata.projection_excluding_unusuals)
+          : Number(metadata.baseline_projected_total || 0),
+        projected_budget_delta: metadata.projected_budget_delta != null ? Number(metadata.projected_budget_delta) : null,
+        confidence: metadata.confidence || null,
+        historical_period_count: Number(metadata.historical_period_count || 0),
+        top_unusual_expenses: topUnusualExpenses.filter(Boolean),
+      },
+      categories: categoryProjection ? [categoryProjection] : [],
+    },
+    scope: resolvedScope,
+  };
+}
+
 export default function TrendDetailScreen() {
   const router = useRouter();
   const {
@@ -336,12 +484,22 @@ export default function TrendDetailScreen() {
     insight_type: insightType = '',
     category_key: categoryKey = '',
     insight_metadata: insightMetadataParam = '',
+    preload_category_expenses: preloadCategoryExpensesParam = '',
     title,
     insight_id: insightId = '',
     mock = '',
   } = useLocalSearchParams();
-  const [trend, setTrend] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const insightMetadata = useMemo(() => parseJsonParam(insightMetadataParam, {}), [insightMetadataParam]);
+  const preloadedCategoryExpenses = useMemo(() => {
+    const rows = parseJsonParam(preloadCategoryExpensesParam, []);
+    return Array.isArray(rows) ? rows : [];
+  }, [preloadCategoryExpensesParam]);
+  const fallbackTrend = useMemo(
+    () => buildTrendFromInsightMetadata(insightMetadata, `${scope}`, `${month}`),
+    [insightMetadata, scope, month]
+  );
+  const [trend, setTrend] = useState(() => (`${mock}` === '1' ? buildMockTrend(scope, month) : fallbackTrend));
+  const [loading, setLoading] = useState(() => (`${mock}` === '1' ? false : !fallbackTrend));
   const [error, setError] = useState('');
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
@@ -351,10 +509,10 @@ export default function TrendDetailScreen() {
   const [categoryReviewStatus, setCategoryReviewStatus] = useState('');
   const [recurringReviewStatus, setRecurringReviewStatus] = useState('');
   const [showSupportingDetail, setShowSupportingDetail] = useState(false);
-  const [categoryExpenses, setCategoryExpenses] = useState([]);
+  const [categoryExpenses, setCategoryExpenses] = useState(() => preloadedCategoryExpenses);
   const [categoryExpensesLoading, setCategoryExpensesLoading] = useState(false);
   const primaryAction = useMemo(
-    () => primaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
+    () => getPrimaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
     [insightType, scope, month, categoryKey, trend]
   );
 
@@ -368,32 +526,51 @@ export default function TrendDetailScreen() {
         return;
       }
       if (`${mock}` === '1') {
-        setTrend(buildMockTrend(scope, month));
+        const mockTrend = buildMockTrend(scope, month);
+        setTrend(mockTrend);
         setError('');
         setLoading(false);
         return;
       }
       try {
-        setLoading(true);
-        const params = new URLSearchParams({
-          scope: `${scope}` === 'household' ? 'household' : 'personal',
-          month: `${month}`,
-        });
-        const data = await api.get(`/trends/summary?${params.toString()}`);
-        if (!cancelled) {
-          setTrend(data);
-          setError('');
-        }
+        if (!fallbackTrend) setLoading(true);
+        const cacheKey = `cache:trend-detail:${`${scope}` === 'household' ? 'household' : 'personal'}:${month}`;
+        await loadWithCache(
+          cacheKey,
+          async () => {
+            const params = new URLSearchParams({
+              scope: `${scope}` === 'household' ? 'household' : 'personal',
+              month: `${month}`,
+            });
+            return api.get(`/trends/summary?${params.toString()}`);
+          },
+          (data) => {
+            if (!cancelled && data) {
+              setTrend(data);
+              setError('');
+              setLoading(false);
+            }
+          },
+          (err) => {
+            if (!cancelled) {
+              if (!fallbackTrend) setError(err.message || 'Could not load trend detail');
+              setLoading(false);
+            }
+          }
+        );
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Could not load trend detail');
+        if (!cancelled) {
+          if (!fallbackTrend) setError(err.message || 'Could not load trend detail');
+          setLoading(false);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && fallbackTrend) setLoading(false);
       }
     }
 
     load();
     return () => { cancelled = true; };
-  }, [scope, month, mock]);
+  }, [scope, month, mock, fallbackTrend]);
 
   const highlightedDriver = useMemo(
     () => trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey) || null,
@@ -434,14 +611,6 @@ export default function TrendDetailScreen() {
       worthWatching: worthWatching.slice(0, 3),
     };
   }, [unusualExpenses]);
-  const insightMetadata = useMemo(() => {
-    if (!insightMetadataParam) return {};
-    try {
-      return JSON.parse(`${insightMetadataParam}`);
-    } catch {
-      return {};
-    }
-  }, [insightMetadataParam]);
   const recurringSpikeSignals = useMemo(() => {
     if (`${mock}` === '1') {
       return [
@@ -480,7 +649,7 @@ export default function TrendDetailScreen() {
     async function loadCategoryExpenses() {
       if (!month || !categoryKey || !supportsCategoryReview) {
         setCategoryExpensesLoading(false);
-        setCategoryExpenses([]);
+        setCategoryExpenses(preloadedCategoryExpenses);
         return;
       }
       if (`${mock}` === '1') {
@@ -489,24 +658,44 @@ export default function TrendDetailScreen() {
         return;
       }
       try {
-        setCategoryExpensesLoading(true);
-        const params = new URLSearchParams({
-          month: `${month}`,
-          category_id: `${categoryKey}`,
-        });
-        const endpoint = `${scope}` === 'household' ? '/expenses/household' : '/expenses';
-        const rows = await api.get(`${endpoint}?${params.toString()}`);
-        if (!cancelled) setCategoryExpenses(Array.isArray(rows) ? rows.slice(0, 8) : []);
+        if (!preloadedCategoryExpenses.length) setCategoryExpensesLoading(true);
+        const cacheKey = `cache:trend-category-expenses:${`${scope}` === 'household' ? 'household' : 'personal'}:${month}:${categoryKey}`;
+        await loadWithCache(
+          cacheKey,
+          async () => {
+            const params = new URLSearchParams({
+              month: `${month}`,
+              category_id: `${categoryKey}`,
+            });
+            const endpoint = `${scope}` === 'household' ? '/expenses/household' : '/expenses';
+            return api.get(`${endpoint}?${params.toString()}`);
+          },
+          (rows) => {
+            if (!cancelled) {
+              setCategoryExpenses(Array.isArray(rows) ? rows.slice(0, 8) : []);
+              setCategoryExpensesLoading(false);
+            }
+          },
+          () => {
+            if (!cancelled) {
+              if (!preloadedCategoryExpenses.length) setCategoryExpenses([]);
+              setCategoryExpensesLoading(false);
+            }
+          }
+        );
       } catch {
-        if (!cancelled) setCategoryExpenses([]);
+        if (!cancelled) {
+          if (!preloadedCategoryExpenses.length) setCategoryExpenses([]);
+          setCategoryExpensesLoading(false);
+        }
       } finally {
-        if (!cancelled) setCategoryExpensesLoading(false);
+        if (!cancelled && preloadedCategoryExpenses.length) setCategoryExpensesLoading(false);
       }
     }
 
     loadCategoryExpenses();
     return () => { cancelled = true; };
-  }, [categoryKey, month, mock, scope, supportsCategoryReview]);
+  }, [categoryKey, month, mock, scope, supportsCategoryReview, preloadedCategoryExpenses]);
   const categoryMerchantSummary = useMemo(() => {
     const totals = new Map();
     for (const expense of categoryExpenses) {

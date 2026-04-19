@@ -98,16 +98,18 @@ function shouldShowPrimaryMetric(insight, primaryMetric) {
   return !body.includes(metricValue);
 }
 
-export function InsightCard({ insight, width, onPress, onDismiss }) {
+export function InsightCard({ insight, width, onPress, onDismiss, disabled = false }) {
   const tone = insightToneStyles(insight);
   const primaryMetric = getInsightPrimaryMetric(insight);
   const showPrimaryMetric = shouldShowPrimaryMetric(insight, primaryMetric);
 
   return (
     <TouchableOpacity
-      style={[styles.insightCard, tone.card, { width }]}
+      style={[styles.insightCard, tone.card, disabled && styles.insightCardDisabled, { width }]}
       activeOpacity={0.92}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={() => onPress?.(insight)}
     >
       <View style={styles.insightHeader}>
@@ -125,6 +127,7 @@ export function InsightCard({ insight, width, onPress, onDismiss }) {
               event?.stopPropagation?.();
               onDismiss?.(insight);
             }}
+            disabled={disabled}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel={`Dismiss insight: ${insight.title}`}
@@ -169,6 +172,7 @@ const styles = StyleSheet.create({
   insightCardSetup: { backgroundColor: '#12120f', borderColor: '#2b2818' },
   insightCardLearning: { backgroundColor: '#101512', borderColor: '#1d3424' },
   insightCardExplain: { backgroundColor: '#111214', borderColor: '#20252b' },
+  insightCardDisabled: { opacity: 0.72 },
   insightHeader: { gap: 10 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   insightMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
