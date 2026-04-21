@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
 import { stashNavigationPayload } from '../services/navigationPayloadStore';
+import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -91,15 +92,18 @@ function AppNavigator() {
         // Non-fatal
       }
 
-      const payloadKey = stashNavigationPayload({ metadata }, 'push-insight');
-
       if (RECURRING_PUSH_INSIGHT_TYPES.has(insightType) && groupKey) {
+        const preloadHistory = buildRecurringItemPreload({
+          title: firstValue(data.title, content.title || 'Recurring item'),
+          metadata,
+        });
+        const payloadKey = stashNavigationPayload({ metadata, preloadHistory }, 'push-recurring-item');
         router.push({
           pathname: '/recurring-item',
           params: {
             group_key: groupKey,
             scope: firstValue(data.scope, metadata.scope || 'personal'),
-            title: firstValue(data.title, content.title || 'Recurring item'),
+            title: metadata.item_name || firstValue(data.title, content.title || 'Recurring item'),
             insight_id: insightId,
             insight_type: insightType,
             body: firstValue(data.body, content.body || ''),
@@ -109,6 +113,7 @@ function AppNavigator() {
         return;
       }
 
+      const payloadKey = stashNavigationPayload({ metadata }, 'push-insight');
       router.push({
         pathname: '/insight-detail',
         params: {
