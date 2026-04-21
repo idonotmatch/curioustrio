@@ -95,6 +95,7 @@ function toInsight(signal, scope = 'household') {
     metadata: {
       ...signal,
       scope,
+      continuity_key: `recurring_signal:${scope}:${signal.group_key}:${signal.signal}`,
     },
     actions: [],
   };
@@ -128,6 +129,7 @@ function toRepurchaseDueInsight(candidate, scope = 'household') {
     metadata: {
       ...candidate,
       scope,
+      continuity_key: `recurring_due:${scope}:${candidate.group_key}`,
     },
     actions: [],
   };
@@ -153,6 +155,7 @@ function toBuySoonBetterPriceInsight(opportunity, scope = 'household') {
     metadata: {
       ...opportunity,
       scope,
+      continuity_key: `recurring_buy_opportunity:${scope}:${opportunity.group_key}`,
     },
     actions: [],
   };
@@ -397,6 +400,7 @@ function buildRestockWindowInsights({ projection, watchCandidates = [], scope = 
       projected_headroom_amount: projectedHeadroomAmount,
       projected_budget_delta: projectedBudgetDelta,
       projection_confidence: overall.confidence,
+      continuity_key: `recurring_restock:${scope}:${candidate.group_key}`,
     },
     actions: [],
   });
@@ -512,6 +516,7 @@ function buildTrendInsights(trend, scope) {
         one_off_delta_amount: oneOffDeltaAmount,
         recurring_delta_amount: recurringDeltaAmount,
         top_one_off_merchants: topOneOffMerchants,
+        continuity_key: `one_off_variance:${scopeLabel}:${trend.month}`,
       },
       actions: [],
     });
@@ -549,6 +554,7 @@ function buildTrendInsights(trend, scope) {
         budget_fit: budgetFit,
         maturity: 'mature',
         confidence: 'comparative',
+        continuity_key: `budget_fit:${scopeLabel}:total`,
       },
       actions: [],
     });
@@ -660,6 +666,7 @@ function buildProjectionInsights(projection, scope) {
         adjusted_projected_total: adjustedProjectedTotal,
         baseline_projected_total: Number(overall.baseline_projected_total || 0),
         confidence: overall.confidence,
+        continuity_key: `projection_one_off:${scopeLabel}:${projection.month}`,
       },
       actions: [],
     });
@@ -1320,6 +1327,7 @@ async function buildInsights({ user, limit = 10 }) {
           total_delta_amount: Number(totalRecurringDelta.toFixed(2)),
           items: topItems,
           recurring_spike_signals: topSpikeSignals,
+          continuity_key: `recurring_cost_pressure:household:${user.household_id}`,
         },
         actions: [],
       }]);
@@ -1394,6 +1402,7 @@ async function buildInsights({ user, limit = 10 }) {
           total_delta_amount: Number(personalTotalRecurringDelta.toFixed(2)),
           items: topItems,
           recurring_spike_signals: topSpikeSignals,
+          continuity_key: `recurring_cost_pressure:personal:${user.id}`,
         },
         actions: [],
       }]);
