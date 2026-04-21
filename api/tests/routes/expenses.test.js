@@ -486,6 +486,7 @@ describe('GET /expenses/pending', () => {
       headline: 'Trusted sender',
       item_reliability_level: 'unknown',
       review_mode: 'full_review',
+      message_subject: 'Order Confirmation',
       message_snippet: 'Your Amazon order total is $10.00',
     });
     expect(Array.isArray(hinted.gmail_review_hint.likely_changed_fields)).toBe(true);
@@ -535,6 +536,28 @@ describe('GET /expenses/pending', () => {
     } finally {
       emailLogSpy.mockRestore();
     }
+  });
+
+  it('includes the email subject even when from_address is missing and review_source is unset', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, notes)
+       VALUES ($1, $2, 'Legacy Gmail Import', 16.00, '2026-03-18', 'email', 'pending', 'Imported from Gmail — needs review')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject)
+       VALUES ($1, 'legacy-subject-msg', $2, 'imported', 'Your Amazon order receipt')`,
+      [userId, expResult.rows[0].id]
+    );
+
+    const res = await request(app).get('/expenses/pending');
+    expect(res.status).toBe(200);
+    const pendingExpense = res.body.find((expense) => expense.id === expResult.rows[0].id);
+    expect(pendingExpense).toBeDefined();
+    expect(pendingExpense.gmail_review_hint).toMatchObject({
+      message_subject: 'Your Amazon order receipt',
+    });
   });
 });
 

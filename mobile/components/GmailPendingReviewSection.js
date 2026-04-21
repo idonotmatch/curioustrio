@@ -34,8 +34,13 @@ export function GmailPendingReviewSection({
           >
             <View style={styles.pendingRowMain}>
               <Text style={styles.pendingMerchant} numberOfLines={1}>
-                {item.merchant || item.description || '(no merchant)'}
+                {item.gmail_review_hint?.message_subject || item.email_subject || item.merchant || item.description || '(no merchant)'}
               </Text>
+              {(item.gmail_review_hint?.message_subject || item.email_subject) ? (
+                <Text style={styles.pendingMeta} numberOfLines={1}>
+                  {[item.merchant, item.gmail_review_hint?.from_address || item.email_from_address].filter(Boolean).join('  ·  ')}
+                </Text>
+              ) : null}
               <Text style={styles.pendingMeta} numberOfLines={1}>
                 {item.gmail_review_hint?.review_mode === 'quick_check'
                   ? 'Quick check'

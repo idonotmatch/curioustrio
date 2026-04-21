@@ -387,7 +387,7 @@ export default function ExpenseDetailScreen() {
   const gmailReviewHint = expense.gmail_review_hint || null;
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
-  const subjectLine = `${gmailReviewHint?.message_subject || ''}`.trim();
+  const subjectLine = `${gmailReviewHint?.message_subject || expense?.email_subject || ''}`.trim();
   const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet);
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';

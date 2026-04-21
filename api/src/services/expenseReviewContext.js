@@ -333,7 +333,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
 async function attachGmailReviewHint(expense, userId) {
   if (!expense || expense.source !== 'email') return expense;
   const log = await EmailImportLog.findByExpenseId(expense.id);
-  if (!log?.from_address && expense.review_source !== 'gmail') {
+  if (!log?.message_id) {
     return { ...expense, gmail_review_hint: null };
   }
 
@@ -374,9 +374,19 @@ async function attachGmailReviewHint(expense, userId) {
 
 async function fetchPendingExpensesBase(userId) {
   const result = await db.query(
-    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
+            l.subject AS email_subject,
+            l.from_address AS email_from_address,
+            l.snippet AS email_snippet
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT subject, from_address, snippet
+       FROM email_import_log
+       WHERE expense_id = e.id
+       ORDER BY imported_at DESC
+       LIMIT 1
+     ) l ON TRUE
      WHERE e.user_id = $1 AND e.status = 'pending'
      ORDER BY e.date DESC, e.created_at DESC`,
     [userId]

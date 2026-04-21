@@ -74,17 +74,23 @@ function isQuickCheckPending(item = {}) {
 }
 
 function reviewHeadline(item = {}) {
-  const subject = `${item?.gmail_review_hint?.message_subject || ''}`.trim();
+  const subject = `${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`.trim();
   if (subject) return subject;
   return item.merchant || item.description || '—';
 }
 
 function reviewSubline(item = {}) {
   const parts = [];
-  if (item?.gmail_review_hint?.from_address) parts.push(item.gmail_review_hint.from_address);
+  if (item?.gmail_review_hint?.from_address || item?.email_from_address) {
+    parts.push(item?.gmail_review_hint?.from_address || item?.email_from_address);
+  }
   const date = formatDate(item?.date);
   if (date) parts.push(date);
   return parts.join('  ·  ');
+}
+
+function reviewSubject(item = {}) {
+  return `${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`.trim();
 }
 
 export function reviewQueueGuidance(item = {}) {
@@ -112,6 +118,7 @@ export function ReviewQueueItem({
   const source = pendingSourcePresentation(item);
   const quickCheck = isQuickCheckPending(item);
   const isPreview = variant === 'preview';
+  const subject = reviewSubject(item);
 
   const renderLeftActions = () => (
     <TouchableOpacity style={styles.approveAction} onPress={() => onApprove(item.id)}>
@@ -142,13 +149,19 @@ export function ReviewQueueItem({
             </Text>
             {isPreview ? (
               <>
+                {subject ? (
+                  <>
+                    <Text style={styles.previewSubjectLabel}>Subject</Text>
+                    <Text style={styles.previewSubject} numberOfLines={1}>{subject}</Text>
+                  </>
+                ) : null}
                 <Text style={styles.previewMeta} numberOfLines={1}>{reviewQueueLabel(item)}</Text>
                 <Text style={styles.previewGuidance} numberOfLines={1}>{reviewQueueGuidance(item)}</Text>
               </>
             ) : (
               <>
                 <View style={styles.metaRow}>
-                  {!item.gmail_review_hint?.message_subject ? (
+                  {!reviewSubject(item) ? (
                     <Text style={styles.date}>{formatDate(item.date)}</Text>
                   ) : null}
                   <View style={[styles.sourceChip, source.accent]}>
@@ -156,11 +169,11 @@ export function ReviewQueueItem({
                     <Text style={[styles.sourceChipText, source.accentText]}>{source.label}</Text>
                   </View>
                 </View>
-                {item.gmail_review_hint?.message_subject ? (
+                {reviewSubject(item) ? (
                   <>
                     <Text style={styles.emailSubjectLabel}>Subject</Text>
                     <Text style={styles.emailSubject} numberOfLines={1}>
-                      {item.gmail_review_hint.message_subject}
+                      {reviewSubject(item)}
                     </Text>
                     <Text style={styles.emailContext} numberOfLines={1}>
                       {[item.merchant, reviewSubline(item)].filter(Boolean).join('  ·  ')}
@@ -261,6 +274,8 @@ const styles = StyleSheet.create({
   previewRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   previewRowMain: { flex: 1, marginRight: 8 },
   previewMerchant: { fontSize: 14, color: '#f5f5f5' },
+  previewSubjectLabel: { fontSize: 10, color: '#6f6f6f', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 },
+  previewSubject: { fontSize: 12, color: '#d6d6d6', fontWeight: '600', marginTop: 2 },
   previewMeta: { fontSize: 11, color: '#8faed8', marginTop: 3, fontWeight: '600' },
   previewGuidance: { fontSize: 12, color: '#8a8a8a', marginTop: 4 },
   previewRowRight: { alignItems: 'flex-end', gap: 6 },
