@@ -534,6 +534,17 @@ $396.32`,
     expect(res.body.failed).toBe(1);
     expect(res.body.imported).toBe(0);
     expect(res.body.outcomes.failed_reasons['Network error']).toBe(1);
+
+    const token = await db.query(
+      `SELECT last_synced_at, last_sync_attempted_at, last_sync_status, last_sync_source, last_sync_error
+       FROM oauth_tokens WHERE user_id = $1`,
+      [userId]
+    );
+    expect(token.rows[0].last_sync_attempted_at).toBeTruthy();
+    expect(token.rows[0].last_synced_at).toBeTruthy();
+    expect(token.rows[0].last_sync_status).toBe('success');
+    expect(token.rows[0].last_sync_source).toBe('manual');
+    expect(token.rows[0].last_sync_error).toBeNull();
   });
 
   it('returns a reconnect message when Gmail credentials are expired before sync starts', async () => {
@@ -550,6 +561,44 @@ $396.32`,
     expect(res.body).toEqual({
       error: 'Gmail connection expired. Reconnect Gmail and try again.',
     });
+
+    const token = await db.query(
+      `SELECT last_synced_at, last_sync_attempted_at, last_sync_status, last_sync_source, last_sync_error
+       FROM oauth_tokens WHERE user_id = $1`,
+      [userId]
+    );
+    expect(token.rows[0].last_sync_attempted_at).toBeTruthy();
+    expect(token.rows[0].last_synced_at).toBeNull();
+    expect(token.rows[0].last_sync_status).toBe('failed');
+    expect(token.rows[0].last_sync_source).toBe('manual');
+    expect(token.rows[0].last_sync_error).toMatch(/invalid_grant/i);
+  });
+
+  it('returns a configuration error when Gmail env is missing and records a failed sync attempt', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockRejectedValue(new Error('google_client_id missing'));
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      error: 'Gmail sync is not configured correctly.',
+    });
+
+    const token = await db.query(
+      `SELECT last_synced_at, last_sync_attempted_at, last_sync_status, last_sync_source, last_sync_error
+       FROM oauth_tokens WHERE user_id = $1`,
+      [userId]
+    );
+    expect(token.rows[0].last_sync_attempted_at).toBeTruthy();
+    expect(token.rows[0].last_synced_at).toBeNull();
+    expect(token.rows[0].last_sync_status).toBe('failed');
+    expect(token.rows[0].last_sync_source).toBe('manual');
+    expect(token.rows[0].last_sync_error).toMatch(/google_client_id/i);
   });
 
   it('imports uncertain emails into pending when a likely amount can be recovered', async () => {
