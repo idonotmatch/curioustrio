@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
-import { consumeNavigationPayload } from '../services/navigationPayloadStore';
+import { consumeNavigationPayload, stashNavigationPayload } from '../services/navigationPayloadStore';
 import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insightEvidence';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 import { openExpenseDetail } from '../services/openExpenseDetail';
@@ -611,6 +611,35 @@ export default function TrendDetailScreen() {
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
+  function handleOpenRecurringSignal(signal) {
+    if (!signal?.group_key) return;
+    const payloadKey = stashNavigationPayload({
+      metadata: {
+        scope: `${scope}` === 'household' ? 'household' : 'personal',
+        group_key: signal.group_key,
+        item_name: signal.item_name || null,
+        latest_merchant: signal.latest_merchant || null,
+        latest_date: signal.latest_date || null,
+        comparison_type: signal.comparison_type || null,
+        delta_percent: signal.delta_percent ?? null,
+      },
+    }, 'trend-recurring-item');
+
+    router.push({
+      pathname: '/recurring-item',
+      params: {
+        group_key: signal.group_key,
+        scope: `${scope}` === 'household' ? 'household' : 'personal',
+        title: signal.item_name || 'Recurring item',
+        insight_id: insightId ? `${insightId}` : '',
+        insight_type: 'recurring_cost_pressure',
+        body: signal.item_name
+          ? `${signal.item_name} is contributing to the recurring pressure in this period.`
+          : 'This recurring item is contributing to the recurring pressure in this period.',
+        payload_key: payloadKey,
+      },
+    });
+  }
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
   const unusualDecisionBuckets = useMemo(() => {
     const likelyDiscount = [];
@@ -1161,7 +1190,13 @@ export default function TrendDetailScreen() {
                     <Text style={styles.sectionEyebrow}>What&apos;s driving it</Text>
                     <View style={styles.reviewList}>
                       {recurringSpikeSignals.map((signal) => (
-                        <View key={signal.group_key || `${signal.item_name}:${signal.latest_merchant}`} style={styles.reviewRow}>
+                        <TouchableOpacity
+                          key={signal.group_key || `${signal.item_name}:${signal.latest_merchant}`}
+                          style={styles.reviewRow}
+                          activeOpacity={signal.group_key ? 0.82 : 1}
+                          disabled={!signal.group_key}
+                          onPress={() => handleOpenRecurringSignal(signal)}
+                        >
                           <View style={styles.driverText}>
                             <Text style={styles.driverName}>{signal.item_name || 'Recurring item'}</Text>
                             <Text style={styles.driverMeta}>
@@ -1172,7 +1207,7 @@ export default function TrendDetailScreen() {
                           <Text style={styles.driverDelta}>
                             +{formatCurrency(signal.delta_amount)}
                           </Text>
-                        </View>
+                        </TouchableOpacity>
                       ))}
                     </View>
                     <Text style={styles.metricRow}>
