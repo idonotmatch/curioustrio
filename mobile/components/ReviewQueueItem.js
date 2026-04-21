@@ -81,7 +81,6 @@ function reviewHeadline(item = {}) {
 
 function reviewSubline(item = {}) {
   const parts = [];
-  if (item?.merchant && item?.gmail_review_hint?.message_subject) parts.push(item.merchant);
   if (item?.gmail_review_hint?.from_address) parts.push(item.gmail_review_hint.from_address);
   const date = formatDate(item?.date);
   if (date) parts.push(date);
@@ -158,7 +157,15 @@ export function ReviewQueueItem({
                   </View>
                 </View>
                 {item.gmail_review_hint?.message_subject ? (
-                  <Text style={styles.emailSubject} numberOfLines={1}>{reviewSubline(item)}</Text>
+                  <>
+                    <Text style={styles.emailSubjectLabel}>Subject</Text>
+                    <Text style={styles.emailSubject} numberOfLines={1}>
+                      {item.gmail_review_hint.message_subject}
+                    </Text>
+                    <Text style={styles.emailContext} numberOfLines={1}>
+                      {[item.merchant, reviewSubline(item)].filter(Boolean).join('  ·  ')}
+                    </Text>
+                  </>
                 ) : null}
                 {item.gmail_review_hint ? (
                   <View style={styles.hintWrap}>
@@ -212,7 +219,9 @@ const styles = StyleSheet.create({
   merchant: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  emailSubject: { marginTop: 6, fontSize: 12, color: '#737373' },
+  emailSubjectLabel: { marginTop: 6, fontSize: 10, color: '#6f6f6f', textTransform: 'uppercase', letterSpacing: 0.5 },
+  emailSubject: { marginTop: 2, fontSize: 13, color: '#d6d6d6', fontWeight: '600' },
+  emailContext: { marginTop: 3, fontSize: 12, color: '#737373' },
   sourceChip: {
     flexDirection: 'row',
     alignItems: 'center',

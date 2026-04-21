@@ -41,6 +41,12 @@ export function PendingExpenseReviewPanel({
         {expenseMerchant && subjectLine && subjectLine.toLowerCase() !== `${expenseMerchant}`.toLowerCase() ? (
           <Text style={styles.reviewBannerText}>{expenseMerchant}</Text>
         ) : null}
+        {subjectLine ? (
+          <View style={styles.reviewBannerSubjectBlock}>
+            <Text style={styles.reviewBannerSubjectLabel}>Email subject</Text>
+            <Text style={styles.reviewBannerSubjectValue}>{subjectLine}</Text>
+          </View>
+        ) : null}
         {reviewDecisionFacts.length ? (
           <View style={styles.reviewFactGrid}>
             {reviewDecisionFacts.map((fact) => (

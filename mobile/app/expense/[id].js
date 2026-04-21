@@ -1220,6 +1220,20 @@ const styles = StyleSheet.create({
   reviewBannerEyebrow: { color: '#cbb37c', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
   reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
   reviewBannerText: { color: '#b8aa86', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  reviewBannerSubjectBlock: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#24201a',
+  },
+  reviewBannerSubjectLabel: {
+    color: '#cbb37c',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  reviewBannerSubjectValue: { color: '#f1eadc', fontSize: 13, fontWeight: '600', lineHeight: 18 },
   reviewFactGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   reviewFactChip: {
     minWidth: 100,
