@@ -7,6 +7,7 @@ import { loadWithCache } from '../services/cache';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insightEvidence';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
+import { openExpenseDetail } from '../services/openExpenseDetail';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -607,6 +608,9 @@ export default function TrendDetailScreen() {
   }), [categoryKey, highlightedCategoryProjection, highlightedDriver, insightMetadata]);
   const supportsUnusualReview = ['one_offs_driving_variance', 'one_off_expense_skewing_projection'].includes(`${insightType}`);
   const supportsCategoryReview = ['top_category_driver', 'projected_category_surge', 'projected_category_under_baseline'].includes(`${insightType}`);
+  function handleOpenExpense(expense) {
+    openExpenseDetail(router, expense);
+  }
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
   const unusualDecisionBuckets = useMemo(() => {
     const likelyDiscount = [];
@@ -944,7 +948,13 @@ export default function TrendDetailScreen() {
                         </Text>
                         <View style={styles.reviewList}>
                           {unusualDecisionBuckets.likelyDiscount.map((expense) => (
-                            <View key={`discount:${expense.id || `${expense.merchant}:${expense.amount}`}`} style={styles.reviewRow}>
+                            <TouchableOpacity
+                              key={`discount:${expense.id || `${expense.merchant}:${expense.amount}`}`}
+                              style={styles.reviewRow}
+                              activeOpacity={expense.id ? 0.82 : 1}
+                              disabled={!expense.id}
+                              onPress={() => handleOpenExpense(expense)}
+                            >
                               <View style={styles.driverText}>
                                 <Text style={styles.driverName}>{expense.merchant}</Text>
                                 <Text style={styles.driverMeta}>
@@ -952,7 +962,7 @@ export default function TrendDetailScreen() {
                                 </Text>
                               </View>
                               <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                            </View>
+                            </TouchableOpacity>
                           ))}
                         </View>
                       </>
@@ -964,7 +974,13 @@ export default function TrendDetailScreen() {
                         </Text>
                         <View style={styles.reviewList}>
                           {unusualDecisionBuckets.worthWatching.map((expense) => (
-                            <View key={`watch:${expense.id || `${expense.merchant}:${expense.amount}`}`} style={styles.reviewRow}>
+                            <TouchableOpacity
+                              key={`watch:${expense.id || `${expense.merchant}:${expense.amount}`}`}
+                              style={styles.reviewRow}
+                              activeOpacity={expense.id ? 0.82 : 1}
+                              disabled={!expense.id}
+                              onPress={() => handleOpenExpense(expense)}
+                            >
                               <View style={styles.driverText}>
                                 <Text style={styles.driverName}>{expense.merchant}</Text>
                                 <Text style={styles.driverMeta}>
@@ -972,7 +988,7 @@ export default function TrendDetailScreen() {
                                 </Text>
                               </View>
                               <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                            </View>
+                            </TouchableOpacity>
                           ))}
                         </View>
                       </>
@@ -982,7 +998,13 @@ export default function TrendDetailScreen() {
                 {unusualExpenses.length ? (
                   <View style={styles.reviewList}>
                     {unusualExpenses.map((expense) => (
-                      <View key={expense.id || `${expense.merchant}:${expense.amount}`} style={styles.reviewRow}>
+                      <TouchableOpacity
+                        key={expense.id || `${expense.merchant}:${expense.amount}`}
+                        style={styles.reviewRow}
+                        activeOpacity={expense.id ? 0.82 : 1}
+                        disabled={!expense.id}
+                        onPress={() => handleOpenExpense(expense)}
+                      >
                         <View style={styles.driverText}>
                           <Text style={styles.driverName}>{expense.merchant}</Text>
                           <Text style={styles.driverMeta}>
@@ -990,7 +1012,7 @@ export default function TrendDetailScreen() {
                           </Text>
                         </View>
                         <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 ) : oneOffMerchants.length ? (
@@ -1062,7 +1084,13 @@ export default function TrendDetailScreen() {
                     <Text style={styles.sectionEyebrow}>Recent purchases in this category</Text>
                     <View style={styles.reviewList}>
                       {categoryExpenses.map((expense) => (
-                        <View key={expense.id || `${expense.merchant}:${expense.date}:${expense.amount}`} style={styles.reviewRow}>
+                        <TouchableOpacity
+                          key={expense.id || `${expense.merchant}:${expense.date}:${expense.amount}`}
+                          style={styles.reviewRow}
+                          activeOpacity={expense.id ? 0.82 : 1}
+                          disabled={!expense.id}
+                          onPress={() => handleOpenExpense(expense)}
+                        >
                           <View style={styles.driverText}>
                             <Text style={styles.driverName}>{expense.merchant || 'Unknown merchant'}</Text>
                             <Text style={styles.driverMeta}>
@@ -1071,7 +1099,7 @@ export default function TrendDetailScreen() {
                             </Text>
                           </View>
                           <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                        </View>
+                        </TouchableOpacity>
                       ))}
                     </View>
                   </>
@@ -1320,7 +1348,13 @@ export default function TrendDetailScreen() {
                     <View style={styles.supportingSection}>
                       <Text style={styles.supportingSectionTitle}>Purchases shaping the forecast</Text>
                       {trend.projection.overall.top_unusual_expenses.map((expense) => (
-                        <View key={expense.id || `${expense.merchant}:${expense.date}`} style={styles.driverRow}>
+                        <TouchableOpacity
+                          key={expense.id || `${expense.merchant}:${expense.date}`}
+                          style={styles.driverRow}
+                          activeOpacity={expense.id ? 0.82 : 1}
+                          disabled={!expense.id}
+                          onPress={() => handleOpenExpense(expense)}
+                        >
                           <View style={styles.driverText}>
                             <Text style={styles.driverName}>{expense.merchant}</Text>
                             <Text style={styles.driverMeta}>
@@ -1328,7 +1362,7 @@ export default function TrendDetailScreen() {
                             </Text>
                           </View>
                           <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                        </View>
+                        </TouchableOpacity>
                       ))}
                       <Text style={styles.emptyText}>
                         Baseline projection excludes these from the forward run-rate, while adjusted projection counts what has already happened this month.

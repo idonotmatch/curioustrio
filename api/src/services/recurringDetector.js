@@ -36,6 +36,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
   const scope = options.scope === 'personal' ? 'personal' : 'household';
   const result = await queryBudgetRelevant(
     `SELECT
+       ei.expense_id,
        ei.product_id,
        ei.comparable_key,
        ei.product_match_confidence,
@@ -59,6 +60,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
      ORDER BY e.date ASC`,
     [ownerId],
     `SELECT
+       ei.expense_id,
        ei.product_id,
        ei.comparable_key,
        ei.product_match_confidence,
@@ -89,6 +91,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
       ? row.date.toISOString().slice(0, 10)
       : `${row.date}`.slice(0, 10);
     groups.get(key).push({
+      expense_id: row.expense_id || null,
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
       product_match_confidence: row.product_match_confidence || null,
@@ -282,6 +285,7 @@ async function getRecurringItemHistory(ownerId, groupKey, options = {}) {
     normalized_total_size_value: latest.normalized_total_size_value,
     normalized_total_size_unit: latest.normalized_total_size_unit,
     purchases: sorted.map((entry) => ({
+      id: entry.expense_id || null,
       date: entry.date.toISOString().split('T')[0],
       merchant: entry.merchant,
       item_amount: entry.item_amount,

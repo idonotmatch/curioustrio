@@ -7,6 +7,7 @@ import { loadWithCache } from '../services/cache';
 import { selectInsightEvidence } from '../services/insightEvidence';
 import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../services/insightPresentation';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
+import { openExpenseDetail } from '../services/openExpenseDetail';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -295,6 +296,9 @@ export default function InsightDetailScreen() {
   const nextStep = nextStepCopy(descriptor, primaryAction);
   const merchantComparisons = merchantComparisonRows(metadata);
   const purchaseHistory = purchaseHistoryRows(metadata);
+  function handleOpenExpense(expense) {
+    openExpenseDetail(router, expense);
+  }
   const [evidenceRows, setEvidenceRows] = useState(() => {
     if (evidenceMode === 'largest_expense') {
       return metadata.largest_expense ? [metadata.largest_expense] : [];
@@ -551,8 +555,15 @@ export default function InsightDetailScreen() {
                 const unitDetail = purchase.estimated_unit_price != null
                   ? `${formatCurrency(purchase.estimated_unit_price)} / ${purchase.normalized_total_size_unit || 'unit'}`
                   : null;
+                const purchaseId = purchase.id || purchase.expense_id || null;
                 return (
-                  <View key={purchase.id} style={styles.expenseRow}>
+                  <TouchableOpacity
+                    key={purchaseId || `${purchase.date}:${purchase.merchant}:${purchase.amount}`}
+                    style={styles.expenseRow}
+                    activeOpacity={purchaseId ? 0.82 : 1}
+                    disabled={!purchaseId}
+                    onPress={() => handleOpenExpense(purchase)}
+                  >
                     <View style={styles.expenseText}>
                       <Text style={styles.expenseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
                       <Text style={styles.expenseMeta}>
@@ -560,7 +571,7 @@ export default function InsightDetailScreen() {
                       </Text>
                     </View>
                     <Text style={styles.expenseAmount}>{formatCurrency(purchase.amount)}</Text>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -610,7 +621,13 @@ export default function InsightDetailScreen() {
             ) : evidenceRows.length > 0 ? (
               <View style={styles.expenseList}>
                 {evidenceRows.map((expense, index) => (
-                  <View key={expense.id || `${expense.merchant || 'expense'}:${index}`} style={styles.expenseRow}>
+                  <TouchableOpacity
+                    key={expense.id || `${expense.merchant || 'expense'}:${index}`}
+                    style={styles.expenseRow}
+                    activeOpacity={expense.id ? 0.82 : 1}
+                    disabled={!expense.id}
+                    onPress={() => handleOpenExpense(expense)}
+                  >
                     <View style={styles.expenseText}>
                       <Text style={styles.expenseMerchant}>{expense.merchant || 'Unknown merchant'}</Text>
                       <Text style={styles.expenseMeta}>
@@ -618,7 +635,7 @@ export default function InsightDetailScreen() {
                       </Text>
                     </View>
                     <Text style={styles.expenseAmount}>{formatCurrency(expense.amount)}</Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             ) : (

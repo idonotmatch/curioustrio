@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
+import { openExpenseDetail } from '../services/openExpenseDetail';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -101,6 +102,7 @@ function signalSummary(insightType, metadata = {}, history = null, fallbackBody 
 }
 
 export default function RecurringItemScreen() {
+  const router = useRouter();
   const {
     group_key: groupKey,
     scope = 'household',
@@ -138,6 +140,9 @@ export default function RecurringItemScreen() {
   );
   const merchantPriceHistory = Array.isArray(history?.merchant_price_history) ? history.merchant_price_history : [];
   const purchaseHistory = Array.isArray(history?.purchases) ? history.purchases : [];
+  function handleOpenExpense(expense) {
+    openExpenseDetail(router, expense);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -300,8 +305,16 @@ export default function RecurringItemScreen() {
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>Supporting activity</Text>
               <Text style={styles.cardTitle}>Recent purchases</Text>
-              {purchaseHistory.map((purchase) => (
-                <View key={`${purchase.date}:${purchase.merchant}:${purchase.item_amount}`} style={styles.purchaseRow}>
+              {purchaseHistory.map((purchase) => {
+                const purchaseId = purchase.id || purchase.expense_id || null;
+                return (
+                <TouchableOpacity
+                  key={`${purchaseId || purchase.date}:${purchase.merchant}:${purchase.item_amount}`}
+                  style={styles.purchaseRow}
+                  activeOpacity={purchaseId ? 0.82 : 1}
+                  disabled={!purchaseId}
+                  onPress={() => handleOpenExpense(purchase)}
+                >
                   <View>
                     <Text style={styles.purchaseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
                     <Text style={styles.purchaseDate}>{purchase.date}</Text>
@@ -312,8 +325,9 @@ export default function RecurringItemScreen() {
                       <Text style={styles.purchaseUnit}>{formatCurrency(purchase.estimated_unit_price)} / unit</Text>
                     ) : null}
                   </View>
-                </View>
-              ))}
+                </TouchableOpacity>
+                );
+              })}
             </View>
 
             {insightId ? (

@@ -17,6 +17,7 @@ describe('summarizeHistoryRows', () => {
   it('groups rows by stable identity and summarizes recent item history', () => {
     const summaries = summarizeHistoryRows([
       {
+        expense_id: 'expense-1',
         comparable_key: 'sparkling water lime|brand:water co|size:12oz|pack:8',
         product_match_confidence: 'medium',
         item_name: 'Sparkling Water Lime',
@@ -29,6 +30,7 @@ describe('summarizeHistoryRows', () => {
         date: '2026-04-01',
       },
       {
+        expense_id: 'expense-2',
         comparable_key: 'sparkling water lime|brand:water co|size:12oz|pack:8',
         product_match_confidence: 'medium',
         item_name: 'Sparkling Water Lime',
@@ -41,6 +43,7 @@ describe('summarizeHistoryRows', () => {
         date: '2026-04-10',
       },
       {
+        expense_id: 'expense-3',
         comparable_key: 'sparkling water lime|brand:water co|size:12oz|pack:8',
         product_match_confidence: 'medium',
         item_name: 'Sparkling Water Lime',
@@ -68,6 +71,11 @@ describe('summarizeHistoryRows', () => {
       expect.objectContaining({ merchant: 'Target', occurrence_count: 2 }),
       expect.objectContaining({ merchant: 'Whole Foods', occurrence_count: 1 }),
     ]));
+    expect(summaries[0].purchases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'expense-1' }),
+      expect.objectContaining({ id: 'expense-2' }),
+      expect.objectContaining({ id: 'expense-3' }),
+    ]));
   });
 });
 
@@ -76,6 +84,7 @@ describe('listItemHistorySummaries', () => {
     db.query.mockResolvedValueOnce({
       rows: [
         {
+          expense_id: 'expense-1',
           comparable_key: 'organic banana',
           product_match_confidence: 'medium',
           item_name: 'Organic Bananas',
@@ -88,6 +97,7 @@ describe('listItemHistorySummaries', () => {
           date: '2026-04-01',
         },
         {
+          expense_id: 'expense-2',
           comparable_key: 'organic banana',
           product_match_confidence: 'medium',
           item_name: 'Organic Bananas',
@@ -100,6 +110,7 @@ describe('listItemHistorySummaries', () => {
           date: '2026-04-08',
         },
         {
+          expense_id: 'expense-3',
           comparable_key: 'one off item',
           product_match_confidence: 'medium',
           item_name: 'One Off Item',
@@ -126,6 +137,7 @@ describe('getItemHistoryByGroupKey', () => {
     db.query.mockResolvedValueOnce({
       rows: [
         {
+          expense_id: 'expense-1',
           product_id: 'product-123',
           comparable_key: null,
           product_match_confidence: 'high',
@@ -139,6 +151,7 @@ describe('getItemHistoryByGroupKey', () => {
           date: '2026-04-01',
         },
         {
+          expense_id: 'expense-2',
           product_id: 'product-123',
           comparable_key: null,
           product_match_confidence: 'high',
@@ -163,5 +176,9 @@ describe('getItemHistoryByGroupKey', () => {
       occurrence_count: 2,
       median_amount: 39.865,
     });
+    expect(result.purchases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'expense-1' }),
+      expect.objectContaining({ id: 'expense-2' }),
+    ]));
   });
 });

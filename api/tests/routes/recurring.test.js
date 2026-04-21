@@ -213,6 +213,11 @@ describe('GET /recurring/item-history', () => {
       occurrence_count: 3,
     });
     expect(historyRes.body.purchases).toHaveLength(3);
+    expect(historyRes.body.purchases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: expenseIds[0] }),
+      expect.objectContaining({ id: expenseIds[1] }),
+      expect.objectContaining({ id: expenseIds[2] }),
+    ]));
   });
 
   it('returns personal recurring item history without requiring household scope', async () => {

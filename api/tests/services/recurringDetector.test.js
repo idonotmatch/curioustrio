@@ -318,6 +318,11 @@ describe('getRecurringItemHistory', () => {
       normalized_total_size_unit: 'oz',
     });
     expect(history.purchases).toHaveLength(3);
+    expect(history.purchases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: e1 }),
+      expect.objectContaining({ id: e2 }),
+      expect.objectContaining({ id: e3 }),
+    ]));
     expect(history.merchant_price_history).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ merchant: 'Trader Joes', occurrence_count: 1 }),

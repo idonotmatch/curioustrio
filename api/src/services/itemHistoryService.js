@@ -51,6 +51,7 @@ function summarizeHistoryRows(rows = []) {
     if (!groupKey) continue;
     if (!grouped.has(groupKey)) grouped.set(groupKey, []);
     grouped.get(groupKey).push({
+      expense_id: row.expense_id || null,
       group_key: groupKey,
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
@@ -120,6 +121,7 @@ function summarizeIdentity(entries = []) {
     normalized_total_size_value: latest.normalized_total_size_value,
     normalized_total_size_unit: latest.normalized_total_size_unit,
     purchases: sorted.map((entry) => ({
+      id: entry.expense_id || null,
       date: entry.date,
       merchant: entry.merchant,
       amount: entry.amount,
@@ -152,6 +154,7 @@ async function loadItemHistoryRows(ownerId, {
 
   const sharedSelect = `
     SELECT
+      ei.expense_id,
       ei.product_id,
       ei.comparable_key,
       ei.product_match_confidence,
