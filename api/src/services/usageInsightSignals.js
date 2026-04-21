@@ -230,6 +230,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
       metadata: earlyInsightMetadata(projection, scopeLabel, {
         largest_expense: largestExpense,
         share_of_spend: share,
+        continuity_key: `spend_concentration:${scopeLabel}:${projection.month}`,
       }),
       actions: [],
     });
@@ -248,6 +249,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
       expires_at: expiresAt,
       metadata: earlyInsightMetadata(projection, scopeLabel, {
         uncategorized_count: Number(activity.uncategorized_count || 0),
+        continuity_key: `cleanup:${scopeLabel}:${projection.month}`,
       }),
       actions: [],
     });
@@ -270,6 +272,7 @@ function buildEarlyUsageInsights({ projection, budgetLimit = null, scope = 'pers
       metadata: earlyInsightMetadata(projection, scopeLabel, {
         expense_count: expenseCount,
         active_day_count: activeDayCount,
+        continuity_key: `logging_momentum:${scopeLabel}:${projection.month}`,
       }),
       actions: [],
     });

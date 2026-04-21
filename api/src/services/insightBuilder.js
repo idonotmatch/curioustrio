@@ -1115,6 +1115,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         month: projection?.month || null,
         usage_fallback: true,
         usage_context: context,
+        continuity_key: `usage_start_logging:${scopeLabel}:${projection?.month || 'current'}`,
       },
       actions: [],
     }]);
@@ -1144,6 +1145,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         month: projection?.month || null,
         usage_fallback: true,
         usage_context: context,
+        continuity_key: `usage_set_budget:${scopeLabel}:${projection?.month || 'current'}`,
       },
       actions: [],
     }]);
@@ -1174,6 +1176,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         historical_period_count: historicalPeriodCount,
         usage_fallback: true,
         usage_context: context,
+        continuity_key: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
       },
       actions: [],
     }]);
@@ -1203,6 +1206,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
       historical_period_count: historicalPeriodCount,
       usage_fallback: true,
       usage_context: context,
+      continuity_key: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}`,
     },
     actions: [],
   }]);
