@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
+import { stashNavigationPayload } from '../services/navigationPayloadStore';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -25,6 +26,20 @@ function firstValue(value, fallback = null) {
 function normalizeNotificationData(data = {}) {
   if (!data || typeof data !== 'object') return {};
   return data;
+}
+
+function parseNotificationMetadata(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof value === 'object') return value;
+  return {};
 }
 
 function AppNavigator() {
@@ -204,14 +219,20 @@ function AppNavigator() {
       const type = firstValue(data.type, '');
 
       if (type === 'insight') {
+        const metadata = parseNotificationMetadata(firstValue(data.metadata));
+        const insightType = firstValue(data.insight_type, '');
+        const insightId = firstValue(data.insight_id, '');
+        const groupKey = firstValue(data.group_key, metadata.group_key || '');
+
         try {
           await api.post('/insights/events', {
             events: [{
-              insight_id: firstValue(data.insight_id),
+              insight_id: insightId,
               event_type: 'tapped',
               metadata: {
                 source: 'push',
-                insight_type: firstValue(data.insight_type),
+                insight_type: insightType,
+                continuity_key: metadata.continuity_key || null,
               },
             }],
           });
@@ -219,20 +240,38 @@ function AppNavigator() {
           // Non-fatal
         }
 
-        const metadata = typeof data.metadata === 'string'
-          ? data.metadata
-          : JSON.stringify(data.metadata || {});
+        const payloadKey = stashNavigationPayload({ metadata }, 'push-insight');
+
+        if (
+          ['recurring_repurchase_due', 'recurring_price_spike', 'buy_soon_better_price', 'recurring_restock_window', 'recurring_cost_pressure'].includes(insightType)
+          && groupKey
+        ) {
+          router.push({
+            pathname: '/recurring-item',
+            params: {
+              group_key: groupKey,
+              scope: firstValue(data.scope, metadata.scope || 'personal'),
+              title: firstValue(data.title, content.title || 'Recurring item'),
+              insight_id: insightId,
+              insight_type: insightType,
+              body: firstValue(data.body, content.body || ''),
+              payload_key: payloadKey,
+            },
+          });
+          return;
+        }
+
         router.push({
           pathname: '/insight-detail',
           params: {
-            insight_id: firstValue(data.insight_id, ''),
-            insight_type: firstValue(data.insight_type, ''),
+            insight_id: insightId,
+            insight_type: insightType,
             title: firstValue(data.title, content.title || 'Insight detail'),
             body: firstValue(data.body, content.body || ''),
             severity: firstValue(data.severity, 'low'),
             entity_type: firstValue(data.entity_type, ''),
             entity_id: firstValue(data.entity_id, ''),
-            metadata,
+            payload_key: payloadKey,
           },
         });
         return;
