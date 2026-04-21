@@ -211,7 +211,15 @@ describe('spendProjectionAnalyzer', () => {
       categoryKey: 'groceries',
       categoryName: 'Groceries',
       currentExpenses: [
-        { merchant: 'Grocer', amount: 50, date: '2026-04-01', category_key: 'groceries', category_name: 'Groceries' },
+        {
+          merchant: 'Grocer',
+          amount: 50,
+          date: '2026-04-01',
+          category_key: 'groceries',
+          category_name: 'Groceries',
+          category_source: 'memory',
+          category_confidence: 4,
+        },
         { merchant: 'Airline', amount: 300, date: '2026-04-02', category_key: 'travel', category_name: 'Travel' },
       ],
       historicalPeriods: [
@@ -250,6 +258,12 @@ describe('spendProjectionAnalyzer', () => {
     expect(projection.baseline_projected_total).toBeCloseTo(121.03, 2);
     expect(projection.adjusted_projected_total).toBeCloseTo(121.03, 2);
     expect(projection.historical_average_total).toBeCloseTo(46.67, 2);
+    expect(projection.category_provenance).toMatchObject({
+      expense_count: 1,
+      trusted_count: 1,
+      low_confidence_count: 0,
+      trust_score: 0.98,
+    });
   });
 
   it('returns the top projected category pressures', () => {
@@ -296,8 +310,26 @@ describe('spendProjectionAnalyzer', () => {
 
   it('summarizes current activity for early insights', () => {
     const summary = summarizeCurrentActivity([
-      { id: '1', merchant: 'Amazon', amount: 42, date: '2026-04-01', category_key: 'shopping', category_name: 'Shopping' },
-      { id: '2', merchant: 'Amazon', amount: 18, date: '2026-04-03', category_key: 'shopping', category_name: 'Shopping' },
+      {
+        id: '1',
+        merchant: 'Amazon',
+        amount: 42,
+        date: '2026-04-01',
+        category_key: 'shopping',
+        category_name: 'Shopping',
+        category_source: 'memory',
+        category_confidence: 4,
+      },
+      {
+        id: '2',
+        merchant: 'Amazon',
+        amount: 18,
+        date: '2026-04-03',
+        category_key: 'shopping',
+        category_name: 'Shopping',
+        category_source: 'heuristic',
+        category_confidence: 2,
+      },
       { id: '3', merchant: 'Cafe', amount: 12, date: '2026-04-03', category_key: 'dining', category_name: 'Dining' },
       { id: '4', merchant: 'Mystery', amount: 9, date: '2026-04-04', category_key: 'uncategorized', category_name: 'Uncategorized' },
     ]);
@@ -305,6 +337,11 @@ describe('spendProjectionAnalyzer', () => {
     expect(summary.expense_count).toBe(4);
     expect(summary.active_day_count).toBe(3);
     expect(summary.top_categories[0]).toMatchObject({ category_key: 'shopping', spend: 60, count: 2 });
+    expect(summary.top_categories[0].category_provenance).toMatchObject({
+      expense_count: 2,
+      trusted_count: 2,
+      low_confidence_count: 0,
+    });
     expect(summary.top_merchants[0]).toMatchObject({ merchant_key: 'amazon', spend: 60, count: 2 });
     expect(summary.largest_expense).toMatchObject({ merchant: 'Amazon', amount: 42 });
     expect(summary.uncategorized_count).toBe(1);

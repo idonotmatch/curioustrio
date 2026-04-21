@@ -382,6 +382,7 @@ export default function ExpenseDetailScreen() {
   const categoryLabel = expense.category_parent_name || expense.category_name || 'Uncategorized';
   const ownerLabel = expense.user_name || 'You';
   const sourceText = sourceLabel[expense.source] || expense.source;
+  const categoryReasoning = expense.category_reasoning || null;
   const reviewState = expense.status === 'pending' && expense.source === 'email';
   const gmailReviewHint = expense.gmail_review_hint || null;
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
@@ -616,6 +617,34 @@ export default function ExpenseDetailScreen() {
               </View>
             );
           })}
+        </View>
+      ) : null}
+
+      {!isPendingEmailReview && categoryReasoning?.label ? (
+        <View style={styles.categoryReasoningCard}>
+          <Text style={styles.categoryReasoningEyebrow}>Category signal</Text>
+          <Text style={styles.categoryReasoningTitle}>{categoryReasoning.label}</Text>
+          {categoryReasoning.detail ? (
+            <Text style={styles.categoryReasoningBody}>{categoryReasoning.detail}</Text>
+          ) : null}
+          {Number.isFinite(categoryReasoning?.decision_count) || Number.isFinite(categoryReasoning?.merchant_hit_count) ? (
+            <View style={styles.categoryReasoningMetaWrap}>
+              {Number.isFinite(categoryReasoning?.decision_count) ? (
+                <View style={styles.categoryReasoningMetaChip}>
+                  <Text style={styles.categoryReasoningMetaText}>
+                    {categoryReasoning.decision_count} learned {categoryReasoning.decision_count === 1 ? 'decision' : 'decisions'}
+                  </Text>
+                </View>
+              ) : null}
+              {Number.isFinite(categoryReasoning?.merchant_hit_count) && categoryReasoning.merchant_hit_count > 0 ? (
+                <View style={styles.categoryReasoningMetaChip}>
+                  <Text style={styles.categoryReasoningMetaText}>
+                    {categoryReasoning.merchant_hit_count} merchant {categoryReasoning.merchant_hit_count === 1 ? 'match' : 'matches'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -1031,6 +1060,29 @@ const styles = StyleSheet.create({
   recurringSubtitle: { color: '#777', fontSize: 13, lineHeight: 18, marginTop: 4 },
   recurringAction: { color: '#8ab4ff', fontSize: 14, fontWeight: '600' },
   recurringNotePreview: { color: '#b8b8b8', fontSize: 13, lineHeight: 18, marginTop: 10 },
+  categoryReasoningCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#111',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    padding: 14,
+  },
+  categoryReasoningEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  categoryReasoningTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  categoryReasoningBody: { color: '#cfcfcf', fontSize: 13, lineHeight: 19, marginTop: 6 },
+  categoryReasoningMetaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  categoryReasoningMetaChip: {
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#242424',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  categoryReasoningMetaText: { color: '#a8a8a8', fontSize: 11, fontWeight: '600' },
   itemHistoryCard: {
     marginHorizontal: 20,
     marginTop: 12,

@@ -99,7 +99,7 @@ describe('assignCategory', () => {
       ],
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       category_id: 'cat-dining-id',
       source: 'heuristic',
       confidence: 2,
@@ -158,7 +158,7 @@ describe('assignCategory', () => {
   it('prefers learned merchant+description decisions before merchant memory', async () => {
     CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
       category_id: 'cat-gas-id',
-      decision_count: 3,
+      decision_count: 8,
       match_type: 'merchant_description',
     });
     MerchantMapping.findByMerchant.mockResolvedValueOnce({
@@ -173,12 +173,12 @@ describe('assignCategory', () => {
       categories: mockCategories,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       category_id: 'cat-gas-id',
       source: 'decision_memory',
-      confidence: 3,
+      confidence: 4,
     });
-    expect(MerchantMapping.findByMerchant).not.toHaveBeenCalled();
+    expect(MerchantMapping.findByMerchant).toHaveBeenCalledWith('hh-1', 'Shell');
   });
 
   it('can learn from repeated description-only corrections when merchant is missing', async () => {
@@ -190,15 +190,65 @@ describe('assignCategory', () => {
 
     const result = await assignCategory({
       merchant: null,
-      description: 'bananas',
+      description: 'soccer registration fee',
       householdId: 'hh-1',
-      categories: mockCategories,
+      categories: [
+        ...mockCategories,
+        { id: 'cat-kids-id', name: 'Kids' },
+      ],
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       category_id: 'cat-grocery-id',
       source: 'description_memory',
       confidence: 3,
     });
+  });
+
+  it('keeps merchant memory when a weak learned merchant correction conflicts', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
+      category_id: 'cat-gas-id',
+      decision_count: 2,
+      match_type: 'merchant_description',
+    });
+    MerchantMapping.findByMerchant.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      hit_count: 5,
+    });
+
+    const result = await assignCategory({
+      merchant: 'Target',
+      description: 'household essentials',
+      householdId: 'hh-1',
+      categories: mockCategories,
+    });
+
+    expect(result).toMatchObject({
+      category_id: 'cat-grocery-id',
+      source: 'memory',
+      confidence: 4,
+    });
+  });
+
+  it('does not use description-only memory when a merchant is present', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      decision_count: 5,
+      match_type: 'description',
+    });
+    MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
+
+    const result = await assignCategory({
+      merchant: 'Uber',
+      description: 'trip home from airport',
+      householdId: 'hh-1',
+      categories: [
+        ...mockCategories,
+        { id: 'cat-travel-id', name: 'Travel' },
+      ],
+    });
+
+    expect(result.category_id).toBe('cat-travel-id');
+    expect(result.source).toBe('heuristic');
   });
 });

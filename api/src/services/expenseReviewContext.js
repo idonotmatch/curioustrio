@@ -5,6 +5,8 @@ const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
 const { getItemHistoryByGroupKey } = require('./itemHistoryService');
 const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
+const Category = require('../models/category');
+const { explainAssignedCategory } = require('./categoryAssigner');
 
 function normalizeText(value = '') {
   return `${value || ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -477,7 +479,33 @@ async function attachItemHistoryBestEffort(expense, userId) {
   };
 }
 
-async function attachExpenseReviewContext(expense, userId, { includeItems = false } = {}) {
+async function attachCategoryReasoningBestEffort(expense) {
+  if (!expense?.id) return { ...expense, category_reasoning: null };
+  if (expense.category_reasoning && typeof expense.category_reasoning === 'object') {
+    return expense;
+  }
+  try {
+    const categories = expense.household_id
+      ? await Category.findByHousehold(expense.household_id)
+      : [];
+    const categoryReasoning = await explainAssignedCategory({
+      householdId: expense.household_id,
+      merchant: expense.merchant,
+      description: expense.description || expense.notes || null,
+      categoryId: expense.category_id,
+      categories,
+    });
+    return { ...expense, category_reasoning: categoryReasoning || null };
+  } catch (err) {
+    console.error('[expenseReviewContext] category reasoning attach failed:', {
+      expense_id: expense?.id || null,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+    return { ...expense, category_reasoning: null };
+  }
+}
+
+async function attachExpenseReviewContext(expense, userId, { includeItems = false, includeCategoryReasoning = false } = {}) {
   let enrichedExpense = await attachDuplicateFlagsBestEffort(expense);
   if (includeItems) {
     enrichedExpense = await attachItemsBestEffort(enrichedExpense);
@@ -491,6 +519,9 @@ async function attachExpenseReviewContext(expense, userId, { includeItems = fals
       enrichedExpense = { ...enrichedExpense, item_review_context: [] };
     }
   }
+  if (includeCategoryReasoning) {
+    enrichedExpense = await attachCategoryReasoningBestEffort(enrichedExpense);
+  }
   try {
     return await attachGmailReviewHint(enrichedExpense, userId);
   } catch (err) {
@@ -502,9 +533,9 @@ async function attachExpenseReviewContext(expense, userId, { includeItems = fals
   }
 }
 
-async function attachExpensesReviewContext(expenses = [], userId, { includeItems = false } = {}) {
+async function attachExpensesReviewContext(expenses = [], userId, { includeItems = false, includeCategoryReasoning = false } = {}) {
   const results = await Promise.allSettled(
-    expenses.map((expense) => attachExpenseReviewContext(expense, userId, { includeItems }))
+    expenses.map((expense) => attachExpenseReviewContext(expense, userId, { includeItems, includeCategoryReasoning }))
   );
   return results.map((result, index) => {
     if (result.status === 'fulfilled') return result.value;
@@ -517,6 +548,7 @@ async function attachExpensesReviewContext(expenses = [], userId, { includeItems
       ...expense,
       duplicate_flags: expense?.duplicate_flags || [],
       ...(includeItems ? { items: expense?.items || [], item_review_context: expense?.item_review_context || [] } : {}),
+      ...(includeCategoryReasoning ? { category_reasoning: expense?.category_reasoning || null } : {}),
       gmail_review_hint: null,
     };
   });

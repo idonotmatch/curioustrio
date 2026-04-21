@@ -335,11 +335,13 @@ async function processMessageImport(user, msgId, {
       return { imported: 0, skipped: 1, failed: 0, reason: 'duplicate_expense' };
     }
 
-    const { category_id } = await assignCategory({
+    const categoryAssignment = await assignCategory({
       merchant: parsed.merchant,
+      description: parsed.description,
       householdId: user.household_id,
       categories,
     });
+    const { category_id } = categoryAssignment;
     const { location } = await resolveEmailLocation({ merchant: parsed.merchant, subject, from, body });
     let itemsWithProducts = [];
     if (Array.isArray(parsed.items) && parsed.items.length > 0) {
@@ -398,6 +400,9 @@ async function processMessageImport(user, msgId, {
       paymentMethod: parsed.payment_method || 'unknown',
       cardLast4: parsed.card_last4 || null,
       cardLabel: parsed.card_label || null,
+      categorySource: categoryAssignment.source || null,
+      categoryConfidence: categoryAssignment.confidence ?? null,
+      categoryReasoning: categoryAssignment.reasoning || null,
       reviewRequired: true,
       reviewMode: reviewMode || null,
       reviewSource: 'gmail',

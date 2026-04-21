@@ -767,6 +767,38 @@ describe('GET /expenses/:id', () => {
       matched_count: 2,
     });
   });
+
+  it('includes category_reasoning when the current category matches merchant memory', async () => {
+    const category = await db.query(
+      `INSERT INTO categories (household_id, name, kind)
+       VALUES ($1, 'Groceries memory detail', 'expense')
+       RETURNING id`,
+      [householdId]
+    );
+    const categoryId = category.rows[0].id;
+
+    await db.query(
+      `INSERT INTO merchant_mappings (household_id, merchant_name, category_id, hit_count)
+       VALUES ($1, LOWER($2), $3, 6)`,
+      [householdId, 'Trader Joe\'s', categoryId]
+    );
+
+    const expense = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, description, amount, date, source, status, category_id)
+       VALUES ($1, $2, 'Trader Joe''s', 'weekly groceries', 64.12, '2026-03-16', 'manual', 'confirmed', $3)
+       RETURNING id`,
+      [userId, householdId, categoryId]
+    );
+
+    const res = await request(app).get(`/expenses/${expense.rows[0].id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.category_reasoning).toMatchObject({
+      strategy: 'memory',
+      label: 'Matched merchant memory',
+      merchant_hit_count: 6,
+    });
+  });
 });
 
 describe('PATCH /expenses/:id', () => {

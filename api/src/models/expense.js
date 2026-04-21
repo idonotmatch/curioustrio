@@ -12,6 +12,10 @@ function isMissingBudgetExclusionReasonError(err) {
   return err?.code === '42703' && /budget_exclusion_reason/i.test(`${err?.message || ''}`);
 }
 
+function isMissingCategoryProvenanceError(err) {
+  return err?.code === '42703' && /category_(source|confidence|reasoning)/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -33,6 +37,9 @@ async function create({
   isPrivate = false,
   excludeFromBudget = false,
   budgetExclusionReason = null,
+  categorySource = null,
+  categoryConfidence = null,
+  categoryReasoning = null,
   reviewRequired = false,
   reviewMode = null,
   reviewSource = null,
@@ -42,18 +49,27 @@ async function create({
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
          place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
-         is_private, exclude_from_budget, budget_exclusion_reason, review_required, review_mode, review_source
+         is_private, exclude_from_budget, budget_exclusion_reason,
+         category_source, category_confidence, category_reasoning,
+         review_required, review_mode, review_source
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
       [
         userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
         placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
-        isPrivate, excludeFromBudget, budgetExclusionReason, reviewRequired, reviewMode, reviewSource,
+        isPrivate, excludeFromBudget, budgetExclusionReason,
+        categorySource, categoryConfidence, categoryReasoning ? JSON.stringify(categoryReasoning) : null,
+        reviewRequired, reviewMode, reviewSource,
       ]
     );
     return result.rows[0];
   } catch (err) {
-    if (!isMissingExpenseReviewMetadataError(err) && !isMissingExcludeFromBudgetError(err) && !isMissingBudgetExclusionReasonError(err)) throw err;
+    if (
+      !isMissingExpenseReviewMetadataError(err)
+      && !isMissingExcludeFromBudgetError(err)
+      && !isMissingBudgetExclusionReasonError(err)
+      && !isMissingCategoryProvenanceError(err)
+    ) throw err;
     const fallback = await db.query(
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
@@ -315,6 +331,7 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
 async function update(id, userId, {
   merchant, amount, date, categoryId, notes,
   paymentMethod, cardLast4, cardLabel, isPrivate, excludeFromBudget, budgetExclusionReason,
+  categorySource, categoryConfidence, categoryReasoning,
   placeName, address, mapkitStableId,
 } = {}) {
   const hasMerchant = merchant !== undefined;
@@ -328,6 +345,9 @@ async function update(id, userId, {
   const hasIsPrivate = isPrivate !== undefined;
   const hasExcludeFromBudget = excludeFromBudget !== undefined;
   const hasBudgetExclusionReason = budgetExclusionReason !== undefined;
+  const hasCategorySource = categorySource !== undefined;
+  const hasCategoryConfidence = categoryConfidence !== undefined;
+  const hasCategoryReasoning = categoryReasoning !== undefined;
   const hasPlaceName = placeName !== undefined;
   const hasAddress = address !== undefined;
   const hasMapkitStableId = mapkitStableId !== undefined;
@@ -345,9 +365,12 @@ async function update(id, userId, {
          is_private = CASE WHEN $19 THEN $20 ELSE is_private END,
          exclude_from_budget = CASE WHEN $21 THEN $22 ELSE exclude_from_budget END,
          budget_exclusion_reason = CASE WHEN $23 THEN $24 ELSE budget_exclusion_reason END,
-         place_name = CASE WHEN $25 THEN $26 ELSE place_name END,
-         address = CASE WHEN $27 THEN $28 ELSE address END,
-         mapkit_stable_id = CASE WHEN $29 THEN $30 ELSE mapkit_stable_id END
+         category_source = CASE WHEN $25 THEN $26 ELSE category_source END,
+         category_confidence = CASE WHEN $27 THEN $28 ELSE category_confidence END,
+         category_reasoning = CASE WHEN $29 THEN $30 ELSE category_reasoning END,
+         place_name = CASE WHEN $31 THEN $32 ELSE place_name END,
+         address = CASE WHEN $33 THEN $34 ELSE address END,
+         mapkit_stable_id = CASE WHEN $35 THEN $36 ELSE mapkit_stable_id END
        WHERE id = $1 AND user_id = $2 RETURNING *`,
       [
         id, userId,
@@ -362,6 +385,9 @@ async function update(id, userId, {
         hasIsPrivate, isPrivate,
         hasExcludeFromBudget, excludeFromBudget,
         hasBudgetExclusionReason, budgetExclusionReason,
+        hasCategorySource, categorySource,
+        hasCategoryConfidence, categoryConfidence,
+        hasCategoryReasoning, categoryReasoning ? JSON.stringify(categoryReasoning) : null,
         hasPlaceName, placeName,
         hasAddress, address,
         hasMapkitStableId, mapkitStableId,
@@ -369,7 +395,11 @@ async function update(id, userId, {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err) && !isMissingBudgetExclusionReasonError(err)) throw err;
+    if (
+      !isMissingExcludeFromBudgetError(err)
+      && !isMissingBudgetExclusionReasonError(err)
+      && !isMissingCategoryProvenanceError(err)
+    ) throw err;
     const fallback = await db.query(
       `UPDATE expenses SET
          merchant = CASE WHEN $3 THEN $4 ELSE merchant END,

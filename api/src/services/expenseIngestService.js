@@ -94,6 +94,7 @@ function buildCategoryResponseFields(assignment, matchedCategory) {
     category_name: matchedCategory?.name || null,
     category_source: assignment.source,
     category_confidence: assignment.confidence,
+    category_reasoning: assignment.reasoning || null,
   };
 }
 

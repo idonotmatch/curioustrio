@@ -2,16 +2,21 @@ const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
 const { loadTimingPreferences, plannerRecommendationNote } = require('./planningProfileService');
+const { summarizeCategoryProvenance } = require('./categoryProvenance');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+function isMissingCategoryProvenanceError(err) {
+  return err?.code === '42703' && /category_(source|confidence)/i.test(`${err?.message || ''}`);
 }
 
 async function queryBudgetRelevant(sql, params, fallbackSql) {
   try {
     return await db.query(sql, params);
   } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    if ((!isMissingExcludeFromBudgetError(err) && !isMissingCategoryProvenanceError(err)) || !fallbackSql) throw err;
     return db.query(fallbackSql, params);
   }
 }
@@ -126,6 +131,8 @@ function normalizeExpenseRow(expense) {
     amount: Number(expense.amount || 0),
     category_key: expense.category_key || 'uncategorized',
     category_name: expense.category_name || 'Uncategorized',
+    category_source: expense.category_source || null,
+    category_confidence: expense.category_confidence == null ? null : Number(expense.category_confidence),
     date: typeof expense.date === 'string' ? expense.date.slice(0, 10) : dateOnly(parseDateOnly(expense.date)),
   };
 }
@@ -353,6 +360,7 @@ function projectCategorySpend({
     historical_period_count: filteredHistoricalPeriods.length,
     historical_average_total: historicalAverageTotal,
     top_unusual_expenses: split.top_unusual_expenses,
+    category_provenance: summarizeCategoryProvenance(filteredCurrentExpenses),
   };
 }
 
@@ -399,9 +407,11 @@ function summarizeCurrentActivity(currentExpenses = []) {
       category_name: expense.category_name || 'Uncategorized',
       spend: 0,
       count: 0,
+      expenses: [],
     };
     category.spend += Number(expense.amount || 0);
     category.count += 1;
+    category.expenses.push(expense);
     byCategory.set(categoryKey, category);
 
     const merchantKey = `${expense.merchant || 'Unknown'}`.trim().toLowerCase() || 'unknown';
@@ -426,9 +436,14 @@ function summarizeCurrentActivity(currentExpenses = []) {
     active_day_count: activeDays.size,
     total_spend: Number(totalSpend.toFixed(2)),
     top_categories: [...byCategory.values()]
-      .map((entry) => ({ ...entry, spend: Number(entry.spend.toFixed(2)) }))
+      .map((entry) => ({
+        ...entry,
+        spend: Number(entry.spend.toFixed(2)),
+        category_provenance: summarizeCategoryProvenance(entry.expenses),
+      }))
       .sort(sortBySpend)
-      .slice(0, 5),
+      .slice(0, 5)
+      .map(({ expenses, ...entry }) => entry),
     top_merchants: [...byMerchant.values()]
       .map((entry) => ({ ...entry, spend: Number(entry.spend.toFixed(2)) }))
       .sort(sortBySpend)
@@ -1138,6 +1153,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
          e.merchant,
          e.amount,
          e.date,
+         e.category_source,
+         e.category_confidence,
          COALESCE(e.category_id::text, 'uncategorized') AS category_key,
          COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
        FROM expenses e
@@ -1154,6 +1171,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
          e.merchant,
          e.amount,
          e.date,
+         NULL::text AS category_source,
+         NULL::int AS category_confidence,
          COALESCE(e.category_id::text, 'uncategorized') AS category_key,
          COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
        FROM expenses e
@@ -1173,6 +1192,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
        e.merchant,
        e.amount,
        e.date,
+       e.category_source,
+       e.category_confidence,
        COALESCE(e.category_id::text, 'uncategorized') AS category_key,
        COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
      FROM expenses e
@@ -1189,6 +1210,8 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
        e.merchant,
        e.amount,
        e.date,
+       NULL::text AS category_source,
+       NULL::int AS category_confidence,
        COALESCE(e.category_id::text, 'uncategorized') AS category_key,
        COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name
      FROM expenses e

@@ -180,6 +180,9 @@ async function createConfirmedExpense({
     isPrivate: payload.is_private ?? false,
     excludeFromBudget: payload.exclude_from_budget ?? false,
     budgetExclusionReason: payload.exclude_from_budget ? normalizedBudgetExclusionReason : null,
+    categorySource: payload.category_source || null,
+    categoryConfidence: payload.category_confidence ?? null,
+    categoryReasoning: payload.category_reasoning || null,
   });
 
   if (Array.isArray(payload.items) && payload.items.length > 0) {

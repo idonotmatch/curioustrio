@@ -231,7 +231,7 @@ router.post('/confirm', async (req, res, next) => {
       merchant, description, amount, date, category_id, source, notes,
       place_name, address,
       mapkit_stable_id, linked_expense_id,
-      suggested_category_id, category_source, category_confidence,
+      suggested_category_id, category_source, category_confidence, category_reasoning,
       payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
       ingest_attempt_id, parsed_payment_snapshot,
     } = req.body;
@@ -266,6 +266,7 @@ router.post('/confirm', async (req, res, next) => {
         linked_expense_id,
         category_source,
         category_confidence,
+        category_reasoning,
         payment_method,
         card_last4,
         card_label,
@@ -473,7 +474,10 @@ router.get('/:id', async (req, res, next) => {
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     if (!canViewExpense(user, expense)) return res.status(404).json({ error: 'Expense not found' });
-    res.json(await attachExpenseReviewContext(expense, user.id, { includeItems: true }));
+    res.json(await attachExpenseReviewContext(expense, user.id, {
+      includeItems: true,
+      includeCategoryReasoning: true,
+    }));
   } catch (err) { next(err); }
 });
 
@@ -523,6 +527,13 @@ router.patch('/:id', async (req, res, next) => {
       isPrivate: is_private,
       excludeFromBudget: exclude_from_budget,
       budgetExclusionReason: exclude_from_budget === false ? null : normalizedBudgetExclusionReason,
+      categorySource: category_id !== undefined ? 'manual_edit' : undefined,
+      categoryConfidence: category_id !== undefined ? null : undefined,
+      categoryReasoning: category_id !== undefined ? {
+        strategy: 'manual_edit',
+        label: 'Updated manually',
+        detail: 'This category was changed directly by the user.',
+      } : undefined,
       placeName: place_name,
       address,
       mapkitStableId: mapkit_stable_id,

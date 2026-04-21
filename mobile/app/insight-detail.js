@@ -41,6 +41,11 @@ function formatCurrency(value) {
   return `$${Number(value).toFixed(2)}`;
 }
 
+function formatPercentFromRatio(value) {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return `${Math.round(Number(value) * 100)}%`;
+}
+
 function formatShortDate(value) {
   if (!value) return '';
   const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
@@ -59,6 +64,7 @@ function metadataHighlights(metadata = {}) {
     ['Expense count', metadata.expense_count],
     ['Active days', metadata.active_day_count],
     ['Uncategorized', metadata.uncategorized_count],
+    ['Category signal', formatPercentFromRatio(metadata.category_trust_score)],
     ['Combined scopes', Array.isArray(metadata.consolidated_scopes) ? metadata.consolidated_scopes.map(formatLabel).join(' + ') : null],
   ];
 
@@ -69,6 +75,8 @@ function metadataHighlights(metadata = {}) {
 }
 
 function transparencyRows(metadata = {}) {
+  const trustedCount = metadata.category_trusted_count != null ? `${metadata.category_trusted_count}` : null;
+  const lowConfidenceCount = metadata.category_low_confidence_count != null ? `${metadata.category_low_confidence_count}` : null;
   const rows = [
     ['Maturity', metadata.maturity],
     ['Confidence', metadata.confidence],
@@ -78,6 +86,9 @@ function transparencyRows(metadata = {}) {
     ['Scope relationship', metadata.scope_relationship],
     ['Household context', metadata.household_context_included ? 'Included' : null],
     ['Month', metadata.month],
+    ['Category signal', formatPercentFromRatio(metadata.category_trust_score)],
+    ['Trusted category expenses', trustedCount],
+    ['Low-confidence category expenses', lowConfidenceCount],
     ['Combined scopes', Array.isArray(metadata.consolidated_scopes) ? metadata.consolidated_scopes.map(formatLabel).join(' + ') : null],
   ];
 
@@ -96,11 +107,36 @@ function transparencySummary(metadata = {}) {
   } else if (metadata.scope) {
     parts.push(formatLabel(metadata.scope));
   }
+  if (metadata.category_trust_score != null) {
+    const score = Number(metadata.category_trust_score || 0);
+    if (score >= 0.9) parts.push('Strong category signal');
+    else if (score >= 0.75) parts.push('Solid category signal');
+    else if (score >= 0.55) parts.push('Mixed category signal');
+    else parts.push('Weak category signal');
+  }
   if (metadata.category_name) parts.push(metadata.category_name);
   else if (metadata.merchant_name) parts.push(metadata.merchant_name);
 
   if (!parts.length) return 'Scoring context and hierarchy for this card.';
   return parts.slice(0, 4).join(' • ');
+}
+
+function categorySignalCopy(metadata = {}) {
+  if (metadata.category_trust_score == null) return null;
+  const trustScore = Number(metadata.category_trust_score || 0);
+  const trustedCount = Number(metadata.category_trusted_count || 0);
+  const lowConfidenceCount = Number(metadata.category_low_confidence_count || 0);
+
+  if (trustScore >= 0.9) {
+    return `This card is leaning on strong category history${trustedCount > 0 ? ` across ${trustedCount} trusted expense${trustedCount === 1 ? '' : 's'}` : ''}.`;
+  }
+  if (trustScore >= 0.75) {
+    return `Most of the supporting expenses were categorized with stable signals${trustedCount > 0 ? ` (${trustedCount} trusted)` : ''}.`;
+  }
+  if (trustScore >= 0.55) {
+    return `This is directionally useful, but some of the supporting expenses still have mixed category quality${lowConfidenceCount > 0 ? ` (${lowConfidenceCount} low-confidence)` : ''}.`;
+  }
+  return `This pattern is built on weak category quality right now${lowConfidenceCount > 0 ? ` (${lowConfidenceCount} low-confidence)` : ''}, so it should be treated as a softer read.`;
 }
 
 function whatChangedCopy(metadata = {}, body = '') {
@@ -288,6 +324,7 @@ export default function InsightDetailScreen() {
   });
   const highlights = metadataHighlights(metadata);
   const technicalRows = transparencyRows(metadata);
+  const categorySignal = categorySignalCopy(metadata);
   const consolidationNote = consolidatedCopy(metadata);
   const consolidationRows = consolidatedRows(metadata);
   const evidenceMode = evidenceModeForInsight(insightType, metadata);
@@ -596,6 +633,9 @@ export default function InsightDetailScreen() {
                 ? 'Open this if you want the scoring context and hierarchy behind the card.'
                 : transparencySummary(metadata)}
             </Text>
+            {!showTechnicalDetails && categorySignal ? (
+              <Text style={styles.technicalHint}>{categorySignal}</Text>
+            ) : null}
             {showTechnicalDetails ? (
               <View style={styles.metricList}>
                 {technicalRows.map((row) => (
@@ -833,6 +873,7 @@ const styles = StyleSheet.create({
   metricMerchant: { color: '#f5f5f5', fontSize: 13, fontWeight: '700' },
   metricSub: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
   metricValue: { color: '#f5f5f5', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
+  technicalHint: { color: '#a9a39a', fontSize: 12, lineHeight: 18, marginTop: -2 },
   feedbackRow: { flexDirection: 'row', gap: 10 },
   feedbackButton: {
     flex: 1,

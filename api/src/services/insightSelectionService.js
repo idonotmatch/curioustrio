@@ -63,6 +63,34 @@ function evidenceStrengthScore(insight) {
   return historicalEvidenceScore(insight) + confidenceComponentScore(insight) + numericEvidenceScore(insight);
 }
 
+function categoryTrustAdjustment(insight) {
+  const type = `${insight?.type || ''}`.trim();
+  const categoryDriven = type === 'top_category_driver'
+    || type === 'projected_category_surge'
+    || type === 'projected_category_under_baseline'
+    || type === 'early_top_category'
+    || type === 'developing_category_shift';
+  if (!categoryDriven) return 0;
+
+  const trustScore = Number(insight?.metadata?.category_trust_score ?? NaN);
+  const lowConfidenceCount = Number(insight?.metadata?.category_low_confidence_count || 0);
+  const trustedCount = Number(insight?.metadata?.category_trusted_count || 0);
+
+  let adjustment = 0;
+  if (Number.isFinite(trustScore)) {
+    if (trustScore >= 0.9) adjustment += 10;
+    else if (trustScore >= 0.8) adjustment += 6;
+    else if (trustScore >= 0.7) adjustment += 2;
+    else if (trustScore >= 0.55) adjustment -= 8;
+    else adjustment -= 16;
+  }
+
+  if (lowConfidenceCount >= 3 && trustedCount === 0) adjustment -= 8;
+  else if (lowConfidenceCount >= 2 && trustedCount <= 1) adjustment -= 4;
+
+  return adjustment;
+}
+
 function scopeRelevanceScore(insight) {
   if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 14;
   if (insight?.metadata?.scope === 'personal') return 16;
@@ -190,6 +218,7 @@ function minimumSurfaceThreshold(insight) {
 function surfaceGuardReasons(insight, preferenceSummary = {}) {
   const metadata = insight?.metadata || {};
   const reasons = [];
+  const type = `${insight?.type || ''}`.trim();
   const role = portfolioRole(insight);
   const maturity = `${metadata.maturity || ''}`.trim();
   const shownCount = knownTypeShownCount(preferenceSummary.type_preferences, insight?.type);
@@ -201,6 +230,18 @@ function surfaceGuardReasons(insight, preferenceSummary = {}) {
 
   if (role === 'explain' && evidenceScore < 18) {
     reasons.push('thin_explanatory_evidence');
+  }
+
+  if (
+    (type === 'top_category_driver'
+      || type === 'projected_category_surge'
+      || type === 'projected_category_under_baseline'
+      || type === 'early_top_category'
+      || type === 'developing_category_shift')
+    && Number.isFinite(Number(metadata.category_trust_score))
+    && Number(metadata.category_trust_score) < 0.55
+  ) {
+    reasons.push('weak_category_assignment_signal');
   }
 
   if (maturity === 'early' && role === 'explain') {
@@ -245,6 +286,7 @@ function scoreInsightCandidate(insight, feedbackSummary = new Map(), preferenceS
     preference: preferenceAdjustmentForInsight(insight, preferenceSummary),
     scope_hierarchy: scopeHierarchyAdjustment(insight),
     planner_timing: Number(insight?.metadata?.planner_timing_adjustment || 0),
+    category_trust: categoryTrustAdjustment(insight),
   };
   const baseScore = Object.values(components).reduce((sum, value) => sum + Number(value || 0), 0);
   const adjustmentScore = Object.values(adjustments).reduce((sum, value) => sum + Number(value || 0), 0);

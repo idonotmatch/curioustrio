@@ -360,6 +360,7 @@ export default function ConfirmScreen() {
         suggested_category_id: parsed?.category_id || null,
         category_source: parsed?.category_source || null,
         category_confidence: parsed?.category_confidence ?? null,
+        category_reasoning: parsed?.category_reasoning || null,
         source: isRefund ? 'refund' : (parsed?.source || 'manual'),
         notes: expense.notes,
         place_name: locationData?.place_name,

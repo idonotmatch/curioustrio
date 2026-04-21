@@ -121,6 +121,49 @@ describe('insightBuilder orchestration', () => {
     expect(decision.surface_score).toBeGreaterThanOrEqual(decision.threshold);
   });
 
+  it('penalizes and can suppress category insights built on weak category trust', () => {
+    const strongDecision = insightSurfaceDecision(buildInsight({
+      id: 'strong-category',
+      type: 'early_top_category',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        month: '2026-04',
+        maturity: 'early',
+        confidence: 'descriptive',
+        category_key: 'groceries',
+        category_name: 'Groceries',
+        current_spend_to_date: 142,
+        expense_count: 4,
+        category_trust_score: 0.91,
+        category_trusted_count: 4,
+        category_low_confidence_count: 0,
+      },
+    }));
+    const weakDecision = insightSurfaceDecision(buildInsight({
+      id: 'weak-category',
+      type: 'early_top_category',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        month: '2026-04',
+        maturity: 'early',
+        confidence: 'descriptive',
+        category_key: 'groceries',
+        category_name: 'Groceries',
+        current_spend_to_date: 142,
+        expense_count: 4,
+        category_trust_score: 0.42,
+        category_trusted_count: 0,
+        category_low_confidence_count: 3,
+      },
+    }));
+
+    expect(strongDecision.eligible).toBe(true);
+    expect(weakDecision.surface_score).toBeLessThan(strongDecision.surface_score);
+    expect(weakDecision.suppression_reasons).toContain('weak_category_assignment_signal');
+  });
+
   it('summarizes surface decisions by eligibility and suppression reason', () => {
     const decisions = [
       {

@@ -1,16 +1,21 @@
 const db = require('../db');
 const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
+const { summarizeCategoryProvenance } = require('./categoryProvenance');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
+}
+
+function isMissingCategoryProvenanceError(err) {
+  return err?.code === '42703' && /category_(source|confidence)/i.test(`${err?.message || ''}`);
 }
 
 async function queryBudgetRelevant(sql, params, fallbackSql) {
   try {
     return await db.query(sql, params);
   } catch (err) {
-    if (!isMissingExcludeFromBudgetError(err) || !fallbackSql) throw err;
+    if ((!isMissingExcludeFromBudgetError(err) && !isMissingCategoryProvenanceError(err)) || !fallbackSql) throw err;
     return db.query(fallbackSql, params);
   }
 }
@@ -119,7 +124,23 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
       `SELECT
          COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name,
          COALESCE(e.category_id::text, 'uncategorized') AS category_key,
-         COALESCE(SUM(e.amount), 0) AS spent
+         COALESCE(SUM(e.amount), 0) AS spent,
+         COUNT(*)::int AS expense_count,
+         COUNT(*) FILTER (
+           WHERE (
+             e.category_source IN ('decision_memory', 'memory')
+             OR (e.category_source = 'description_memory' AND COALESCE(e.category_confidence, 0) >= 3)
+             OR (e.category_source = 'heuristic' AND COALESCE(e.category_confidence, 0) >= 2)
+             OR (e.category_source = 'manual_edit')
+             OR (e.category_source = 'claude' AND COALESCE(e.category_confidence, 0) >= 4)
+           )
+         )::int AS trusted_count,
+         COUNT(*) FILTER (
+           WHERE (
+             e.category_source IS NULL
+             OR (e.category_source = 'claude' AND COALESCE(e.category_confidence, 0) < 2)
+           )
+         )::int AS low_confidence_count
        FROM expenses e
        LEFT JOIN categories c ON e.category_id = c.id
        LEFT JOIN categories pc ON c.parent_id = pc.id
@@ -133,7 +154,10 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
       `SELECT
          COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name,
          COALESCE(e.category_id::text, 'uncategorized') AS category_key,
-         COALESCE(SUM(e.amount), 0) AS spent
+         COALESCE(SUM(e.amount), 0) AS spent,
+         COUNT(*)::int AS expense_count,
+         0::int AS trusted_count,
+         0::int AS low_confidence_count
        FROM expenses e
        LEFT JOIN categories c ON e.category_id = c.id
        LEFT JOIN categories pc ON c.parent_id = pc.id
@@ -147,6 +171,16 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
       category_key: row.category_key,
       category_name: row.category_name,
       spent: Number(row.spent || 0),
+      expense_count: Number(row.expense_count || 0),
+      category_provenance: {
+        expense_count: Number(row.expense_count || 0),
+        trusted_count: Number(row.trusted_count || 0),
+        low_confidence_count: Number(row.low_confidence_count || 0),
+        trusted_spend_share: null,
+        trust_score: Number(row.expense_count || 0) > 0
+          ? Number((Number(row.trusted_count || 0) / Number(row.expense_count || 1)).toFixed(3))
+          : null,
+      },
     }));
   }
 
@@ -154,7 +188,23 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
     `SELECT
        COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name,
        COALESCE(e.category_id::text, 'uncategorized') AS category_key,
-       COALESCE(SUM(e.amount), 0) AS spent
+       COALESCE(SUM(e.amount), 0) AS spent,
+       COUNT(*)::int AS expense_count,
+       COUNT(*) FILTER (
+         WHERE (
+           e.category_source IN ('decision_memory', 'memory')
+           OR (e.category_source = 'description_memory' AND COALESCE(e.category_confidence, 0) >= 3)
+           OR (e.category_source = 'heuristic' AND COALESCE(e.category_confidence, 0) >= 2)
+           OR (e.category_source = 'manual_edit')
+           OR (e.category_source = 'claude' AND COALESCE(e.category_confidence, 0) >= 4)
+         )
+       )::int AS trusted_count,
+       COUNT(*) FILTER (
+         WHERE (
+           e.category_source IS NULL
+           OR (e.category_source = 'claude' AND COALESCE(e.category_confidence, 0) < 2)
+         )
+       )::int AS low_confidence_count
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      LEFT JOIN categories pc ON c.parent_id = pc.id
@@ -168,7 +218,10 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
     `SELECT
        COALESCE(pc.name || ' · ' || c.name, c.name, 'Uncategorized') AS category_name,
        COALESCE(e.category_id::text, 'uncategorized') AS category_key,
-       COALESCE(SUM(e.amount), 0) AS spent
+       COALESCE(SUM(e.amount), 0) AS spent,
+       COUNT(*)::int AS expense_count,
+       0::int AS trusted_count,
+       0::int AS low_confidence_count
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      LEFT JOIN categories pc ON c.parent_id = pc.id
@@ -182,6 +235,16 @@ async function categorySpendByPeriod({ scope, householdId, userId, from, toExclu
     category_key: row.category_key,
     category_name: row.category_name,
     spent: Number(row.spent || 0),
+    expense_count: Number(row.expense_count || 0),
+    category_provenance: {
+      expense_count: Number(row.expense_count || 0),
+      trusted_count: Number(row.trusted_count || 0),
+      low_confidence_count: Number(row.low_confidence_count || 0),
+      trusted_spend_share: null,
+      trust_score: Number(row.expense_count || 0) > 0
+        ? Number((Number(row.trusted_count || 0) / Number(row.expense_count || 1)).toFixed(3))
+        : null,
+    },
   }));
 }
 
@@ -493,6 +556,7 @@ async function analyzeSpendingTrend({ user, scope = 'personal', month = null }) 
           historical_spend_to_date_avg: historicalAvg,
           delta_amount: driverDelta,
           delta_percent: driverDeltaPercent,
+          category_provenance: current?.category_provenance || historical?.category_provenance || null,
         };
       })
       .filter((driver) => Math.abs(driver.delta_amount) >= 20)
