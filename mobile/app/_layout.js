@@ -42,6 +42,14 @@ function parseNotificationMetadata(value) {
   return {};
 }
 
+const RECURRING_PUSH_INSIGHT_TYPES = new Set([
+  'recurring_repurchase_due',
+  'recurring_price_spike',
+  'buy_soon_better_price',
+  'recurring_restock_window',
+  'recurring_cost_pressure',
+]);
+
 function AppNavigator() {
   const router = useRouter();
   const [bootstrapped, setBootstrapped] = useState(false);
@@ -49,6 +57,88 @@ function AppNavigator() {
   const gmailSyncInFlightRef = useRef(false);
   const lastGmailAutoSyncAttemptRef = useRef(0);
   const lastHandledNotificationRef = useRef(null);
+  const pendingNotificationResponseRef = useRef(null);
+
+  async function navigateFromNotificationResponse(response) {
+    const identifier = response?.notification?.request?.identifier;
+    if (identifier && lastHandledNotificationRef.current === identifier) return;
+    if (identifier) lastHandledNotificationRef.current = identifier;
+
+    const content = response?.notification?.request?.content || {};
+    const data = normalizeNotificationData(content.data);
+    const route = firstValue(data.route);
+    const type = firstValue(data.type, '');
+
+    if (type === 'insight') {
+      const metadata = parseNotificationMetadata(firstValue(data.metadata));
+      const insightType = firstValue(data.insight_type, '');
+      const insightId = firstValue(data.insight_id, '');
+      const groupKey = firstValue(data.group_key, metadata.group_key || '');
+
+      try {
+        await api.post('/insights/events', {
+          events: [{
+            insight_id: insightId,
+            event_type: 'tapped',
+            metadata: {
+              source: 'push',
+              insight_type: insightType,
+              continuity_key: metadata.continuity_key || null,
+            },
+          }],
+        });
+      } catch {
+        // Non-fatal
+      }
+
+      const payloadKey = stashNavigationPayload({ metadata }, 'push-insight');
+
+      if (RECURRING_PUSH_INSIGHT_TYPES.has(insightType) && groupKey) {
+        router.push({
+          pathname: '/recurring-item',
+          params: {
+            group_key: groupKey,
+            scope: firstValue(data.scope, metadata.scope || 'personal'),
+            title: firstValue(data.title, content.title || 'Recurring item'),
+            insight_id: insightId,
+            insight_type: insightType,
+            body: firstValue(data.body, content.body || ''),
+            payload_key: payloadKey,
+          },
+        });
+        return;
+      }
+
+      router.push({
+        pathname: '/insight-detail',
+        params: {
+          insight_id: insightId,
+          insight_type: insightType,
+          title: firstValue(data.title, content.title || 'Insight detail'),
+          body: firstValue(data.body, content.body || ''),
+          severity: firstValue(data.severity, 'low'),
+          entity_type: firstValue(data.entity_type, ''),
+          entity_id: firstValue(data.entity_id, ''),
+          payload_key: payloadKey,
+        },
+      });
+      return;
+    }
+
+    if (route) {
+      router.push(route);
+      return;
+    }
+
+    if (type === 'recurring') {
+      router.push('/watching-plans');
+      return;
+    }
+
+    if (type === 'review_queue' || type === 'gmail_import') {
+      router.push('/review-queue');
+    }
+  }
 
   async function cacheCurrentUser(user) {
     if (!user) return;
@@ -209,87 +299,11 @@ function AppNavigator() {
 
   useEffect(() => {
     async function handleNotificationResponse(response) {
-      const identifier = response?.notification?.request?.identifier;
-      if (identifier && lastHandledNotificationRef.current === identifier) return;
-      if (identifier) lastHandledNotificationRef.current = identifier;
-
-      const content = response?.notification?.request?.content || {};
-      const data = normalizeNotificationData(content.data);
-      const route = firstValue(data.route);
-      const type = firstValue(data.type, '');
-
-      if (type === 'insight') {
-        const metadata = parseNotificationMetadata(firstValue(data.metadata));
-        const insightType = firstValue(data.insight_type, '');
-        const insightId = firstValue(data.insight_id, '');
-        const groupKey = firstValue(data.group_key, metadata.group_key || '');
-
-        try {
-          await api.post('/insights/events', {
-            events: [{
-              insight_id: insightId,
-              event_type: 'tapped',
-              metadata: {
-                source: 'push',
-                insight_type: insightType,
-                continuity_key: metadata.continuity_key || null,
-              },
-            }],
-          });
-        } catch {
-          // Non-fatal
-        }
-
-        const payloadKey = stashNavigationPayload({ metadata }, 'push-insight');
-
-        if (
-          ['recurring_repurchase_due', 'recurring_price_spike', 'buy_soon_better_price', 'recurring_restock_window', 'recurring_cost_pressure'].includes(insightType)
-          && groupKey
-        ) {
-          router.push({
-            pathname: '/recurring-item',
-            params: {
-              group_key: groupKey,
-              scope: firstValue(data.scope, metadata.scope || 'personal'),
-              title: firstValue(data.title, content.title || 'Recurring item'),
-              insight_id: insightId,
-              insight_type: insightType,
-              body: firstValue(data.body, content.body || ''),
-              payload_key: payloadKey,
-            },
-          });
-          return;
-        }
-
-        router.push({
-          pathname: '/insight-detail',
-          params: {
-            insight_id: insightId,
-            insight_type: insightType,
-            title: firstValue(data.title, content.title || 'Insight detail'),
-            body: firstValue(data.body, content.body || ''),
-            severity: firstValue(data.severity, 'low'),
-            entity_type: firstValue(data.entity_type, ''),
-            entity_id: firstValue(data.entity_id, ''),
-            payload_key: payloadKey,
-          },
-        });
+      if (!bootstrapped) {
+        pendingNotificationResponseRef.current = response;
         return;
       }
-
-      if (route) {
-        router.push(route);
-        return;
-      }
-
-      if (type === 'recurring') {
-        router.push('/watching-plans');
-        return;
-      }
-
-      if (type === 'review_queue' || type === 'gmail_import') {
-        router.push('/review-queue');
-      }
+      await navigateFromNotificationResponse(response);
     }
 
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -305,7 +319,14 @@ function AppNavigator() {
       });
 
     return () => subscription.remove();
-  }, [router]);
+  }, [bootstrapped, router]);
+
+  useEffect(() => {
+    if (!bootstrapped || !pendingNotificationResponseRef.current) return;
+    const response = pendingNotificationResponseRef.current;
+    pendingNotificationResponseRef.current = null;
+    navigateFromNotificationResponse(response);
+  }, [bootstrapped, router]);
 
   if (!bootstrapped) {
     return (
