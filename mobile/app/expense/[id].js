@@ -1,6 +1,6 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert, Switch, Linking, Platform, Modal
+  StyleSheet, ActivityIndicator, Alert, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -10,12 +10,17 @@ import { api } from '../../services/api';
 import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import { removePendingExpense } from '../../hooks/usePendingExpenses';
+import { usePendingExpenseReviewActions } from '../../hooks/usePendingExpenseReviewActions';
+import { useExpenseVisibilityControls } from '../../hooks/useExpenseVisibilityControls';
 import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 import { PendingExpenseReviewPanel } from '../../components/PendingExpenseReviewPanel';
-import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
+import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
+import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
+import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
+import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
+import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 import {
   formatImportedAt,
@@ -109,7 +114,6 @@ export default function ExpenseDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savingControls, setSavingControls] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actioning, setActioning] = useState(false);
   const [showDismissReasonSheet, setShowDismissReasonSheet] = useState(false);
@@ -208,6 +212,25 @@ export default function ExpenseDetailScreen() {
   const canEdit = !!currentUserId && !!expense && String(expense.user_id) === String(currentUserId);
   const itemSignals = summarizeItemSignals(items);
   const canAdjustReviewControls = canEdit && expense?.status === 'pending' && expense?.source === 'email';
+  const {
+    savingControls,
+    persistReviewControlsIfNeeded,
+    handleTogglePrivate,
+    handleToggleTrackOnly,
+    handleSelectBudgetExclusionReason,
+  } = useExpenseVisibilityControls({
+    expenseId: id,
+    expense,
+    canEdit,
+    canAdjustReviewControls,
+    isPrivate,
+    setIsPrivate,
+    excludeFromBudget,
+    setExcludeFromBudget,
+    budgetExclusionReason,
+    setBudgetExclusionReason,
+    setExpense,
+  });
 
   useEffect(() => {
     if (!canEdit && editing) setEditing(false);
@@ -285,134 +308,6 @@ export default function ExpenseDetailScreen() {
     }
   }
 
-  async function persistReviewControlsIfNeeded() {
-    if (!canAdjustReviewControls || !expense) return expense;
-    const nextReason = excludeFromBudget ? budgetExclusionReason : null;
-    if (excludeFromBudget && !nextReason) {
-      Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
-      return null;
-    }
-    const reviewControlsChanged =
-      Boolean(expense.is_private) !== Boolean(isPrivate)
-      || Boolean(expense.exclude_from_budget) !== Boolean(excludeFromBudget)
-      || `${expense.budget_exclusion_reason || ''}` !== `${nextReason || ''}`;
-
-    if (!reviewControlsChanged) return expense;
-
-    try {
-      const refreshed = await api.patch(`/expenses/${id}`, {
-        is_private: isPrivate,
-        exclude_from_budget: excludeFromBudget,
-        budget_exclusion_reason: nextReason,
-      });
-      setExpense(refreshed);
-      saveExpenseSnapshot(refreshed);
-      patchExpenseInCachedLists(refreshed);
-      return refreshed;
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Could not save review options');
-      return null;
-    }
-  }
-
-  async function persistExpenseControls(patch, optimisticState = {}) {
-    if (!canEdit || !expense) return expense;
-    const previousExpense = expense;
-    const nextExpense = {
-      ...expense,
-      ...optimisticState,
-    };
-
-    setExpense(nextExpense);
-    if (optimisticState.is_private !== undefined) setIsPrivate(Boolean(optimisticState.is_private));
-    if (optimisticState.exclude_from_budget !== undefined) setExcludeFromBudget(Boolean(optimisticState.exclude_from_budget));
-    if (optimisticState.budget_exclusion_reason !== undefined) setBudgetExclusionReason(optimisticState.budget_exclusion_reason || null);
-
-    setSavingControls(true);
-    try {
-      const refreshed = await api.patch(`/expenses/${id}`, patch);
-      setExpense(refreshed);
-      setIsPrivate(Boolean(refreshed.is_private));
-      setExcludeFromBudget(Boolean(refreshed.exclude_from_budget));
-      setBudgetExclusionReason(refreshed.budget_exclusion_reason || null);
-      saveExpenseSnapshot(refreshed);
-      patchExpenseInCachedLists(refreshed);
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
-      return refreshed;
-    } catch (e) {
-      setExpense(previousExpense);
-      setIsPrivate(Boolean(previousExpense.is_private));
-      setExcludeFromBudget(Boolean(previousExpense.exclude_from_budget));
-      setBudgetExclusionReason(previousExpense.budget_exclusion_reason || null);
-      Alert.alert('Error', e.message);
-      return previousExpense;
-    } finally {
-      setSavingControls(false);
-    }
-  }
-
-  async function handleTogglePrivate(nextValue) {
-    if (!canEdit || savingControls) return;
-    await persistExpenseControls(
-      { is_private: nextValue },
-      { is_private: nextValue }
-    );
-  }
-
-  async function handleToggleTrackOnly(nextValue) {
-    if (!canEdit || savingControls) return;
-    if (!nextValue) {
-      await persistExpenseControls(
-        {
-          exclude_from_budget: false,
-          budget_exclusion_reason: null,
-        },
-        {
-          exclude_from_budget: false,
-          budget_exclusion_reason: null,
-        }
-      );
-      return;
-    }
-
-    const nextReason = budgetExclusionReason || expense?.budget_exclusion_reason || null;
-    setExcludeFromBudget(true);
-    if (nextReason) {
-      setBudgetExclusionReason(nextReason);
-      await persistExpenseControls(
-        {
-          exclude_from_budget: true,
-          budget_exclusion_reason: nextReason,
-        },
-        {
-          exclude_from_budget: true,
-          budget_exclusion_reason: nextReason,
-        }
-      );
-      return;
-    }
-
-    setExpense((current) => current ? { ...current, exclude_from_budget: true } : current);
-  }
-
-  async function handleSelectBudgetExclusionReason(reasonValue) {
-    if (!canEdit || savingControls) return;
-    await persistExpenseControls(
-      {
-        exclude_from_budget: true,
-        budget_exclusion_reason: reasonValue,
-      },
-      {
-        exclude_from_budget: true,
-        budget_exclusion_reason: reasonValue,
-      }
-    );
-  }
-
   async function handleDelete() {
     Alert.alert('Delete expense', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
@@ -475,23 +370,6 @@ export default function ExpenseDetailScreen() {
     }
   }
 
-  async function dismissPendingExpense(dismissalReason) {
-    setActioning(true);
-    try {
-      await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
-      await removeExpenseFromCachedLists(id);
-      await removeExpenseSnapshot(id);
-      const { invalidateCache } = await import('../../services/cache');
-      await invalidateCache('cache:expenses:pending');
-      removePendingExpense(id);
-      setShowDismissReasonSheet(false);
-      router.back();
-    } catch (e) {
-      Alert.alert('Error', e.message);
-      setActioning(false);
-    }
-  }
-
   if (loading) return <View style={styles.center}><ActivityIndicator color="#555" /></View>;
   if (!expense) return <View style={styles.center}><Text style={styles.muted}>Expense not found.</Text></View>;
 
@@ -530,6 +408,15 @@ export default function ExpenseDetailScreen() {
   const displayIsPrivate = isPendingEmailReview ? isPrivate : (editing ? isPrivate : expense.is_private);
   const displayExcludeFromBudget = isPendingEmailReview ? excludeFromBudget : (editing ? excludeFromBudget : expense.exclude_from_budget);
   const itemReviewContext = Array.isArray(expense.item_review_context) ? expense.item_review_context : [];
+  const { approvePendingExpense, dismissPendingExpense } = usePendingExpenseReviewActions({
+    expenseId: id,
+    router,
+    setActioning,
+    setShowDismissReasonSheet,
+    persistReviewControlsIfNeeded,
+    isItemsFirstReview,
+    isQuickCheckReview,
+  });
 
   function activateReviewField(fieldKey) {
     setEditing(true);
@@ -823,54 +710,18 @@ export default function ExpenseDetailScreen() {
         )}
 
         {!isPendingEmailReview ? (
-          <>
-            <View style={[styles.row, { paddingVertical: 12 }]}>
-              <Text style={styles.label}>Private</Text>
-              <Switch
-                value={isPrivate}
-                onValueChange={canEdit ? handleTogglePrivate : undefined}
-                disabled={!canEdit || savingControls}
-                trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
-                thumbColor={isPrivate ? '#fff' : '#555'}
-              />
-            </View>
-
-            <View style={[styles.row, { paddingVertical: 12 }]}>
-              <View style={styles.trackOnlyTextWrap}>
-                <Text style={styles.label}>Track only</Text>
-                <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
-              </View>
-              <Switch
-                value={excludeFromBudget}
-                onValueChange={canEdit ? handleToggleTrackOnly : undefined}
-                disabled={!canEdit || savingControls}
-                trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
-                thumbColor={excludeFromBudget ? '#fff' : '#555'}
-              />
-            </View>
-
-            {excludeFromBudget ? (
-              <View style={styles.trackOnlyReasonBlock}>
-                <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
-                <View style={styles.reasonChipWrap}>
-                  {TRACK_ONLY_REASONS.map((reason) => {
-                    const selected = budgetExclusionReason === reason.value;
-                    return (
-                      <TouchableOpacity
-                        key={reason.value}
-                        style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                        onPress={() => canEdit ? handleSelectBudgetExclusionReason(reason.value) : undefined}
-                        activeOpacity={0.82}
-                        disabled={!canEdit || savingControls}
-                      >
-                        <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-          </>
+          <ExpenseVisibilityControls
+            styles={styles}
+            isPrivate={isPrivate}
+            excludeFromBudget={excludeFromBudget}
+            budgetExclusionReason={budgetExclusionReason}
+            canAdjust={canEdit}
+            savingControls={savingControls}
+            trackOnlyReasons={TRACK_ONLY_REASONS}
+            onTogglePrivate={handleTogglePrivate}
+            onToggleTrackOnly={handleToggleTrackOnly}
+            onSelectBudgetExclusionReason={handleSelectBudgetExclusionReason}
+          />
         ) : null}
       </View>
 
@@ -922,249 +773,52 @@ export default function ExpenseDetailScreen() {
         </View>
       )}
 
-      {(items.length > 0 || (editing && canEdit)) && (
-        <TouchableOpacity
-          style={[styles.itemsHeader, activeReviewField === 'items' && styles.itemsHeaderActive]}
-          onPress={() => setItemsExpanded(e => !e)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.itemsHeaderText, activeReviewField === 'items' && styles.itemsHeaderTextActive]}>
-            {items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : 'Items'}
-          </Text>
-          <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-forward'} size={14} color={activeReviewField === 'items' ? '#f5f5f5' : '#444'} />
-        </TouchableOpacity>
-      )}
+      <ExpenseItemsSection
+        styles={styles}
+        items={items}
+        itemsExpanded={itemsExpanded}
+        setItemsExpanded={setItemsExpanded}
+        activeReviewField={activeReviewField}
+        editing={editing}
+        canEdit={canEdit}
+        itemsEdits={itemsEdits}
+        setItemsEdits={setItemsEdits}
+        amount={amount}
+        itemSignals={itemSignals}
+        itemMatchLabel={itemMatchLabel}
+        formatItemStructuredMeta={formatItemStructuredMeta}
+        itemSubmeta={itemSubmeta}
+      />
 
-      {itemsExpanded && (
-        <View style={styles.itemsList}>
-          {editing && canEdit ? (
-            <>
-              {itemsEdits.map((item, i) => (
-                <View key={i} style={styles.itemEditRow}>
-                  <TextInput
-                    style={styles.itemEditDesc}
-                    value={item.description}
-                    onChangeText={v => setItemsEdits(prev => prev.map((it, idx) => idx === i ? { ...it, description: v } : it))}
-                    placeholder="Description"
-                    placeholderTextColor="#444"
-                  />
-                  <TextInput
-                    style={styles.itemEditAmount}
-                    value={item.amount}
-                    onChangeText={v => setItemsEdits(prev => prev.map((it, idx) => idx === i ? { ...it, amount: v } : it))}
-                    placeholder="0.00"
-                    placeholderTextColor="#444"
-                    keyboardType="decimal-pad"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setItemsEdits(prev => prev.filter((_, idx) => idx !== i))}
-                    style={styles.itemRemoveBtn}
-                  >
-                    <Text style={styles.itemRemoveText}>×</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-              <TouchableOpacity
-                onPress={() => setItemsEdits(prev => [...prev, { description: '', amount: '' }])}
-                style={styles.addItemRow}
-              >
-                <Text style={styles.addItemText}>+ Add item</Text>
-              </TouchableOpacity>
-              {(() => {
-                const itemSum = itemsEdits.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
-                const total = parseFloat(amount) || 0;
-                const hasAmounts = itemsEdits.some(it => it.amount !== '');
-                if (!hasAmounts || total === 0) return null;
-                const diff = total - itemSum;
-                const balanced = Math.abs(diff) < 0.01;
-                return (
-                  <View style={styles.itemBalance}>
-                    <Text style={[styles.itemBalanceText, balanced ? styles.itemBalanceOk : styles.itemBalanceWarn]}>
-                      {balanced
-                        ? '✓ Items match total'
-                        : diff > 0
-                          ? `$${diff.toFixed(2)} unaccounted`
-                          : `$${Math.abs(diff).toFixed(2)} over total`}
-                    </Text>
-                  </View>
-                );
-              })()}
-            </>
-          ) : (
-            <>
-              <View style={styles.itemSummaryRow}>
-                {itemSignals.matched > 0 ? (
-                  <View style={styles.itemSummaryChip}>
-                    <Text style={styles.itemSummaryChipText}>{itemSignals.matched} matched</Text>
-                  </View>
-                ) : null}
-                {itemSignals.unitPriced > 0 ? (
-                  <View style={styles.itemSummaryChip}>
-                    <Text style={styles.itemSummaryChipText}>{itemSignals.unitPriced} unit priced</Text>
-                  </View>
-                ) : null}
-                {itemSignals.nonProduct > 0 ? (
-                  <View style={styles.itemSummaryChipMuted}>
-                    <Text style={styles.itemSummaryChipTextMuted}>{itemSignals.nonProduct} fees or extras</Text>
-                  </View>
-                ) : null}
-              </View>
-              {items.map((item, i) => {
-                const matchLabel = itemMatchLabel(item);
-                const structuredMeta = formatItemStructuredMeta(item);
-                const submeta = itemSubmeta(item);
-                return (
-                  <View key={i} style={styles.itemReadRow}>
-                    <View style={styles.itemReadText}>
-                      <View style={styles.itemReadTop}>
-                        <Text style={styles.itemReadDesc}>{item.description || 'Untitled item'}</Text>
-                        {matchLabel ? (
-                          <View style={styles.itemMatchChip}>
-                            <Text style={styles.itemMatchChipText}>{matchLabel}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      {structuredMeta ? <Text style={styles.itemReadMeta}>{structuredMeta}</Text> : null}
-                      {submeta ? <Text style={styles.itemReadSubmeta}>{submeta}</Text> : null}
-                    </View>
-                    {item.amount != null ? (
-                      <Text style={styles.itemReadAmount}>${Number(item.amount).toFixed(2)}</Text>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </>
-          )}
-        </View>
-      )}
+      <ExpenseDetailActions
+        styles={styles}
+        expense={expense}
+        editing={editing}
+        canEdit={canEdit}
+        saving={saving}
+        handleSave={handleSave}
+        actioning={actioning}
+        approvePendingExpense={approvePendingExpense}
+        openDismissReasonSheet={() => setShowDismissReasonSheet(true)}
+        isItemsFirstReview={isItemsFirstReview}
+        isQuickCheckReview={isQuickCheckReview}
+        deleting={deleting}
+        handleDelete={handleDelete}
+      />
 
-      {/* Duplicate flags */}
-      {expense.duplicate_flags?.length > 0 && (
-        <View style={styles.dupSection}>
-          <Text style={styles.dupTitle}>Possible duplicate</Text>
-          {expense.duplicate_flags.map(f => (
-            <Text key={f.id} style={styles.dupItem}>Confidence: {f.confidence} · {f.status}</Text>
-          ))}
-        </View>
-      )}
-
-      {/* Actions */}
-      {editing && canEdit && (
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save changes'}</Text>
-        </TouchableOpacity>
-      )}
-
-      {!editing && expense.status === 'pending' && (
-        <View style={styles.pendingActions}>
-          <TouchableOpacity
-            style={[styles.approveBtn, actioning && { opacity: 0.5 }]}
-            disabled={actioning}
-            onPress={async () => {
-              setActioning(true);
-              try {
-                const persistedExpense = await persistReviewControlsIfNeeded();
-                if (!persistedExpense) {
-                  setActioning(false);
-                  return;
-                }
-                const reviewContext = isItemsFirstReview
-                  ? 'items_first'
-                  : isQuickCheckReview
-                    ? 'quick_check'
-                    : 'full_review';
-                const approved = await api.post(`/expenses/${id}/approve`, { review_context: reviewContext });
-                if (approved?.id) {
-                  await saveExpenseSnapshot(approved);
-                  await patchExpenseInCachedLists(approved);
-                }
-                const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
-                await Promise.all([
-                  invalidateCache('cache:expenses:pending'),
-                  invalidateCacheByPrefix('cache:expenses:'),
-                  invalidateCacheByPrefix('cache:budget:'),
-                  invalidateCacheByPrefix('cache:household-expenses:'),
-                ]);
-                removePendingExpense(id);
-                router.back();
-              }
-              catch (e) { Alert.alert('Error', e.message); setActioning(false); }
-            }}
-          >
-            <Text style={styles.approveBtnText}>
-              {isItemsFirstReview ? 'Approve after item check' : isQuickCheckReview ? 'Approve after quick check' : 'Approve'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dismissBtn, actioning && { opacity: 0.5 }]}
-            disabled={actioning}
-            onPress={() => setShowDismissReasonSheet(true)}
-          >
-            <Text style={styles.dismissBtnText}>Dismiss</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {canEdit ? (
-        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
-          {deleting
-            ? <ActivityIndicator color="#ef4444" size="small" />
-            : <Text style={styles.deleteBtnText}>Delete expense</Text>}
-        </TouchableOpacity>
-      ) : null}
-
-      <Modal
+      <RecurringExpenseModal
+        styles={styles}
         visible={showRecurringModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowRecurringModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Recurring purchase</Text>
-            <Text style={styles.modalSubtitle}>
-              Mark this so Adlo can treat it as a common recurring purchase and make better timing and price recommendations.
-            </Text>
-
-            <Text style={styles.modalLabel}>How often do you usually buy this?</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={recurringFrequencyDays}
-              onChangeText={(value) => setRecurringFrequencyDays(value.replace(/\D/g, '').slice(0, 3))}
-              placeholder="e.g. 14"
-              placeholderTextColor="#555"
-              keyboardType="number-pad"
-            />
-            <Text style={styles.modalHelp}>Days between purchases. Leave blank if you are not sure yet.</Text>
-
-            <Text style={styles.modalLabel}>Anything else we should know?</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextarea]}
-              value={recurringNotes}
-              onChangeText={setRecurringNotes}
-              placeholder="Optional note"
-              placeholderTextColor="#555"
-              multiline
-            />
-
-            <View style={styles.modalActions}>
-              {recurringPreference ? (
-                <TouchableOpacity onPress={removeRecurringPreference} disabled={actioning}>
-                  <Text style={styles.modalDelete}>Remove flag</Text>
-                </TouchableOpacity>
-              ) : <View />}
-              <View style={styles.modalRightActions}>
-                <TouchableOpacity onPress={() => setShowRecurringModal(false)} disabled={actioning}>
-                  <Text style={styles.modalCancel}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={saveRecurringPreference} disabled={actioning}>
-                  <Text style={styles.modalSave}>{actioning ? 'Saving…' : 'Save'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowRecurringModal(false)}
+        recurringPreference={recurringPreference}
+        recurringFrequencyDays={recurringFrequencyDays}
+        setRecurringFrequencyDays={setRecurringFrequencyDays}
+        recurringNotes={recurringNotes}
+        setRecurringNotes={setRecurringNotes}
+        removeRecurringPreference={removeRecurringPreference}
+        saveRecurringPreference={saveRecurringPreference}
+        actioning={actioning}
+      />
       <DismissReasonSheet
         visible={showDismissReasonSheet}
         busy={actioning}

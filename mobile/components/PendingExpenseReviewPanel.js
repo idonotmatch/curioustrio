@@ -1,5 +1,6 @@
-import { View, Text, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ExpenseVisibilityControls } from './ExpenseVisibilityControls';
 
 export function PendingExpenseReviewPanel({
   styles,
@@ -114,9 +115,6 @@ export function PendingExpenseReviewPanel({
       </View>
 
       <View style={styles.reviewControlsCard}>
-        <Text style={styles.reviewControlsEyebrow}>Review options</Text>
-        <Text style={styles.reviewControlsTitle}>Decide how this should be counted before you approve it</Text>
-
         {treatmentSuggestion ? (
           <View style={styles.reviewSuggestionCard}>
             <View style={styles.reviewSuggestionHeader}>
@@ -144,52 +142,20 @@ export function PendingExpenseReviewPanel({
           </View>
         ) : null}
 
-        <View style={[styles.row, { paddingVertical: 12 }]}>
-          <Text style={styles.label}>Private</Text>
-          <Switch
-            value={isPrivate}
-            onValueChange={canAdjustReviewControls ? handleTogglePrivate : undefined}
-            disabled={!canAdjustReviewControls || savingControls}
-            trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
-            thumbColor={isPrivate ? '#fff' : '#555'}
-          />
-        </View>
-
-        <View style={[styles.row, { paddingVertical: 12 }]}>
-          <View style={styles.trackOnlyTextWrap}>
-            <Text style={styles.label}>Track only</Text>
-            <Text style={styles.trackOnlyHint}>Save it without counting it toward your budget.</Text>
-          </View>
-          <Switch
-            value={excludeFromBudget}
-            onValueChange={canAdjustReviewControls ? handleToggleTrackOnly : undefined}
-            disabled={!canAdjustReviewControls || savingControls}
-            trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
-            thumbColor={excludeFromBudget ? '#fff' : '#555'}
-          />
-        </View>
-
-        {excludeFromBudget ? (
-          <View style={styles.trackOnlyReasonBlock}>
-            <Text style={styles.trackOnlyReasonLabel}>Why are you tracking it separately?</Text>
-            <View style={styles.reasonChipWrap}>
-              {trackOnlyReasons.map((reason) => {
-                const selected = budgetExclusionReason === reason.value;
-                return (
-                  <TouchableOpacity
-                    key={reason.value}
-                    style={[styles.reasonChip, selected && styles.reasonChipActive]}
-                    onPress={() => canAdjustReviewControls ? handleSelectBudgetExclusionReason(reason.value) : undefined}
-                    activeOpacity={0.82}
-                    disabled={!canAdjustReviewControls || savingControls}
-                  >
-                    <Text style={[styles.reasonChipText, selected && styles.reasonChipTextActive]}>{reason.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        ) : null}
+        <ExpenseVisibilityControls
+          styles={styles}
+          eyebrow="Review options"
+          title="Decide how this should be counted before you approve it"
+          isPrivate={isPrivate}
+          excludeFromBudget={excludeFromBudget}
+          budgetExclusionReason={budgetExclusionReason}
+          canAdjust={canAdjustReviewControls}
+          savingControls={savingControls}
+          trackOnlyReasons={trackOnlyReasons}
+          onTogglePrivate={handleTogglePrivate}
+          onToggleTrackOnly={handleToggleTrackOnly}
+          onSelectBudgetExclusionReason={handleSelectBudgetExclusionReason}
+        />
       </View>
 
       <View style={styles.reviewFieldsHeader}>
