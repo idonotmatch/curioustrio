@@ -2,6 +2,7 @@ const Expense = require('../models/expense');
 const MerchantMapping = require('../models/merchantMapping');
 const ExpenseItem = require('../models/expenseItem');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
+const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../models/receiptLineCorrection');
 const detectDuplicates = require('./duplicateDetector');
 const { resolveProductMatch } = require('./productResolver');
@@ -20,6 +21,7 @@ function validateConfirmExpensePayload(payload = {}) {
     source,
     items,
     category_id,
+    suggested_category_id,
     exclude_from_budget,
     budget_exclusion_reason,
   } = payload;
@@ -34,6 +36,10 @@ function validateConfirmExpensePayload(payload = {}) {
 
   if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
     return { error: 'category_id must be a valid UUID', reason: 'invalid_category_id' };
+  }
+
+  if (suggested_category_id !== undefined && suggested_category_id !== null && !UUID_RE.test(suggested_category_id)) {
+    return { error: 'suggested_category_id must be a valid UUID', reason: 'invalid_suggested_category_id' };
   }
 
   const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(budget_exclusion_reason);
@@ -105,6 +111,26 @@ async function updateMerchantMemory({ categoryId, householdId, merchant }) {
     householdId,
     merchantName: merchant,
     categoryId,
+  });
+}
+
+async function recordCategoryDecision({
+  user,
+  expense,
+  payload,
+}) {
+  await CategoryDecisionEvent.create({
+    userId: user?.id,
+    householdId: user?.household_id || null,
+    expenseId: expense?.id || null,
+    eventType: 'confirm',
+    merchantName: payload?.merchant || null,
+    description: payload?.description || null,
+    suggestedCategoryId: payload?.suggested_category_id || null,
+    previousCategoryId: null,
+    finalCategoryId: expense?.category_id || payload?.category_id || null,
+    suggestionSource: payload?.category_source || null,
+    suggestionConfidence: payload?.category_confidence ?? null,
   });
 }
 
@@ -188,6 +214,12 @@ async function createConfirmedExpense({
     merchant: payload.merchant,
   });
 
+  try {
+    await recordCategoryDecision({ user, expense, payload });
+  } catch (categoryDecisionErr) {
+    console.error('Category decision log failed (non-fatal):', categoryDecisionErr.message);
+  }
+
   const duplicateFlags = await detectDuplicateFlags(expense);
   return { expense, duplicate_flags: duplicateFlags };
 }
@@ -195,5 +227,6 @@ async function createConfirmedExpense({
 module.exports = {
   createConfirmedExpense,
   normalizeBudgetExclusionReason,
+  updateMerchantMemory,
   validateConfirmExpensePayload,
 };

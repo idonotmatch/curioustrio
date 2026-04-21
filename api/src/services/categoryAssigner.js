@@ -1,9 +1,16 @@
 const { complete } = require('./ai');
 const MerchantMapping = require('../models/merchantMapping');
+const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 
 function confidenceFromHitCount(hitCount) {
   if (hitCount >= 5) return 4;
   if (hitCount >= 2) return 3;
+  return 2;
+}
+
+function confidenceFromDecisionCount(decisionCount) {
+  if (decisionCount >= 4) return 4;
+  if (decisionCount >= 2) return 3;
   return 2;
 }
 
@@ -56,6 +63,19 @@ function assignCategoryHeuristically({ merchant, description, categories }) {
 }
 
 async function assignCategory({ merchant, description, householdId, categories, placeType }) {
+  const learnedDecision = await CategoryDecisionEvent.findBestLearnedMatch({
+    householdId,
+    merchantName: merchant,
+    description,
+  });
+  if (learnedDecision?.category_id) {
+    return {
+      category_id: learnedDecision.category_id,
+      source: learnedDecision.match_type === 'merchant_description' ? 'decision_memory' : 'description_memory',
+      confidence: confidenceFromDecisionCount(learnedDecision.decision_count),
+    };
+  }
+
   // 1. Check merchant memory (only when a specific merchant name is known)
   if (merchant) {
     const mapping = await MerchantMapping.findByMerchant(householdId, merchant);

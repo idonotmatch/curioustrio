@@ -21,9 +21,11 @@ jest.mock('@anthropic-ai/sdk', () => {
 
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const MerchantMapping = require('../../src/models/merchantMapping');
+const CategoryDecisionEvent = require('../../src/models/categoryDecisionEvent');
 const db = require('../../src/db');
 
 jest.mock('../../src/models/merchantMapping');
+jest.mock('../../src/models/categoryDecisionEvent');
 
 afterAll(() => db.pool.end());
 
@@ -39,6 +41,8 @@ function mockCreate() {
 
 beforeEach(() => {
   MerchantMapping.findByMerchant.mockReset();
+  CategoryDecisionEvent.findBestLearnedMatch.mockReset();
+  CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValue(null);
   mockCreate().mockReset();
   mockCreate().mockResolvedValue({
     content: [{ text: JSON.stringify({ category_id: 'cat-grocery-id', confidence: 'high' }) }]
@@ -47,6 +51,7 @@ beforeEach(() => {
 
 describe('assignCategory', () => {
   it('returns category from MerchantMapping when available', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce({
       category_id: 'cat-grocery-id',
       hit_count: 7,
@@ -65,6 +70,7 @@ describe('assignCategory', () => {
   });
 
   it('falls back to Claude when no mapping exists', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
 
     const result = await assignCategory({
@@ -79,6 +85,7 @@ describe('assignCategory', () => {
   });
 
   it('uses local category heuristics before the Claude fallback', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
     const callsBefore = mockCreate().mock.calls.length;
 
@@ -101,6 +108,7 @@ describe('assignCategory', () => {
   });
 
   it('returns null category when Claude cannot determine', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
     mockCreate().mockResolvedValueOnce({
       content: [{ text: JSON.stringify({ category_id: null, confidence: 'none' }) }]
@@ -118,6 +126,7 @@ describe('assignCategory', () => {
   });
 
   it('returns confidence 3 for hit_count between 2 and 4', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce({
       category_id: 'cat-grocery-id',
       hit_count: 3,
@@ -132,6 +141,7 @@ describe('assignCategory', () => {
   });
 
   it('returns confidence 2 for hit_count of 1', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce({
       category_id: 'cat-grocery-id',
       hit_count: 1,
@@ -143,5 +153,52 @@ describe('assignCategory', () => {
     });
     expect(result.confidence).toBe(2);
     expect(result.source).toBe('memory');
+  });
+
+  it('prefers learned merchant+description decisions before merchant memory', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
+      category_id: 'cat-gas-id',
+      decision_count: 3,
+      match_type: 'merchant_description',
+    });
+    MerchantMapping.findByMerchant.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      hit_count: 7,
+    });
+
+    const result = await assignCategory({
+      merchant: 'Shell',
+      description: 'fill up before road trip',
+      householdId: 'hh-1',
+      categories: mockCategories,
+    });
+
+    expect(result).toEqual({
+      category_id: 'cat-gas-id',
+      source: 'decision_memory',
+      confidence: 3,
+    });
+    expect(MerchantMapping.findByMerchant).not.toHaveBeenCalled();
+  });
+
+  it('can learn from repeated description-only corrections when merchant is missing', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      decision_count: 2,
+      match_type: 'description',
+    });
+
+    const result = await assignCategory({
+      merchant: null,
+      description: 'bananas',
+      householdId: 'hh-1',
+      categories: mockCategories,
+    });
+
+    expect(result).toEqual({
+      category_id: 'cat-grocery-id',
+      source: 'description_memory',
+      confidence: 3,
+    });
   });
 });

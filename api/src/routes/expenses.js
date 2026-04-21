@@ -7,10 +7,12 @@ const Expense = require('../models/expense');
 const Category = require('../models/category');
 const EmailImportLog = require('../models/emailImportLog');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
+const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
 const {
   createConfirmedExpense,
   normalizeBudgetExclusionReason,
+  updateMerchantMemory,
   validateConfirmExpensePayload,
 } = require('../services/expenseConfirmService');
 const {
@@ -229,6 +231,7 @@ router.post('/confirm', async (req, res, next) => {
       merchant, description, amount, date, category_id, source, notes,
       place_name, address,
       mapkit_stable_id, linked_expense_id,
+      suggested_category_id, category_source, category_confidence,
       payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
       ingest_attempt_id, parsed_payment_snapshot,
     } = req.body;
@@ -254,12 +257,15 @@ router.post('/confirm', async (req, res, next) => {
         amount,
         date,
         category_id,
+        suggested_category_id,
         source,
         notes,
         place_name,
         address,
         mapkit_stable_id,
         linked_expense_id,
+        category_source,
+        category_confidence,
         payment_method,
         card_last4,
         card_label,
@@ -522,6 +528,7 @@ router.patch('/:id', async (req, res, next) => {
       mapkitStableId: mapkit_stable_id,
     });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const categoryChanged = category_id !== undefined && `${originalExpense.category_id || ''}` !== `${expense.category_id || ''}`;
     if (items !== undefined) {
       try {
         const resolvedItems = await Promise.all(
@@ -534,6 +541,33 @@ router.patch('/:id', async (req, res, next) => {
         console.error('[expenses/:id PATCH] item replace failed:', {
           expense_id: req.params.id,
           message: err?.message || String(err || 'unknown_error'),
+        });
+      }
+    }
+    if (categoryChanged) {
+      try {
+        await updateMerchantMemory({
+          categoryId: expense.category_id,
+          householdId: user?.household_id,
+          merchant: expense.merchant,
+        });
+        await CategoryDecisionEvent.create({
+          userId: user.id,
+          householdId: user?.household_id || null,
+          expenseId: expense.id,
+          eventType: 'edit',
+          merchantName: expense.merchant || null,
+          description: expense.description || null,
+          suggestedCategoryId: originalExpense.category_id || null,
+          previousCategoryId: originalExpense.category_id || null,
+          finalCategoryId: expense.category_id || null,
+          suggestionSource: 'manual_edit',
+          suggestionConfidence: null,
+        });
+      } catch (categoryDecisionErr) {
+        console.error('[expenses/:id PATCH] category learning update failed:', {
+          expense_id: expense.id,
+          message: categoryDecisionErr?.message || String(categoryDecisionErr || 'unknown_error'),
         });
       }
     }
