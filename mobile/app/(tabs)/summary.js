@@ -1,10 +1,9 @@
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
@@ -13,177 +12,27 @@ import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useInsights } from '../../hooks/useInsights';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
-import { InsightCard } from '../../components/InsightCard';
+import { SummaryInsightsRail } from '../../components/SummaryInsightsRail';
+import { SummaryMonthPicker } from '../../components/SummaryMonthPicker';
+import { SummaryQuickEntry } from '../../components/SummaryQuickEntry';
+import { SummaryRecentActivity } from '../../components/SummaryRecentActivity';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 import { toLocalDateString } from '../../services/date';
-import { selectInsightEvidence } from '../../services/insightEvidence';
 import { stashNavigationPayload } from '../../services/navigationPayloadStore';
+import {
+  getPastMonths,
+  formatDate,
+  formatRelativeTime,
+  insightEventMetadata,
+  buildRecurringItemPreload,
+  parseScenarioInput,
+  buildPreloadedCategoryExpenses,
+  buildPreloadedInsightEvidence,
+} from '../../services/summaryScreenHelpers';
 import { buildMockInsights } from '../../fixtures/mockInsights';
 import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
 
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MOCK_GMAIL_IMPORT_SUMMARY = buildMockGmailImportState().importSummary;
-
-function getPastMonths() {
-  const months = [];
-  const now = new Date();
-  for (let i = 0; i < 13; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(d.toISOString().slice(0, 7));
-  }
-  return months;
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  const clean = dateStr.slice(0, 10) + 'T12:00:00';
-  const date = new Date(clean);
-  if (isNaN(date)) return dateStr;
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return `${MONTH_SHORT[date.getMonth()]} ${date.getDate()}`;
-}
-
-function formatRelativeTime(value) {
-  if (!value) return null;
-  const diffMs = Date.now() - new Date(value).getTime();
-  if (Number.isNaN(diffMs)) return null;
-  const minutes = Math.max(0, Math.floor(diffMs / 60000));
-  if (minutes < 1) return 'just now';
-  if (minutes === 1) return '1m ago';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours === 1) return '1h ago';
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return '1d ago';
-  return `${days}d ago`;
-}
-
-function insightEventMetadata(insight, surface = 'summary') {
-  return {
-    surface,
-    type: insight?.type || null,
-    insight_type: insight?.type || null,
-    maturity: insight?.metadata?.maturity || null,
-    confidence: insight?.metadata?.confidence || null,
-    scope: insight?.metadata?.scope || null,
-    entity_type: insight?.entity_type || null,
-    entity_id: insight?.entity_id || null,
-    category_key: insight?.metadata?.category_key || null,
-    merchant_key: insight?.metadata?.merchant_key || null,
-    continuity_key: insight?.metadata?.continuity_key || null,
-    scope_relationship: insight?.metadata?.scope_relationship || null,
-    consolidated_scopes: insight?.metadata?.consolidated_scopes || null,
-    related_insight_ids: insight?.metadata?.related_insight_ids || null,
-  };
-}
-
-function buildRecurringItemPreload(insight) {
-  const metadata = insight?.metadata || {};
-  const merchantBreakdown = Array.isArray(metadata.merchant_breakdown) ? metadata.merchant_breakdown : [];
-  const merchants = Array.isArray(metadata.merchants)
-    ? metadata.merchants.filter(Boolean)
-    : merchantBreakdown.map((entry) => entry?.merchant).filter(Boolean);
-  const fallbackMerchant = metadata.latest_merchant || metadata.merchant || null;
-
-  return {
-    group_key: metadata.group_key || null,
-    item_name: metadata.item_name || insight?.title || 'Recurring item',
-    brand: metadata.brand || null,
-    average_gap_days: metadata.average_gap_days ?? null,
-    occurrence_count: metadata.occurrence_count ?? metadata.expense_count ?? null,
-    median_amount: metadata.median_amount ?? metadata.average_amount ?? null,
-    median_unit_price: metadata.median_unit_price ?? null,
-    last_purchased_at: metadata.last_purchased_at || metadata.last_seen_at || null,
-    next_expected_date: metadata.next_expected_date || null,
-    merchants: merchants.length ? merchants : (fallbackMerchant ? [fallbackMerchant] : []),
-    merchant_price_history: merchantBreakdown.map((entry) => ({
-      merchant: entry?.merchant || 'Unknown merchant',
-      occurrence_count: entry?.occurrence_count ?? entry?.count ?? 1,
-      median_amount: entry?.median_amount ?? entry?.average_amount ?? entry?.amount ?? null,
-      median_unit_price: entry?.median_unit_price ?? null,
-    })),
-    purchases: Array.isArray(metadata.purchases) ? metadata.purchases : [],
-  };
-}
-
-function parseScenarioInput(raw, { allowHousehold = false } = {}) {
-  const trimmed = `${raw || ''}`.trim();
-  if (!trimmed) return null;
-
-  let normalized = trimmed.toLowerCase();
-  normalized = normalized.replace(/^(can i afford|could i afford|check|scenario)\s+/i, '');
-  let timingMode = 'now';
-
-  if (/\b(next month|next period)\b/i.test(normalized)) {
-    timingMode = 'next_period';
-    normalized = normalized.replace(/\b(next month|next period)\b/gi, ' ');
-  } else if (/\b(spread( it)? over (a few|few|3|three) months?|over (a few|few|3|three) months?)\b/i.test(normalized)) {
-    timingMode = 'spread_3_periods';
-    normalized = normalized.replace(/\b(spread( it)? over (a few|few|3|three) months?|over (a few|few|3|three) months?)\b/gi, ' ');
-  }
-
-  let scope = 'personal';
-  if (allowHousehold && normalized.startsWith('household ')) {
-    scope = 'household';
-    normalized = normalized.slice('household '.length);
-  } else if (normalized.startsWith('mine ')) {
-    scope = 'personal';
-    normalized = normalized.slice('mine '.length);
-  }
-
-  const amountMatch = normalized.match(/(\d+(?:\.\d{1,2})?)/);
-  if (!amountMatch) return null;
-  const amount = amountMatch[1];
-  const amountIndex = amountMatch.index || 0;
-  const before = normalized.slice(0, amountIndex).trim();
-  const after = normalized.slice(amountIndex + amount.length).trim();
-  const label = `${before} ${after}`.replace(/\s+/g, ' ').trim();
-
-  return {
-    amount,
-    label,
-    scope,
-    timingMode,
-  };
-}
-
-function buildPreloadedCategoryExpenses(insight, personalExpenses = [], householdExpenses = []) {
-  const categoryKey = `${insight?.metadata?.category_key || ''}`.trim();
-  const month = `${insight?.metadata?.month || ''}`.trim();
-  if (!categoryKey || !month) return [];
-
-  const source = `${insight?.metadata?.scope || 'personal'}` === 'household'
-    ? householdExpenses
-    : personalExpenses;
-
-  const monthRows = source.filter((expense) => `${expense?.date || ''}`.slice(0, 7) === month);
-  return selectInsightEvidence(monthRows, 'category', insight?.metadata || {}, 8);
-}
-
-function buildPreloadedInsightEvidence(insight, personalExpenses = [], householdExpenses = []) {
-  const metadata = insight?.metadata || {};
-  const month = `${metadata.month || ''}`.trim();
-  if (!month) return [];
-
-  const source = `${metadata.scope || 'personal'}` === 'household'
-    ? householdExpenses
-    : personalExpenses;
-  const monthRows = source.filter((expense) => `${expense?.date || ''}`.slice(0, 7) === month);
-  const mode = `${insight?.type || ''}` === 'early_cleanup'
-    ? 'cleanup'
-    : metadata.category_key
-      ? 'category'
-      : (metadata.merchant_key || metadata.merchant_name)
-        ? 'merchant'
-        : null;
-  return selectInsightEvidence(monthRows, mode, metadata, 5);
-}
 
 export default function SummaryScreen() {
   const router = useRouter();
@@ -577,21 +426,6 @@ export default function SummaryScreen() {
     }
   }
 
-  function renderDeleteAction(id) {
-    return (
-      <TouchableOpacity
-        style={styles.deleteAction}
-        onPress={() => Alert.alert('Delete expense', 'This cannot be undone.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: () => deleteExpense(id) },
-        ])}
-      >
-        <Ionicons name="trash-outline" size={18} color="#fff" />
-        <Text style={styles.deleteActionText}>Delete</Text>
-      </TouchableOpacity>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
     <ScrollView
@@ -663,66 +497,17 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      {/* Quick Add */}
-      <View style={styles.quickAdd}>
-        <Text style={styles.sectionLabel}>Quick entry</Text>
-        <View style={styles.entryModeToggle}>
-          <TouchableOpacity
-            style={[styles.entryModeChip, entryMode === 'add' && styles.entryModeChipActive]}
-            onPress={() => setEntryMode('add')}
-          >
-            <Text style={[styles.entryModeChipText, entryMode === 'add' && styles.entryModeChipTextActive]}>Add</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.entryModeChip, entryMode === 'check' && styles.entryModeChipActive]}
-            onPress={() => setEntryMode('check')}
-          >
-            <Text style={[styles.entryModeChipText, entryMode === 'check' && styles.entryModeChipTextActive]}>Plan</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.entryModeMeta}>
-          {entryMode === 'check'
-            ? 'Pressure-test a purchase against your current spending outlook.'
-            : 'Tell me what you bought.'}
-        </Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder={entryMode === 'check'
-              ? '180 running shoes · can i afford 240 air fryer?'
-              : '84.50 trader joes · lunch 14 · gas 60 yesterday'}
-            placeholderTextColor="#555"
-            onSubmitEditing={handlePrimaryEntry}
-            autoCorrect={false}
-            returnKeyType={entryMode === 'check' ? 'go' : 'done'}
-            editable={!loading}
-          />
-          <TouchableOpacity style={styles.addBtn} onPress={handlePrimaryEntry} disabled={loading || !input.trim()}>
-            {loading
-              ? <ActivityIndicator color="#000" size="small" />
-              : <Ionicons name="arrow-forward" size={18} color="#000" />}
-          </TouchableOpacity>
-        </View>
-        {quickEntryProcessingMessage ? (
-          <View style={styles.quickEntryProcessing}>
-            <ActivityIndicator color="#d4d4d4" size="small" />
-            <Text style={styles.quickEntryProcessingText}>{quickEntryProcessingMessage}</Text>
-          </View>
-        ) : null}
-        {entryMode === 'add' ? (
-          <TouchableOpacity
-            style={styles.scanLink}
-            onPress={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
-          >
-            <Ionicons name="camera-outline" size={14} color="#888" />
-            <Text style={styles.scanLinkText}>scan a receipt</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.entryModeSpacer} />
-        )}
-      </View>
+      <SummaryQuickEntry
+        styles={styles}
+        entryMode={entryMode}
+        setEntryMode={setEntryMode}
+        input={input}
+        setInput={setInput}
+        handlePrimaryEntry={handlePrimaryEntry}
+        loading={loading}
+        quickEntryProcessingMessage={quickEntryProcessingMessage}
+        onPressScan={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
+      />
 
       {watchedPlans.length > 0 ? (
         <TouchableOpacity
@@ -753,105 +538,45 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {(displayInsights.length > 0 || insightsError) && (
-        <View style={styles.insightsSection}>
-          <View style={styles.insightsHeading}>
-            <Text style={styles.sectionLabel}>Insights</Text>
-            {displayInsights.length > 1 ? (
-              <Text style={styles.insightsHint}>Swipe for more</Text>
-            ) : null}
-          </View>
-          {insightsError ? (
-            <TouchableOpacity style={styles.insightsErrorCard} onPress={refreshInsights} activeOpacity={0.85}>
-              <Text style={styles.insightsErrorTitle}>Couldn’t load insights</Text>
-              <Text style={styles.insightsErrorBody}>{insightsError}</Text>
-              <Text style={styles.insightsErrorAction}>Tap to retry</Text>
-            </TouchableOpacity>
-          ) : null}
-          <ScrollView
-            horizontal
-            scrollEnabled={hasMultipleInsights}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[
-              styles.insightsRail,
-              !hasMultipleInsights && styles.insightsRailSingle,
-            ]}
-          >
-            {displayInsights.map((insight) => (
-              <InsightCard
-                key={insight.id}
-                insight={insight}
-                width={insightCardWidth}
-                onPress={handlePressInsight}
-                onDismiss={handleDismissInsight}
-                disabled={Boolean(openingInsightId)}
-              />
-            ))}
-          </ScrollView>
-        </View>
-      )}
+      <SummaryInsightsRail
+        styles={styles}
+        displayInsights={displayInsights}
+        insightsError={insightsError}
+        refreshInsights={refreshInsights}
+        hasMultipleInsights={hasMultipleInsights}
+        insightCardWidth={insightCardWidth}
+        handlePressInsight={handlePressInsight}
+        handleDismissInsight={handleDismissInsight}
+        openingInsightId={openingInsightId}
+      />
 
-      {/* Recent activity */}
-      <View style={styles.recent}>
-        <View style={styles.recentHeader}>
-          <View style={styles.recentHeading}>
-            <Text style={styles.sectionLabelCompact}>Recent</Text>
-            <Text style={styles.recentMeta}>
-              {`${pendingExpenses.length} pending`}
-              {gmailRefreshTimestamp ? ` · Gmail ${gmailRefreshVerb} ${formatRelativeTime(gmailRefreshTimestamp)}` : ''}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={() => router.navigate('/')}>
-            <Text style={styles.seeAll}>See all</Text>
-          </TouchableOpacity>
-        </View>
-
-        {recent.map(e => (
-          <Swipeable
-            key={e.id}
-            renderRightActions={() => renderDeleteAction(e.id)}
-            overshootRight={false}
-          >
-            <TouchableOpacity
-              style={styles.recentRow}
-              onPress={() => router.push(`/expense/${e.id}`)}
-            >
-              <Text style={styles.recentMerchant} numberOfLines={1}>{e.merchant || e.description || '—'}</Text>
-              <Text style={styles.recentDate}>{formatDate(e.date)}</Text>
-              <Text style={[styles.recentAmount, Number(e.amount) < 0 && styles.recentRefund]}>
-                {Number(e.amount) < 0 ? '−' : ''}${Math.abs(Number(e.amount)).toFixed(2)}
-              </Text>
-            </TouchableOpacity>
-          </Swipeable>
-        ))}
-        {recent.length === 0 && (
-          <Text style={styles.emptyText}>No confirmed expenses yet.</Text>
-        )}
-
-      </View>
+      <SummaryRecentActivity
+        styles={styles}
+        recent={recent}
+        pendingExpensesCount={pendingExpenses.length}
+        gmailRefreshTimestamp={gmailRefreshTimestamp}
+        gmailRefreshVerb={gmailRefreshVerb}
+        formatRelativeTime={formatRelativeTime}
+        formatDate={formatDate}
+        onPressSeeAll={() => router.navigate('/')}
+        onPressExpense={(expenseId) => router.push(`/expense/${expenseId}`)}
+        onDeleteExpense={deleteExpense}
+      />
     </ScrollView>
 
-    <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
-      <View style={styles.monthPickerOverlay}>
-        <View style={styles.monthPickerSheet}>
-          <Text style={styles.monthPickerTitle}>Select month</Text>
-          {getPastMonths().map(m => (
-            <TouchableOpacity
-              key={m}
-              style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
-              onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
-            >
-              <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                {periodLabel(m, startDay)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity style={styles.monthPickerClose} onPress={() => setShowMonthPicker(false)}>
-            <Text style={styles.monthPickerCloseText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+    <SummaryMonthPicker
+      styles={styles}
+      visible={showMonthPicker}
+      onClose={() => setShowMonthPicker(false)}
+      months={getPastMonths()}
+      selectedMonth={selectedMonth}
+      onSelectMonth={(month) => {
+        setSelectedMonth(month);
+        setShowMonthPicker(false);
+      }}
+      periodLabel={periodLabel}
+      startDay={startDay}
+    />
     </SafeAreaView>
   );
 }
