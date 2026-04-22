@@ -24,6 +24,7 @@ jest.mock('../../src/services/itemHistoryService', () => ({
 jest.mock('../../src/services/emailParser', () => ({
   classifyEmailExpense: jest.fn(),
   parseEmailExpense: jest.fn(),
+  extractFallbackItemsFromEmailBody: jest.fn(),
   analyzeEmailSignals: jest.fn(),
   classifyEmailModality: jest.fn(),
   extractEmailLocationCandidate: jest.fn(),
@@ -38,7 +39,7 @@ jest.mock('../../src/services/categoryAssigner', () => ({
 
 const app = require('../../src/index');
 const { exchangeCode, listRecentMessages, getMessage } = require('../../src/services/gmailClient');
-const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals, classifyEmailModality, extractEmailLocationCandidate } = require('../../src/services/emailParser');
+const { classifyEmailExpense, parseEmailExpense, extractFallbackItemsFromEmailBody, analyzeEmailSignals, classifyEmailModality, extractEmailLocationCandidate } = require('../../src/services/emailParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { searchPlace } = require('../../src/services/mapkitService');
 const { resolveProductMatch } = require('../../src/services/productResolver');
@@ -91,6 +92,7 @@ beforeEach(async () => {
   listRecentMessages.mockReset();
   getMessage.mockReset();
   parseEmailExpense.mockReset();
+  extractFallbackItemsFromEmailBody.mockReset();
   classifyEmailExpense.mockReset();
   analyzeEmailSignals.mockReset();
   analyzeEmailSignals.mockReturnValue({ shouldSurfaceToReview: false });
@@ -98,6 +100,7 @@ beforeEach(async () => {
   classifyEmailModality.mockReturnValue('online');
   extractEmailLocationCandidate.mockReset();
   extractEmailLocationCandidate.mockReturnValue(null);
+  extractFallbackItemsFromEmailBody.mockReturnValue([]);
   searchPlace.mockReset();
   searchPlace.mockResolvedValue(null);
   resolveProductMatch.mockReset();
@@ -724,6 +727,54 @@ $396.32`,
     expect(Number(expense.rows[0].amount)).toBe(41.22);
     expect(expense.rows[0].notes).toMatch(/imported from gmail/i);
     expect(expense.rows[0].notes).toMatch(/needs review/i);
+  });
+
+  it('persists deterministic fallback items when parseEmailExpense returns null', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    listRecentMessages.mockResolvedValue([{ id: 'fallback-items-msg' }]);
+    getMessage.mockResolvedValue({
+      subject: 'Order #RT-270233 confirmed',
+      from: 'hello@eightouncecoffee.ca',
+      body: 'Item Description\nDAK - Plum Marmalade Espresso\n$19.99\nTotal\n$107.95',
+      snippet: 'Order #RT-270233 confirmed',
+      receivedAt: '2026-04-21',
+    });
+    classifyEmailExpense.mockResolvedValue({ disposition: 'expense', merchant: 'Eight Ounce Coffee', reason: 'receipt' });
+    parseEmailExpense.mockResolvedValue(null);
+    extractFallbackItemsFromEmailBody.mockReturnValue([
+      { description: 'DAK - Plum Marmalade Espresso', amount: 19.99, brand: 'DAK Coffee Roasters', sku: 'COF-DA-0323' },
+      { description: 'DAK - House of Plum Espresso', amount: 21.99, brand: 'DAK Coffee Roasters', sku: 'COF-DA-0397' },
+    ]);
+    assignCategory.mockResolvedValue({ category_id: null });
+
+    const res = await request(app).post('/gmail/import');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+
+    const expense = await db.query(
+      `SELECT id
+       FROM expenses
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+    const items = await db.query(
+      `SELECT description, amount
+       FROM expense_items
+       WHERE expense_id = $1
+       ORDER BY sort_order ASC, created_at ASC`,
+      [expense.rows[0].id]
+    );
+    expect(items.rows).toEqual([
+      expect.objectContaining({ description: 'DAK - Plum Marmalade Espresso', amount: '19.99' }),
+      expect.objectContaining({ description: 'DAK - House of Plum Espresso', amount: '21.99' }),
+    ]);
   });
 
   it('skips fallback imports from noisy senders with poor review history', async () => {

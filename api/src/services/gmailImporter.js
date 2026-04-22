@@ -9,6 +9,7 @@ const { listRecentMessages, getMessage } = require('./gmailClient');
 const {
   classifyEmailExpense,
   parseEmailExpense,
+  extractFallbackItemsFromEmailBody,
   analyzeEmailSignals,
   classifyEmailModality,
   extractEmailLocationCandidate,
@@ -262,6 +263,7 @@ async function processMessageImport(user, msgId, {
     }
 
     let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
+    const deterministicFallbackItems = extractFallbackItemsFromEmailBody(body);
     let importedAsPendingReview = false;
     const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
 
@@ -291,7 +293,9 @@ async function processMessageImport(user, msgId, {
         amount: classification.disposition === 'refund' ? -Math.abs(fallbackAmount) : Math.abs(fallbackAmount),
         date: clampExpenseDate(parsed?.date, maxExpenseDate),
         notes: parsed?.notes || buildReviewNotes({ reason: 'needs review' }),
-        items: Array.isArray(parsed?.items) ? parsed.items : null,
+        items: Array.isArray(parsed?.items) && parsed.items.length > 0
+          ? parsed.items
+          : (deterministicFallbackItems.length > 0 ? deterministicFallbackItems : null),
       };
       importedAsPendingReview = true;
     }
