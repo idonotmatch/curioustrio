@@ -9,6 +9,7 @@ const {
   classifyEmailExpense,
   heuristicDisposition,
   selectRelevantEmailText,
+  extractFallbackItemsFromEmailBody,
   analyzeEmailSignals,
   classifyEmailModality,
   extractEmailLocationCandidate,
@@ -240,6 +241,84 @@ $107.95`;
     expect(result.extractionText).toContain('September - Peanut Brittle Espresso');
     expect(result.extractionText).toContain('$16.99');
     expect(result.extractionText).toContain('Total\n$107.95');
+  });
+
+  it('extracts fallback product items directly from rich email body structure', () => {
+    const emailBody = `ITEM DESCRIPTION
+DAK - Plum Marmalade
+Espresso
+DAK Coffee Roasters
+COF-DA-0323
+x 1
+$19.99
+
+DAK - House of Plum Espresso
+DAK Coffee Roasters
+COF-DA-0397
+x 1
+$21.99
+
+Subtotal
+$41.98
+Total
+$41.98`;
+
+    const items = extractFallbackItemsFromEmailBody(emailBody);
+    expect(items).toEqual([
+      expect.objectContaining({
+        description: 'DAK - Plum Marmalade Espresso',
+        amount: 19.99,
+        brand: 'DAK Coffee Roasters',
+        sku: 'COF-DA-0323',
+      }),
+      expect.objectContaining({
+        description: 'DAK - House of Plum Espresso',
+        amount: 21.99,
+        brand: 'DAK Coffee Roasters',
+        sku: 'COF-DA-0397',
+      }),
+    ]);
+  });
+
+  it('uses fallback items when the model only returns summary rows', async () => {
+    complete.mockResolvedValue(`{
+      "merchant":"Coffee Order",
+      "amount":107.95,
+      "date":"2026-04-21",
+      "notes":"Imported from Gmail",
+      "items":[
+        { "description":"Subtotal", "amount":107.95, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null }
+      ]
+    }`);
+
+    const result = await parseEmailExpense(
+      `ITEM DESCRIPTION
+DAK - Plum Marmalade
+Espresso
+DAK Coffee Roasters
+COF-DA-0323
+x 1
+$19.99
+
+DAK - House of Plum Espresso
+DAK Coffee Roasters
+COF-DA-0397
+x 1
+$21.99
+
+Subtotal
+$41.98
+Total
+$41.98`,
+      'Coffee order',
+      'orders@example.com',
+      '2026-04-21'
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ description: 'DAK - Plum Marmalade Espresso', amount: 19.99 }),
+      expect.objectContaining({ description: 'DAK - House of Plum Espresso', amount: 21.99 }),
+    ]);
   });
 
   it('sends structured extraction text to the parser prompt', async () => {

@@ -1,4 +1,5 @@
 const { complete } = require('./ai');
+const { classifyExpenseItemType } = require('./itemClassifier');
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are an email expense classifier.
 Given an email subject, sender, and a few body excerpts, classify it as one of:
@@ -320,6 +321,106 @@ function parseJsonResponse(text) {
   }
 }
 
+function parsePriceValue(line = '') {
+  const match = `${line || ''}`.match(/\$?\s?(-?\d+(?:\.\d{2})?)/);
+  return match ? Number(match[1]) : null;
+}
+
+function looksLikeBrandLine(line = '') {
+  const text = `${line || ''}`.trim();
+  if (!text || isSummaryLikeLine(text) || isSkuLikeLine(text) || isQuantityLine(text) || isMoneyOnlyLine(text)) return false;
+  return /\b(coffee|roasters|company|co\.?|inc\.?|llc|market|foods|kitchen|bakery|shop|store)\b/i.test(text);
+}
+
+function extractFallbackItemsFromEmailBody(emailBody = '') {
+  const structured = cleanStructuredText(redactSensitiveText(emailBody));
+  if (!structured) return [];
+
+  const allLines = structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let lines = allLines;
+  const itemSectionIndex = allLines.findIndex((line) => /^item description$/i.test(line));
+  if (itemSectionIndex >= 0) {
+    lines = allLines.slice(itemSectionIndex + 1);
+  }
+
+  const stopIndex = lines.findIndex((line) => /^(subtotal|total|grand total|order total|estimated total)$/i.test(line));
+  if (stopIndex > 0) {
+    lines = lines.slice(0, stopIndex);
+  }
+
+  const items = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!isLikelyProductAnchor(line)) continue;
+
+    let priceIndex = -1;
+    for (let offset = 0; offset <= 5; offset += 1) {
+      const candidate = lines[index + offset];
+      if (!candidate) break;
+      if (isSummaryLikeLine(candidate) && !isPriceBearingLine(candidate)) break;
+      if (isPriceBearingLine(candidate) || isMoneyOnlyLine(candidate)) {
+        priceIndex = index + offset;
+        break;
+      }
+    }
+    if (priceIndex === -1) continue;
+
+    const block = lines.slice(index, priceIndex + 1);
+    const price = parsePriceValue(lines[priceIndex]);
+    if (!Number.isFinite(price) || price <= 0) continue;
+
+    const textLines = block.filter((entry) =>
+      !isPriceBearingLine(entry)
+      && !isQuantityLine(entry)
+      && !isSkuLikeLine(entry)
+    );
+
+    if (!textLines.length) continue;
+
+    const brand = textLines.find((entry, entryIndex) => entryIndex > 0 && looksLikeBrandLine(entry)) || null;
+    const descriptionLines = textLines.filter((entry) => entry !== brand);
+    const description = descriptionLines.slice(0, 2).join(' ').trim();
+    if (!description) continue;
+
+    const sku = block.find((entry) => isSkuLikeLine(entry)) || null;
+    const quantityLine = block.find((entry) => isQuantityLine(entry)) || null;
+    const packSizeMatch = quantityLine ? quantityLine.match(/x\s*(\d+)/i) : null;
+
+    items.push({
+      description,
+      amount: price,
+      upc: null,
+      sku,
+      brand,
+      product_size: null,
+      pack_size: packSizeMatch?.[1] || null,
+      unit: null,
+    });
+
+    index = priceIndex;
+    if (items.length >= 30) break;
+  }
+
+  return items;
+}
+
+function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
+  if (!Array.isArray(fallbackItems) || fallbackItems.length === 0) return false;
+  const parsedItems = Array.isArray(parsed?.items) ? parsed.items : [];
+  if (!parsedItems.length) return true;
+
+  const parsedProductCount = parsedItems.filter((item) => classifyExpenseItemType(item?.description) === 'product').length;
+  const fallbackProductCount = fallbackItems.filter((item) => classifyExpenseItemType(item?.description) === 'product').length;
+
+  if (parsedProductCount === 0 && fallbackProductCount > 0) return true;
+  if (parsedProductCount < fallbackProductCount / 2 && fallbackProductCount >= 2) return true;
+  return false;
+}
+
 function normalizeParsedPaymentFields(parsed = {}) {
   if (!parsed || typeof parsed !== 'object') return parsed;
   const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
@@ -384,7 +485,18 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
     }],
   });
 
-  return normalizeParsedPaymentFields(parseJsonResponse(text));
+  const parsed = normalizeParsedPaymentFields(parseJsonResponse(text));
+  if (!parsed || typeof parsed !== 'object') return parsed;
+
+  const fallbackItems = extractFallbackItemsFromEmailBody(emailBody);
+  if (shouldUseFallbackItems(parsed, fallbackItems)) {
+    return {
+      ...parsed,
+      items: fallbackItems,
+    };
+  }
+
+  return parsed;
 }
 
 function clampExpenseDate(candidateDate, maxDate) {
@@ -397,6 +509,7 @@ module.exports = {
   parseEmailExpense,
   classifyEmailExpense,
   selectRelevantEmailText,
+  extractFallbackItemsFromEmailBody,
   heuristicDisposition,
   analyzeEmailSignals,
   classifyEmailModality,
