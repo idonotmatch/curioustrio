@@ -77,6 +77,39 @@ function uniqueLines(lines = [], limit = 24) {
   return result;
 }
 
+function isSummaryLikeLine(line = '') {
+  return /(total|subtotal|tax|shipping|service fee|delivery fee|tip|discount|savings|reward|charged|amount paid|order summary|receipt|merchant|seller|card)/i.test(line);
+}
+
+function isMoneyOnlyLine(line = '') {
+  return /^\$?\s?-?\d+(?:\.\d{2})?$/.test(`${line || ''}`.trim());
+}
+
+function isPriceBearingLine(line = '') {
+  return /\$\s?-?\d+(?:\.\d{2})?/.test(`${line || ''}`);
+}
+
+function isQuantityLine(line = '') {
+  return /^(?:qty|quantity)?\s*x?\s*\d+\b/i.test(`${line || ''}`.trim());
+}
+
+function isSkuLikeLine(line = '') {
+  return /^[A-Z0-9-]{5,}$/.test(`${line || ''}`.trim());
+}
+
+function isAddressLikeLine(line = '') {
+  return /\b\d{2,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\s(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place)\b/i.test(`${line || ''}`);
+}
+
+function isLikelyProductAnchor(line = '') {
+  const text = `${line || ''}`.trim();
+  if (!text) return false;
+  if (text.length < 3 || text.length > 120) return false;
+  if (isSummaryLikeLine(text) || isMoneyOnlyLine(text) || isAddressLikeLine(text)) return false;
+  if (!/[a-z]/i.test(text)) return false;
+  return true;
+}
+
 function selectBottomStructuredLines(structured = '', limit = 14) {
   return uniqueLines(
     structured
@@ -96,15 +129,61 @@ function selectItemLikeLines(structured = '', limit = 18) {
       .map((line) => line.trim())
       .filter(Boolean)
       .filter((line) => {
-        if (/(total|subtotal|tax|shipping|service fee|delivery fee|tip|discount|savings|reward|charged|amount paid|order summary|receipt|merchant|seller|card)/i.test(line)) {
-          return false;
-        }
-        if (/^\$?\s?-?\d+(?:\.\d{2})?$/.test(line)) return false;
+        if (isSummaryLikeLine(line)) return false;
+        if (isMoneyOnlyLine(line)) return false;
         if (line.length < 3 || line.length > 80) return false;
         return /[a-z]/i.test(line);
       }),
     limit,
   );
+}
+
+function selectItemBlockLines(structured = '', limit = 32) {
+  const lines = structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const collected = [];
+  const seenIndexes = new Set();
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!isLikelyProductAnchor(line)) continue;
+
+    let moneyIndex = -1;
+    for (let offset = 0; offset <= 5; offset += 1) {
+      const candidate = lines[index + offset];
+      if (!candidate) break;
+      if (isSummaryLikeLine(candidate) && !isPriceBearingLine(candidate)) break;
+      if (isPriceBearingLine(candidate) || isMoneyOnlyLine(candidate)) {
+        moneyIndex = index + offset;
+        break;
+      }
+    }
+
+    if (moneyIndex === -1) continue;
+
+    for (let cursor = index; cursor <= Math.min(moneyIndex, index + 5); cursor += 1) {
+      const candidate = lines[cursor];
+      if (!candidate || seenIndexes.has(cursor)) continue;
+      if (isAddressLikeLine(candidate)) continue;
+      if (
+        cursor !== moneyIndex &&
+        !isLikelyProductAnchor(candidate) &&
+        !isSkuLikeLine(candidate) &&
+        !isQuantityLine(candidate) &&
+        !isPriceBearingLine(candidate)
+      ) {
+        continue;
+      }
+      collected.push(candidate);
+      seenIndexes.add(cursor);
+      if (collected.length >= limit) return collected;
+    }
+  }
+
+  return uniqueLines(collected, limit);
 }
 
 function selectMoneyContextLines(structured = '', limit = 24) {
@@ -206,6 +285,7 @@ function selectRelevantEmailText(emailBody, snippet = '') {
     ...selectKeywordLines(structured, 16),
     ...selectMoneyContextLines(structured, 24),
   ], 24).join('\n');
+  const itemBlockLines = selectItemBlockLines(structured, 32).join('\n');
   const itemLines = selectItemLikeLines(structured, 18).join('\n');
   const focusedSummary = [normalizedSnippet, keywordLines, bottomStructured, topStructured]
     .filter(Boolean)
@@ -213,7 +293,7 @@ function selectRelevantEmailText(emailBody, snippet = '') {
 
   const classifierText = focusedSummary.slice(0, 1800);
 
-  const extractionText = [structuredSnippet, keywordLines, itemLines, bottomStructured, topStructured]
+  const extractionText = [structuredSnippet, keywordLines, itemBlockLines, itemLines, bottomStructured, topStructured]
     .filter(Boolean)
     .join('\n...\n')
     .slice(0, 3600);

@@ -4,6 +4,7 @@ const Category = require('../models/category');
 const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const PushToken = require('../models/pushToken');
+const db = require('../db');
 const { listRecentMessages, getMessage } = require('./gmailClient');
 const {
   classifyEmailExpense,
@@ -509,6 +510,56 @@ async function retryFailedImportLog(user, log) {
   });
 }
 
+async function removePendingImportedExpense(expenseId, userId) {
+  if (!expenseId || !userId) return;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE expenses SET linked_expense_id = NULL WHERE linked_expense_id = $1`, [expenseId]);
+    await client.query(`UPDATE email_import_log SET expense_id = NULL WHERE expense_id = $1`, [expenseId]);
+    await client.query(`DELETE FROM duplicate_flags WHERE expense_id_a = $1 OR expense_id_b = $1`, [expenseId]);
+    await client.query(`DELETE FROM expense_items WHERE expense_id = $1`, [expenseId]);
+    await client.query(`DELETE FROM recurring_preferences WHERE expense_id = $1`, [expenseId]);
+    await client.query(`DELETE FROM expenses WHERE id = $1 AND user_id = $2`, [expenseId, userId]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function reprocessImportLog(user, log) {
+  const categories = await Category.findByHousehold(user.household_id);
+  const todayDate = new Date().toISOString().split('T')[0];
+  const outcomes = createOutcomes();
+
+  if (log?.expense_id) {
+    const existingExpense = await Expense.findById(log.expense_id);
+    if (existingExpense) {
+      if (existingExpense.user_id !== user.id) {
+        throw new Error('Import log does not belong to this user');
+      }
+      if (existingExpense.source !== 'email') {
+        throw new Error('Only Gmail-imported expenses can be reprocessed');
+      }
+      if (existingExpense.status !== 'pending') {
+        throw new Error('Only pending Gmail imports can be reprocessed');
+      }
+      await removePendingImportedExpense(existingExpense.id, user.id);
+    }
+  }
+
+  return processMessageImport(user, log.message_id, {
+    categories,
+    todayDate,
+    allowExistingRetry: true,
+    existingLog: log,
+    outcomes,
+  });
+}
+
 async function retryFailedImportsForUser(user, { limit = 10 } = {}) {
   const failedLogs = await EmailImportLog.listFailedByUser(user.id, limit);
   let imported = 0, skipped = 0, failed = 0;
@@ -535,6 +586,7 @@ module.exports = {
   importForUser,
   retryFailedImportLog,
   retryFailedImportsForUser,
+  reprocessImportLog,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
 };

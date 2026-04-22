@@ -189,6 +189,59 @@ $122.24`;
     expect(result.extractionText).toContain('Estimated total\n$122.24');
   });
 
+  it('preserves item card blocks with brand, sku, quantity, and price for rich order emails', () => {
+    const emailBody = `SHIPPING ADDRESS
+Dang Nguyen
+1546 Audubon Village Dr
+Winston Salem, NC 27106
+
+ITEM DESCRIPTION
+DAK - Plum Marmalade
+Espresso
+DAK Coffee Roasters
+COF-DA-0323
+x 1
+$19.99
+
+DAK - House of Plum Espresso
+DAK Coffee Roasters
+COF-DA-0397
+x 1
+$21.99
+
+DAK - Cream Donut Espresso
+DAK Coffee Roasters
+COF-DA-0377
+x 1
+$29.99
+
+September - Peanut Brittle Espresso
+September Coffee Co
+COF-SP-0128
+x 1
+$16.99
+
+DAK - Jazz Fruits Espresso
+DAK Coffee Roasters
+COF-DA-0061
+x 1
+$18.99
+
+Subtotal
+$107.95
+Total
+$107.95`;
+    const result = selectRelevantEmailText(emailBody, 'Total $107.95');
+    expect(result.extractionText).toContain('DAK - Plum Marmalade');
+    expect(result.extractionText).toContain('DAK Coffee Roasters');
+    expect(result.extractionText).toContain('COF-DA-0323');
+    expect(result.extractionText).toContain('x 1');
+    expect(result.extractionText).toContain('$19.99');
+    expect(result.extractionText).toContain('September - Peanut Brittle Espresso');
+    expect(result.extractionText).toContain('$16.99');
+    expect(result.extractionText).toContain('Total\n$107.95');
+  });
+
   it('sends structured extraction text to the parser prompt', async () => {
     complete.mockResolvedValue('null');
     await parseEmailExpense(

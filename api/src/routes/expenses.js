@@ -11,6 +11,7 @@ const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
 const {
   createConfirmedExpense,
+  enrichItemWithResolution,
   normalizeBudgetExclusionReason,
   updateMerchantMemory,
   validateConfirmExpensePayload,

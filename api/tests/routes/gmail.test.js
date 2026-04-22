@@ -149,6 +149,99 @@ describe('GET /gmail/status', () => {
   });
 });
 
+describe('POST /gmail/message/:messageId/reprocess', () => {
+  it('reprocesses an already-imported pending Gmail expense by replacing the old expense', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, refresh_token, token_expires_at)
+       VALUES ($1, 'gmail', $2, NOW() + INTERVAL '30 days')`,
+      [userId, encrypt('refresh-token')]
+    );
+
+    const originalExpense = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, amount, date, source, status, notes,
+         review_required, review_mode, review_source
+       )
+       VALUES ($1, $2, 'Old Merchant', 18.99, '2026-04-21', 'email', 'pending', 'Imported from Gmail',
+         TRUE, 'items_first', 'gmail')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const originalExpenseId = originalExpense.rows[0].id;
+
+    await db.query(
+      `INSERT INTO expense_items (expense_id, description, amount, sort_order, item_type)
+       VALUES ($1, 'Subtotal', 18.99, 0, 'summary')`,
+      [originalExpenseId]
+    );
+
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address)
+       VALUES ($1, '19db291791e9743e', $2, 'imported', 'Coffee order', 'orders@example.com')`,
+      [userId, originalExpenseId]
+    );
+
+    getMessage.mockResolvedValue({
+      subject: 'Coffee order',
+      from: 'orders@example.com',
+      snippet: 'Total $107.95',
+      body: `ITEM DESCRIPTION
+DAK - Plum Marmalade Espresso
+DAK Coffee Roasters
+COF-DA-0323
+x 1
+$19.99
+Total
+$107.95`,
+      receivedAt: '2026-04-21',
+    });
+    classifyEmailExpense.mockResolvedValue({
+      disposition: 'expense',
+      merchant: 'Dak Coffee Roasters',
+      reason: 'order receipt',
+    });
+    parseEmailExpense.mockResolvedValue({
+      merchant: 'Dak Coffee Roasters',
+      amount: 107.95,
+      date: '2026-04-21',
+      notes: 'Imported from Gmail',
+      payment_method: null,
+      card_label: null,
+      card_last4: null,
+      items: [
+        { description: 'DAK - Plum Marmalade Espresso', amount: 19.99 },
+      ],
+    });
+    assignCategory.mockResolvedValue({ category_id: null, source: null, confidence: null, reasoning: null });
+
+    const res = await request(app)
+      .post('/gmail/message/19db291791e9743e/reprocess');
+
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.expense).toBeTruthy();
+    expect(res.body.expense.id).not.toBe(originalExpenseId);
+
+    const oldExpenseCheck = await db.query(`SELECT id FROM expenses WHERE id = $1`, [originalExpenseId]);
+    expect(oldExpenseCheck.rowCount).toBe(0);
+
+    const logCheck = await db.query(
+      `SELECT expense_id, status FROM email_import_log WHERE user_id = $1 AND message_id = $2`,
+      [userId, '19db291791e9743e']
+    );
+    expect(logCheck.rows[0].status).toBe('imported');
+    expect(logCheck.rows[0].expense_id).toBe(res.body.expense.id);
+
+    const itemsCheck = await db.query(
+      `SELECT description, amount FROM expense_items WHERE expense_id = $1 ORDER BY sort_order ASC`,
+      [res.body.expense.id]
+    );
+    expect(itemsCheck.rows).toEqual([
+      expect.objectContaining({ description: 'DAK - Plum Marmalade Espresso' }),
+    ]);
+  });
+});
+
 describe('GET /gmail/callback', () => {
   it('saves token, returns Gmail connected page', async () => {
     await db.query(
