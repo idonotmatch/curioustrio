@@ -208,10 +208,6 @@ export function ReviewQueueItem({
               >
                 <Text style={isPreview ? styles.previewConfirmChipText : styles.confirmChipText}>Confirm</Text>
               </TouchableOpacity>
-            ) : isPreview ? (
-              <View style={styles.previewReviewChip}>
-                <Text style={styles.previewReviewChipText}>Review</Text>
-              </View>
             ) : null}
           </View>
         </TouchableOpacity>
@@ -274,7 +270,7 @@ const styles = StyleSheet.create({
   },
   confirmChipText: { fontSize: 11, fontWeight: '700', color: '#bbf7d0' },
   previewRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  previewRowMain: { flex: 1, marginRight: 8 },
+  previewRowMain: { flex: 1, marginRight: 16 },
   previewMerchant: { fontSize: 14, color: '#f5f5f5' },
   previewSubjectLabel: { fontSize: 10, color: '#6f6f6f', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 },
   previewSubject: { fontSize: 12, color: '#d6d6d6', fontWeight: '600', marginTop: 2 },
@@ -292,16 +288,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   previewConfirmChipText: { color: '#bbf7d0', fontSize: 11, fontWeight: '700' },
-  previewReviewChip: {
-    alignSelf: 'flex-end',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2b3442',
-    backgroundColor: '#141920',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  previewReviewChipText: { color: '#c8d7ec', fontSize: 11, fontWeight: '700' },
   approveAction: {
     backgroundColor: '#22c55e',
     justifyContent: 'center', alignItems: 'center',
