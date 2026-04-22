@@ -130,6 +130,55 @@ function htmlToReadableText(html = '') {
     .trim();
 }
 
+function countLineMatches(text = '', pattern) {
+  return text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => pattern.test(line)).length;
+}
+
+function bodyRichnessScore(text = '') {
+  const normalized = `${text || ''}`.trim();
+  if (!normalized) return 0;
+
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const moneyLines = countLineMatches(normalized, /\$\s?-?\d+(?:\.\d{2})?/);
+  const quantityLines = countLineMatches(normalized, /^(?:qty|quantity)?\s*x?\s*\d+\b/i);
+  const skuLines = countLineMatches(normalized, /^[A-Z0-9-]{5,}$/);
+  const summaryLines = countLineMatches(normalized, /^(subtotal|total|order total|amount paid|amount charged|grand total|estimated total|shipping|tax)/i);
+  const productLikeLines = countLineMatches(normalized, /[a-z]/i)
+    - summaryLines;
+
+  return (
+    Math.min(lines.length, 60) * 1
+    + Math.min(productLikeLines, 24) * 2
+    + Math.min(moneyLines, 16) * 3
+    + Math.min(quantityLines, 12) * 3
+    + Math.min(skuLines, 12) * 4
+    - Math.min(summaryLines, 12) * 1
+  );
+}
+
+function chooseBestMessageBody(plainText = '', htmlText = '', snippet = '') {
+  const normalizedPlain = `${plainText || ''}`.trim();
+  const normalizedHtml = `${htmlText || ''}`.trim();
+  if (!normalizedPlain) return normalizedHtml || snippet || '';
+  if (!normalizedHtml) return normalizedPlain || snippet || '';
+
+  const plainScore = bodyRichnessScore(normalizedPlain);
+  const htmlScore = bodyRichnessScore(normalizedHtml);
+
+  if (htmlScore >= plainScore + 8) {
+    return normalizedHtml;
+  }
+  return normalizedPlain;
+}
+
 async function getMessage(userId, messageId) {
   const auth = await getAuthenticatedClient(userId);
   const gmail = google.gmail({ version: 'v1', auth });
@@ -160,14 +209,13 @@ async function getMessage(userId, messageId) {
   }
   if (payload) extractBody(payload);
 
-  // Prefer plain text; fall back to HTML with tags stripped
   const normalizedPlain = plainBody
     .replace(/\r/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const normalizedHtml = htmlToReadableText(htmlBody);
-  const body = normalizedPlain || normalizedHtml || snippet;
+  const body = chooseBestMessageBody(normalizedPlain, normalizedHtml, snippet);
 
   return { subject, from, snippet, body, receivedAt };
 }
@@ -180,4 +228,6 @@ module.exports = {
   listRecentMessages,
   getMessage,
   htmlToReadableText,
+  chooseBestMessageBody,
+  bodyRichnessScore,
 };

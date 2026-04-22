@@ -38,6 +38,7 @@ import { buildMockGmailImportState, buildMockPendingExpenses } from '../fixtures
 
 const SUMMARY_WINDOW_DAYS = 90;
 const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
+const TEMP_REPROCESS_MESSAGE_ID = '19db291791e9743e';
 
 const MOCK_GMAIL_IMPORT_STATE = buildMockGmailImportState();
 
@@ -54,6 +55,7 @@ export default function GmailImportScreen() {
   const [gmailSyncing, setGmailSyncing] = useState(false);
   const [retryingFailedIds, setRetryingFailedIds] = useState([]);
   const [retryingAllFailed, setRetryingAllFailed] = useState(false);
+  const [reprocessingMessageId, setReprocessingMessageId] = useState('');
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
   const [learningExpanded, setLearningExpanded] = useState(false);
   const [senderSectionExpanded, setSenderSectionExpanded] = useState(false);
@@ -266,6 +268,27 @@ export default function GmailImportScreen() {
     }
   }
 
+  async function reprocessSpecificMessage(messageId = TEMP_REPROCESS_MESSAGE_ID) {
+    setReprocessingMessageId(messageId);
+    try {
+      const result = await api.post(`/gmail/message/${encodeURIComponent(messageId)}/reprocess`, {});
+      await invalidateCache('cache:expenses:pending');
+      await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
+      Alert.alert(
+        'Message reprocessed',
+        result?.imported
+          ? 'The Gmail message was reprocessed and added back into your review flow.'
+          : result?.skipped
+            ? 'The Gmail message was reprocessed but still ended up skipped.'
+            : 'The Gmail message was reprocessed.'
+      );
+    } catch (e) {
+      Alert.alert('Reprocess failed', e?.message || 'Could not reprocess this Gmail message');
+    } finally {
+      setReprocessingMessageId('');
+    }
+  }
+
   return (
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
@@ -305,6 +328,24 @@ export default function GmailImportScreen() {
           visibleSenderCards={visibleSenderCards}
           summaryWindowDays={displayImportSummary?.window_days || SUMMARY_WINDOW_DAYS}
         />
+
+        {displayGmailStatus?.connected ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>TEMP TOOLS</Text>
+            <TouchableOpacity
+              style={[styles.inlineRetryBtn, reprocessingMessageId && styles.actionBtnDisabled]}
+              onPress={() => reprocessSpecificMessage(TEMP_REPROCESS_MESSAGE_ID)}
+              disabled={!!reprocessingMessageId}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.inlineRetryBtnText}>
+                {reprocessingMessageId === TEMP_REPROCESS_MESSAGE_ID
+                  ? 'Reprocessing message...'
+                  : 'Reprocess message 19db291791e9743e'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <GmailPendingReviewSection
           styles={styles}
