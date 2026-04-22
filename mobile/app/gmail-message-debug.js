@@ -33,6 +33,14 @@ export default function GmailMessageDebugScreen() {
       `Chosen source: ${payload.chosen_source || 'unknown'}`,
       `Plain score: ${payload.plain_score ?? 'n/a'}`,
       `HTML score: ${payload.html_score ?? 'n/a'}`,
+      `Parsed item count: ${payload.parser_debug?.parsed_item_count ?? 0}`,
+      `Fallback item count: ${payload.parser_debug?.fallback_item_count ?? 0}`,
+      '',
+      '--- Parser Items Preview ---',
+      JSON.stringify(payload.parser_debug?.parsed_items_preview || [], null, 2),
+      '',
+      '--- Fallback Items Preview ---',
+      JSON.stringify(payload.parser_debug?.fallback_items_preview || [], null, 2),
       '',
       '--- Selected Body Preview ---',
       payload.selected_body_preview || '',
@@ -59,11 +67,22 @@ export default function GmailMessageDebugScreen() {
           <Text style={styles.metaSub}>
             {`Chosen source: ${payload?.chosen_source || 'unknown'}  •  Plain ${payload?.plain_score ?? 'n/a'}  •  HTML ${payload?.html_score ?? 'n/a'}`}
           </Text>
+          <Text style={styles.metaSub}>
+            {`Parser items ${payload?.parser_debug?.parsed_item_count ?? 0}  •  Fallback items ${payload?.parser_debug?.fallback_item_count ?? 0}`}
+          </Text>
           <TouchableOpacity style={styles.shareButton} onPress={shareDebugPayload} activeOpacity={0.82}>
             <Text style={styles.shareButtonText}>Share debug text</Text>
           </TouchableOpacity>
         </View>
 
+        <DebugSection
+          title="Parser Items Preview"
+          body={JSON.stringify(payload?.parser_debug?.parsed_items_preview || [], null, 2)}
+        />
+        <DebugSection
+          title="Fallback Items Preview"
+          body={JSON.stringify(payload?.parser_debug?.fallback_items_preview || [], null, 2)}
+        />
         <DebugSection title="Selected Body Preview" body={payload?.selected_body_preview} />
         <DebugSection title="Plain Preview" body={payload?.plain_preview} />
         <DebugSection title="HTML Preview" body={payload?.html_preview} />
