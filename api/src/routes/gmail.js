@@ -6,7 +6,7 @@ const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
-const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
+const { getAuthUrl, exchangeCode, getMessageDebug } = require('../services/gmailClient');
 const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reprocessImportLog } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { aiEndpoints } = require('../middleware/rateLimit');
@@ -226,6 +226,19 @@ router.post('/message/:messageId/reprocess', authenticate, async (req, res, next
     }
     next(err);
   }
+});
+
+router.get('/message/:messageId/debug', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const messageId = `${req.params.messageId || ''}`.trim();
+    if (!messageId) return res.status(400).json({ error: 'messageId required' });
+    const log = await EmailImportLog.findByMessageId(user.id, messageId);
+    if (!log) return res.status(404).json({ error: 'Import log not found' });
+    const debug = await getMessageDebug(user.id, messageId);
+    res.json(debug);
+  } catch (err) { next(err); }
 });
 
 router.post('/retry-failed', authenticate, async (req, res, next) => {

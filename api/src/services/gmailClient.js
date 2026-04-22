@@ -220,6 +220,60 @@ async function getMessage(userId, messageId) {
   return { subject, from, snippet, body, receivedAt };
 }
 
+async function getMessageDebug(userId, messageId) {
+  const auth = await getAuthenticatedClient(userId);
+  const gmail = google.gmail({ version: 'v1', auth });
+  const response = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'full',
+  });
+
+  const payload = response.data.payload;
+  const snippet = response.data.snippet || '';
+  const receivedAt = response.data.internalDate
+    ? new Date(Number(response.data.internalDate)).toISOString().split('T')[0]
+    : null;
+  const headers = payload?.headers || [];
+  const subject = headers.find((h) => h.name === 'Subject')?.value || '';
+  const from = headers.find((h) => h.name === 'From')?.value || '';
+
+  let plainBody = '';
+  let htmlBody = '';
+  function extractBody(part) {
+    if (part.mimeType === 'text/plain' && part.body?.data) {
+      plainBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
+    } else if (part.mimeType === 'text/html' && part.body?.data) {
+      htmlBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
+    }
+    if (part.parts) part.parts.forEach(extractBody);
+  }
+  if (payload) extractBody(payload);
+
+  const normalizedPlain = plainBody
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const normalizedHtml = htmlToReadableText(htmlBody);
+  const plainScore = bodyRichnessScore(normalizedPlain);
+  const htmlScore = bodyRichnessScore(normalizedHtml);
+  const body = chooseBestMessageBody(normalizedPlain, normalizedHtml, snippet);
+
+  return {
+    subject,
+    from,
+    snippet,
+    receivedAt,
+    chosen_source: body === normalizedHtml ? 'html' : (body === normalizedPlain ? 'plain' : 'snippet'),
+    plain_score: plainScore,
+    html_score: htmlScore,
+    plain_preview: normalizedPlain.slice(0, 4000),
+    html_preview: normalizedHtml.slice(0, 4000),
+    selected_body_preview: body.slice(0, 4000),
+  };
+}
+
 module.exports = {
   GMAIL_SEARCH_QUERY,
   getAuthUrl,
@@ -227,6 +281,7 @@ module.exports = {
   getAuthenticatedClient,
   listRecentMessages,
   getMessage,
+  getMessageDebug,
   htmlToReadableText,
   chooseBestMessageBody,
   bodyRichnessScore,

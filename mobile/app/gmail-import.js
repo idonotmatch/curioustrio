@@ -56,6 +56,7 @@ export default function GmailImportScreen() {
   const [retryingFailedIds, setRetryingFailedIds] = useState([]);
   const [retryingAllFailed, setRetryingAllFailed] = useState(false);
   const [reprocessingMessageId, setReprocessingMessageId] = useState('');
+  const [debuggingMessageId, setDebuggingMessageId] = useState('');
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
   const [learningExpanded, setLearningExpanded] = useState(false);
   const [senderSectionExpanded, setSenderSectionExpanded] = useState(false);
@@ -289,6 +290,25 @@ export default function GmailImportScreen() {
     }
   }
 
+  async function debugSpecificMessage(messageId = TEMP_REPROCESS_MESSAGE_ID) {
+    setDebuggingMessageId(messageId);
+    try {
+      const debug = await api.get(`/gmail/message/${encodeURIComponent(messageId)}/debug`);
+      const preview = [
+        `Chosen source: ${debug?.chosen_source || 'unknown'}`,
+        `Plain score: ${debug?.plain_score ?? 'n/a'}`,
+        `HTML score: ${debug?.html_score ?? 'n/a'}`,
+        '',
+        debug?.selected_body_preview || '(no body preview)',
+      ].join('\n');
+      Alert.alert('Gmail body debug', preview);
+    } catch (e) {
+      Alert.alert('Debug failed', e?.message || 'Could not load Gmail message diagnostics');
+    } finally {
+      setDebuggingMessageId('');
+    }
+  }
+
   return (
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
@@ -342,6 +362,18 @@ export default function GmailImportScreen() {
                 {reprocessingMessageId === TEMP_REPROCESS_MESSAGE_ID
                   ? 'Reprocessing message...'
                   : 'Reprocess message 19db291791e9743e'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.inlineRetryBtn, { marginTop: 10 }, debuggingMessageId && styles.actionBtnDisabled]}
+              onPress={() => debugSpecificMessage(TEMP_REPROCESS_MESSAGE_ID)}
+              disabled={!!debuggingMessageId}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.inlineRetryBtnText}>
+                {debuggingMessageId === TEMP_REPROCESS_MESSAGE_ID
+                  ? 'Loading message debug...'
+                  : 'Inspect fetched body 19db291791e9743e'}
               </Text>
             </TouchableOpacity>
           </View>
