@@ -415,9 +415,26 @@ function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
 
   const parsedProductCount = parsedItems.filter((item) => classifyExpenseItemType(item?.description) === 'product').length;
   const fallbackProductCount = fallbackItems.filter((item) => classifyExpenseItemType(item?.description) === 'product').length;
+  const parsedSummaryOrFeeCount = parsedItems.filter((item) => {
+    const type = classifyExpenseItemType(item?.description);
+    return type === 'summary' || type === 'fee' || type === 'discount';
+  }).length;
+  const fallbackDescriptions = new Set(
+    fallbackItems
+      .map((item) => `${item?.description || ''}`.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const parsedDescriptions = new Set(
+    parsedItems
+      .map((item) => `${item?.description || ''}`.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const overlappingDescriptions = [...parsedDescriptions].filter((description) => fallbackDescriptions.has(description)).length;
 
   if (parsedProductCount === 0 && fallbackProductCount > 0) return true;
   if (parsedProductCount < fallbackProductCount / 2 && fallbackProductCount >= 2) return true;
+  if (fallbackProductCount >= 2 && parsedSummaryOrFeeCount >= parsedItems.length && parsedProductCount < fallbackProductCount) return true;
+  if (fallbackProductCount >= 3 && overlappingDescriptions === 0) return true;
   return false;
 }
 

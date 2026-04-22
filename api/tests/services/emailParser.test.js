@@ -321,6 +321,68 @@ $41.98`,
     ]);
   });
 
+  it('uses fallback items when the model only returns fee and summary rows', async () => {
+    complete.mockResolvedValue(`{
+      "merchant":"Eight Ounce Coffee",
+      "amount":107.95,
+      "date":"2026-04-21",
+      "notes":"Imported from Gmail",
+      "items":[
+        { "description":"Subtotal", "amount":18.99, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null },
+        { "description":"shipping and taxes", "amount":88.96, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null }
+      ]
+    }`);
+
+    const result = await parseEmailExpense(
+      `Item Description
+DAK - Plum Marmalade Espresso
+DAK Coffee Roasters
+COF-DA-0323
+x 1
+$19.99
+
+DAK - House of Plum Espresso
+DAK Coffee Roasters
+COF-DA-0397
+x 1
+$21.99
+
+DAK - Cream Donut Espresso
+DAK Coffee Roasters
+COF-DA-0377
+x 1
+$29.99
+
+September - Peanut Brittle Espresso
+September Coffee Co
+COF-SP-0128
+x 1
+$16.99
+
+DAK - Jazz Fruits Espresso
+DAK Coffee Roasters
+COF-DA-0061
+x 1
+$18.99
+
+Subtotal
+$107.95
+Total
+$107.95`,
+      'Order #RT-270233 confirmed',
+      'hello@eightouncecoffee.ca',
+      '2026-04-21'
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ description: 'DAK - Plum Marmalade Espresso', amount: 19.99 }),
+      expect.objectContaining({ description: 'DAK - House of Plum Espresso', amount: 21.99 }),
+      expect.objectContaining({ description: 'DAK - Cream Donut Espresso', amount: 29.99 }),
+      expect.objectContaining({ description: 'September - Peanut Brittle Espresso', amount: 16.99 }),
+      expect.objectContaining({ description: 'DAK - Jazz Fruits Espresso', amount: 18.99 }),
+    ]);
+  });
+
   it('sends structured extraction text to the parser prompt', async () => {
     complete.mockResolvedValue('null');
     await parseEmailExpense(
