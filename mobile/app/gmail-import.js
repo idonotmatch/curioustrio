@@ -294,14 +294,16 @@ export default function GmailImportScreen() {
     setDebuggingMessageId(messageId);
     try {
       const debug = await api.get(`/gmail/message/${encodeURIComponent(messageId)}/debug`);
-      const preview = [
-        `Chosen source: ${debug?.chosen_source || 'unknown'}`,
-        `Plain score: ${debug?.plain_score ?? 'n/a'}`,
-        `HTML score: ${debug?.html_score ?? 'n/a'}`,
-        '',
-        debug?.selected_body_preview || '(no body preview)',
-      ].join('\n');
-      Alert.alert('Gmail body debug', preview);
+      const payload = {
+        message_id: messageId,
+        ...debug,
+      };
+      router.push({
+        pathname: '/gmail-message-debug',
+        params: {
+          payload: JSON.stringify(payload),
+        },
+      });
     } catch (e) {
       Alert.alert('Debug failed', e?.message || 'Could not load Gmail message diagnostics');
     } finally {
