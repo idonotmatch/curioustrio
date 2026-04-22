@@ -20,7 +20,7 @@ import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
 import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
-import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
+import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, mergeExpenseData, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 import {
   formatImportedAt,
@@ -106,29 +106,7 @@ function applyExpenseToState(record, setters) {
 function mergeReviewMetadata(previous, next) {
   if (!next) return previous || null;
   if (!previous) return next;
-
-  const prevHint = previous.gmail_review_hint || null;
-  const nextHint = next.gmail_review_hint || null;
-  const mergedHint = prevHint || nextHint
-    ? {
-        ...(prevHint || {}),
-        ...(nextHint || {}),
-        message_subject: nextHint?.message_subject || prevHint?.message_subject || null,
-        message_snippet: nextHint?.message_snippet || prevHint?.message_snippet || null,
-        from_address: nextHint?.from_address || prevHint?.from_address || null,
-        imported_at: nextHint?.imported_at || prevHint?.imported_at || null,
-        treatment_suggestion: nextHint?.treatment_suggestion || prevHint?.treatment_suggestion || null,
-      }
-    : null;
-
-  return {
-    ...previous,
-    ...next,
-    email_subject: next.email_subject || previous.email_subject || null,
-    email_from_address: next.email_from_address || previous.email_from_address || null,
-    email_snippet: next.email_snippet || previous.email_snippet || null,
-    gmail_review_hint: mergedHint,
-  };
+  return mergeExpenseData(previous, next);
 }
 
 const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;

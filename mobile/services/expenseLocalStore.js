@@ -11,6 +11,36 @@ function isPresent(value) {
   return value !== undefined && value !== null;
 }
 
+function mergePreferPresent(existingValue, incomingValue) {
+  return isPresent(incomingValue) ? incomingValue : existingValue;
+}
+
+function mergeGmailReviewHint(existingHint = null, incomingHint = null) {
+  if (!existingHint && !incomingHint) return null;
+  if (!incomingHint || typeof incomingHint !== 'object') return existingHint || null;
+  if (!existingHint || typeof existingHint !== 'object') return incomingHint;
+
+  const merged = {
+    ...existingHint,
+    ...incomingHint,
+  };
+
+  for (const key of Object.keys(existingHint)) {
+    if (isPresent(incomingHint[key])) continue;
+    merged[key] = existingHint[key];
+  }
+
+  const arrayKeys = ['review_checklist', 'likely_changed_fields', 'item_top_signals'];
+  for (const key of arrayKeys) {
+    if (Array.isArray(incomingHint?.[key]) && incomingHint[key].length > 0) continue;
+    if (Array.isArray(existingHint?.[key]) && existingHint[key].length > 0) {
+      merged[key] = existingHint[key];
+    }
+  }
+
+  return merged;
+}
+
 function mergeExpenseData(existing = {}, incoming = {}) {
   if (!existing?.id) return incoming;
   if (!incoming?.id) return existing;
@@ -41,12 +71,24 @@ function mergeExpenseData(existing = {}, incoming = {}) {
     merged.item_count = incoming.items.length;
   }
 
-  if (!hasOwn(incoming, 'gmail_review_hint') && existing.gmail_review_hint) {
-    merged.gmail_review_hint = existing.gmail_review_hint;
+  if (existing.gmail_review_hint || incoming.gmail_review_hint) {
+    merged.gmail_review_hint = mergeGmailReviewHint(existing.gmail_review_hint, incoming.gmail_review_hint);
   }
 
   if (!hasOwn(incoming, 'duplicate_flags') && Array.isArray(existing.duplicate_flags)) {
     merged.duplicate_flags = existing.duplicate_flags;
+  }
+
+  merged.email_subject = mergePreferPresent(existing.email_subject, incoming.email_subject);
+  merged.email_from_address = mergePreferPresent(existing.email_from_address, incoming.email_from_address);
+  merged.email_snippet = mergePreferPresent(existing.email_snippet, incoming.email_snippet);
+
+  if ((!Array.isArray(incoming.item_review_context) || incoming.item_review_context.length === 0) && Array.isArray(existing.item_review_context) && existing.item_review_context.length > 0) {
+    merged.item_review_context = existing.item_review_context;
+  }
+
+  if (!isPresent(incoming.category_reasoning) && isPresent(existing.category_reasoning)) {
+    merged.category_reasoning = existing.category_reasoning;
   }
 
   return merged;
@@ -219,6 +261,8 @@ export async function findExpenseSnapshotInCaches(id) {
 export async function mergeExpenseSnapshot(expense) {
   return saveExpenseSnapshot(expense);
 }
+
+export { mergeExpenseData };
 
 async function listCacheKeys() {
   try {
