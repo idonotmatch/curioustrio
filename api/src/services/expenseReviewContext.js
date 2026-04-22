@@ -334,7 +334,13 @@ async function attachGmailReviewHint(expense, userId) {
   if (!expense || expense.source !== 'email') return expense;
   const log = await EmailImportLog.findByExpenseId(expense.id);
   if (!log?.message_id) {
-    return { ...expense, gmail_review_hint: null };
+    return {
+      ...expense,
+      email_subject: expense?.email_subject || null,
+      email_from_address: expense?.email_from_address || null,
+      email_snippet: expense?.email_snippet || null,
+      gmail_review_hint: null,
+    };
   }
 
   let senderQuality = { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
@@ -365,6 +371,9 @@ async function attachGmailReviewHint(expense, userId) {
 
   return {
     ...expense,
+    email_subject: log.subject || null,
+    email_from_address: log.from_address || null,
+    email_snippet: log.snippet || null,
     gmail_review_hint: {
       ...buildEmailReviewHint(expense, log, senderQuality),
       treatment_suggestion: treatmentSuggestion,

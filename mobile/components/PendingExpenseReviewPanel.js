@@ -30,66 +30,42 @@ export function PendingExpenseReviewPanel({
   secondaryDetailsExpanded,
   setSecondaryDetailsExpanded,
 }) {
+  const attentionFields = Array.isArray(priorityReviewFields)
+    ? priorityReviewFields.filter((field) => {
+        const reason = `${field?.reason || ''}`.toLowerCase();
+        if (field?.key === 'items' && isItemsFirstReview) return true;
+        return (
+          reason.includes('often') ||
+          reason.includes('cleanup') ||
+          reason.includes('inferred') ||
+          reason.includes('double-check')
+        );
+      })
+    : [];
+
+  const approvalFacts = Array.isArray(reviewDecisionFacts)
+    ? reviewDecisionFacts.filter((fact) => fact?.label !== 'Sender')
+    : [];
+
   return (
     <>
-      <View style={styles.reviewBanner}>
-        <Text style={styles.reviewBannerEyebrow}>
-          {isItemsFirstReview ? 'Items first' : 'Gmail import'}
-        </Text>
-        <Text style={styles.reviewBannerTitle}>
+      <View style={styles.reviewProvenanceCard}>
+        <Text style={styles.reviewSectionEyebrow}>From email</Text>
+        <Text style={styles.reviewProvenanceTitle}>
           {subjectLine || expenseMerchant || 'Gmail import awaiting review'}
         </Text>
-        {expenseMerchant && subjectLine && subjectLine.toLowerCase() !== `${expenseMerchant}`.toLowerCase() ? (
-          <Text style={styles.reviewBannerText}>{expenseMerchant}</Text>
-        ) : null}
-        {subjectLine ? (
-          <View style={styles.reviewBannerSubjectBlock}>
-            <Text style={styles.reviewBannerSubjectLabel}>Email subject</Text>
-            <Text style={styles.reviewBannerSubjectValue}>{subjectLine}</Text>
-          </View>
-        ) : null}
-        {reviewDecisionFacts.length ? (
-          <View style={styles.reviewFactGrid}>
-            {reviewDecisionFacts.map((fact) => (
-              <View key={`${fact.label}:${fact.value}`} style={styles.reviewFactChip}>
-                <Text style={styles.reviewFactLabel}>{fact.label}</Text>
-                <Text style={styles.reviewFactValue} numberOfLines={1}>{fact.value}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-        <View style={styles.reviewFocusBlock}>
-          <Text style={styles.reviewFocusTitle}>{reviewFocusSummary.title}</Text>
-          <Text style={styles.reviewFocusBody}>{reviewFocusSummary.body}</Text>
-        </View>
-        {treatmentSuggestionSummary ? (
-          <View style={styles.reviewPatternBlock}>
-            <Text style={styles.reviewPatternLabel}>Usually for similar expenses</Text>
-            <Text style={styles.reviewPatternBody}>{treatmentSuggestionSummary}</Text>
-          </View>
-        ) : null}
-        {importMetaBits.length || emailSnippet ? (
-          <View style={styles.reviewBannerEmailContext}>
-            {importMetaBits.length ? (
-              <Text style={styles.reviewBannerMeta}>{importMetaBits.join('  ·  ')}</Text>
-            ) : null}
-            {emailSnippet ? (
-              <>
-                <Text style={styles.reviewBannerEmailLabel}>Email preview</Text>
-                <Text style={styles.reviewBannerEmailSnippet} numberOfLines={2}>{emailSnippet}</Text>
-              </>
-            ) : null}
-          </View>
-        ) : null}
+        {importMetaBits.length ? <Text style={styles.reviewProvenanceMeta}>{importMetaBits.join('  ·  ')}</Text> : null}
+        {emailSnippet ? <Text style={styles.reviewProvenanceSnippet} numberOfLines={2}>{emailSnippet}</Text> : null}
       </View>
 
-      <View style={styles.priorityFieldsCard}>
-        <View style={styles.priorityFieldsHeader}>
+      <View style={styles.reviewSummaryCard}>
+        <View style={styles.reviewSummaryHeader}>
           <View>
-            <Text style={styles.priorityFieldsEyebrow}>Check these details</Text>
-            <Text style={styles.priorityFieldsTitle}>
-              {isItemsFirstReview ? 'Start with the items, then confirm the basics' : 'Confirm the key facts before approving'}
-            </Text>
+            <Text style={styles.reviewSectionEyebrow}>Approve this expense</Text>
+            <Text style={styles.reviewSummaryTitle}>These are the details that will be saved</Text>
+            {expenseMerchant && subjectLine && subjectLine.toLowerCase() !== `${expenseMerchant}`.toLowerCase() ? (
+              <Text style={styles.reviewSummarySubtitle}>{expenseMerchant}</Text>
+            ) : null}
           </View>
           {!editing ? (
             <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
@@ -97,24 +73,60 @@ export function PendingExpenseReviewPanel({
             </TouchableOpacity>
           ) : null}
         </View>
-        {priorityReviewFields.map((field) => (
-          <TouchableOpacity
-            key={field.key}
-            style={[styles.priorityFieldRow, activeReviewField === field.key && styles.priorityFieldRowActive]}
-            onPress={() => activateReviewField(field.key)}
-            activeOpacity={0.82}
-          >
-            <View style={styles.priorityFieldTop}>
-              <Text style={styles.priorityFieldLabel}>{field.label}</Text>
-              <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
-            </View>
-            <Text style={styles.priorityFieldValue}>{field.value}</Text>
-            <Text style={styles.priorityFieldReason}>{field.reason}</Text>
-          </TouchableOpacity>
-        ))}
+
+        {approvalFacts.length ? (
+          <View style={styles.reviewSummaryGrid}>
+            {approvalFacts.map((fact) => (
+              <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
+                <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
+                <Text style={styles.reviewSummaryChipValue} numberOfLines={1}>{fact.value}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </View>
 
+      {attentionFields.length ? (
+        <View style={styles.priorityFieldsCard}>
+          <View style={styles.priorityFieldsHeader}>
+            <View>
+              <Text style={styles.reviewSectionEyebrow}>Needs attention</Text>
+              <Text style={styles.priorityFieldsTitle}>
+                {reviewFocusSummary.title}
+              </Text>
+              <Text style={styles.reviewAttentionBody}>{reviewFocusSummary.body}</Text>
+            </View>
+            {!editing ? (
+              <TouchableOpacity onPress={() => activateReviewField(attentionFields[0]?.key || 'amount')} activeOpacity={0.8}>
+                <Text style={styles.priorityFieldsAction}>Review</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {attentionFields.map((field) => (
+            <TouchableOpacity
+              key={field.key}
+              style={[styles.priorityFieldRow, activeReviewField === field.key && styles.priorityFieldRowActive]}
+              onPress={() => activateReviewField(field.key)}
+              activeOpacity={0.82}
+            >
+              <View style={styles.priorityFieldTop}>
+                <Text style={styles.priorityFieldLabel}>{field.label}</Text>
+                <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
+              </View>
+              <Text style={styles.priorityFieldValue}>{field.value}</Text>
+              <Text style={styles.priorityFieldReason}>{field.reason}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.reviewControlsCard}>
+        {treatmentSuggestionSummary ? (
+          <View style={styles.reviewPatternBlock}>
+            <Text style={styles.reviewPatternLabel}>Usually for similar expenses</Text>
+            <Text style={styles.reviewPatternBody}>{treatmentSuggestionSummary}</Text>
+          </View>
+        ) : null}
         {treatmentSuggestion ? (
           <View style={styles.reviewSuggestionCard}>
             <View style={styles.reviewSuggestionHeader}>

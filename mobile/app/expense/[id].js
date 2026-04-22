@@ -103,6 +103,34 @@ function applyExpenseToState(record, setters) {
   })));
 }
 
+function mergeReviewMetadata(previous, next) {
+  if (!next) return previous || null;
+  if (!previous) return next;
+
+  const prevHint = previous.gmail_review_hint || null;
+  const nextHint = next.gmail_review_hint || null;
+  const mergedHint = prevHint || nextHint
+    ? {
+        ...(prevHint || {}),
+        ...(nextHint || {}),
+        message_subject: nextHint?.message_subject || prevHint?.message_subject || null,
+        message_snippet: nextHint?.message_snippet || prevHint?.message_snippet || null,
+        from_address: nextHint?.from_address || prevHint?.from_address || null,
+        imported_at: nextHint?.imported_at || prevHint?.imported_at || null,
+        treatment_suggestion: nextHint?.treatment_suggestion || prevHint?.treatment_suggestion || null,
+      }
+    : null;
+
+  return {
+    ...previous,
+    ...next,
+    email_subject: next.email_subject || previous.email_subject || null,
+    email_from_address: next.email_from_address || previous.email_from_address || null,
+    email_snippet: next.email_snippet || previous.email_snippet || null,
+    gmail_review_hint: mergedHint,
+  };
+}
+
 const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
 
 export default function ExpenseDetailScreen() {
@@ -183,9 +211,10 @@ export default function ExpenseDetailScreen() {
       try {
         const fresh = await api.get(`/expenses/${id}`);
         if (!active) return;
-        applyExpenseToState(fresh, setters);
+        const merged = mergeReviewMetadata(bootstrappedWithItems, fresh);
+        applyExpenseToState(merged, setters);
         setLoading(false);
-        saveExpenseSnapshot(fresh);
+        saveExpenseSnapshot(merged);
       } catch {
         if (active && !bootstrapped) setLoading(false);
       }
@@ -277,7 +306,7 @@ export default function ExpenseDetailScreen() {
             unit: it.unit || null,
           })),
       });
-      const refreshed = await api.get(`/expenses/${id}`);
+      const refreshed = mergeReviewMetadata(expense, await api.get(`/expenses/${id}`));
       setExpense(refreshed);
       saveExpenseSnapshot(refreshed);
       patchExpenseInCachedLists(refreshed);
@@ -388,11 +417,11 @@ export default function ExpenseDetailScreen() {
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const subjectLine = `${gmailReviewHint?.message_subject || expense?.email_subject || ''}`.trim();
-  const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet);
+  const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet || expense?.email_snippet);
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
-  const importMetaBits = [gmailReviewHint?.from_address, importedAtLabel].filter(Boolean);
+  const importMetaBits = [gmailReviewHint?.from_address || expense?.email_from_address, importedAtLabel].filter(Boolean);
   const treatmentSuggestionSummary = buildTreatmentSuggestionSummary(treatmentSuggestion);
   const reviewFocusSummary = buildReviewFocusSummary(gmailReviewHint);
   const reviewDecisionFacts = buildReviewDecisionFacts({
@@ -967,6 +996,49 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   reviewBannerEmailSnippet: { color: '#c9c1af', fontSize: 12, lineHeight: 18 },
+  reviewProvenanceCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: -4,
+    backgroundColor: '#14110d',
+    borderWidth: 1,
+    borderColor: '#25201a',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  reviewSectionEyebrow: { color: '#8a816f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
+  reviewProvenanceTitle: { color: '#f3efe8', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  reviewProvenanceMeta: { color: '#a79b87', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  reviewProvenanceSnippet: { color: '#c8bfaf', fontSize: 12, lineHeight: 18, marginTop: 8 },
+  reviewSummaryCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: -4,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  reviewSummaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
+  reviewSummaryTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  reviewSummarySubtitle: { color: '#8d8d8d', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  reviewSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  reviewSummaryChip: {
+    minWidth: 104,
+    maxWidth: '48%',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+    backgroundColor: '#0d0d0d',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  reviewSummaryChipLabel: { color: '#7f7f7f', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  reviewSummaryChipValue: { color: '#f3f3f3', fontSize: 13, fontWeight: '600' },
+  reviewAttentionBody: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
   priorityFieldsCard: {
     marginHorizontal: 20,
     marginTop: 12,

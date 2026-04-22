@@ -119,6 +119,9 @@ export function ReviewQueueItem({
   const quickCheck = isQuickCheckPending(item);
   const isPreview = variant === 'preview';
   const subject = reviewSubject(item);
+  const rowTitle = subject
+    ? (item.merchant || item.description || subject || '—')
+    : reviewHeadline(item);
 
   const renderLeftActions = () => (
     <TouchableOpacity style={styles.approveAction} onPress={() => onApprove(item.id)}>
@@ -145,15 +148,14 @@ export function ReviewQueueItem({
         <TouchableOpacity style={isPreview ? styles.previewRow : styles.row} onPress={() => onOpen(item)} activeOpacity={0.85}>
           <View style={isPreview ? styles.previewRowMain : styles.rowMain}>
             <Text style={isPreview ? styles.previewMerchant : styles.merchant} numberOfLines={1}>
-              {reviewHeadline(item)}
+              {rowTitle}
             </Text>
             {isPreview ? (
               <>
                 {subject ? (
-                  <>
-                    <Text style={styles.previewSubjectLabel}>Subject</Text>
-                    <Text style={styles.previewSubject} numberOfLines={1}>{subject}</Text>
-                  </>
+                  <Text style={styles.previewMeta} numberOfLines={1}>
+                    {[subject, item?.gmail_review_hint?.from_address || item?.email_from_address].filter(Boolean).join('  ·  ')}
+                  </Text>
                 ) : null}
                 <Text style={styles.previewMeta} numberOfLines={1}>{reviewQueueLabel(item)}</Text>
                 <Text style={styles.previewGuidance} numberOfLines={1}>{reviewQueueGuidance(item)}</Text>
