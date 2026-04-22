@@ -138,6 +138,35 @@ function countLineMatches(text = '', pattern) {
     .filter((line) => pattern.test(line)).length;
 }
 
+function cssNoisePenalty(text = '') {
+  const normalized = `${text || ''}`.trim();
+  if (!normalized) return 0;
+
+  const commentMatches = normalized.match(/\/\*[\s\S]*?\*\//g) || [];
+  const propertyMatches = normalized.match(/\b(?:margin|padding|width|height|display|color|font|line-height|border|background|text-decoration|text-transform|opacity|cursor|direction|border-spacing|border-collapse)\s*:/gi) || [];
+  const selectorMatches = normalized.match(/(?:^|\n)\s*(?:html|body|table|img|div|a|th|td|\.[A-Za-z0-9_-]+|#[A-Za-z0-9_-]+|\*\[[^\]]+\])[^a-zA-Z0-9\n]*\{/gm) || [];
+  const braceCount = (normalized.match(/[{}]/g) || []).length;
+  const semicolonCount = (normalized.match(/;/g) || []).length;
+
+  const longCssSignals = [
+    /\/\*\s*what it does:/i,
+    /\.ExternalClass/i,
+    /\[x-apple-data-detectors\]/i,
+    /\.x-gmail-data-detectors/i,
+    /mso-table-lspace/i,
+    /-webkit-text-size-adjust/i,
+  ].reduce((count, pattern) => count + (pattern.test(normalized) ? 1 : 0), 0);
+
+  return (
+    Math.min(commentMatches.length, 12) * 6
+    + Math.min(propertyMatches.length, 24) * 2
+    + Math.min(selectorMatches.length, 16) * 4
+    + Math.min(Math.floor(braceCount / 2), 20) * 2
+    + Math.min(Math.floor(semicolonCount / 4), 20) * 1
+    + longCssSignals * 10
+  );
+}
+
 function bodyRichnessScore(text = '') {
   const normalized = `${text || ''}`.trim();
   if (!normalized) return 0;
@@ -151,8 +180,8 @@ function bodyRichnessScore(text = '') {
   const quantityLines = countLineMatches(normalized, /^(?:qty|quantity)?\s*x?\s*\d+\b/i);
   const skuLines = countLineMatches(normalized, /^[A-Z0-9-]{5,}$/);
   const summaryLines = countLineMatches(normalized, /^(subtotal|total|order total|amount paid|amount charged|grand total|estimated total|shipping|tax)/i);
-  const productLikeLines = countLineMatches(normalized, /[a-z]/i)
-    - summaryLines;
+  const productLikeLines = Math.max(countLineMatches(normalized, /[a-z]/i) - summaryLines, 0);
+  const cssPenalty = cssNoisePenalty(normalized);
 
   return (
     Math.min(lines.length, 60) * 1
@@ -161,6 +190,7 @@ function bodyRichnessScore(text = '') {
     + Math.min(quantityLines, 12) * 3
     + Math.min(skuLines, 12) * 4
     - Math.min(summaryLines, 12) * 1
+    - cssPenalty
   );
 }
 
