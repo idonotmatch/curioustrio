@@ -14,14 +14,14 @@ Adlo is a **personal-first, household-aware, AI-augmented expense tracker** desi
 | Feature | Today (Current State) | Ideal End State | Maturity |
 |---|---|---|---|
 | **Manual Expense Entry** | NL input → Claude parses to structured expense; camera/receipt OCR supported | Instant, zero-friction entry; voice input; smart pre-fills from history | 70% |
-| **Gmail Auto-Import** | OAuth2 + scheduled sync; queue-first Gmail review flow; per-sender quality tracking; subject/snippet context; dismiss-reason feedback; learned treatment suggestions from similar history | Real-time streaming import; multi-provider (Outlook, Apple Mail); smarter pre-queue filtering and reconciliation across sources | 75% |
+| **Gmail Auto-Import** | OAuth2 + scheduled sync; queue-first Gmail review flow; per-sender/template quality tracking; subject/snippet context; dismiss-reason feedback; item-review learning; learned treatment suggestions from similar history | Real-time streaming import; multi-provider (Outlook, Apple Mail); smarter pre-queue filtering and reconciliation across sources | 78% |
 | **AI Categorization** | Claude assigns category; merchant_mappings cache for repeat merchants; category suggestor on input | Self-improving per household; learns corrections instantly; handles edge cases (split bills, reimbursable) | 60% |
 | **Duplicate Detection** | Proportional threshold `GREATEST(1.00, amount × 2%)` + date ±2 days + merchant; flags uncertain cases for review | Cross-source deduplication (email + manual + bank); confidence scoring; user correction feedback loop | 50% |
 | **Budget Tracking** | Monthly limits per category; spending bar; period configurable by start day; `Track only` expenses excluded from budget with structured reasons | Rolling budgets; goal-setting; carryover logic; "on track / at risk" forecasting per category; multiple budget buckets | 65% |
 | **Household Sharing** | Multi-user households; private expense flag; shared expense view; invite via email; household context derived from confirmed individual inputs | Roles (owner/member/viewer); split expense tracking; household-level budgets vs individual; approval flow | 40% |
 | **Spending Insights** | Price spikes, recurring-due-soon, buy-soon signals; early/developing insight lifecycle; personal-first hierarchy with household rollups; lineage-aware feedback loop; push notifications | Personalized recommendations; anomaly detection; subscription audit; net worth context; proactive alerts | 65% |
 | **Recurring Detection** | Pattern detection across expense history; watch list; repurchase due date estimation | Subscription management (cancel alerts, price increases); recurring vs one-time budget separation | 45% |
-| **Price Tracking** | Per-product price observation history; best-price signal for recurring items | Price trend graphs; store comparison; price drop notifications; basket optimization | 30% |
+| **Price Tracking** | Per-product price observation history; best-price signal for recurring items; Gmail item rows now feed the same confirmed item history once approved | Price trend graphs; store comparison; price drop notifications; basket optimization | 35% |
 | **Trend Analysis** | Rolling 30-day category trends; projection to end of period; deep-dive per category | Year-over-year comparisons; custom date ranges; downloadable reports; anomaly explanation | 50% |
 | **Location Tagging** | Apple MapKit place search; location stored on expense | Auto-suggest merchant from GPS at time of entry; map view of spend by location | 25% |
 | **Push Notifications** | Insight notifications queued + dispatched via cron; device token registration | Rich notifications with inline actions; notification preferences; smart timing (don't notify at 2am) | 40% |
@@ -71,6 +71,7 @@ Adlo is a **personal-first, household-aware, AI-augmented expense tracker** desi
 - **Merchant normalization** — canonical merchant registry; fuzzy match at ingest; household learns corrections
 - **NL input improvements** — handle multi-expense input in one message ("$45 at Whole Foods and $12 at Starbucks"); improve split/shared expense parsing; keep building item-level natural language entry beyond the new explicit `items:` and single-item inference paths
 - **Confirm flow UX** — continue simplifying Gmail review and expense confirmation; current flow now includes subject/snippet context, similar-expense treatment suggestions, quick confirm, and direct `Private` / `Track only` controls without deep edit
+- **Item review learning** — Gmail item-first approvals now distinguish clean item approvals from item corrections, so template trust can evolve toward quick review, item cleanup, or suppression paths
 - **Budget forecasting** — "at this rate you'll exceed Dining by $120" card on home screen; per-category risk signal
 
 ### Phase 2 — Household Intelligence (Weeks 7–14)
@@ -127,6 +128,7 @@ Note: the current product direction is personal-first. Review ownership and budg
 - [x] **Review queue hardening** — pending queue and expense detail routes now tolerate optional enrichment failures (`duplicate_flags`, Gmail sender preferences, Gmail hint attachment) instead of dropping pending items on the floor
 - [x] **Track-only budget impact model** — expenses can be saved without counting toward budget, with structured exclusion reasons; budget and insight math respect the exclusion
 - [x] **Gmail review feedback learning** — structured dismiss reasons, sender-level review trends, and similar-expense treatment suggestions now feed the Gmail review workflow
+- [x] **Gmail item feedback learning** — item-first approvals record clean item-review signals, item corrections are tracked separately, and pending review payloads expose item counts for local review/insight continuity
 - [x] **Personal-first insight hierarchy** — insight consolidation, ranking, and lineage metadata now start from personal signals and layer household context on top
 
 ### Short-Term (4–8 Weeks)

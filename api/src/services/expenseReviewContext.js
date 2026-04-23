@@ -228,15 +228,27 @@ function buildEmailReviewRouting(senderQuality, itemReliability, preferredReview
   }
 
   if (reviewMode === 'items_first') {
+    const itemLevel = itemReliability?.level || 'unknown';
+    const trustedItems = itemLevel === 'trusted';
+    const noisyItems = itemLevel === 'noisy';
     return {
       review_mode: 'items_first',
-      review_title: 'Focus on the items before approving',
-      review_message: 'The overall import is often usable, but the line items from this sender are where mistakes usually show up.',
-      review_checklist: [
-        'Items: remove fee, discount, or total rows that should not count as purchases.',
-        'Items: make sure the product names and per-item amounts look right.',
-        'Amount: confirm the final total still matches what was actually charged.',
-      ],
+      review_title: trustedItems ? 'Items found from this receipt' : 'Focus on the items before approving',
+      review_message: trustedItems
+        ? 'Line items from this sender are usually usable, so confirm the basket and final total.'
+        : noisyItems
+          ? 'Line items from this sender often need cleanup before they are useful.'
+          : 'The email has item rows worth checking before approval.',
+      review_checklist: trustedItems
+        ? [
+            'Items: scan the product list for anything obviously missing or extra.',
+            'Amount: confirm the final total still matches what was charged.',
+          ]
+        : [
+            'Items: remove fee, discount, or total rows that should not count as purchases.',
+            'Items: make sure the product names and per-item amounts look right.',
+            'Amount: confirm the final total still matches what was actually charged.',
+          ],
     };
   }
 
@@ -384,6 +396,7 @@ async function attachGmailReviewHint(expense, userId) {
 async function fetchPendingExpensesBase(userId) {
   const result = await db.query(
     `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
+            (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count,
             l.subject AS email_subject,
             l.from_address AS email_from_address,
             l.snippet AS email_snippet

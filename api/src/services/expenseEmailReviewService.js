@@ -1,6 +1,12 @@
 const Expense = require('../models/expense');
+const ExpenseItem = require('../models/expenseItem');
 const EmailImportLog = require('../models/emailImportLog');
 const { attachGmailReviewHint } = require('./expenseReviewContext');
+
+function isItemReviewField(field = '') {
+  const normalized = `${field || ''}`;
+  return normalized.startsWith('items') && normalized !== 'items_reviewed_clean';
+}
 
 function normalizeReviewContext(value) {
   const raw = `${value || ''}`.trim().toLowerCase();
@@ -43,6 +49,23 @@ async function handleDismissedExpenseReview(expense, userId, dismissalReason) {
 async function handleApprovedExpenseReview(expense, userId, reviewContext) {
   if (!expense?.id || expense.source !== 'email') return expense;
   let nextExpense = expense;
+  let items = [];
+  let existingReviewFields = [];
+  try {
+    const [existingLog, existingItems] = await Promise.all([
+      EmailImportLog.findByExpenseId(expense.id),
+      ExpenseItem.findByExpenseId(expense.id),
+    ]);
+    existingReviewFields = Array.isArray(existingLog?.review_changed_fields)
+      ? existingLog.review_changed_fields
+      : [];
+    items = Array.isArray(existingItems) ? existingItems : [];
+  } catch (err) {
+    console.error('[expenses/approve] review context lookup failed:', {
+      expense_id: expense.id,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+  }
   const normalizedNotes = normalizeApprovedEmailNotes(expense.notes || '');
   if (normalizedNotes && normalizedNotes !== expense.notes) {
     try {
@@ -63,16 +86,28 @@ async function handleApprovedExpenseReview(expense, userId, reviewContext) {
     });
   }
   const reviewContextField = normalizeReviewContext(reviewContext);
+  const changedFields = reviewContextField ? [reviewContextField] : [];
+  const hadItemCorrections = existingReviewFields.some(isItemReviewField);
+  if (reviewContextField === 'review_path_items_first' && items.length > 0 && !hadItemCorrections) {
+    changedFields.push('items_reviewed_clean');
+  }
   try {
     await EmailImportLog.recordReviewFeedback(nextExpense.id, {
       action: 'approved',
-      changedFields: reviewContextField ? [reviewContextField] : [],
+      changedFields,
     });
   } catch (err) {
     console.error('[expenses/approve] email review feedback failed:', {
       expense_id: nextExpense.id,
       message: err?.message || String(err || 'unknown_error'),
     });
+  }
+  if (items.length > 0) {
+    nextExpense = {
+      ...nextExpense,
+      items,
+      item_count: items.length,
+    };
   }
   try {
     return await attachGmailReviewHint(nextExpense, userId);

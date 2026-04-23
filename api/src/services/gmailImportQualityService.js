@@ -61,6 +61,11 @@ function isItemField(field = '') {
   return `${field}`.startsWith('items');
 }
 
+function isItemCorrectionField(field = '') {
+  const normalized = `${field || ''}`;
+  return isItemField(normalized) && normalized !== 'items_reviewed_clean';
+}
+
 function isReviewPathField(field = '') {
   return `${field}`.startsWith('review_path_');
 }
@@ -77,22 +82,34 @@ function extractReviewPath(changedFields = []) {
 
 function summarizeItemReliability(rows = []) {
   const imports = rows.length;
+  const itemRows = rows.filter((row) => {
+    const changedFields = Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [];
+    const itemBlockLevel = `${row.structured_item_block_level || ''}`.trim().toLowerCase();
+    return Number(row.deterministic_item_count || 0) > 0
+      || (itemBlockLevel && itemBlockLevel !== 'none')
+      || changedFields.some(isItemField)
+      || extractReviewPath(changedFields) === 'items_first';
+  });
+  const itemReviewCount = itemRows.length;
   const itemFieldCounts = new Map();
   let itemEdited = 0;
+  let cleanItemApproved = 0;
 
-  for (const row of rows) {
+  for (const row of itemRows) {
     const changedFields = Array.isArray(row.review_changed_fields) ? row.review_changed_fields : [];
-    const itemFields = changedFields.filter(isItemField);
+    const itemFields = changedFields.filter(isItemCorrectionField);
     if (itemFields.length) itemEdited += 1;
+    if (row.review_action === 'approved' && !itemFields.length) cleanItemApproved += 1;
     for (const field of itemFields) {
       itemFieldCounts.set(field, (itemFieldCounts.get(field) || 0) + 1);
     }
   }
 
-  const editRate = toRate(itemEdited, imports);
+  const editRate = toRate(itemEdited, itemReviewCount);
+  const cleanApprovalRate = toRate(cleanItemApproved, itemReviewCount);
   let level = 'unknown';
-  if (imports >= 3) {
-    if (editRate <= 0.15) level = 'trusted';
+  if (itemReviewCount >= 3) {
+    if (cleanApprovalRate >= 0.75 && editRate <= 0.2) level = 'trusted';
     else if (editRate >= 0.5) level = 'noisy';
     else level = 'mixed';
   }
@@ -114,8 +131,11 @@ function summarizeItemReliability(rows = []) {
   return {
     level,
     imports,
+    item_reviewed: itemReviewCount,
+    clean_item_approved: cleanItemApproved,
     edited: itemEdited,
     edit_rate: editRate,
+    clean_item_approval_rate: cleanApprovalRate,
     top_signals: topSignals,
     message,
   };

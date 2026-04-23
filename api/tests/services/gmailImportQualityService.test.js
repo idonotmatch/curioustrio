@@ -187,7 +187,7 @@ describe('gmailImportQualityService', () => {
       sender_domain: 'amazon.com',
       level: 'trusted',
       metrics: expect.objectContaining({ imported: 3 }),
-      item_reliability: expect.objectContaining({ level: 'trusted' }),
+      item_reliability: expect.objectContaining({ level: 'unknown' }),
       template_quality: expect.objectContaining({
         subject_pattern: 'amazon_order',
         force_import_review: true,
@@ -206,6 +206,7 @@ describe('gmailImportQualityService', () => {
       { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [], structured_item_block_level: null, deterministic_item_count: 0 },
       { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['items_fee_rows_removed', 'items'], structured_item_block_level: null, deterministic_item_count: 0 },
       { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['items_description', 'items_amount'], structured_item_block_level: null, deterministic_item_count: 0 },
+      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['items_summary_rows_removed'], structured_item_block_level: null, deterministic_item_count: 0 },
       { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['merchant'], structured_item_block_level: null, deterministic_item_count: 0 },
     ]);
 
@@ -213,12 +214,50 @@ describe('gmailImportQualityService', () => {
       sender_domain: 'shop.com',
       item_reliability: expect.objectContaining({
         level: 'noisy',
-        edited: 2,
+        edited: 3,
         top_signals: expect.arrayContaining([
           expect.objectContaining({ field: 'items', count: 1 }),
           expect.objectContaining({ field: 'items_amount', count: 1 }),
           expect.objectContaining({ field: 'items_description', count: 1 }),
         ]),
+      }),
+    });
+  });
+
+  it('learns clean item approvals separately from generic clean approvals', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      {
+        from_address: 'receipts@coffee.test',
+        review_action: 'approved',
+        review_edit_count: 0,
+        review_changed_fields: ['review_path_items_first', 'items_reviewed_clean'],
+        structured_item_block_level: 'strong',
+        deterministic_item_count: 5,
+      },
+      {
+        from_address: 'receipts@coffee.test',
+        review_action: 'approved',
+        review_edit_count: 0,
+        review_changed_fields: ['review_path_items_first', 'items_reviewed_clean'],
+        structured_item_block_level: 'strong',
+        deterministic_item_count: 4,
+      },
+      {
+        from_address: 'receipts@coffee.test',
+        review_action: 'approved',
+        review_edit_count: 0,
+        review_changed_fields: ['review_path_items_first', 'items_reviewed_clean'],
+        structured_item_block_level: 'strong',
+        deterministic_item_count: 6,
+      },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'receipts@coffee.test')).resolves.toMatchObject({
+      item_reliability: expect.objectContaining({
+        level: 'trusted',
+        item_reviewed: 3,
+        clean_item_approved: 3,
+        clean_item_approval_rate: 1,
       }),
     });
   });

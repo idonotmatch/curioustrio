@@ -1176,6 +1176,51 @@ describe('POST /expenses/:id/approve', () => {
     expect(log.rows[0].review_action).toBe('approved');
     expect(log.rows[0].review_changed_fields).toContain('review_path_quick_check');
   });
+
+  it('records clean item review feedback and returns items when approving item-first Gmail imports', async () => {
+    const expResult = await db.query(
+      `INSERT INTO expenses (
+         user_id, household_id, merchant, amount, date, source, status, review_required, review_mode, review_source
+       )
+       VALUES ($1, $2, 'ItemFirstApprove', 41.98, '2026-03-17', 'email', 'pending', TRUE, 'items_first', 'gmail')
+       RETURNING id`,
+      [userId, householdId]
+    );
+    const expenseId = expResult.rows[0].id;
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, expense_id, status)
+       VALUES ($1, 'approve-items-first-msg', $2, 'imported')`,
+      [userId, expenseId]
+    );
+    await db.query(
+      `INSERT INTO expense_items (expense_id, description, amount, sort_order, item_type)
+       VALUES
+         ($1, 'DAK Coffee', 19.99, 0, 'product'),
+         ($1, 'House Espresso', 21.99, 1, 'product')`,
+      [expenseId]
+    );
+
+    const res = await request(app)
+      .post(`/expenses/${expenseId}/approve`)
+      .send({ review_context: 'items_first' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('confirmed');
+    expect(res.body.item_count).toBe(2);
+    expect(res.body.items).toHaveLength(2);
+
+    const log = await db.query(
+      `SELECT review_action, review_edit_count, review_changed_fields
+       FROM email_import_feedback
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+    expect(log.rows[0].review_action).toBe('approved');
+    expect(Number(log.rows[0].review_edit_count)).toBe(0);
+    expect(log.rows[0].review_changed_fields).toEqual(
+      expect.arrayContaining(['review_path_items_first', 'items_reviewed_clean'])
+    );
+  });
 });
 
 describe('DELETE /expenses/:id', () => {
