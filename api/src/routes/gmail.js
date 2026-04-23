@@ -6,10 +6,9 @@ const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
-const { getAuthUrl, exchangeCode, getMessageDebug } = require('../services/gmailClient');
+const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
 const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reprocessImportLog } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
-const { parseEmailExpense, extractFallbackItemsFromEmailBody } = require('../services/emailParser');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 function gmailAppReturnUrl() {
@@ -227,50 +226,6 @@ router.post('/message/:messageId/reprocess', authenticate, async (req, res, next
     }
     next(err);
   }
-});
-
-router.get('/message/:messageId/debug', authenticate, async (req, res, next) => {
-  try {
-    const user = await User.findByProviderUid(req.userId);
-    if (!user) return res.status(401).json({ error: 'User not synced' });
-    const messageId = `${req.params.messageId || ''}`.trim();
-    if (!messageId) return res.status(400).json({ error: 'messageId required' });
-    const log = await EmailImportLog.findByMessageId(user.id, messageId);
-    if (!log) return res.status(404).json({ error: 'Import log not found' });
-    const debug = await getMessageDebug(user.id, messageId);
-    const messageDateContext = debug.receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(debug.receivedAt)
-      ? debug.receivedAt
-      : new Date().toISOString().split('T')[0];
-
-    let parsed = null;
-    let parsedError = null;
-    try {
-      parsed = await parseEmailExpense(
-        debug.selected_body_preview || '',
-        debug.subject || '',
-        debug.from || '',
-        messageDateContext,
-        debug.snippet || ''
-      );
-    } catch (err) {
-      parsedError = err?.message || 'parse_failed';
-    }
-
-    const fallbackItems = extractFallbackItemsFromEmailBody(debug.selected_body_preview || '');
-    res.json({
-      ...debug,
-      parser_debug: {
-        parsed_item_count: Array.isArray(parsed?.items) ? parsed.items.length : 0,
-        parsed_items_preview: Array.isArray(parsed?.items) ? parsed.items.slice(0, 8) : [],
-        parsed_amount: parsed?.amount ?? null,
-        parsed_merchant: parsed?.merchant ?? null,
-        parsed_date: parsed?.date ?? null,
-        parsed_error: parsedError,
-        fallback_item_count: fallbackItems.length,
-        fallback_items_preview: fallbackItems.slice(0, 8),
-      },
-    });
-  } catch (err) { next(err); }
 });
 
 router.post('/retry-failed', authenticate, async (req, res, next) => {

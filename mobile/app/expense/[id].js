@@ -249,6 +249,23 @@ export default function ExpenseDetailScreen() {
     }
   }, [excludeFromBudget, budgetExclusionReason]);
 
+  const reviewState = expense?.status === 'pending' && expense?.source === 'email';
+  const gmailReviewHint = expense?.gmail_review_hint || null;
+  const isPendingEmailReview = reviewState;
+  const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
+  const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
+
+  useEffect(() => {
+    if (!isPendingEmailReview) return;
+    if (!Array.isArray(items) || items.length === 0) return;
+    if (itemsExpanded) return;
+    setItemsExpanded(true);
+    if (isItemsFirstReview) {
+      setEditing(true);
+      setActiveReviewField((current) => current || 'items');
+    }
+  }, [isPendingEmailReview, items, itemsExpanded, isItemsFirstReview]);
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -390,15 +407,10 @@ export default function ExpenseDetailScreen() {
   const ownerLabel = expense.user_name || 'You';
   const sourceText = sourceLabel[expense.source] || expense.source;
   const categoryReasoning = expense.category_reasoning || null;
-  const reviewState = expense.status === 'pending' && expense.source === 'email';
-  const gmailReviewHint = expense.gmail_review_hint || null;
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const subjectLine = `${gmailReviewHint?.message_subject || expense?.email_subject || ''}`.trim();
   const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet || expense?.email_snippet);
-  const isPendingEmailReview = reviewState;
-  const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
-  const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
   const importMetaBits = [gmailReviewHint?.from_address || expense?.email_from_address, importedAtLabel].filter(Boolean);
   const treatmentSuggestionSummary = buildTreatmentSuggestionSummary(treatmentSuggestion);
   const reviewFocusSummary = buildReviewFocusSummary(gmailReviewHint);
@@ -535,6 +547,9 @@ export default function ExpenseDetailScreen() {
           budgetExclusionReason={budgetExclusionReason}
           secondaryDetailsExpanded={secondaryDetailsExpanded}
           setSecondaryDetailsExpanded={setSecondaryDetailsExpanded}
+          items={items}
+          formatCurrency={formatCurrency}
+          setItemsExpanded={setItemsExpanded}
         />
       ) : reviewState ? (
         <View style={styles.reviewBanner}>

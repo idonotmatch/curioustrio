@@ -29,6 +29,9 @@ export function PendingExpenseReviewPanel({
   budgetExclusionReason,
   secondaryDetailsExpanded,
   setSecondaryDetailsExpanded,
+  items,
+  formatCurrency,
+  setItemsExpanded,
 }) {
   const attentionFields = Array.isArray(priorityReviewFields)
     ? priorityReviewFields.filter((field) => {
@@ -46,6 +49,9 @@ export function PendingExpenseReviewPanel({
   const approvalFacts = Array.isArray(reviewDecisionFacts)
     ? reviewDecisionFacts.filter((fact) => fact?.label !== 'Sender')
     : [];
+  const reviewItems = Array.isArray(items) ? items.filter((item) => item?.description) : [];
+  const previewItems = reviewItems.slice(0, 3);
+  const hasMoreItems = reviewItems.length > previewItems.length;
 
   return (
     <>
@@ -117,6 +123,62 @@ export function PendingExpenseReviewPanel({
               <Text style={styles.priorityFieldReason}>{field.reason}</Text>
             </TouchableOpacity>
           ))}
+        </View>
+      ) : null}
+
+      {reviewItems.length > 0 ? (
+        <View style={styles.priorityFieldsCard}>
+          <View style={styles.priorityFieldsHeader}>
+            <View>
+              <Text style={styles.reviewSectionEyebrow}>Extracted items</Text>
+              <Text style={styles.priorityFieldsTitle}>
+                {reviewItems.length} {reviewItems.length === 1 ? 'item' : 'items'} found in the email
+              </Text>
+              <Text style={styles.reviewAttentionBody}>
+                Check that the product names and amounts match what was actually ordered.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setItemsExpanded(true);
+                activateReviewField('items');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.priorityFieldsAction}>Review</Text>
+            </TouchableOpacity>
+          </View>
+          {previewItems.map((item, index) => (
+            <TouchableOpacity
+              key={`${item.description}:${index}`}
+              style={[styles.priorityFieldRow, activeReviewField === 'items' && styles.priorityFieldRowActive]}
+              onPress={() => {
+                setItemsExpanded(true);
+                activateReviewField('items');
+              }}
+              activeOpacity={0.82}
+            >
+              <View style={styles.priorityFieldTop}>
+                <Text style={styles.priorityFieldLabel}>{item.description}</Text>
+                <Text style={styles.priorityFieldLabel}>
+                  {formatCurrency(item.amount) || '—'}
+                </Text>
+              </View>
+              {item.brand ? <Text style={styles.priorityFieldReason}>{item.brand}</Text> : null}
+            </TouchableOpacity>
+          ))}
+          {hasMoreItems ? (
+            <TouchableOpacity
+              style={styles.priorityFieldRow}
+              onPress={() => {
+                setItemsExpanded(true);
+                activateReviewField('items');
+              }}
+              activeOpacity={0.82}
+            >
+              <Text style={styles.priorityFieldsAction}>View all {reviewItems.length} items</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 
