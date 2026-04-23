@@ -23,6 +23,7 @@ export function GmailImportOverview({
   formatDismissReason,
   topTemplates,
   formatTemplateLabel,
+  formatTemplateItemSignal,
   senderCards,
   senderSectionExpanded,
   setSenderSectionExpanded,
@@ -187,7 +188,11 @@ export function GmailImportOverview({
                               {formatTemplateLabel(template.subject_pattern)}
                             </Text>
                             <Text style={styles.templateMeta}>
-                              {template.sender_domain} · {template.total} seen · {template.learned_disposition || 'unknown'}
+                              {[
+                                template.sender_domain,
+                                `${template.total} seen`,
+                                formatTemplateItemSignal(template) || template.learned_disposition || 'unknown',
+                              ].filter(Boolean).join(' · ')}
                             </Text>
                           </View>
                           <Text style={styles.templateOutcome}>

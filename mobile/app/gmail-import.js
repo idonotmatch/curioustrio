@@ -28,6 +28,7 @@ import {
   senderPolicyLabel,
   formatDismissReason,
   formatTemplateLabel,
+  formatTemplateItemSignal,
   rankSenderCard,
   learningSummaryLines,
   importHealthMessage,
@@ -292,6 +293,7 @@ export default function GmailImportScreen() {
           formatDismissReason={formatDismissReason}
           topTemplates={topTemplates}
           formatTemplateLabel={formatTemplateLabel}
+          formatTemplateItemSignal={formatTemplateItemSignal}
           senderCards={senderCards}
           senderSectionExpanded={senderSectionExpanded}
           setSenderSectionExpanded={setSenderSectionExpanded}

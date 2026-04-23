@@ -95,7 +95,7 @@ describe('gmailImportQualityService', () => {
       },
     ]);
     EmailImportLog.listTemplateSignalsByUser.mockResolvedValue([
-      { from_address: 'orders@amazon.com', subject: 'ORDER: First', status: 'imported', review_action: 'approved', review_edit_count: 0, skip_reason: null },
+      { from_address: 'orders@amazon.com', subject: 'ORDER: First', status: 'imported', review_action: 'approved', review_edit_count: 0, skip_reason: null, structured_item_block_level: 'strong', deterministic_item_count: 3 },
       { from_address: 'receipts@target.com', subject: 'Your package has shipped', status: 'skipped', review_action: null, review_edit_count: 0, skip_reason: 'template_skip_generic_shipping' },
     ]);
 
@@ -163,6 +163,8 @@ describe('gmailImportQualityService', () => {
       expect.objectContaining({
         sender_domain: 'amazon.com',
         subject_pattern: 'amazon_order',
+        structured_item_block_strong_count: 1,
+        average_deterministic_item_count: 3,
       }),
       expect.objectContaining({
         sender_domain: 'target.com',

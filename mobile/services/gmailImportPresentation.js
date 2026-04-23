@@ -139,6 +139,19 @@ export function formatTemplateLabel(pattern = '') {
   }
 }
 
+export function formatTemplateItemSignal(template = {}) {
+  const strongCount = Number(template.structured_item_block_strong_count || 0);
+  const itemCount = Number(template.structured_item_block_count || 0);
+  const averageItems = Number(template.average_deterministic_item_count || 0);
+  if (strongCount > 0 && averageItems >= 2) {
+    return `${Math.round(averageItems)} item rows detected`;
+  }
+  if (strongCount > 0 || itemCount > 0) {
+    return 'Line items detected';
+  }
+  return null;
+}
+
 export function rankSenderCard(sender = {}) {
   if (sender.sender_preference?.force_review) return 0;
   if (sender.level === 'noisy') return 1;
@@ -154,6 +167,13 @@ export function learningSummaryLines(summary = {}, reasonChips = [], topDismissR
   const approvedWithoutChanges = Number(summary?.approved_without_changes || 0);
   const approvedAfterChanges = Number(summary?.approved_after_changes || 0);
   const skipped = Number(summary?.skipped || 0);
+  const topTemplates = Array.isArray(summary?.debug?.top_templates)
+    ? summary.debug.top_templates
+    : [];
+  const structuredTemplateCount = topTemplates.filter((template) =>
+    Number(template?.structured_item_block_strong_count || 0) > 0
+    || Number(template?.structured_item_block_count || 0) > 0
+  ).length;
 
   if (approvedWithoutChanges > 0 || approvedAfterChanges > 0) {
     if (approvedWithoutChanges >= approvedAfterChanges) {
@@ -165,6 +185,10 @@ export function learningSummaryLines(summary = {}, reasonChips = [], topDismissR
 
   if (pendingReview > 0) {
     lines.push(`${pendingReview} import${pendingReview === 1 ? ' is' : 's are'} waiting because Adlo still wanted your confirmation.`);
+  }
+
+  if (structuredTemplateCount > 0) {
+    lines.push(`${structuredTemplateCount} receipt pattern${structuredTemplateCount === 1 ? '' : 's'} now show reliable item rows for review.`);
   }
 
   if (reasonChips.length > 0 && skipped > 0) {

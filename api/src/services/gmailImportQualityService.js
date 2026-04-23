@@ -267,6 +267,9 @@ function buildTemplateSummary(rows = [], limit = 8) {
       approved: 0,
       dismissed: 0,
       edited: 0,
+      structured_item_block_count: 0,
+      structured_item_block_strong_count: 0,
+      deterministic_item_count_total: 0,
       top_skip_reasons: new Map(),
     };
 
@@ -277,6 +280,10 @@ function buildTemplateSummary(rows = [], limit = 8) {
     if (row.review_action === 'approved') current.approved += 1;
     if (row.review_action === 'dismissed') current.dismissed += 1;
     if (Number(row.review_edit_count || 0) > 0) current.edited += 1;
+    const itemBlockLevel = `${row.structured_item_block_level || ''}`.trim().toLowerCase();
+    if (itemBlockLevel && itemBlockLevel !== 'none') current.structured_item_block_count += 1;
+    if (itemBlockLevel === 'strong') current.structured_item_block_strong_count += 1;
+    current.deterministic_item_count_total += Math.max(0, Number(row.deterministic_item_count || 0));
     if (row.status === 'skipped' && row.skip_reason) {
       current.top_skip_reasons.set(row.skip_reason, (current.top_skip_reasons.get(row.skip_reason) || 0) + 1);
     }
@@ -294,6 +301,13 @@ function buildTemplateSummary(rows = [], limit = 8) {
       approved: entry.approved,
       dismissed: entry.dismissed,
       edited: entry.edited,
+      structured_item_block_count: entry.structured_item_block_count,
+      structured_item_block_strong_count: entry.structured_item_block_strong_count,
+      structured_item_block_rate: toRate(entry.structured_item_block_count, entry.imported),
+      structured_item_block_strong_rate: toRate(entry.structured_item_block_strong_count, entry.imported),
+      average_deterministic_item_count: entry.imported
+        ? Number((entry.deterministic_item_count_total / entry.imported).toFixed(2))
+        : 0,
       learned_disposition: inferTemplateDisposition(entry.subject_pattern, entry.imported, entry.approved, entry.dismissed),
       top_skip_reasons: [...entry.top_skip_reasons.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
