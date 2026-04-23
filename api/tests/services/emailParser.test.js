@@ -10,6 +10,7 @@ const {
   heuristicDisposition,
   selectRelevantEmailText,
   extractFallbackItemsFromEmailBody,
+  summarizeStructuredItemBlock,
   analyzeEmailSignals,
   classifyEmailModality,
   extractEmailLocationCandidate,
@@ -381,6 +382,30 @@ $107.95`,
       expect.objectContaining({ description: 'September - Peanut Brittle Espresso', amount: 16.99 }),
       expect.objectContaining({ description: 'DAK - Jazz Fruits Espresso', amount: 18.99 }),
     ]);
+  });
+
+  it('detects a strong structured item block when item rows are clearly present', () => {
+    expect(summarizeStructuredItemBlock(
+      `Item Description
+DAK - Plum Marmalade Espresso
+DAK Coffee Roasters
+COF-DA-0323
+x 1
+$19.99
+
+DAK - House of Plum Espresso
+DAK Coffee Roasters
+COF-DA-0397
+x 1
+$21.99
+
+Subtotal
+$41.98`
+    )).toEqual(expect.objectContaining({
+      level: 'strong',
+      deterministic_item_count: 2,
+      has_anchor_label: true,
+    }));
   });
 
   it('sends structured extraction text to the parser prompt', async () => {

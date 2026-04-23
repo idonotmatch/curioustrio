@@ -1,6 +1,7 @@
 const {
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
+  buildStructuredItemReviewAdjustment,
 } = require('../../src/services/gmailImporter');
 
 describe('buildGmailImportPushPayload', () => {
@@ -60,5 +61,35 @@ describe('buildItemHistoryReviewAdjustment', () => {
       level: 'noisy',
       message: 'Parsed items do not line up cleanly with recent item history.',
     });
+  });
+});
+
+describe('buildStructuredItemReviewAdjustment', () => {
+  it('promotes strong structured item blocks into an items-first review path', () => {
+    expect(buildStructuredItemReviewAdjustment({
+      senderQuality: {
+        level: 'trusted',
+        item_reliability: { level: 'unknown' },
+      },
+      structuredItemSignal: { level: 'strong' },
+      deterministicItemCount: 5,
+    })).toEqual({
+      reviewMode: 'items_first',
+      item_reliability: expect.objectContaining({
+        level: 'mixed',
+        message: expect.stringContaining('structured item block'),
+      }),
+    });
+  });
+
+  it('does not override noisy senders just because item rows are structured', () => {
+    expect(buildStructuredItemReviewAdjustment({
+      senderQuality: {
+        level: 'noisy',
+        item_reliability: { level: 'noisy' },
+      },
+      structuredItemSignal: { level: 'strong' },
+      deterministicItemCount: 5,
+    })).toBeNull();
   });
 });

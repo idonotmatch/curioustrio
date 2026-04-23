@@ -408,6 +408,49 @@ function extractFallbackItemsFromEmailBody(emailBody = '') {
   return items;
 }
 
+function summarizeStructuredItemBlock(emailBody = '') {
+  const structured = cleanStructuredText(redactSensitiveText(emailBody));
+  if (!structured) {
+    return {
+      level: 'none',
+      deterministic_item_count: 0,
+      has_anchor_label: false,
+      sku_line_count: 0,
+      quantity_line_count: 0,
+    };
+  }
+
+  const lines = structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const deterministicItems = extractFallbackItemsFromEmailBody(emailBody);
+  const hasAnchorLabel = lines.some((line) => /^(item description|items|order items|line items)$/i.test(line));
+  const skuLineCount = lines.filter((line) => isSkuLikeLine(line)).length;
+  const quantityLineCount = lines.filter((line) => isQuantityLine(line)).length;
+
+  let level = 'none';
+  if (deterministicItems.length >= 2) {
+    if (
+      hasAnchorLabel
+      || skuLineCount >= deterministicItems.length
+      || quantityLineCount >= deterministicItems.length
+    ) {
+      level = 'strong';
+    } else {
+      level = 'present';
+    }
+  }
+
+  return {
+    level,
+    deterministic_item_count: deterministicItems.length,
+    has_anchor_label: hasAnchorLabel,
+    sku_line_count: skuLineCount,
+    quantity_line_count: quantityLineCount,
+  };
+}
+
 function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
   if (!Array.isArray(fallbackItems) || fallbackItems.length === 0) return false;
   const parsedItems = Array.isArray(parsed?.items) ? parsed.items : [];
@@ -527,6 +570,7 @@ module.exports = {
   classifyEmailExpense,
   selectRelevantEmailText,
   extractFallbackItemsFromEmailBody,
+  summarizeStructuredItemBlock,
   heuristicDisposition,
   analyzeEmailSignals,
   classifyEmailModality,

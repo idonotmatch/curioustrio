@@ -10,6 +10,7 @@ const {
   classifyEmailExpense,
   parseEmailExpense,
   extractFallbackItemsFromEmailBody,
+  summarizeStructuredItemBlock,
   analyzeEmailSignals,
   classifyEmailModality,
   extractEmailLocationCandidate,
@@ -179,6 +180,26 @@ function buildItemHistoryReviewAdjustment(expenseLike = {}, itemHistories = []) 
   };
 }
 
+function buildStructuredItemReviewAdjustment({
+  senderQuality = {},
+  structuredItemSignal = {},
+  deterministicItemCount = 0,
+} = {}) {
+  if (structuredItemSignal?.level !== 'strong') return null;
+  if (Number(deterministicItemCount || 0) < 2) return null;
+  if ((senderQuality?.level || 'unknown') === 'noisy') return null;
+
+  const currentItemLevel = senderQuality?.item_reliability?.level || 'unknown';
+  return {
+    reviewMode: 'items_first',
+    item_reliability: {
+      ...(senderQuality?.item_reliability || {}),
+      level: currentItemLevel === 'trusted' ? 'trusted' : 'mixed',
+      message: 'This email has a clear structured item block, so review the extracted items first.',
+    },
+  };
+}
+
 async function resolveEmailLocation({ merchant = '', subject = '', from = '', body = '' }) {
   const modality = classifyEmailModality(subject, from, body);
   if (!['in_person', 'pickup'].includes(modality)) {
@@ -264,6 +285,7 @@ async function processMessageImport(user, msgId, {
 
     let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
     const deterministicFallbackItems = extractFallbackItemsFromEmailBody(body);
+    const structuredItemSignal = summarizeStructuredItemBlock(body);
     let importedAsPendingReview = false;
     const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
 
@@ -387,7 +409,19 @@ async function processMessageImport(user, msgId, {
       }
     }
 
-    const reviewMode = recommendReviewMode(effectiveSenderQuality);
+    const structuredItemAdjustment = buildStructuredItemReviewAdjustment({
+      senderQuality: effectiveSenderQuality,
+      structuredItemSignal,
+      deterministicItemCount: deterministicFallbackItems.length,
+    });
+    if (structuredItemAdjustment?.item_reliability) {
+      effectiveSenderQuality = {
+        ...effectiveSenderQuality,
+        item_reliability: structuredItemAdjustment.item_reliability,
+      };
+    }
+
+    const reviewMode = structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality);
 
     const expense = await Expense.create({
       userId: user.id,
@@ -593,4 +627,5 @@ module.exports = {
   reprocessImportLog,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
+  buildStructuredItemReviewAdjustment,
 };
