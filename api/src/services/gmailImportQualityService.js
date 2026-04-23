@@ -186,12 +186,19 @@ function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
   let cleanApproved = 0;
   let dismissed = 0;
   let edited = 0;
+  let structuredItemBlockCount = 0;
+  let structuredItemBlockStrongCount = 0;
+  let deterministicItemCountTotal = 0;
 
   for (const row of templateRows) {
     const editCount = Number(row.review_edit_count || 0);
     if (row.review_action === 'approved' && editCount === 0) cleanApproved += 1;
     if (row.review_action === 'dismissed') dismissed += 1;
     if (editCount > 0) edited += 1;
+    const itemBlockLevel = `${row.structured_item_block_level || ''}`.trim().toLowerCase();
+    if (itemBlockLevel && itemBlockLevel !== 'none') structuredItemBlockCount += 1;
+    if (itemBlockLevel === 'strong') structuredItemBlockStrongCount += 1;
+    deterministicItemCountTotal += Math.max(0, Number(row.deterministic_item_count || 0));
   }
 
   const learnedDisposition = inferTemplateDisposition(subjectPattern, imported, cleanApproved, dismissed);
@@ -205,6 +212,11 @@ function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
     clean_approval_rate: toRate(cleanApproved, imported),
     dismissal_rate: toRate(dismissed, imported),
     edit_rate: toRate(edited, imported),
+    structured_item_block_count: structuredItemBlockCount,
+    structured_item_block_strong_count: structuredItemBlockStrongCount,
+    structured_item_block_rate: toRate(structuredItemBlockCount, imported),
+    structured_item_block_strong_rate: toRate(structuredItemBlockStrongCount, imported),
+    average_deterministic_item_count: imported ? Number((deterministicItemCountTotal / imported).toFixed(2)) : 0,
     learned_disposition: learnedDisposition,
     force_import_review: learnedDisposition === 'transactional',
     should_skip_prequeue: learnedDisposition === 'non_transactional',
@@ -303,6 +315,8 @@ function recommendReviewMode(senderQuality = {}) {
   const itemLevel = senderQuality?.item_reliability?.level || 'unknown';
   const fastLaneEligible = !!senderQuality?.review_path_reliability?.fast_lane_eligible;
   const dominantDismissReason = frequentDismissReason(senderQuality);
+  const structuredTemplateStrength = Number(senderQuality?.template_quality?.structured_item_block_strong_rate || 0);
+  const structuredTemplateCount = Number(senderQuality?.template_quality?.structured_item_block_strong_count || 0);
 
   if ([
     'not_an_expense',
@@ -316,6 +330,10 @@ function recommendReviewMode(senderQuality = {}) {
 
   if (senderLevel === 'trusted' && (itemLevel === 'trusted' || fastLaneEligible)) {
     return 'quick_check';
+  }
+
+  if (senderLevel !== 'noisy' && structuredTemplateCount >= 2 && structuredTemplateStrength >= 0.5) {
+    return 'items_first';
   }
 
   if (

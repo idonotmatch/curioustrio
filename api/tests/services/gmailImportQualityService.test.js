@@ -201,10 +201,10 @@ describe('gmailImportQualityService', () => {
 
   it('captures item reliability separately from top-level sender quality', async () => {
     EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
-      { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [] },
-      { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['items_fee_rows_removed', 'items'] },
-      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['items_description', 'items_amount'] },
-      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['merchant'] },
+      { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [], structured_item_block_level: null, deterministic_item_count: 0 },
+      { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['items_fee_rows_removed', 'items'], structured_item_block_level: null, deterministic_item_count: 0 },
+      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['items_description', 'items_amount'], structured_item_block_level: null, deterministic_item_count: 0 },
+      { from_address: 'orders@shop.com', review_action: null, review_edit_count: 1, review_changed_fields: ['merchant'], structured_item_block_level: null, deterministic_item_count: 0 },
     ]);
 
     await expect(getSenderImportQuality('user-1', 'orders@shop.com')).resolves.toMatchObject({
@@ -219,6 +219,62 @@ describe('gmailImportQualityService', () => {
         ]),
       }),
     });
+  });
+
+  it('learns template-level structured item blocks and prefers items-first review', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      {
+        from_address: 'hello@eightouncecoffee.ca',
+        subject: 'Order #1 confirmed',
+        review_action: 'approved',
+        review_edit_count: 0,
+        review_changed_fields: [],
+        structured_item_block_level: 'strong',
+        deterministic_item_count: 5,
+      },
+      {
+        from_address: 'hello@eightouncecoffee.ca',
+        subject: 'Order #2 confirmed',
+        review_action: 'approved',
+        review_edit_count: 0,
+        review_changed_fields: [],
+        structured_item_block_level: 'strong',
+        deterministic_item_count: 4,
+      },
+      {
+        from_address: 'hello@eightouncecoffee.ca',
+        subject: 'Order #3 confirmed',
+        review_action: 'approved',
+        review_edit_count: 0,
+        review_changed_fields: [],
+        structured_item_block_level: 'none',
+        deterministic_item_count: 0,
+      },
+    ]);
+    EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([]);
+    EmailImportLog.listTemplateSignalsByUser.mockResolvedValue([
+      { from_address: 'hello@eightouncecoffee.ca', subject: 'Order #1 confirmed', status: 'imported', review_action: 'approved', review_edit_count: 0, skip_reason: null, structured_item_block_level: 'strong', deterministic_item_count: 5 },
+      { from_address: 'hello@eightouncecoffee.ca', subject: 'Order #2 confirmed', status: 'imported', review_action: 'approved', review_edit_count: 0, skip_reason: null, structured_item_block_level: 'strong', deterministic_item_count: 4 },
+      { from_address: 'hello@eightouncecoffee.ca', subject: 'Order #3 confirmed', status: 'imported', review_action: 'approved', review_edit_count: 0, skip_reason: null, structured_item_block_level: 'none', deterministic_item_count: 0 },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'hello@eightouncecoffee.ca', 'Order #4 confirmed')).resolves.toMatchObject({
+      template_quality: expect.objectContaining({
+        structured_item_block_strong_count: 2,
+        structured_item_block_strong_rate: expect.any(Number),
+      }),
+    });
+
+    expect(recommendReviewMode({
+      level: 'mixed',
+      item_reliability: { level: 'unknown' },
+      template_quality: {
+        structured_item_block_strong_count: 2,
+        structured_item_block_strong_rate: 0.6667,
+      },
+      review_path_reliability: { fast_lane_eligible: false },
+      top_dismiss_reasons: [],
+    })).toBe('items_first');
   });
 
   it('learns a transactional template outside amazon from repeated approvals', async () => {

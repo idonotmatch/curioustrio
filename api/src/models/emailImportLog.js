@@ -12,6 +12,10 @@ function isMissingSnippetError(err) {
   return err?.code === '42703' && /snippet/i.test(`${err?.message || ''}`);
 }
 
+function isMissingItemStructureError(err) {
+  return err?.code === '42703' && /(structured_item_block_level|deterministic_item_count)/i.test(`${err?.message || ''}`);
+}
+
 function sanitizeSnippet(snippet) {
   const value = `${snippet || ''}`.trim();
   if (!value) return null;
@@ -24,19 +28,36 @@ function sanitizeSnippet(snippet) {
     .slice(0, 120);
 }
 
-async function create({ userId, messageId, expenseId, status = 'imported', subject, fromAddress, skipReason, snippet }) {
+async function create({
+  userId,
+  messageId,
+  expenseId,
+  status = 'imported',
+  subject,
+  fromAddress,
+  skipReason,
+  snippet,
+  structuredItemBlockLevel = null,
+  deterministicItemCount = null,
+}) {
   const safeSnippet = sanitizeSnippet(snippet);
   try {
     const result = await db.query(
-      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO email_import_log (
+         user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
+         structured_item_block_level, deterministic_item_count
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
-      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet]
+      [
+        userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet,
+        structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
+      ]
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingSnippetError(err)) throw err;
+    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -52,6 +73,8 @@ async function findByExpenseId(expenseId) {
   try {
     const result = await db.query(
       `SELECT l.*,
+              l.structured_item_block_level,
+              l.deterministic_item_count,
               f.reviewed_at,
               f.review_action,
               f.review_changed_fields,
@@ -65,10 +88,12 @@ async function findByExpenseId(expenseId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingSnippetError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.*,
               NULL::text AS snippet,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
@@ -133,6 +158,7 @@ async function findByMessageId(userId, messageId) {
   try {
     const result = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
+              l.structured_item_block_level, l.deterministic_item_count,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
               e.notes,
@@ -147,10 +173,12 @@ async function findByMessageId(userId, messageId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
@@ -178,6 +206,8 @@ async function listByUser(userId, limit = 100, { detail = 'compact' } = {}) {
               ${fullDetail ? 'l.message_id,' : ''}
               l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               ${fullDetail ? 'l.snippet,' : 'NULL::text AS snippet,'}
+              l.structured_item_block_level,
+              l.deterministic_item_count,
               l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
@@ -195,13 +225,15 @@ async function listByUser(userId, limit = 100, { detail = 'compact' } = {}) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id,
               ${fullDetail ? 'l.user_id,' : ''}
               ${fullDetail ? 'l.message_id,' : ''}
               l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
               l.user_feedback, l.user_feedback_at,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
@@ -227,6 +259,7 @@ async function findByIdForUser(id, userId) {
   try {
     const result = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
+              l.structured_item_block_level, l.deterministic_item_count,
               l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
@@ -244,10 +277,12 @@ async function findByIdForUser(id, userId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
               l.user_feedback, l.user_feedback_at,
               NULL::timestamptz AS reviewed_at,
               NULL::text AS review_action,
@@ -283,12 +318,26 @@ async function listFailedByUser(userId, limit = 25) {
   return result.rows;
 }
 
-async function upsertResult({ userId, messageId, expenseId = null, status = 'imported', subject, fromAddress, skipReason, snippet }) {
+async function upsertResult({
+  userId,
+  messageId,
+  expenseId = null,
+  status = 'imported',
+  subject,
+  fromAddress,
+  skipReason,
+  snippet,
+  structuredItemBlockLevel = null,
+  deterministicItemCount = null,
+}) {
   const safeSnippet = sanitizeSnippet(snippet);
   try {
     const result = await db.query(
-      `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO email_import_log (
+         user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
+         structured_item_block_level, deterministic_item_count
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (user_id, message_id) DO UPDATE SET
          expense_id = EXCLUDED.expense_id,
          status = EXCLUDED.status,
@@ -296,13 +345,18 @@ async function upsertResult({ userId, messageId, expenseId = null, status = 'imp
          from_address = EXCLUDED.from_address,
          skip_reason = EXCLUDED.skip_reason,
          snippet = EXCLUDED.snippet,
+         structured_item_block_level = EXCLUDED.structured_item_block_level,
+         deterministic_item_count = EXCLUDED.deterministic_item_count,
          imported_at = NOW()
        RETURNING *`,
-      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet]
+      [
+        userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet,
+        structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
+      ]
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingSnippetError(err)) throw err;
+    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -523,6 +577,8 @@ async function listQualitySignalsByUser(userId, days = 30) {
               l.from_address,
               l.imported_at,
               l.status,
+              l.structured_item_block_level,
+              l.deterministic_item_count,
               f.review_action,
               f.review_changed_fields,
               f.review_edit_count,
@@ -537,13 +593,15 @@ async function listQualitySignalsByUser(userId, days = 30) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.message_id,
               l.subject,
               l.from_address,
               l.imported_at,
               l.status,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
@@ -582,6 +640,8 @@ async function listTemplateSignalsByUser(userId, days = 30) {
               l.status,
               l.skip_reason,
               l.imported_at,
+              l.structured_item_block_level,
+              l.deterministic_item_count,
               f.review_action,
               f.review_changed_fields,
               f.review_edit_count
@@ -594,13 +654,15 @@ async function listTemplateSignalsByUser(userId, days = 30) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.subject,
               l.from_address,
               l.status,
               l.skip_reason,
               l.imported_at,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
               NULL::text AS review_action,
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count

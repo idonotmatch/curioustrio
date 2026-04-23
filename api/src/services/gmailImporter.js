@@ -253,6 +253,7 @@ async function processMessageImport(user, msgId, {
     const templateQuality = senderQuality?.template_quality || {};
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
     const signals = analyzeEmailSignals(subject, from, body);
+    const structuredItemSignal = summarizeStructuredItemBlock(body);
 
     if (
       templateQuality.should_skip_prequeue
@@ -264,6 +265,8 @@ async function processMessageImport(user, msgId, {
       await EmailImportLog.upsertResult({
         userId: user.id, messageId: msgId, status: 'skipped',
         subject, fromAddress: from, skipReason, snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
       });
       increment(outcomes.skipped_reasons, skipReason);
       return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -277,6 +280,8 @@ async function processMessageImport(user, msgId, {
         await EmailImportLog.upsertResult({
           userId: user.id, messageId: msgId, status: 'skipped',
           subject, fromAddress: from, skipReason, snippet,
+          structuredItemBlockLevel: structuredItemSignal.level,
+          deterministicItemCount: structuredItemSignal.deterministic_item_count,
         });
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -285,7 +290,6 @@ async function processMessageImport(user, msgId, {
 
     let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
     const deterministicFallbackItems = extractFallbackItemsFromEmailBody(body);
-    const structuredItemSignal = summarizeStructuredItemBlock(body);
     let importedAsPendingReview = false;
     const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
 
@@ -296,6 +300,8 @@ async function processMessageImport(user, msgId, {
         await EmailImportLog.upsertResult({
           userId: user.id, messageId: msgId, status: 'skipped',
           subject, fromAddress: from, skipReason, snippet,
+          structuredItemBlockLevel: structuredItemSignal.level,
+          deterministicItemCount: structuredItemSignal.deterministic_item_count,
         });
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -305,6 +311,8 @@ async function processMessageImport(user, msgId, {
         await EmailImportLog.upsertResult({
           userId: user.id, messageId: msgId, status: 'skipped',
           subject, fromAddress: from, skipReason, snippet,
+          structuredItemBlockLevel: structuredItemSignal.level,
+          deterministicItemCount: structuredItemSignal.deterministic_item_count,
         });
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -328,6 +336,8 @@ async function processMessageImport(user, msgId, {
       await EmailImportLog.upsertResult({
         userId: user.id, messageId: msgId, status: 'skipped',
         subject, fromAddress: from, skipReason, snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
       });
       increment(outcomes.skipped_reasons, skipReason);
       return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -459,6 +469,8 @@ async function processMessageImport(user, msgId, {
       subject: msgSubject,
       fromAddress: msgFrom,
       snippet: msgSnippet,
+      structuredItemBlockLevel: structuredItemSignal.level,
+      deterministicItemCount: structuredItemSignal.deterministic_item_count,
     });
 
     if (reviewMode === 'quick_check') {
