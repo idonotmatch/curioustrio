@@ -73,6 +73,12 @@ function isQuickCheckPending(item = {}) {
   return likelyChangedFields.length <= 1;
 }
 
+function extractedItemCount(item = {}) {
+  const explicitCount = Math.max(0, Number(item?.item_count || 0));
+  if (Array.isArray(item?.items)) return Math.max(item.items.length, explicitCount);
+  return explicitCount;
+}
+
 function reviewHeadline(item = {}) {
   const subject = `${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`.trim();
   if (subject) return subject;
@@ -94,6 +100,10 @@ function reviewSubject(item = {}) {
 }
 
 export function reviewQueueGuidance(item = {}) {
+  const itemCount = extractedItemCount(item);
+  if (item?.gmail_review_hint?.review_mode === 'items_first' && itemCount > 0) {
+    return `Review ${itemCount} extracted item${itemCount === 1 ? '' : 's'} before approving.`;
+  }
   return reviewModePresentation(item.gmail_review_hint).guidance;
 }
 
@@ -119,6 +129,7 @@ export function ReviewQueueItem({
   const quickCheck = isQuickCheckPending(item);
   const isPreview = variant === 'preview';
   const subject = reviewSubject(item);
+  const itemCount = extractedItemCount(item);
   const rowTitle = subject
     ? (item.merchant || item.description || subject || '—')
     : reviewHeadline(item);
@@ -188,8 +199,15 @@ export function ReviewQueueItem({
                       <View style={[styles.modeChip, mode.accent]}>
                         <Text style={[styles.modeChipText, mode.accentText]}>{mode.chipLabel}</Text>
                       </View>
+                      {itemCount > 0 ? (
+                        <View style={styles.itemCountChip}>
+                          <Text style={styles.itemCountChipText}>
+                            {itemCount} item{itemCount === 1 ? '' : 's'}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
-                    <Text style={styles.hintDetail} numberOfLines={1}>{mode.guidance}</Text>
+                    <Text style={styles.hintDetail} numberOfLines={1}>{reviewQueueGuidance(item)}</Text>
                   </View>
                 ) : null}
               </>
@@ -257,6 +275,16 @@ const styles = StyleSheet.create({
   modeChipTextItems: { color: '#fde68a' },
   modeChipFull: { backgroundColor: 'rgba(147,197,253,0.08)', borderColor: 'rgba(147,197,253,0.28)' },
   modeChipTextFull: { color: '#bfdbfe' },
+  itemCountChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
+  itemCountChipText: { fontSize: 11, fontWeight: '700', color: '#cbd5e1', letterSpacing: 0.2 },
   hintDetail: { fontSize: 12, color: '#8a8a8a' },
   rowRight: { alignItems: 'flex-end', gap: 6 },
   amount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600' },

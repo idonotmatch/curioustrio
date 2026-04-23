@@ -1,5 +1,11 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 
+function extractedItemCount(item = {}) {
+  const explicitCount = Math.max(0, Number(item?.item_count || 0));
+  if (Array.isArray(item?.items)) return Math.max(item.items.length, explicitCount);
+  return explicitCount;
+}
+
 export function GmailPendingReviewSection({
   styles,
   displayGmailStatus,
@@ -25,35 +31,42 @@ export function GmailPendingReviewSection({
           {pendingReviewError || 'No Gmail imports are currently waiting in your review queue.'}
         </Text>
       ) : (
-        displayPendingReviewItems.slice(0, 3).map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={styles.pendingRow}
-            activeOpacity={0.82}
-            onPress={() => openExpenseReview(item)}
-          >
-            <View style={styles.pendingRowMain}>
-              <Text style={styles.pendingMerchant} numberOfLines={1}>
-                {item.gmail_review_hint?.message_subject || item.email_subject || item.merchant || item.description || '(no merchant)'}
-              </Text>
-              {(item.gmail_review_hint?.message_subject || item.email_subject) ? (
-                <Text style={styles.pendingMeta} numberOfLines={1}>
-                  {[item.merchant, item.gmail_review_hint?.from_address || item.email_from_address].filter(Boolean).join('  ·  ')}
+        displayPendingReviewItems.slice(0, 3).map((item) => {
+          const itemCount = extractedItemCount(item);
+          const reviewMode = item.gmail_review_hint?.review_mode === 'quick_check'
+            ? 'Quick check'
+            : item.gmail_review_hint?.review_mode === 'items_first'
+              ? 'Items first'
+              : 'Review';
+          return (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.pendingRow}
+              activeOpacity={0.82}
+              onPress={() => openExpenseReview(item)}
+            >
+              <View style={styles.pendingRowMain}>
+                <Text style={styles.pendingMerchant} numberOfLines={1}>
+                  {item.gmail_review_hint?.message_subject || item.email_subject || item.merchant || item.description || '(no merchant)'}
                 </Text>
-              ) : null}
-              <Text style={styles.pendingMeta} numberOfLines={1}>
-                {item.gmail_review_hint?.review_mode === 'quick_check'
-                  ? 'Quick check'
-                  : item.gmail_review_hint?.review_mode === 'items_first'
-                    ? 'Items first'
-                    : 'Review'}
-              </Text>
-            </View>
-            <View style={styles.pendingRowRight}>
-              <Text style={styles.pendingAmount}>${Number(item.amount || 0).toFixed(2)}</Text>
-            </View>
-          </TouchableOpacity>
-        ))
+                {(item.gmail_review_hint?.message_subject || item.email_subject) ? (
+                  <Text style={styles.pendingMeta} numberOfLines={1}>
+                    {[item.merchant, item.gmail_review_hint?.from_address || item.email_from_address].filter(Boolean).join('  ·  ')}
+                  </Text>
+                ) : null}
+                <Text style={styles.pendingMeta} numberOfLines={1}>
+                  {[
+                    reviewMode,
+                    itemCount > 0 ? `${itemCount} extracted item${itemCount === 1 ? '' : 's'}` : null,
+                  ].filter(Boolean).join('  ·  ')}
+                </Text>
+              </View>
+              <View style={styles.pendingRowRight}>
+                <Text style={styles.pendingAmount}>${Number(item.amount || 0).toFixed(2)}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })
       )}
     </View>
   );
