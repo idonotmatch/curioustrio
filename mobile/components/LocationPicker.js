@@ -80,7 +80,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     try {
       let result = null;
       if (merchant?.trim()) {
-        const coords = await getCoords();
+        const coords = await getCoords({ requestIfNeeded: true });
         if (coords) {
           const lookup = await api.get(
             `/places/search?q=${encodeURIComponent(merchant)}&lat=${coords.latitude}&lng=${coords.longitude}`
@@ -89,7 +89,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
         }
       }
       if (!result) {
-        result = await getLocation();
+        result = await getLocation({ requestIfNeeded: true });
       }
       if (result) onLocation(result);
     } catch (e) {
