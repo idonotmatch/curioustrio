@@ -58,6 +58,23 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     };
   }, [query, searchMode]);
 
+  function beginSearch(nextQuery = '') {
+    setSearchMode(true);
+    setQuery(nextQuery);
+    setSearchError('');
+  }
+
+  function endSearch() {
+    setSearchMode(false);
+    setSearchResults([]);
+    setSearchError('');
+  }
+
+  function selectLocation(result) {
+    onLocation(result);
+    endSearch();
+  }
+
   async function handlePress() {
     setLoading(true);
     try {
@@ -82,44 +99,44 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     }
   }
 
-  if (locationData) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.row}>
-          <Text style={styles.label}>LOCATION</Text>
-          <TouchableOpacity onPress={() => onLocation(null)}>
-            <Text style={styles.clear}>✕ clear</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.placeName}>{locationData.place_name}</Text>
-        {locationData.address ? <Text style={styles.address}>{locationData.address}</Text> : null}
-        <TouchableOpacity onPress={() => { setSearchMode(true); setQuery(locationData.place_name || ''); }} style={styles.secondaryAction}>
-          <Text style={styles.secondaryActionText}>Search for a different place</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.button} onPress={handlePress} disabled={loading}>
-          {loading
-            ? <ActivityIndicator color="#888" size="small" />
-            : <Text style={styles.buttonText}>Use current location</Text>
-          }
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.searchToggle, searchMode && styles.searchToggleActive]}
-          onPress={() => {
-            setSearchMode(v => !v);
-            if (!searchMode) setQuery(merchant || '');
-            if (searchMode) setSearchResults([]);
-          }}
-        >
-          <Text style={[styles.searchToggleText, searchMode && styles.searchToggleTextActive]}>Search place</Text>
-        </TouchableOpacity>
-      </View>
+      {locationData ? (
+        <>
+          <View style={styles.row}>
+            <Text style={styles.label}>LOCATION</Text>
+            <TouchableOpacity onPress={() => onLocation(null)}>
+              <Text style={styles.clear}>✕ clear</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.placeName}>{locationData.place_name}</Text>
+          {locationData.address ? <Text style={styles.address}>{locationData.address}</Text> : null}
+          <TouchableOpacity onPress={() => beginSearch(locationData.place_name || merchant || '')} style={styles.secondaryAction}>
+            <Text style={styles.secondaryActionText}>Search for a different place</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.button} onPress={handlePress} disabled={loading}>
+            {loading
+              ? <ActivityIndicator color="#888" size="small" />
+              : <Text style={styles.buttonText}>Use current location</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.searchToggle, searchMode && styles.searchToggleActive]}
+            onPress={() => {
+              if (searchMode) {
+                endSearch();
+              } else {
+                beginSearch(merchant || '');
+              }
+            }}
+          >
+            <Text style={[styles.searchToggleText, searchMode && styles.searchToggleTextActive]}>Search place</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {searchMode ? (
         <View style={styles.searchPanel}>
@@ -131,6 +148,11 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
             placeholderTextColor="#444"
             autoCorrect={false}
           />
+          {locationData ? (
+            <TouchableOpacity style={styles.searchCancel} onPress={endSearch}>
+              <Text style={styles.searchCancelText}>Cancel search</Text>
+            </TouchableOpacity>
+          ) : null}
           {searching ? (
             <ActivityIndicator color="#888" size="small" style={{ marginTop: 10 }} />
           ) : query.trim() ? (
@@ -139,7 +161,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
                 {searchResults.map((result) => {
                   const key = result.mapkit_stable_id || `${result.place_name}:${result.address}`;
                   return (
-                    <TouchableOpacity key={key} style={styles.resultCard} onPress={() => onLocation(result)}>
+                    <TouchableOpacity key={key} style={styles.resultCard} onPress={() => selectLocation(result)}>
                       <Text style={styles.placeName}>{result.place_name}</Text>
                       {result.address ? <Text style={styles.address}>{result.address}</Text> : null}
                     </TouchableOpacity>
@@ -176,6 +198,8 @@ const styles = StyleSheet.create({
   searchToggleTextActive: { color: '#000' },
   searchPanel: { marginTop: 10 },
   searchInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
+  searchCancel: { marginTop: 10, alignSelf: 'flex-start' },
+  searchCancelText: { color: '#777', fontSize: 12 },
   resultCard: { marginTop: 10, backgroundColor: '#111', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#2a2a2a' },
   resultsList: { marginTop: 10, gap: 8 },
   emptySearch: { marginTop: 10, color: '#666', fontSize: 12 },

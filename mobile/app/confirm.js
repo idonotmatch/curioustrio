@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
@@ -65,6 +65,7 @@ export default function ConfirmScreen() {
   const [catSuggestion, setCatSuggestion] = useState(null);
   const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const autoLocationAttemptRef = useRef('');
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
       ? parsed.items.map(it => ({
@@ -77,6 +78,7 @@ export default function ConfirmScreen() {
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
   const hasReviewHint = reviewFields.length > 0;
   const fieldConfidence = expense?.field_confidence || {};
+  const parsedHasLocation = !!(parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id);
 
   function confidenceMeta(field) {
     const level = fieldConfidence[field];
@@ -141,14 +143,14 @@ export default function ConfirmScreen() {
   }, [savedCards, paymentMethod, cardLast4, cardLabel]);
 
   useEffect(() => {
-    if (parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id) {
+    if (parsedHasLocation) {
       setLocationData({
         place_name: parsed.place_name || merchant || '',
         address: parsed.address || null,
         mapkit_stable_id: parsed.mapkit_stable_id || null,
       });
     }
-  }, []);
+  }, [parsedHasLocation, parsed?.address, parsed?.mapkit_stable_id, parsed?.place_name, merchant]);
 
   useEffect(() => {
     if (!excludeFromBudget) {
@@ -168,18 +170,23 @@ export default function ConfirmScreen() {
   }, [paymentMethod, selectedSavedCard, selectedSavedCardKey]);
 
   useEffect(() => {
-    if (!merchant?.trim()) return; // only auto-populate when merchant is known
-    if (parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id) return;
+    const merchantQuery = merchant.trim();
+    if (!merchantQuery) return;
+    if (parsedHasLocation) return;
+    if (locationData?.mapkit_stable_id || locationData?.place_name || locationData?.address) return;
+    const normalizedQuery = merchantQuery.toLowerCase();
+    if (autoLocationAttemptRef.current === normalizedQuery) return;
 
     async function autoPopulateLocation() {
+      autoLocationAttemptRef.current = normalizedQuery;
       try {
         const coords = await getCoords();
-        if (!coords) return;
-        const { latitude, longitude } = coords;
-
-        const result = await api.get(
-          `/places/search?q=${encodeURIComponent(merchant)}&lat=${latitude}&lng=${longitude}`
-        );
+        const params = new URLSearchParams({ q: merchantQuery });
+        if (coords?.latitude != null && coords?.longitude != null) {
+          params.set('lat', String(coords.latitude));
+          params.set('lng', String(coords.longitude));
+        }
+        const result = await api.get(`/places/search?${params.toString()}`);
         if (result?.result) {
           setLocationData(result.result);
         }
@@ -189,7 +196,7 @@ export default function ConfirmScreen() {
     }
 
     autoPopulateLocation();
-  }, []); // run once on mount; merchant is captured from closure at parse time
+  }, [merchant, parsedHasLocation, locationData?.mapkit_stable_id, locationData?.place_name, locationData?.address]);
 
   const isCameraSource = parsed.source === 'camera';
   const cardsForMethod = savedCards.filter(c => c.payment_method === paymentMethod);
