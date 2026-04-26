@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+const { decodeHtmlEntities } = require('../services/text');
 
 export function GmailImportLogSection({
   styles,
@@ -49,7 +50,7 @@ export function GmailImportLogSection({
             <View key={entry.id} style={styles.logRow}>
               <View style={styles.logRowLeft}>
                 <Text style={styles.logSubject} numberOfLines={1}>
-                  {entry.subject || '(no subject)'}
+                  {decodeHtmlEntities(`${entry.subject || ''}`).trim() || '(no subject)'}
                 </Text>
                 <Text style={styles.logFrom} numberOfLines={1}>
                   {entry.from_address || '—'}

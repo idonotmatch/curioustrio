@@ -8,6 +8,12 @@ const Category = require('../models/category');
 const { explainAssignedCategory } = require('./categoryAssigner');
 const { buildExpenseTreatmentSuggestion } = require('./expenseTreatmentSuggestion');
 const { buildEmailReviewHint } = require('./emailReviewHint');
+const { decodeHtmlEntities } = require('../utils/htmlEntities');
+
+function decodeEmailField(value) {
+  const decoded = decodeHtmlEntities(`${value || ''}`).replace(/\s+/g, ' ').trim();
+  return decoded || null;
+}
 
 async function attachGmailReviewHint(expense, userId) {
   if (!expense || expense.source !== 'email') return expense;
@@ -15,9 +21,9 @@ async function attachGmailReviewHint(expense, userId) {
   if (!log?.message_id) {
     return {
       ...expense,
-      email_subject: expense?.email_subject || null,
+      email_subject: decodeEmailField(expense?.email_subject),
       email_from_address: expense?.email_from_address || null,
-      email_snippet: expense?.email_snippet || null,
+      email_snippet: decodeEmailField(expense?.email_snippet),
       gmail_review_hint: null,
     };
   }
@@ -69,11 +75,15 @@ async function attachGmailReviewHint(expense, userId) {
 
   return {
     ...expense,
-    email_subject: log.subject || null,
+    email_subject: decodeEmailField(log.subject),
     email_from_address: log.from_address || null,
-    email_snippet: log.snippet || null,
+    email_snippet: decodeEmailField(log.snippet),
     gmail_review_hint: {
-      ...buildEmailReviewHint(expense, log, senderQuality),
+      ...buildEmailReviewHint(expense, {
+        ...log,
+        subject: decodeEmailField(log.subject),
+        snippet: decodeEmailField(log.snippet),
+      }, senderQuality),
       treatment_suggestion: treatmentSuggestion,
       category_explanation: categoryExplanation,
     },

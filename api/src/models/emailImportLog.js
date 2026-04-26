@@ -1,4 +1,5 @@
 const db = require('../db');
+const { decodeHtmlEntities } = require('../utils/htmlEntities');
 
 function isMissingFeedbackTableError(err) {
   return err?.code === '42P01' && `${err?.message || ''}`.includes('email_import_feedback');
@@ -17,7 +18,7 @@ function isMissingItemStructureError(err) {
 }
 
 function sanitizeSnippet(snippet) {
-  const value = `${snippet || ''}`.trim();
+  const value = decodeHtmlEntities(`${snippet || ''}`).trim();
   if (!value) return null;
 
   return value
@@ -26,6 +27,11 @@ function sanitizeSnippet(snippet) {
     .replace(/\bhttps?:\/\/\S+/gi, '[redacted-link]')
     .replace(/\b\d{5,}\b/g, '[redacted-number]')
     .slice(0, 120);
+}
+
+function sanitizeSubject(subject) {
+  const value = decodeHtmlEntities(`${subject || ''}`).replace(/\s+/g, ' ').trim();
+  return value || null;
 }
 
 async function create({
@@ -51,7 +57,7 @@ async function create({
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
       [
-        userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet,
+        userId, messageId, expenseId, status, sanitizeSubject(subject), fromAddress || null, skipReason || null, safeSnippet,
         structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
       ]
     );
@@ -63,7 +69,7 @@ async function create({
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
-      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null]
+      [userId, messageId, expenseId, status, sanitizeSubject(subject), fromAddress || null, skipReason || null]
     );
     return fallback.rows[0] || null;
   }
@@ -326,6 +332,7 @@ async function upsertResult({
   deterministicItemCount = null,
 }) {
   const safeSnippet = sanitizeSnippet(snippet);
+  const safeSubject = sanitizeSubject(subject);
   try {
     const result = await db.query(
       `INSERT INTO email_import_log (
@@ -345,7 +352,7 @@ async function upsertResult({
          imported_at = NOW()
        RETURNING *`,
       [
-        userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null, safeSnippet,
+        userId, messageId, expenseId, status, safeSubject, fromAddress || null, skipReason || null, safeSnippet,
         structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
       ]
     );
@@ -363,7 +370,7 @@ async function upsertResult({
          skip_reason = EXCLUDED.skip_reason,
          imported_at = NOW()
        RETURNING *`,
-      [userId, messageId, expenseId, status, subject || null, fromAddress || null, skipReason || null]
+      [userId, messageId, expenseId, status, safeSubject, fromAddress || null, skipReason || null]
     );
     return fallback.rows[0] || null;
   }

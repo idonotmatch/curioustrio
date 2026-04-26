@@ -21,6 +21,7 @@ import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
 import { toLocalDateString } from '../../services/date';
 import {
   formatImportedAt,
+  formatEmailText,
   formatEmailSnippet,
   formatCurrency,
   formatShortDate,
@@ -151,7 +152,7 @@ export default function ExpenseDetailScreen() {
   const categoryReasoning = expense.category_reasoning || null;
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
-  const subjectLine = `${gmailReviewHint?.message_subject || expense?.email_subject || ''}`.trim();
+  const subjectLine = formatEmailText(gmailReviewHint?.message_subject || expense?.email_subject);
   const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet || expense?.email_snippet);
   const importMetaBits = [gmailReviewHint?.from_address || expense?.email_from_address, importedAtLabel].filter(Boolean);
   const treatmentSuggestionSummary = buildTreatmentSuggestionSummary(treatmentSuggestion);

@@ -1,9 +1,14 @@
 import { View, Text, TouchableOpacity } from 'react-native';
+const { decodeHtmlEntities } = require('../services/text');
 
 function extractedItemCount(item = {}) {
   const explicitCount = Math.max(0, Number(item?.item_count || 0));
   if (Array.isArray(item?.items)) return Math.max(item.items.length, explicitCount);
   return explicitCount;
+}
+
+function reviewSubject(item = {}) {
+  return decodeHtmlEntities(`${item.gmail_review_hint?.message_subject || item.email_subject || ''}`).trim();
 }
 
 export function GmailPendingReviewSection({
@@ -47,9 +52,9 @@ export function GmailPendingReviewSection({
             >
               <View style={styles.pendingRowMain}>
                 <Text style={styles.pendingMerchant} numberOfLines={1}>
-                  {item.gmail_review_hint?.message_subject || item.email_subject || item.merchant || item.description || '(no merchant)'}
+                  {reviewSubject(item) || item.merchant || item.description || '(no merchant)'}
                 </Text>
-                {(item.gmail_review_hint?.message_subject || item.email_subject) ? (
+                {reviewSubject(item) ? (
                   <Text style={styles.pendingMeta} numberOfLines={1}>
                     {[item.merchant, item.gmail_review_hint?.from_address || item.email_from_address].filter(Boolean).join('  ·  ')}
                   </Text>

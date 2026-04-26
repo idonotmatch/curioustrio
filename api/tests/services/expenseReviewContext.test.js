@@ -92,8 +92,8 @@ describe('expenseReviewContext', () => {
     ExpenseItem.findByExpenseId.mockResolvedValueOnce([{ description: 'Airport ride', amount: 42.5 }]);
     EmailImportLog.findByExpenseId.mockResolvedValueOnce({
       message_id: 'gmail-msg-1',
-      subject: 'Uber trip receipt',
-      snippet: 'Your Uber trip total was $42.50',
+      subject: 'Uber trip &quot;receipt&quot;',
+      snippet: 'Your Uber trip total was &quot;$42.50&quot;',
       from_address: 'uber@uber.com',
       imported_at: '2026-03-16T14:00:00.000Z',
       review_action: null,
@@ -137,8 +137,8 @@ describe('expenseReviewContext', () => {
     expect(result.gmail_review_hint).toMatchObject({
       sender_domain: 'amazon.com',
       from_address: 'uber@uber.com',
-      message_subject: 'Uber trip receipt',
-      message_snippet: 'Your Uber trip total was $42.50',
+      message_subject: 'Uber trip "receipt"',
+      message_snippet: 'Your Uber trip total was "$42.50"',
       review_mode: 'quick_check',
       treatment_suggestion: expect.objectContaining({
         suggested_track_only: true,
@@ -149,6 +149,8 @@ describe('expenseReviewContext', () => {
         suggested_card_last4: '4242',
       }),
     });
+    expect(result.email_subject).toBe('Uber trip "receipt"');
+    expect(result.email_snippet).toBe('Your Uber trip total was "$42.50"');
   });
 
   it('attaches compact item history context when expense items have stable identities', async () => {

@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { DuplicateAlert } from './DuplicateAlert';
+const { decodeHtmlEntities } = require('../services/text');
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -80,7 +81,7 @@ function extractedItemCount(item = {}) {
 }
 
 function reviewHeadline(item = {}) {
-  const subject = `${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`.trim();
+  const subject = decodeHtmlEntities(`${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`).trim();
   if (subject) return subject;
   return item.merchant || item.description || '—';
 }
@@ -96,7 +97,7 @@ function reviewSubline(item = {}) {
 }
 
 function reviewSubject(item = {}) {
-  return `${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`.trim();
+  return decodeHtmlEntities(`${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`).trim();
 }
 
 export function reviewQueueGuidance(item = {}) {

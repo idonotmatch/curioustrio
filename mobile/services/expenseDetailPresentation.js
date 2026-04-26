@@ -1,3 +1,5 @@
+const { decodeHtmlEntities } = require('./text');
+
 function formatImportedAt(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -6,7 +8,12 @@ function formatImportedAt(value) {
 }
 
 function formatEmailSnippet(value) {
-  const cleaned = `${value || ''}`.replace(/\s+/g, ' ').trim();
+  const cleaned = decodeHtmlEntities(`${value || ''}`).replace(/\s+/g, ' ').trim();
+  return cleaned || null;
+}
+
+function formatEmailText(value) {
+  const cleaned = decodeHtmlEntities(`${value || ''}`).replace(/\s+/g, ' ').trim();
   return cleaned || null;
 }
 
@@ -201,6 +208,7 @@ function summarizeItemSignals(items = []) {
 
 module.exports = {
   formatImportedAt,
+  formatEmailText,
   formatEmailSnippet,
   formatCurrency,
   formatShortDate,

@@ -68,6 +68,21 @@ describe('EmailImportLog.create', () => {
     expect(log.snippet.length).toBeLessThanOrEqual(120);
   });
 
+  it('decodes escaped subject and snippet content before storing', async () => {
+    const log = await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-001-decoded-entities',
+      expenseId: null,
+      status: 'imported',
+      subject: 'Ordered: &quot;Kinetic Sand&quot; &amp; more',
+      snippet: 'Your total was &quot;$62.05&quot; &amp; is ready.',
+    });
+
+    expect(log).toBeDefined();
+    expect(log.subject).toBe('Ordered: "Kinetic Sand" & more');
+    expect(log.snippet).toContain('"$62.05" & is ready.');
+  });
+
   it('returns null on conflict (idempotent)', async () => {
     await EmailImportLog.create({
       userId: testUserId,
