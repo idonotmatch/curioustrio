@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { NLInput } from './NLInput';
+import { api } from '../services/api';
+import { toLocalDateString } from '../services/date';
 
 export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   function close() {
     setOpen(false);
@@ -12,6 +16,34 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
   function openAdd() {
     close();
     router.push('/manual-add');
+  }
+
+  async function handleQuickParse(input) {
+    try {
+      setLoading(true);
+      const today = toLocalDateString();
+      const parsed = await api.post('/expenses/parse', { input, today });
+      close();
+      router.push({
+        pathname: '/confirm',
+        params: { data: JSON.stringify({ ...parsed, source: 'manual' }) },
+      });
+    } catch (err) {
+      if (`${err?.message || ''}`.includes('Could not parse')) {
+        Alert.alert(
+          "Couldn't parse that",
+          "Try: '84.50 trader joes' or 'lunch chipotle 14'",
+          [
+            { text: 'Keep editing', style: 'cancel' },
+            { text: 'Manual add', onPress: openAdd },
+          ]
+        );
+      } else {
+        Alert.alert('Error', err?.message || 'Could not parse that expense right now.');
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openScan() {
@@ -40,15 +72,18 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={close}>
           <View style={styles.sheet}>
             <Text style={styles.eyebrow}>Quick action</Text>
-            <Text style={styles.title}>What do you want to do?</Text>
+            <Text style={styles.title}>Add it the fast way</Text>
+            <Text style={styles.subtitle}>Type it naturally, or open a cleaner form if you want to start from scratch.</Text>
+
+            <NLInput onSubmit={handleQuickParse} loading={loading} />
 
             <TouchableOpacity style={styles.actionRow} onPress={openAdd} activeOpacity={0.82}>
               <View style={styles.actionIcon}>
                 <Ionicons name="create-outline" size={18} color="#f5f5f5" />
               </View>
               <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Add expense</Text>
-                <Text style={styles.actionBody}>Log something with text or start from scratch.</Text>
+                <Text style={styles.actionTitle}>Manual add</Text>
+                <Text style={styles.actionBody}>Start from scratch with the structured form.</Text>
               </View>
             </TouchableOpacity>
 
@@ -114,6 +149,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: { fontSize: 11, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 22, color: '#f5f5f5', fontWeight: '700', marginBottom: 2 },
+  subtitle: { fontSize: 13, color: '#9a9a9a', lineHeight: 18, marginBottom: 2 },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

@@ -156,81 +156,58 @@ export default function ManualAddScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Core details</Text>
 
-          <View style={styles.captureIntro}>
-            <Text style={styles.captureTitle}>Start with the purchase itself</Text>
-            <Text style={styles.captureBody}>How much was it, and what should you recognize later when you scan the list?</Text>
-          </View>
-
-          <View style={styles.captureBlock}>
-            <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>Amount</Text>
-              <TextInput
-                style={styles.amountInput}
-                value={amount}
-                onChangeText={(value) => setAmount(moneyInput(value))}
-                placeholder="62.05"
-                placeholderTextColor="#555"
-                keyboardType="decimal-pad"
-              />
-            </View>
-
-            <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>Merchant or description</Text>
-              <TextInput
-                style={styles.textInput}
-                value={merchant}
-                onChangeText={setMerchant}
-                placeholder="Amazon, lunch, hair clips..."
-                placeholderTextColor="#555"
-                autoCorrect={false}
-              />
-            </View>
-          </View>
-
-          <View style={styles.fieldMetaCard}>
-            <View style={styles.fieldMetaHeader}>
-              <Text style={styles.fieldMetaTitle}>When and how it should land</Text>
-              <Text style={styles.fieldMetaBody}>Pick the day and choose the closest bucket.</Text>
-            </View>
-
-            <View style={styles.metaGrid}>
-              <View style={[styles.fieldBlock, styles.metaField]}>
-                <Text style={styles.fieldLabel}>Date</Text>
-                {Platform.OS === 'ios' ? (
-                  <View style={styles.iosDateShell}>
-                    <DateTimePicker
-                      value={new Date(`${date}T12:00:00`)}
-                      mode="date"
-                      display="compact"
-                      maximumDate={new Date()}
-                      onChange={onDateChange}
-                      themeVariant="dark"
-                    />
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
-                    <Text style={styles.dateButtonText}>{date}</Text>
-                  </TouchableOpacity>
-                )}
+          <View style={styles.compactDateRow}>
+            <Text style={styles.compactDateLabel}>Date</Text>
+            {Platform.OS === 'ios' ? (
+              <View style={styles.compactDateValue}>
+                <DateTimePicker
+                  value={new Date(`${date}T12:00:00`)}
+                  mode="date"
+                  display="compact"
+                  maximumDate={new Date()}
+                  onChange={onDateChange}
+                  themeVariant="dark"
+                />
               </View>
-
-              <View style={[styles.fieldBlock, styles.metaField]}>
-                <Text style={styles.fieldLabel}>Category</Text>
-                <TouchableOpacity style={styles.selectorButton} onPress={() => setCategoryPickerOpen(true)} activeOpacity={0.82}>
-                  <Text style={styles.selectorButtonText} numberOfLines={1}>
-                    {selectedCategory?.name || 'Choose a category'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
-                </TouchableOpacity>
-              </View>
-            </View>
+            ) : (
+              <TouchableOpacity style={styles.compactDateValue} onPress={() => setShowDatePicker(true)}>
+                <Text style={styles.compactDateText}>{date}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          <View style={styles.inlineHints}>
-            <Text style={styles.inlineHintTitle}>Category stays flexible</Text>
-            <Text style={styles.inlineHintBody}>
-              Start with a common choice, search if you know it, or leave it unassigned for now.
-            </Text>
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>Amount</Text>
+            <TextInput
+              style={styles.primaryInput}
+              value={amount}
+              onChangeText={(value) => setAmount(moneyInput(value))}
+              placeholder="62.05"
+              placeholderTextColor="#555"
+              keyboardType="decimal-pad"
+            />
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>Merchant</Text>
+            <TextInput
+              style={styles.primaryInput}
+              value={merchant}
+              onChangeText={setMerchant}
+              placeholder="Amazon, lunch, hair clips..."
+              placeholderTextColor="#555"
+              autoCorrect={false}
+            />
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>Category</Text>
+            <TouchableOpacity style={styles.selectorButton} onPress={() => setCategoryPickerOpen(true)} activeOpacity={0.82}>
+              <Text style={styles.selectorButtonText} numberOfLines={1}>
+                {selectedCategory?.name || 'Choose a category'}
+              </Text>
+              <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -507,29 +484,30 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   sectionTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.1 },
-  captureIntro: { gap: 3 },
-  captureTitle: { color: '#f5f5f5', fontSize: 20, fontWeight: '700', lineHeight: 25 },
-  captureBody: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
-  captureBlock: {
+  compactDateRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#141414',
-    borderWidth: 1,
-    borderColor: '#212121',
+    paddingBottom: 2,
   },
+  compactDateLabel: { color: '#7f7f7f', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
+  compactDateValue: { alignItems: 'flex-end', justifyContent: 'center' },
+  compactDateText: { color: '#d7d7d7', fontSize: 14, fontWeight: '500' },
   fieldBlock: { gap: 6 },
   fieldLabel: { fontSize: 12, color: '#999', fontWeight: '600' },
-  amountInput: {
+  primaryInput: {
     backgroundColor: '#181818',
     borderWidth: 1,
     borderColor: '#282828',
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 15,
+    minHeight: 54,
+    paddingVertical: 13,
     color: '#fff',
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '600',
     letterSpacing: 0,
   },
   textInput: {
@@ -545,43 +523,18 @@ const styles = StyleSheet.create({
   notesInput: { minHeight: 88, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: 10 },
   rowField: { flex: 1 },
-  fieldMetaCard: {
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#141414',
-    borderWidth: 1,
-    borderColor: '#212121',
-  },
-  fieldMetaHeader: { gap: 3 },
-  fieldMetaTitle: { color: '#f0f0f0', fontSize: 15, fontWeight: '600' },
-  fieldMetaBody: { color: '#888', fontSize: 12, lineHeight: 17 },
-  metaGrid: { gap: 10 },
-  metaField: { gap: 8 },
   dateButton: {
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#282828',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
-  dateButtonText: { color: '#fff', fontSize: 15 },
-  iosDateShell: {
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#282828',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    alignItems: 'flex-start',
-  },
+  dateButtonText: { color: '#d7d7d7', fontSize: 14, fontWeight: '500' },
   selectorButton: {
     backgroundColor: '#181818',
     borderWidth: 1,
     borderColor: '#282828',
     borderRadius: 10,
     paddingHorizontal: 14,
+    minHeight: 54,
     paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
@@ -589,12 +542,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   selectorButtonText: { color: '#f5f5f5', fontSize: 15, flex: 1 },
-  inlineHints: {
-    gap: 4,
-    paddingTop: 0,
-  },
-  inlineHintTitle: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
-  inlineHintBody: { color: '#7f7f7f', fontSize: 12, lineHeight: 17, maxWidth: 320 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
     borderRadius: 999,
