@@ -6,6 +6,8 @@ import { useMonth, currentPeriod, periodLabel } from '../contexts/MonthContext';
 import { useHousehold } from '../hooks/useHousehold';
 import { api } from '../services/api';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
+import { consumeNavigationPayload } from '../services/navigationPayloadStore';
+import { planningActionSummary, planningSnapshot, planningSuggestionAmounts } from '../services/planningPresentation';
 
 function formatCurrency(value) {
   const amount = Number(value);
@@ -194,6 +196,13 @@ function recentPlanWhyChangedCopy(plan) {
 
 export default function ScenarioCheckScreen() {
   const params = useLocalSearchParams();
+  const payloadKey = typeof params.payload_key === 'string' ? params.payload_key : Array.isArray(params.payload_key) ? params.payload_key[0] : '';
+  const preloadedPayload = useMemo(() => consumeNavigationPayload(payloadKey, null), [payloadKey]);
+  const planningInsight = preloadedPayload?.planningInsight || null;
+  const planningSeed = planningInsight?.metadata || {};
+  const planningSeedSummary = planningActionSummary(planningSeed);
+  const planningSeedSnapshot = planningSnapshot(planningSeed);
+  const starterAmounts = planningSuggestionAmounts(planningSeed);
   const { selectedMonth, startDay } = useMonth();
   const { memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
@@ -231,6 +240,11 @@ export default function ScenarioCheckScreen() {
   const displayLabel = scenario?.label || label.trim() || 'purchase';
   const displayAmount = scenario?.proposed_amount != null ? Number(scenario.proposed_amount) : parsedAmount;
   const amountShareOfRoom = currentHeadroom > 0 ? Math.round((displayAmount / currentHeadroom) * 100) : null;
+
+  function applyStarterAmount(nextAmount) {
+    if (!Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) return;
+    setAmount(`${Number(nextAmount)}`);
+  }
 
   function renderConsiderationRows() {
     const rows = [
@@ -431,6 +445,31 @@ export default function ScenarioCheckScreen() {
             <Text style={styles.heroCopy}>
               See how a one-off expense fits into your current spending outlook for {periodLabel(targetMonth, startDay)}.
             </Text>
+            {planningInsight ? (
+              <View style={styles.seedCard}>
+                <Text style={styles.seedEyebrow}>From your planning insight</Text>
+                <Text style={styles.seedTitle}>{planningSeedSummary.title}</Text>
+                <Text style={styles.seedBody}>{planningSeedSummary.body}</Text>
+                <Text style={styles.seedMeta}>
+                  {planningSeedSnapshot.confidence === 'directional' ? 'Directional read' : 'Baseline read'}
+                  {planningSeedSnapshot.daysRemaining != null ? ` • ${planningSeedSnapshot.daysRemaining} days left` : ''}
+                  {planningSeedSnapshot.headroom > 0 ? ` • About ${formatCurrency(planningSeedSnapshot.headroom)} room` : ''}
+                </Text>
+                {starterAmounts.length > 0 ? (
+                  <View style={styles.starterRow}>
+                    {starterAmounts.map((option) => (
+                      <TouchableOpacity
+                        key={`${option.amount}`}
+                        style={styles.starterChip}
+                        onPress={() => applyStarterAmount(option.amount)}
+                      >
+                        <Text style={styles.starterChipText}>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : (
           <>
@@ -819,6 +858,29 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 30, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   resultTitle: { fontSize: 28, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.6, lineHeight: 34 },
   heroCopy: { fontSize: 15, color: '#b5b5b5', lineHeight: 22 },
+  seedCard: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#1f2630',
+    backgroundColor: '#0f1318',
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+  },
+  seedEyebrow: { fontSize: 11, color: '#8ca7bf', textTransform: 'uppercase', letterSpacing: 1.1 },
+  seedTitle: { fontSize: 17, color: '#eef5ff', fontWeight: '600', lineHeight: 22 },
+  seedBody: { fontSize: 14, color: '#c3d1df', lineHeight: 20 },
+  seedMeta: { fontSize: 12, color: '#8ea2b7', lineHeight: 17 },
+  starterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  starterChip: {
+    borderWidth: 1,
+    borderColor: '#304253',
+    backgroundColor: '#151d25',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  starterChipText: { color: '#eef5ff', fontSize: 13, fontWeight: '600' },
   scopeContextCopy: { fontSize: 13, color: '#8ca7bf', lineHeight: 18 },
   planSummaryCard: {
     backgroundColor: '#101010',

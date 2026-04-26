@@ -523,7 +523,7 @@ export default function TrendDetailScreen() {
   const [categoryExpenses, setCategoryExpenses] = useState(() => preloadedCategoryExpenses);
   const [categoryExpensesLoading, setCategoryExpensesLoading] = useState(false);
   const primaryAction = useMemo(
-    () => getPrimaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend }),
+    () => getPrimaryActionForInsight({ insightType: `${insightType}`, scope: `${scope}`, month: `${month}`, categoryKey: `${categoryKey}`, trend, metadata: trend?.insight?.metadata || {} }),
     [insightType, scope, month, categoryKey, trend]
   );
 

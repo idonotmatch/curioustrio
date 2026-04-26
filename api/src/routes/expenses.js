@@ -541,6 +541,7 @@ router.patch('/:id', async (req, res, next) => {
     });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     const categoryChanged = category_id !== undefined && `${originalExpense.category_id || ''}` !== `${expense.category_id || ''}`;
+    const merchantChanged = merchant !== undefined && `${originalExpense.merchant || ''}` !== `${expense.merchant || ''}`;
     if (items !== undefined) {
       try {
         const resolvedItems = await Promise.all(
@@ -556,7 +557,7 @@ router.patch('/:id', async (req, res, next) => {
         });
       }
     }
-    if (categoryChanged) {
+    if ((categoryChanged || merchantChanged) && expense.category_id) {
       try {
         await updateMerchantMemory({
           categoryId: expense.category_id,

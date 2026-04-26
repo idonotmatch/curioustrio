@@ -144,6 +144,12 @@ function shouldUseDescriptionMemory(learnedDecision, { merchant, description, me
   return Number(learnedDecision.decision_count || 0) >= 2;
 }
 
+function shouldPreferHeuristicOverWeakMerchantMemory(merchantMapping, heuristic = null) {
+  if (!merchantMapping?.category_id || !heuristic?.category_id) return false;
+  if (merchantMapping.category_id === heuristic.category_id) return false;
+  return Number(merchantMapping.hit_count || 0) <= 1;
+}
+
 async function gatherAssignmentSignals({ householdId, merchant, description }) {
   const [merchantMapping, learnedDecision] = await Promise.all([
     merchant ? MerchantMapping.findByMerchant(householdId, merchant) : Promise.resolve(null),
@@ -166,6 +172,7 @@ async function assignCategory({ merchant, description, householdId, categories, 
     merchant,
     description,
   });
+  const heuristic = assignCategoryHeuristically({ merchant, description, categories });
 
   if (learnedDecision?.category_id && shouldPreferLearnedMerchantDecision(learnedDecision, merchantMapping)) {
     return {
@@ -173,6 +180,16 @@ async function assignCategory({ merchant, description, householdId, categories, 
       source: 'decision_memory',
       confidence: confidenceFromDecisionCount(learnedDecision.decision_count),
       reasoning: buildDecisionReasoning(learnedDecision, merchantMapping),
+    };
+  }
+
+  if (heuristic && shouldPreferHeuristicOverWeakMerchantMemory(merchantMapping, heuristic)) {
+    return {
+      ...heuristic,
+      reasoning: {
+        ...(heuristic.reasoning || {}),
+        detail: 'The expense text was a stronger signal than the thin merchant memory, so Adlo followed the local heuristic match.',
+      },
     };
   }
 
@@ -199,7 +216,6 @@ async function assignCategory({ merchant, description, householdId, categories, 
     };
   }
 
-  const heuristic = assignCategoryHeuristically({ merchant, description, categories });
   if (heuristic) return heuristic;
 
   // 3. Claude fallback — use both merchant and description so generic inputs

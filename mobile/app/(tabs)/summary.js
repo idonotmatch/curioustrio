@@ -228,11 +228,20 @@ export default function SummaryScreen() {
     }
 
     if (insight?.type === 'usage_ready_to_plan') {
+      const payloadKey = stashNavigationPayload({
+        planningInsight: {
+          id: insight.id,
+          title: insight.title,
+          body: insight.body,
+          metadata: insight.metadata || {},
+        },
+      }, 'scenario-check');
       router.push({
         pathname: '/scenario-check',
         params: {
           scope: insight.metadata?.scope || 'personal',
           month: insight.metadata?.month || currentMonthStr,
+          payload_key: payloadKey,
         },
       });
       return;

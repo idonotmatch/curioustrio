@@ -230,6 +230,30 @@ describe('assignCategory', () => {
     });
   });
 
+  it('prefers a strong heuristic over one-hit merchant memory', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
+    MerchantMapping.findByMerchant.mockResolvedValueOnce({
+      category_id: 'cat-grocery-id',
+      hit_count: 1,
+    });
+
+    const result = await assignCategory({
+      merchant: 'Uber',
+      description: 'trip home from airport',
+      householdId: 'hh-1',
+      categories: [
+        ...mockCategories,
+        { id: 'cat-travel-id', name: 'Travel' },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      category_id: 'cat-travel-id',
+      source: 'heuristic',
+      confidence: 2,
+    });
+  });
+
   it('does not use description-only memory when a merchant is present', async () => {
     CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
       category_id: 'cat-grocery-id',

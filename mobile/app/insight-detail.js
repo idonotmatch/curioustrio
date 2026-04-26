@@ -6,8 +6,9 @@ import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { selectInsightEvidence } from '../services/insightEvidence';
 import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../services/insightPresentation';
-import { consumeNavigationPayload } from '../services/navigationPayloadStore';
+import { consumeNavigationPayload, stashNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
+import { planningActionSummary } from '../services/planningPresentation';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -320,6 +321,7 @@ export default function InsightDetailScreen() {
     scope: metadata.scope || 'personal',
     month: metadata.month || '',
     categoryKey: metadata.category_key || '',
+    metadata,
     trend: null,
   });
   const highlights = metadataHighlights(metadata);
@@ -331,6 +333,9 @@ export default function InsightDetailScreen() {
   const changed = whatChangedCopy(metadata, body);
   const whyItMatters = whyItMattersCopy(insightType, metadata);
   const nextStep = nextStepCopy(descriptor, primaryAction);
+  const planningNextStep = `${insightType}` === 'usage_ready_to_plan'
+    ? planningActionSummary(metadata)
+    : null;
   const merchantComparisons = merchantComparisonRows(metadata);
   const purchaseHistory = purchaseHistoryRows(metadata);
   function handleOpenExpense(expense) {
@@ -482,6 +487,25 @@ export default function InsightDetailScreen() {
   }
 
   function openPrimaryAction() {
+    if (`${insightType}` === 'usage_ready_to_plan') {
+      const payloadKey = stashNavigationPayload({
+        planningInsight: {
+          id: insightId,
+          title,
+          body,
+          metadata,
+        },
+      }, 'scenario-check');
+      router.push({
+        pathname: '/scenario-check',
+        params: {
+          scope: metadata.scope || 'personal',
+          month: metadata.month || '',
+          payload_key: payloadKey,
+        },
+      });
+      return;
+    }
     if (primaryAction?.route) router.push(primaryAction.route);
   }
 
@@ -534,8 +558,8 @@ export default function InsightDetailScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardEyebrow}>Next step</Text>
-          <Text style={styles.cardTitle}>{nextStep.title}</Text>
-          <Text style={styles.cardCopy}>{nextStep.body}</Text>
+          <Text style={styles.cardTitle}>{planningNextStep?.title || nextStep.title}</Text>
+          <Text style={styles.cardCopy}>{planningNextStep?.body || nextStep.body}</Text>
           {primaryAction?.route && nextStep.cta ? (
             <TouchableOpacity style={styles.primaryButton} onPress={openPrimaryAction}>
               <Text style={styles.primaryButtonText}>{nextStep.cta}</Text>

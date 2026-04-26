@@ -718,6 +718,8 @@ describe('insightBuilder orchestration', () => {
     expect(insights[0].type).toBe('usage_ready_to_plan');
     expect(insights[0].title).toBe('You can start planning with directional reads now');
     expect(insights[0].metadata.planning_confidence).toBe('directional');
+    expect(insights[0].metadata.current_expense_count).toBe(5);
+    expect(insights[0].metadata.projected_headroom_amount).toBe(0);
   });
 
   it('builds quiet-period fallback copy when supplementing a thin rail', () => {

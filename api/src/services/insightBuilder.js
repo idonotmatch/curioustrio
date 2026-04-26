@@ -928,12 +928,25 @@ function buildDismissedContinuityKeySet(events = [], windowDays = 30) {
   const cutoffMs = Date.now() - safeWindowDays * 24 * 60 * 60 * 1000;
   const keys = new Set();
 
+  function toScopeAgnosticKey(key) {
+    const raw = `${key || ''}`.trim();
+    if (!raw) return '';
+    return raw.replace(/:(personal|household):/, ':shared:');
+  }
+
   for (const event of events || []) {
-    if (`${event?.event_type || ''}`.trim() !== 'dismissed') continue;
+    const eventType = `${event?.event_type || ''}`.trim();
+    const negativeReason = `${event?.metadata?.reason || ''}`.trim();
+    const suppressByFeedback = eventType === 'not_helpful'
+      && (negativeReason === 'wrong_timing' || negativeReason === 'not_relevant');
+    if (eventType !== 'dismissed' && !suppressByFeedback) continue;
     const createdAtMs = new Date(event?.created_at || 0).getTime();
     if (Number.isNaN(createdAtMs) || createdAtMs < cutoffMs) continue;
     const continuityKey = `${event?.metadata?.continuity_key || ''}`.trim();
-    if (continuityKey) keys.add(continuityKey);
+    if (!continuityKey) continue;
+    keys.add(continuityKey);
+    const scopeAgnostic = toScopeAgnosticKey(continuityKey);
+    if (scopeAgnostic) keys.add(scopeAgnostic);
   }
 
   return keys;
@@ -1105,6 +1118,17 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
   const currentSpendToDate = Number(projectionOverall.current_spend_to_date || 0);
   const currentExpenseCount = Number(currentActivity.expense_count || 0);
   const currentActiveDayCount = Number(currentActivity.active_day_count || 0);
+  const projectedBudgetDelta = projectionOverall.projected_budget_delta == null
+    ? null
+    : Number(projectionOverall.projected_budget_delta || 0);
+  const projectedHeadroomAmount = projectedBudgetDelta != null && projectedBudgetDelta < 0
+    ? Math.abs(projectedBudgetDelta)
+    : 0;
+  const period = projection?.period || {};
+  const daysRemaining = Number.isFinite(Number(period.days_in_period))
+    && Number.isFinite(Number(period.day_index))
+    ? Math.max(Number(period.days_in_period) - Number(period.day_index), 0)
+    : null;
   const scopeLabel = scope === 'household' ? 'household' : 'personal';
   const isQuietPeriod = context === 'quiet_period';
   const directionalPlanningReady = historicalPeriodCount >= 1
@@ -1112,6 +1136,15 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
     && currentActiveDayCount >= 3
     && currentSpendToDate >= 75;
   const withLineage = (insights) => insights.map(annotateInsightScopeLineage);
+  const planningSnapshot = {
+    budget_limit: Number.isFinite(Number(budgetLimit)) ? Number(budgetLimit) : null,
+    current_spend_to_date: currentSpendToDate,
+    projected_budget_delta: projectedBudgetDelta,
+    projected_headroom_amount: projectedHeadroomAmount,
+    days_remaining: daysRemaining,
+    current_expense_count: currentExpenseCount,
+    current_active_day_count: currentActiveDayCount,
+  };
 
   if (currentSpendToDate <= 0) {
     return withLineage([{
@@ -1192,8 +1225,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
           month: projection?.month || null,
           historical_period_count: historicalPeriodCount,
           history_stage: projectionOverall.history_stage || null,
-          current_expense_count: currentExpenseCount,
-          current_active_day_count: currentActiveDayCount,
+          ...planningSnapshot,
           planning_confidence: 'directional',
           usage_fallback: true,
           usage_context: context,
@@ -1226,6 +1258,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         month: projection?.month || null,
         historical_period_count: historicalPeriodCount,
         history_stage: projectionOverall.history_stage || null,
+        ...planningSnapshot,
         usage_fallback: true,
         usage_context: context,
         continuity_key: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
@@ -1257,6 +1290,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
       month: projection?.month || null,
       historical_period_count: historicalPeriodCount,
       history_stage: projectionOverall.history_stage || null,
+      ...planningSnapshot,
       planning_confidence: historicalPeriodCount >= 3 ? 'baseline' : 'directional',
       usage_fallback: true,
       usage_context: context,
@@ -1563,7 +1597,9 @@ async function buildInsightsForUser({ user, limit = 10 }) {
     .filter((insight) => insight.state?.status !== 'dismissed')
     .filter((insight) => {
       const continuityKey = `${insight?.metadata?.continuity_key || ''}`.trim();
-      return !continuityKey || !dismissedContinuityKeys.has(continuityKey);
+      const sharedContinuityKey = scopeAgnosticContinuityKey(insight);
+      return (!continuityKey || !dismissedContinuityKeys.has(continuityKey))
+        && (!sharedContinuityKey || !dismissedContinuityKeys.has(sharedContinuityKey));
     })
     .filter((insight) => !shouldSuppressInsight(insight, feedbackSummary))
     .map((insight) => ({

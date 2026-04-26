@@ -84,7 +84,7 @@ export function getInsightActionDescriptor(insight, context = {}) {
     case 'usage_building_history':
       return { label: 'Keep logging', reason: metadata?.usage_context === 'quiet_period' ? 'Quiet month' : 'History building' };
     case 'usage_ready_to_plan':
-      return { label: 'Plan a purchase', reason: metadata?.usage_context === 'quiet_period' ? 'Good time to plan' : 'Ready to use' };
+      return { label: 'Plan a purchase', reason: metadata?.planning_confidence === 'directional' ? 'Directional read' : (metadata?.usage_context === 'quiet_period' ? 'Good time to plan' : 'Ready to use') };
     case 'spend_pace_ahead':
       return { label: 'See what is driving it', reason: historicalCount > 0 && historicalCount < 3 ? 'Low confidence' : 'Budget pressure' };
     case 'spend_pace_behind':
@@ -203,6 +203,9 @@ export function getInsightPrimaryMetric(insight, context = {}) {
       return null;
     case 'usage_building_history':
     case 'usage_ready_to_plan':
+      if (metadata.projected_headroom_amount != null && Number(metadata.projected_headroom_amount) > 0) {
+        return metric(formatCurrencyShort(metadata.projected_headroom_amount), 'room to test');
+      }
       return metric(formatCountLabel(metadata.historical_period_count, 'month'), 'history available');
     case 'spend_pace_ahead':
     case 'spend_pace_behind':
@@ -228,8 +231,8 @@ export function getInsightPrimaryMetric(insight, context = {}) {
   }
 }
 
-export function getPrimaryActionForInsight({ insightType, scope, month, categoryKey, trend }) {
-  const descriptor = getInsightActionDescriptor({ type: insightType, metadata: { scope, month, category_key: categoryKey } }, { trend, insightType, categoryKey });
+export function getPrimaryActionForInsight({ insightType, scope, month, categoryKey, trend, metadata = {} }) {
+  const descriptor = getInsightActionDescriptor({ type: insightType, metadata: { scope, month, category_key: categoryKey, ...metadata } }, { trend, insightType, categoryKey, metadata });
 
   switch (`${insightType || ''}`) {
     case 'early_budget_pace':
@@ -254,6 +257,18 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
         route: {
           pathname: '/categories',
           params: {},
+        },
+      };
+    case 'usage_ready_to_plan':
+      return {
+        title: 'Start pressure-testing a purchase',
+        body: metadata?.planning_confidence === 'directional'
+          ? 'Use the planner for a smaller directional what-if first, then compare timing before treating the room as fully reliable.'
+          : 'Use the planner to compare whether a purchase fits better now, next period, or spread out.',
+        cta: 'Open planner',
+        route: {
+          pathname: '/scenario-check',
+          params: { scope, month },
         },
       };
     case 'projected_month_end_over_budget':
