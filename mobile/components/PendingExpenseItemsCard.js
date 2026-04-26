@@ -26,7 +26,7 @@ export function PendingExpenseItemsCard({
             {reviewItems.length} {reviewItems.length === 1 ? 'item' : 'items'} found in the email
           </Text>
           <Text style={styles.reviewAttentionBody}>
-            Check that the product names and amounts match what was actually ordered.
+            Confirm the product names and amounts before approving.
           </Text>
         </View>
         <TouchableOpacity

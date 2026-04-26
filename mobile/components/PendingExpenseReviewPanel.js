@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ExpenseVisibilityControls } from './ExpenseVisibilityControls';
 import { PendingExpenseEmailCard } from './PendingExpenseEmailCard';
 import { PendingExpenseApprovalCard } from './PendingExpenseApprovalCard';
@@ -67,6 +68,19 @@ export function PendingExpenseReviewPanel({
   const hasMoreItems = reviewItems.length > previewItems.length;
   const primaryReviewPath = automationRecommendation?.label || (isItemsFirstReview ? 'Check items first' : 'Review details');
   const categoryDetail = `${categoryExplanation?.detail || ''}`.trim();
+  const itemsCard = reviewItems.length ? (
+    <PendingExpenseItemsCard
+      styles={styles}
+      reviewItems={reviewItems}
+      previewItems={previewItems}
+      hasMoreItems={hasMoreItems}
+      activeReviewField={activeReviewField}
+      setItemsExpanded={setItemsExpanded}
+      activateReviewField={activateReviewField}
+      formatCurrency={formatCurrency}
+    />
+  ) : null;
+
   return (
     <>
       <PendingExpenseEmailCard
@@ -79,6 +93,8 @@ export function PendingExpenseReviewPanel({
         primaryReviewPath={primaryReviewPath}
         emailSnippet={emailSnippet}
       />
+
+      {isItemsFirstReview ? itemsCard : null}
 
       <PendingExpenseApprovalCard
         styles={styles}
@@ -109,16 +125,7 @@ export function PendingExpenseReviewPanel({
         categoryDetail={categoryDetail}
       />
 
-      <PendingExpenseItemsCard
-        styles={styles}
-        reviewItems={reviewItems}
-        previewItems={previewItems}
-        hasMoreItems={hasMoreItems}
-        activeReviewField={activeReviewField}
-        setItemsExpanded={setItemsExpanded}
-        activateReviewField={activateReviewField}
-        formatCurrency={formatCurrency}
-      />
+      {!isItemsFirstReview ? itemsCard : null}
 
       <View style={styles.reviewControlsCard}>
         {treatmentSuggestionSummary ? (
@@ -168,11 +175,6 @@ export function PendingExpenseReviewPanel({
           onToggleTrackOnly={handleToggleTrackOnly}
           onSelectBudgetExclusionReason={handleSelectBudgetExclusionReason}
         />
-      </View>
-
-      <View style={styles.reviewFieldsHeader}>
-        <Text style={styles.reviewFieldsEyebrow}>Expense details</Text>
-        <Text style={styles.reviewFieldsTitle}>These are the details that will be saved</Text>
       </View>
 
       <TouchableOpacity

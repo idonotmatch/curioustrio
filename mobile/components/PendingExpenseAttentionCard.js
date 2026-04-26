@@ -16,10 +16,8 @@ export function PendingExpenseAttentionCard({
     <View style={styles.priorityFieldsCard}>
       <View style={styles.priorityFieldsHeader}>
         <View style={styles.headerCopyBlock}>
-          <Text style={styles.reviewSectionEyebrow}>Needs attention</Text>
-          <Text style={styles.priorityFieldsTitle}>
-            {reviewFocusSummary.title}
-          </Text>
+          <Text style={styles.reviewSectionEyebrow}>Double-check first</Text>
+          <Text style={styles.priorityFieldsTitle}>{reviewFocusSummary.title}</Text>
           <Text style={styles.reviewAttentionBody}>{reviewFocusSummary.body}</Text>
         </View>
         {!editing ? (

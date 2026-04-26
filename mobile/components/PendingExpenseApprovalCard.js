@@ -116,7 +116,12 @@ export function PendingExpenseApprovalCard({
       <View style={styles.reviewSummaryHeader}>
         <View style={styles.headerCopyBlock}>
           <Text style={styles.reviewSectionEyebrow}>Approve this expense</Text>
-          <Text style={styles.reviewSummaryTitle}>Confirm what will be saved</Text>
+          <Text style={styles.reviewSummaryTitle}>{editing ? 'Edit what will be saved' : 'Confirm what will be saved'}</Text>
+          <Text style={styles.reviewSummarySubtitle}>
+            {editing
+              ? 'Update the saved fields here, then approve when they look right.'
+              : 'Approve as-is or edit the core details before saving.'}
+          </Text>
         </View>
         {!editing ? (
           <TouchableOpacity style={styles.headerActionWrap} onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>

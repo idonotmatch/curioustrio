@@ -381,8 +381,10 @@ export default function InsightDetailScreen() {
   const planningNextStep = `${insightType}` === 'usage_ready_to_plan'
     ? planningActionSummary(metadata)
     : null;
+  const keyFacts = highlights.slice(0, 4);
   const merchantComparisons = merchantComparisonRows(metadata);
   const purchaseHistory = purchaseHistoryRows(metadata);
+  const hasSupportingDetail = merchantComparisons.length > 0 || purchaseHistory.length > 0 || !!evidenceMode;
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -577,10 +579,9 @@ export default function InsightDetailScreen() {
         </View>
 
         {consolidationNote ? (
-          <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>Combined read</Text>
-            <Text style={styles.cardTitle}>How this rolls up</Text>
-            <Text style={styles.cardCopy}>{consolidationNote}</Text>
+          <View style={styles.contextBanner}>
+            <Text style={styles.contextBannerTitle}>Personal first, household layered in</Text>
+            <Text style={styles.contextBannerCopy}>{consolidationNote}</Text>
             {consolidationRows.length > 0 ? (
               <View style={styles.foldedList}>
                 {consolidationRows.map((row) => (
@@ -600,15 +601,16 @@ export default function InsightDetailScreen() {
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>Why it matters</Text>
-          <Text style={styles.cardTitle}>What deserves attention</Text>
-          <Text style={styles.cardCopy}>{whyItMatters}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>Next step</Text>
+          <Text style={styles.cardEyebrow}>What to do</Text>
           <Text style={styles.cardTitle}>{planningNextStep?.title || nextStep.title}</Text>
-          <Text style={styles.cardCopy}>{planningNextStep?.body || nextStep.body}</Text>
+          <Text style={styles.cardSupportTitle}>Why it matters</Text>
+          <Text style={styles.cardCopy}>{whyItMatters}</Text>
+          {(planningNextStep?.body || nextStep.body) ? (
+            <>
+              <Text style={styles.cardSupportTitle}>Suggested move</Text>
+              <Text style={styles.cardCopy}>{planningNextStep?.body || nextStep.body}</Text>
+            </>
+          ) : null}
           {primaryAction?.route && nextStep.cta ? (
             <TouchableOpacity style={styles.primaryButton} onPress={openPrimaryAction}>
               <Text style={styles.primaryButtonText}>{nextStep.cta}</Text>
@@ -616,11 +618,11 @@ export default function InsightDetailScreen() {
           ) : null}
         </View>
 
-        {highlights.length > 0 ? (
+        {keyFacts.length > 0 ? (
           <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>At a glance</Text>
+            <Text style={styles.cardEyebrow}>Key facts</Text>
             <Text style={styles.cardTitle}>Key facts</Text>
-            {highlights.map((row) => (
+            {keyFacts.map((row) => (
               <View key={row.label} style={styles.metricRow}>
                 <Text style={styles.metricLabel}>{row.label}</Text>
                 <Text style={styles.metricValue}>{row.value}</Text>
@@ -629,62 +631,100 @@ export default function InsightDetailScreen() {
           </View>
         ) : null}
 
-        {merchantComparisons.length > 0 ? (
+        {hasSupportingDetail ? (
           <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>Merchant comparison</Text>
-            <Text style={styles.cardTitle}>Where this has been landing</Text>
-            <View style={styles.metricList}>
-              {merchantComparisons.map((row) => {
-                const comparisonValue = row.median_unit_price != null
-                  ? `${formatCurrency(row.median_unit_price)} / ${metadata.normalized_total_size_unit || 'unit'}`
-                  : formatCurrency(row.median_amount);
-                const detail = [
-                  row.occurrence_count ? `${row.occurrence_count}x` : null,
-                  row.last_purchased_at ? formatShortDate(row.last_purchased_at) : null,
-                ].filter(Boolean).join(' / ');
-                return (
-                  <View key={row.merchant} style={styles.metricRow}>
-                    <View style={styles.metricTextBlock}>
-                      <Text style={styles.metricMerchant}>{row.merchant}</Text>
-                      {detail ? <Text style={styles.metricSub}>{detail}</Text> : null}
-                    </View>
-                    <Text style={styles.metricValue}>{comparisonValue || 'n/a'}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        ) : null}
+            <Text style={styles.cardEyebrow}>Supporting detail</Text>
+            <Text style={styles.cardTitle}>Evidence behind this card</Text>
+            {merchantComparisons.length > 0 ? (
+              <View style={styles.supportBlock}>
+                <Text style={styles.supportBlockTitle}>Merchant comparison</Text>
+                <View style={styles.metricList}>
+                  {merchantComparisons.map((row) => {
+                    const comparisonValue = row.median_unit_price != null
+                      ? `${formatCurrency(row.median_unit_price)} / ${metadata.normalized_total_size_unit || 'unit'}`
+                      : formatCurrency(row.median_amount);
+                    const detail = [
+                      row.occurrence_count ? `${row.occurrence_count}x` : null,
+                      row.last_purchased_at ? formatShortDate(row.last_purchased_at) : null,
+                    ].filter(Boolean).join(' / ');
+                    return (
+                      <View key={row.merchant} style={styles.metricRow}>
+                        <View style={styles.metricTextBlock}>
+                          <Text style={styles.metricMerchant}>{row.merchant}</Text>
+                          {detail ? <Text style={styles.metricSub}>{detail}</Text> : null}
+                        </View>
+                        <Text style={styles.metricValue}>{comparisonValue || 'n/a'}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
-        {purchaseHistory.length > 0 ? (
-          <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>Recent purchases</Text>
-            <Text style={styles.cardTitle}>How this has moved lately</Text>
-            <View style={styles.expenseList}>
-              {purchaseHistory.slice().reverse().map((purchase) => {
-                const unitDetail = purchase.estimated_unit_price != null
-                  ? `${formatCurrency(purchase.estimated_unit_price)} / ${purchase.normalized_total_size_unit || 'unit'}`
-                  : null;
-                const purchaseId = purchase.id || purchase.expense_id || null;
-                return (
-                  <TouchableOpacity
-                    key={purchaseId || `${purchase.date}:${purchase.merchant}:${purchase.amount}`}
-                    style={styles.expenseRow}
-                    activeOpacity={purchaseId ? 0.82 : 1}
-                    disabled={!purchaseId}
-                    onPress={() => handleOpenExpense(purchase)}
-                  >
-                    <View style={styles.expenseText}>
-                      <Text style={styles.expenseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
-                      <Text style={styles.expenseMeta}>
-                        {[formatShortDate(purchase.date), unitDetail].filter(Boolean).join(' / ')}
-                      </Text>
-                    </View>
-                    <Text style={styles.expenseAmount}>{formatCurrency(purchase.amount)}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {purchaseHistory.length > 0 ? (
+              <View style={styles.supportBlock}>
+                <Text style={styles.supportBlockTitle}>Recent purchases</Text>
+                <View style={styles.expenseList}>
+                  {purchaseHistory.slice().reverse().map((purchase) => {
+                    const unitDetail = purchase.estimated_unit_price != null
+                      ? `${formatCurrency(purchase.estimated_unit_price)} / ${purchase.normalized_total_size_unit || 'unit'}`
+                      : null;
+                    const purchaseId = purchase.id || purchase.expense_id || null;
+                    return (
+                      <TouchableOpacity
+                        key={purchaseId || `${purchase.date}:${purchase.merchant}:${purchase.amount}`}
+                        style={styles.expenseRow}
+                        activeOpacity={purchaseId ? 0.82 : 1}
+                        disabled={!purchaseId}
+                        onPress={() => handleOpenExpense(purchase)}
+                      >
+                        <View style={styles.expenseText}>
+                          <Text style={styles.expenseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
+                          <Text style={styles.expenseMeta}>
+                            {[formatShortDate(purchase.date), unitDetail].filter(Boolean).join(' / ')}
+                          </Text>
+                        </View>
+                        <Text style={styles.expenseAmount}>{formatCurrency(purchase.amount)}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
+            {evidenceMode ? (
+              <View style={styles.supportBlock}>
+                <Text style={styles.supportBlockTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
+                {evidenceLoading ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator color="#d4d4d4" size="small" />
+                    <Text style={styles.loadingText}>Loading recent activity...</Text>
+                  </View>
+                ) : evidenceRows.length > 0 ? (
+                  <View style={styles.expenseList}>
+                    {evidenceRows.map((expense, index) => (
+                      <TouchableOpacity
+                        key={expense.id || `${expense.merchant || 'expense'}:${index}`}
+                        style={styles.expenseRow}
+                        activeOpacity={expense.id ? 0.82 : 1}
+                        disabled={!expense.id}
+                        onPress={() => handleOpenExpense(expense)}
+                      >
+                        <View style={styles.expenseText}>
+                          <Text style={styles.expenseMerchant}>{expense.merchant || 'Unknown merchant'}</Text>
+                          <Text style={styles.expenseMeta}>
+                            {[formatShortDate(expense.date), expense.category_name, expense.user_name].filter(Boolean).join(' / ')}
+                          </Text>
+                        </View>
+                        <Text style={styles.expenseAmount}>{formatCurrency(expense.amount)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.cardCopy}>No matching recent expenses are available for this card yet.</Text>
+                )}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -719,41 +759,6 @@ export default function InsightDetailScreen() {
                 ))}
               </View>
             ) : null}
-          </View>
-        ) : null}
-
-        {evidenceMode ? (
-          <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>Supporting activity</Text>
-            <Text style={styles.cardTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
-            {evidenceLoading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color="#d4d4d4" size="small" />
-                <Text style={styles.loadingText}>Loading recent activity...</Text>
-              </View>
-            ) : evidenceRows.length > 0 ? (
-              <View style={styles.expenseList}>
-                {evidenceRows.map((expense, index) => (
-                  <TouchableOpacity
-                    key={expense.id || `${expense.merchant || 'expense'}:${index}`}
-                    style={styles.expenseRow}
-                    activeOpacity={expense.id ? 0.82 : 1}
-                    disabled={!expense.id}
-                    onPress={() => handleOpenExpense(expense)}
-                  >
-                    <View style={styles.expenseText}>
-                      <Text style={styles.expenseMerchant}>{expense.merchant || 'Unknown merchant'}</Text>
-                      <Text style={styles.expenseMeta}>
-                        {[formatShortDate(expense.date), expense.category_name, expense.user_name].filter(Boolean).join(' / ')}
-                      </Text>
-                    </View>
-                    <Text style={styles.expenseAmount}>{formatCurrency(expense.amount)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.cardCopy}>No matching recent expenses are available for this card yet.</Text>
-            )}
           </View>
         ) : null}
 
@@ -880,6 +885,16 @@ const styles = StyleSheet.create({
   heroCopy: { color: '#d4d4d4', fontSize: 15, lineHeight: 22 },
   heroFacts: { color: '#f5f5f5', fontSize: 13, lineHeight: 18, fontWeight: '700' },
   heroContext: { color: '#9d9d9d', fontSize: 13, lineHeight: 19 },
+  contextBanner: {
+    backgroundColor: '#101412',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1f2c26',
+    padding: 14,
+    gap: 10,
+  },
+  contextBannerTitle: { color: '#def7e8', fontSize: 14, fontWeight: '700' },
+  contextBannerCopy: { color: '#b8d8c4', fontSize: 13, lineHeight: 19 },
   card: {
     backgroundColor: '#111',
     borderRadius: 8,
@@ -890,6 +905,7 @@ const styles = StyleSheet.create({
   },
   cardEyebrow: { color: '#8a8a8a', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   cardTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '700' },
+  cardSupportTitle: { color: '#e5e5e5', fontSize: 12, fontWeight: '700', marginTop: 2 },
   cardCopy: { color: '#b8b8b8', fontSize: 13, lineHeight: 19 },
   foldedList: { gap: 8 },
   foldedRow: {
@@ -932,6 +948,8 @@ const styles = StyleSheet.create({
   technicalHeaderText: { flex: 1, gap: 4 },
   technicalToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
   metricList: { gap: 0 },
+  supportBlock: { gap: 10 },
+  supportBlockTitle: { color: '#e5e5e5', fontSize: 13, fontWeight: '700' },
   metricRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
