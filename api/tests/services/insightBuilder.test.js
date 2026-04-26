@@ -248,6 +248,68 @@ describe('insightBuilder orchestration', () => {
     }))).toBe('projection');
   });
 
+  it('prefers more time-relevant recurring reminders over distant ones', () => {
+    const soonDue = buildInsight({
+      id: 'due-soon',
+      type: 'recurring_repurchase_due',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        maturity: 'mature',
+        confidence: 'observed',
+        days_until_due: 1,
+        average_gap_days: 14,
+        occurrence_count: 4,
+      },
+    });
+    const laterDue = buildInsight({
+      id: 'due-later',
+      type: 'recurring_repurchase_due',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        maturity: 'mature',
+        confidence: 'observed',
+        days_until_due: 9,
+        average_gap_days: 14,
+        occurrence_count: 4,
+      },
+    });
+
+    expect(scoreInsightCandidate(soonDue).surface_score).toBeGreaterThan(scoreInsightCandidate(laterDue).surface_score);
+  });
+
+  it('prefers fresher price opportunities over stale ones', () => {
+    const freshOpportunity = buildInsight({
+      id: 'fresh-opportunity',
+      type: 'buy_soon_better_price',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        maturity: 'developing',
+        confidence: 'observed',
+        discount_percent: 16,
+        observed_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        days_until_due: 2,
+      },
+    });
+    const staleOpportunity = buildInsight({
+      id: 'stale-opportunity',
+      type: 'buy_soon_better_price',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        maturity: 'developing',
+        confidence: 'observed',
+        discount_percent: 16,
+        observed_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+        days_until_due: 2,
+      },
+    });
+
+    expect(scoreInsightCandidate(freshOpportunity).surface_score).toBeGreaterThan(scoreInsightCandidate(staleOpportunity).surface_score);
+  });
+
   it('classifies item-history insights into useful families and clusters', () => {
     expect(portfolioRole(buildInsight({
       type: 'item_staple_merchant_opportunity',

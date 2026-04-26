@@ -59,6 +59,72 @@ function numericEvidenceScore(insight) {
   return Math.min(score, 36);
 }
 
+function parseInsightAnchorDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function daysSince(value) {
+  const date = parseInsightAnchorDate(value);
+  if (!date) return null;
+  const diffMs = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function temporalRelevanceScore(insight) {
+  const metadata = insight?.metadata || {};
+  const type = `${insight?.type || ''}`.trim();
+
+  if (type === 'recurring_repurchase_due') {
+    const daysUntilDue = Number(metadata.days_until_due);
+    if (!Number.isFinite(daysUntilDue)) return 0;
+    if (daysUntilDue <= 0) return 18;
+    if (daysUntilDue <= 2) return 14;
+    if (daysUntilDue <= 5) return 10;
+    if (daysUntilDue <= 10) return 4;
+    return 0;
+  }
+
+  if (type === 'recurring_restock_window') {
+    const daysUntilDue = Number(metadata.days_until_due);
+    if (!Number.isFinite(daysUntilDue)) return 0;
+    if (daysUntilDue <= 1) return 14;
+    if (daysUntilDue <= 4) return 10;
+    if (daysUntilDue <= 7) return 6;
+    return 2;
+  }
+
+  if (type === 'buy_soon_better_price') {
+    const observedAge = daysSince(metadata.observed_at);
+    if (observedAge == null) return 0;
+    if (observedAge <= 1) return 16;
+    if (observedAge <= 3) return 12;
+    if (observedAge <= 7) return 6;
+    return 0;
+  }
+
+  if (
+    type === 'recurring_price_spike'
+    || type === 'recurring_better_than_usual'
+    || type === 'recurring_cheaper_elsewhere'
+    || type === 'recurring_cost_pressure'
+    || type === 'item_merchant_variance'
+    || type === 'item_staple_merchant_opportunity'
+    || type === 'item_staple_emerging'
+  ) {
+    const recentAge = daysSince(metadata.latest_date || metadata.last_purchased_at);
+    if (recentAge == null) return 0;
+    if (recentAge <= 3) return 12;
+    if (recentAge <= 7) return 8;
+    if (recentAge <= 14) return 4;
+    return 0;
+  }
+
+  return 0;
+}
+
 function evidenceStrengthScore(insight) {
   return historicalEvidenceScore(insight) + confidenceComponentScore(insight) + numericEvidenceScore(insight);
 }
@@ -95,7 +161,7 @@ function scopeRelevanceScore(insight) {
   if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 14;
   if (insight?.metadata?.scope === 'personal') return 16;
   if (insight?.metadata?.scope === 'household') return 6;
-  return 4;
+  return 0;
 }
 
 function knownTypeShownCount(typePreferences = [], insightType = '') {
@@ -277,6 +343,7 @@ function scoreInsightCandidate(insight, feedbackSummary = new Map(), preferenceS
     maturity: maturityComponentScore(insight),
     actionability: actionabilityScore(insight),
     evidence: evidenceStrengthScore(insight),
+    temporal_relevance: temporalRelevanceScore(insight),
     scope_relevance: scopeRelevanceScore(insight),
     destination: insightDestinationAdjustment(insight) * 4,
     novelty: noveltyScore(insight, preferenceSummary),
