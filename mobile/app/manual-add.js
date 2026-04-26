@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Platform, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import { Alert, Modal, Platform, Pressable, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
@@ -36,7 +36,7 @@ function moneyInput(value = '') {
 export default function ManualAddScreen() {
   const router = useRouter();
   const draft = useMemo(() => createManualExpenseDraft(), []);
-  const { categories } = useCategories();
+  const { categories, loading: categoriesLoading } = useCategories();
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState(draft.merchant || '');
   const [notes, setNotes] = useState(draft.notes || '');
@@ -51,15 +51,32 @@ export default function ManualAddScreen() {
   const [budgetExclusionReason, setBudgetExclusionReason] = useState(null);
   const [locationData, setLocationData] = useState(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [categoryQuery, setCategoryQuery] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const topCategories = categories.slice(0, 10);
+  const topCategories = categories.slice(0, 8);
   const selectedCategory = categories.find((category) => category.id === categoryId) || null;
+  const filteredCategories = useMemo(() => {
+    const query = categoryQuery.trim().toLowerCase();
+    if (!query) return categories;
+    return categories.filter((category) => `${category.name || ''}`.toLowerCase().includes(query));
+  }, [categories, categoryQuery]);
   const canSave = Number(amount) > 0 && merchant.trim().length > 0 && !saving;
 
   function onDateChange(_, selectedDate) {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (selectedDate) setDate(toLocalDateString(selectedDate));
+  }
+
+  function closeCategoryPicker() {
+    setCategoryPickerOpen(false);
+    setCategoryQuery('');
+  }
+
+  function selectCategory(nextCategoryId) {
+    setCategoryId(nextCategoryId);
+    closeCategoryPicker();
   }
 
   async function handleSave() {
@@ -120,10 +137,20 @@ export default function ManualAddScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <View style={styles.hero}>
-          <Text style={styles.eyebrow}>Manual add</Text>
-          <Text style={styles.title}>Log it quickly</Text>
-          <Text style={styles.subtitle}>Start with the few things you always care about. Add the rest only if it helps.</Text>
+        <View style={styles.heroRow}>
+          <View style={styles.hero}>
+            <Text style={styles.eyebrow}>Manual add</Text>
+            <Text style={styles.title}>Log it quickly</Text>
+            <Text style={styles.subtitle}>Start with the few things you always care about. Add the rest only if it helps.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Close manual add"
+          >
+            <Ionicons name="close" size={18} color="#f5f5f5" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
@@ -174,9 +201,12 @@ export default function ManualAddScreen() {
 
             <View style={[styles.fieldBlock, styles.rowField]}>
               <Text style={styles.fieldLabel}>Category</Text>
-              <Text style={styles.selectedMeta} numberOfLines={1}>
-                {selectedCategory?.name || 'Optional'}
-              </Text>
+              <TouchableOpacity style={styles.selectorButton} onPress={() => setCategoryPickerOpen(true)} activeOpacity={0.82}>
+                <Text style={styles.selectorButtonText} numberOfLines={1}>
+                  {selectedCategory?.name || 'Choose a category'}
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -190,27 +220,11 @@ export default function ManualAddScreen() {
             />
           ) : null}
 
-          <View style={styles.chipWrap}>
-            <TouchableOpacity
-              style={[styles.categoryChip, !categoryId && styles.categoryChipActive]}
-              onPress={() => setCategoryId(null)}
-            >
-              <Text style={[styles.categoryChipText, !categoryId && styles.categoryChipTextActive]}>Unassigned</Text>
-            </TouchableOpacity>
-            {topCategories.map((category) => {
-              const active = category.id === categoryId;
-              return (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[styles.categoryChip, active && styles.categoryChipActive]}
-                  onPress={() => setCategoryId(category.id)}
-                >
-                  <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]} numberOfLines={1}>
-                    {category.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View style={styles.inlineHints}>
+            <Text style={styles.inlineHintTitle}>Try a few ways to pick</Text>
+            <Text style={styles.inlineHintBody}>
+              Use common choices, search, or browse the full list.
+            </Text>
           </View>
         </View>
 
@@ -348,6 +362,102 @@ export default function ManualAddScreen() {
           </TouchableOpacity>
         </View>
       </DismissKeyboardScrollView>
+
+      <Modal
+        visible={categoryPickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={closeCategoryPicker}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={closeCategoryPicker} />
+        <SafeAreaView style={styles.categoryModalShell} edges={['bottom']}>
+          <View style={styles.categoryModal}>
+            <View style={styles.categoryModalHeader}>
+              <View style={styles.categoryModalHeaderCopy}>
+                <Text style={styles.categoryModalEyebrow}>Category</Text>
+                <Text style={styles.categoryModalTitle}>Pick the closest fit</Text>
+              </View>
+              <TouchableOpacity style={styles.categoryModalClose} onPress={closeCategoryPicker}>
+                <Ionicons name="close" size={18} color="#f5f5f5" />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.categorySearchInput}
+              value={categoryQuery}
+              onChangeText={setCategoryQuery}
+              placeholder="Search categories"
+              placeholderTextColor="#666"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+
+            <ScrollView
+              style={styles.categoryModalScroll}
+              contentContainerStyle={styles.categoryModalContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.categorySection}>
+                <Text style={styles.categorySectionTitle}>Common choices</Text>
+                <View style={styles.categoryGrid}>
+                  <TouchableOpacity
+                    style={[styles.categoryOptionCard, !categoryId && styles.categoryOptionCardActive]}
+                    onPress={() => selectCategory(null)}
+                  >
+                    <Text style={[styles.categoryOptionCardText, !categoryId && styles.categoryOptionCardTextActive]}>
+                      Leave unassigned
+                    </Text>
+                  </TouchableOpacity>
+                  {topCategories.map((category) => {
+                    const active = category.id === categoryId;
+                    return (
+                      <TouchableOpacity
+                        key={category.id}
+                        style={[styles.categoryOptionCard, active && styles.categoryOptionCardActive]}
+                        onPress={() => selectCategory(category.id)}
+                      >
+                        <Text style={[styles.categoryOptionCardText, active && styles.categoryOptionCardTextActive]} numberOfLines={2}>
+                          {category.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.categorySection}>
+                <Text style={styles.categorySectionTitle}>
+                  {categoryQuery.trim() ? 'Search results' : 'All categories'}
+                </Text>
+                {categoriesLoading ? (
+                  <View style={styles.categoryLoadingRow}>
+                    <ActivityIndicator color="#f5f5f5" size="small" />
+                    <Text style={styles.categoryLoadingText}>Loading categories...</Text>
+                  </View>
+                ) : filteredCategories.length ? (
+                  <View style={styles.categoryList}>
+                    {filteredCategories.map((category) => {
+                      const active = category.id === categoryId;
+                      return (
+                        <TouchableOpacity
+                          key={category.id}
+                          style={styles.categoryListRow}
+                          onPress={() => selectCategory(category.id)}
+                        >
+                          <Text style={styles.categoryListText}>{category.name}</Text>
+                          {active ? <Ionicons name="checkmark" size={18} color="#f5f5f5" /> : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.categoryEmptyText}>No categories matched that search.</Text>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -356,10 +466,22 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 42, gap: 16 },
-  hero: { gap: 6 },
+  heroRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  hero: { flex: 1, gap: 6 },
   eyebrow: { fontSize: 11, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 30, color: '#f5f5f5', fontWeight: '700', lineHeight: 34 },
   subtitle: { fontSize: 14, color: '#a3a3a3', lineHeight: 20 },
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#171717',
+    borderWidth: 1,
+    borderColor: '#262626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
   card: {
     backgroundColor: '#111',
     borderWidth: 1,
@@ -406,6 +528,25 @@ const styles = StyleSheet.create({
   },
   dateButtonText: { color: '#fff', fontSize: 15 },
   selectedMeta: { color: '#cfcfcf', fontSize: 15, lineHeight: 20 },
+  selectorButton: {
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#282828',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  selectorButtonText: { color: '#f5f5f5', fontSize: 15, flex: 1 },
+  inlineHints: {
+    gap: 4,
+    paddingTop: 2,
+  },
+  inlineHintTitle: { color: '#d4d4d4', fontSize: 13, fontWeight: '600' },
+  inlineHintBody: { color: '#7f7f7f', fontSize: 12, lineHeight: 17 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
     borderRadius: 999,
@@ -471,4 +612,96 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: { opacity: 0.45 },
   saveButtonText: { color: '#000', fontSize: 15, fontWeight: '700' },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  categoryModalShell: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  categoryModal: {
+    maxHeight: '84%',
+    backgroundColor: '#0f0f10',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: '#202020',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 18,
+    gap: 14,
+  },
+  categoryModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  categoryModalHeaderCopy: { flex: 1, gap: 4 },
+  categoryModalEyebrow: { color: '#8a8a8a', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
+  categoryModalTitle: { color: '#f5f5f5', fontSize: 22, fontWeight: '700' },
+  categoryModalClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#171717',
+    borderWidth: 1,
+    borderColor: '#262626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categorySearchInput: {
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#282828',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    color: '#fff',
+    fontSize: 15,
+  },
+  categoryModalScroll: { flexGrow: 0 },
+  categoryModalContent: { paddingBottom: 8, gap: 18 },
+  categorySection: { gap: 10 },
+  categorySectionTitle: { color: '#a0a0a0', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  categoryOptionCard: {
+    minWidth: '47%',
+    flexGrow: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#171717',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  categoryOptionCardActive: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#f5f5f5',
+  },
+  categoryOptionCardText: { color: '#d4d4d4', fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  categoryOptionCardTextActive: { color: '#000' },
+  categoryList: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#202020',
+    backgroundColor: '#151515',
+    overflow: 'hidden',
+  },
+  categoryListRow: {
+    minHeight: 52,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#202020',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  categoryListText: { color: '#f1f1f1', fontSize: 15, flex: 1 },
+  categoryEmptyText: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
+  categoryLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  categoryLoadingText: { color: '#bcbcbc', fontSize: 13 },
 });
