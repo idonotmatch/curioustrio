@@ -125,6 +125,52 @@ function temporalRelevanceScore(insight) {
   return 0;
 }
 
+function isExpiredInsight(insight) {
+  const expiresAt = parseInsightAnchorDate(insight?.expires_at);
+  if (!expiresAt) return false;
+  return expiresAt.getTime() < Date.now();
+}
+
+function temporalStalenessReason(insight) {
+  const metadata = insight?.metadata || {};
+  const type = `${insight?.type || ''}`.trim();
+
+  if (isExpiredInsight(insight)) return 'expired_insight';
+
+  if (type === 'buy_soon_better_price') {
+    const observedAge = daysSince(metadata.observed_at);
+    if (observedAge != null && observedAge > 10) return 'stale_temporal_window';
+    return null;
+  }
+
+  if (type === 'recurring_restock_window') {
+    const daysUntilDue = Number(metadata.days_until_due);
+    if (Number.isFinite(daysUntilDue) && daysUntilDue < -3) return 'stale_temporal_window';
+    return null;
+  }
+
+  if (type === 'recurring_repurchase_due') {
+    const daysUntilDue = Number(metadata.days_until_due);
+    if (Number.isFinite(daysUntilDue) && daysUntilDue < -10) return 'stale_temporal_window';
+    return null;
+  }
+
+  if (
+    type === 'recurring_price_spike'
+    || type === 'recurring_better_than_usual'
+    || type === 'recurring_cheaper_elsewhere'
+    || type === 'recurring_cost_pressure'
+    || type === 'item_merchant_variance'
+    || type === 'item_staple_merchant_opportunity'
+    || type === 'item_staple_emerging'
+  ) {
+    const recentAge = daysSince(metadata.latest_date || metadata.last_purchased_at);
+    if (recentAge != null && recentAge > 21) return 'stale_temporal_window';
+  }
+
+  return null;
+}
+
 function evidenceStrengthScore(insight) {
   return historicalEvidenceScore(insight) + confidenceComponentScore(insight) + numericEvidenceScore(insight);
 }
@@ -289,6 +335,9 @@ function surfaceGuardReasons(insight, preferenceSummary = {}) {
   const maturity = `${metadata.maturity || ''}`.trim();
   const shownCount = knownTypeShownCount(preferenceSummary.type_preferences, insight?.type);
   const evidenceScore = evidenceStrengthScore(insight);
+  const staleReason = temporalStalenessReason(insight);
+
+  if (staleReason) reasons.push(staleReason);
 
   if ((metadata.merchant_key === 'unknown' || metadata.merchant_name === 'Unknown merchant') && metadata.merchant_key) {
     reasons.push('unknown_merchant_anchor');

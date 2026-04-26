@@ -121,6 +121,25 @@ describe('insightBuilder orchestration', () => {
     expect(decision.surface_score).toBeGreaterThanOrEqual(decision.threshold);
   });
 
+  it('suppresses stale recurring opportunity insights instead of just ranking them lower', () => {
+    const decision = insightSurfaceDecision(buildInsight({
+      type: 'buy_soon_better_price',
+      severity: 'medium',
+      metadata: {
+        scope: 'personal',
+        month: '2026-04',
+        maturity: 'mature',
+        confidence: 'comparative',
+        observed_at: '2026-04-01T12:00:00.000Z',
+        days_until_due: 2,
+      },
+      expires_at: '2026-04-12T12:00:00.000Z',
+    }));
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.suppression_reasons).toContain('expired_insight');
+  });
+
   it('penalizes and can suppress category insights built on weak category trust', () => {
     const strongDecision = insightSurfaceDecision(buildInsight({
       id: 'strong-category',
@@ -674,6 +693,31 @@ describe('insightBuilder orchestration', () => {
 
     expect(insights).toHaveLength(1);
     expect(insights[0].type).toBe('usage_ready_to_plan');
+  });
+
+  it('builds directional planning fallback before mature history when current activity is already strong', () => {
+    const insights = buildUsageFallbackInsights({
+      user: { id: 'user-1' },
+      projection: {
+        month: '2026-04',
+        overall: {
+          current_spend_to_date: 160,
+          historical_period_count: 1,
+          history_stage: 'early',
+        },
+        current_activity: {
+          expense_count: 5,
+          active_day_count: 3,
+        },
+      },
+      budgetLimit: 500,
+      scope: 'personal',
+    });
+
+    expect(insights).toHaveLength(1);
+    expect(insights[0].type).toBe('usage_ready_to_plan');
+    expect(insights[0].title).toBe('You can start planning with directional reads now');
+    expect(insights[0].metadata.planning_confidence).toBe('directional');
   });
 
   it('builds quiet-period fallback copy when supplementing a thin rail', () => {

@@ -1100,10 +1100,17 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const projectionOverall = projection?.overall || {};
+  const currentActivity = projection?.current_activity || {};
   const historicalPeriodCount = Number(projectionOverall.historical_period_count || 0);
   const currentSpendToDate = Number(projectionOverall.current_spend_to_date || 0);
+  const currentExpenseCount = Number(currentActivity.expense_count || 0);
+  const currentActiveDayCount = Number(currentActivity.active_day_count || 0);
   const scopeLabel = scope === 'household' ? 'household' : 'personal';
   const isQuietPeriod = context === 'quiet_period';
+  const directionalPlanningReady = historicalPeriodCount >= 1
+    && currentExpenseCount >= 4
+    && currentActiveDayCount >= 3
+    && currentSpendToDate >= 75;
   const withLineage = (insights) => insights.map(annotateInsightScopeLineage);
 
   if (currentSpendToDate <= 0) {
@@ -1161,6 +1168,41 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
   }
 
   if (historicalPeriodCount < 3) {
+    if (directionalPlanningReady) {
+      return withLineage([{
+        id: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}:directional`,
+        type: 'usage_ready_to_plan',
+        title: isQuietPeriod
+          ? 'Quiet month, you can start planning with directional reads'
+          : 'You can start planning with directional reads now',
+        body: isQuietPeriod
+          ? (scope === 'household'
+            ? `This month is still relatively calm, and Adlo already has enough shared activity to pressure-test smaller household purchases directionally while the baseline keeps maturing.`
+            : `This month is still relatively calm, and Adlo already has enough activity to pressure-test smaller purchases directionally while your baseline keeps maturing.`)
+          : (scope === 'household'
+            ? `Adlo only has ${historicalPeriodCount} completed shared ${historicalPeriodCount === 1 ? 'period' : 'periods'}, but ${currentExpenseCount} expenses across ${currentActiveDayCount} days is enough to start pressure-testing smaller household purchases directionally.`
+            : `Adlo only has ${historicalPeriodCount} completed ${historicalPeriodCount === 1 ? 'period' : 'periods'}, but ${currentExpenseCount} expenses across ${currentActiveDayCount} days is enough to start pressure-testing smaller purchases directionally.`),
+        severity: 'low',
+        entity_type: 'budget_period',
+        entity_id: `${scopeLabel}:${projection?.month || 'current'}`,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          scope: scopeLabel,
+          month: projection?.month || null,
+          historical_period_count: historicalPeriodCount,
+          history_stage: projectionOverall.history_stage || null,
+          current_expense_count: currentExpenseCount,
+          current_active_day_count: currentActiveDayCount,
+          planning_confidence: 'directional',
+          usage_fallback: true,
+          usage_context: context,
+          continuity_key: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}`,
+        },
+        actions: [],
+      }]);
+    }
+
     return withLineage([{
       id: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
       type: 'usage_building_history',
@@ -1183,6 +1225,7 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
         scope: scopeLabel,
         month: projection?.month || null,
         historical_period_count: historicalPeriodCount,
+        history_stage: projectionOverall.history_stage || null,
         usage_fallback: true,
         usage_context: context,
         continuity_key: `usage_building_history:${scopeLabel}:${projection?.month || 'current'}`,
@@ -1213,6 +1256,8 @@ function buildUsageFallbackInsights({ user, projection, budgetLimit = null, scop
       scope: scopeLabel,
       month: projection?.month || null,
       historical_period_count: historicalPeriodCount,
+      history_stage: projectionOverall.history_stage || null,
+      planning_confidence: historicalPeriodCount >= 3 ? 'baseline' : 'directional',
       usage_fallback: true,
       usage_context: context,
       continuity_key: `usage_ready_to_plan:${scopeLabel}:${projection?.month || 'current'}`,

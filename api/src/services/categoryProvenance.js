@@ -8,7 +8,12 @@ function categoryProvenanceWeight(expense = {}) {
   const confidence = Number(expense?.category_confidence ?? 0);
 
   if (source === 'decision_memory') return 1;
-  if (source === 'memory') return confidence >= 4 ? 0.98 : 0.95;
+  if (source === 'memory') {
+    if (confidence >= 4) return 0.98;
+    if (confidence >= 3) return 0.88;
+    if (confidence >= 2) return 0.74;
+    return 0.6;
+  }
   if (source === 'description_memory') return 0.82;
   if (source === 'heuristic') return 0.76;
   if (source === 'manual_edit') return 0.88;
