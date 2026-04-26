@@ -238,8 +238,76 @@ function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
     structured_item_block_strong_rate: toRate(structuredItemBlockStrongCount, imported),
     average_deterministic_item_count: imported ? Number((deterministicItemCountTotal / imported).toFixed(2)) : 0,
     learned_disposition: learnedDisposition,
+    level: classifyTemplateMetrics({
+      imported,
+      clean_approval_rate: toRate(cleanApproved, imported),
+      dismissal_rate: toRate(dismissed, imported),
+      edit_rate: toRate(edited, imported),
+      structured_item_block_strong_rate: toRate(structuredItemBlockStrongCount, imported),
+    }),
     force_import_review: learnedDisposition === 'transactional',
     should_skip_prequeue: learnedDisposition === 'non_transactional',
+  };
+}
+
+function classifyTemplateMetrics(metrics = {}) {
+  const imported = Number(metrics.imported || 0);
+  if (imported < 2) return 'unknown';
+  const cleanApprovalRate = Number(metrics.clean_approval_rate || 0);
+  const dismissalRate = Number(metrics.dismissal_rate || 0);
+  const editRate = Number(metrics.edit_rate || 0);
+  const strongItemRate = Number(metrics.structured_item_block_strong_rate || 0);
+
+  if (strongItemRate >= 0.5 && dismissalRate <= 0.2) return 'structured';
+  if (cleanApprovalRate >= 0.65 && dismissalRate <= 0.15 && editRate <= 0.25) return 'trusted';
+  if (dismissalRate >= 0.45 || editRate >= 0.5) return 'noisy';
+  return 'mixed';
+}
+
+function automationRecommendation(senderQuality = {}, templateQuality = null) {
+  const senderLevel = `${senderQuality?.level || 'unknown'}`;
+  const reviewMode = recommendReviewMode({
+    ...senderQuality,
+    template_quality: templateQuality || senderQuality?.template_quality,
+  });
+  const templateLevel = `${templateQuality?.level || 'unknown'}`;
+
+  if (senderQuality?.sender_preference?.force_review) {
+    return {
+      level: 'manual_only',
+      label: 'Manual review only',
+      reason: 'You have this sender pinned to manual review.',
+      suggested_review_mode: 'full_review',
+    };
+  }
+
+  if (reviewMode === 'quick_check' && senderLevel === 'trusted') {
+    return {
+      level: 'fast_lane',
+      label: 'Likely quick approve',
+      reason: ['trusted', 'structured'].includes(templateLevel)
+        ? 'This sender and template are usually clean enough for a quick confirmation.'
+        : 'This sender is usually clean enough for a quick confirmation.',
+      suggested_review_mode: 'quick_check',
+    };
+  }
+
+  if (reviewMode === 'items_first' || templateLevel === 'structured') {
+    return {
+      level: 'item_check',
+      label: 'Likely item check',
+      reason: 'This template usually exposes useful line items, so checking the basket first should be the fastest path.',
+      suggested_review_mode: 'items_first',
+    };
+  }
+
+  return {
+    level: 'full_review',
+    label: 'Review details',
+    reason: senderLevel === 'noisy'
+      ? 'This sender often needs corrections or gets dismissed.'
+      : 'This import still looks like a better fit for a fuller review.',
+    suggested_review_mode: 'full_review',
   };
 }
 
@@ -329,6 +397,13 @@ function buildTemplateSummary(rows = [], limit = 8) {
         ? Number((entry.deterministic_item_count_total / entry.imported).toFixed(2))
         : 0,
       learned_disposition: inferTemplateDisposition(entry.subject_pattern, entry.imported, entry.approved, entry.dismissed),
+      level: classifyTemplateMetrics({
+        imported: entry.imported,
+        clean_approval_rate: toRate(entry.approved, entry.imported),
+        dismissal_rate: toRate(entry.dismissed, entry.imported),
+        edit_rate: toRate(entry.edited, entry.imported),
+        structured_item_block_strong_rate: toRate(entry.structured_item_block_strong_count, entry.imported),
+      }),
       top_skip_reasons: [...entry.top_skip_reasons.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 2)
@@ -351,6 +426,7 @@ function recommendReviewMode(senderQuality = {}) {
   const dominantDismissReason = frequentDismissReason(senderQuality);
   const structuredTemplateStrength = Number(senderQuality?.template_quality?.structured_item_block_strong_rate || 0);
   const structuredTemplateCount = Number(senderQuality?.template_quality?.structured_item_block_strong_count || 0);
+  const templateDisposition = `${senderQuality?.template_quality?.learned_disposition || 'unknown'}`;
 
   if ([
     'not_an_expense',
@@ -360,6 +436,10 @@ function recommendReviewMode(senderQuality = {}) {
     'wrong_details',
   ].includes(dominantDismissReason)) {
     return 'full_review';
+  }
+
+  if (senderLevel === 'trusted' && templateDisposition === 'transactional' && itemLevel !== 'noisy') {
+    return 'quick_check';
   }
 
   if (senderLevel === 'trusted' && (itemLevel === 'trusted' || fastLaneEligible)) {
@@ -684,6 +764,16 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const review_path_reliability = senderSummary.review_path_reliability || summarizeReviewPathReliability([], metrics);
   const item_reliability = summarizeItemReliability(senderRows);
   const template_quality = summarizeTemplateRows(rows, fromAddress, subject);
+  const automation = automationRecommendation({
+    ...senderSummary,
+    level,
+    sender_preference: senderPreference
+      ? { force_review: !!senderPreference.force_review }
+      : { force_review: false },
+    review_path_reliability,
+    item_reliability,
+    template_quality,
+  }, template_quality);
 
   return {
     sender_domain: senderDomain,
@@ -694,6 +784,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
     review_path_reliability,
     item_reliability,
     template_quality,
+    automation_recommendation: automation,
     sender_preference: senderPreference
       ? { force_review: !!senderPreference.force_review }
       : { force_review: false },
@@ -706,6 +797,8 @@ module.exports = {
   extractSubjectPattern,
   getSenderImportQuality,
   classifySenderMetrics,
+  classifyTemplateMetrics,
+  automationRecommendation,
   frequentDismissReason,
   recommendReviewMode,
 };

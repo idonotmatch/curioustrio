@@ -254,6 +254,34 @@ describe('assignCategory', () => {
     });
   });
 
+  it('uses merchant context to separate Uber rides from Uber Eats', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
+    MerchantMapping.findByMerchant.mockResolvedValueOnce({
+      category_id: 'cat-travel-id',
+      hit_count: 2,
+    });
+
+    const result = await assignCategory({
+      merchant: 'Uber',
+      description: 'Uber Eats order for dinner',
+      householdId: 'hh-1',
+      categories: [
+        ...mockCategories,
+        { id: 'cat-dining-id', name: 'Dining Out' },
+        { id: 'cat-travel-id', name: 'Travel' },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      category_id: 'cat-dining-id',
+      source: 'heuristic',
+      confidence: 3,
+    });
+    expect(result.reasoning).toMatchObject({
+      strategy: 'heuristic_context',
+    });
+  });
+
   it('does not use description-only memory when a merchant is present', async () => {
     CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce({
       category_id: 'cat-grocery-id',

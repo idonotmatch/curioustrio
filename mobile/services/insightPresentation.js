@@ -45,6 +45,8 @@ export function getInsightActionDescriptor(insight, context = {}) {
         return { label: 'Review item history', reason: 'Pattern forming' };
       case 'item_recent_price_jump':
         return { label: 'Review recent item price', reason: 'Price moved' };
+      case 'item_repurchase_accelerating':
+        return { label: 'Review item rhythm', reason: 'Buying faster' };
       case 'recurring_price_spike':
         return { label: 'Review recent prices', reason: 'Price changed' };
       case 'buy_soon_better_price':
@@ -164,6 +166,11 @@ export function getInsightPrimaryMetric(insight, context = {}) {
       case 'item_recent_price_jump':
       case 'buy_soon_better_price':
         return metric(formatPercentShort(metadata.delta_percent ?? metadata.discount_percent), 'price difference');
+      case 'item_repurchase_accelerating':
+        if (Number.isFinite(Number(metadata.latest_gap_days))) {
+          return metric(`${Number(metadata.latest_gap_days)}d`, 'latest gap');
+        }
+        return metric(formatCountLabel(metadata.occurrence_count, 'buy'), 'recent repeat rate');
       case 'item_staple_emerging':
         return metric(formatCountLabel(metadata.occurrence_count, 'buy'), 'recent repeat rate');
       case 'recurring_repurchase_due':
@@ -320,6 +327,7 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
       };
     case 'recurring_price_spike':
     case 'item_recent_price_jump':
+    case 'item_repurchase_accelerating':
     case 'buy_soon_better_price':
     case 'recurring_repurchase_due':
     case 'recurring_restock_window':

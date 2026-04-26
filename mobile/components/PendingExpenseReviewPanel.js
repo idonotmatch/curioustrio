@@ -13,6 +13,7 @@ export function PendingExpenseReviewPanel({
   treatmentSuggestionSummary,
   importMetaBits,
   emailSnippet,
+  automationRecommendation,
   priorityReviewFields,
   isItemsFirstReview,
   editing,
@@ -63,6 +64,16 @@ export function PendingExpenseReviewPanel({
         {importMetaBits.length ? <Text style={styles.reviewProvenanceMeta}>{importMetaBits.join('  ·  ')}</Text> : null}
         {emailSnippet ? <Text style={styles.reviewProvenanceSnippet} numberOfLines={2}>{emailSnippet}</Text> : null}
       </View>
+
+      {automationRecommendation?.label ? (
+        <View style={styles.reviewSuggestionCard}>
+          <View style={styles.reviewSuggestionCopy}>
+            <Text style={styles.reviewSuggestionEyebrow}>Likely fastest path</Text>
+            <Text style={styles.reviewSuggestionTitle}>{automationRecommendation.label}</Text>
+            <Text style={styles.reviewSuggestionDetail}>{automationRecommendation.reason}</Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.reviewSummaryCard}>
         <View style={styles.reviewSummaryHeader}>

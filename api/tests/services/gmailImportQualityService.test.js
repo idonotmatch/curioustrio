@@ -192,6 +192,9 @@ describe('gmailImportQualityService', () => {
         subject_pattern: 'amazon_order',
         force_import_review: true,
       }),
+      automation_recommendation: expect.objectContaining({
+        suggested_review_mode: 'quick_check',
+      }),
     });
 
     await expect(getSenderImportQuality('user-1', 'alerts@messy.com')).resolves.toMatchObject({
@@ -220,6 +223,24 @@ describe('gmailImportQualityService', () => {
           expect.objectContaining({ field: 'items_amount', count: 1 }),
           expect.objectContaining({ field: 'items_description', count: 1 }),
         ]),
+      }),
+    });
+  });
+
+  it('surfaces item-check automation when the template is structured but not a fast-lane quick approve', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { from_address: 'orders@shop.com', subject: 'Order confirmation', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['review_path_items_first', 'items_description'], structured_item_block_level: 'strong', deterministic_item_count: 4 },
+      { from_address: 'orders@shop.com', subject: 'Order confirmation', review_action: 'approved', review_edit_count: 1, review_changed_fields: ['review_path_items_first', 'items_amount'], structured_item_block_level: 'strong', deterministic_item_count: 5 },
+      { from_address: 'orders@shop.com', subject: 'Order confirmation', review_action: null, review_edit_count: 0, review_changed_fields: ['review_path_items_first'], structured_item_block_level: 'strong', deterministic_item_count: 6 },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'orders@shop.com', 'Order confirmation')).resolves.toMatchObject({
+      template_quality: expect.objectContaining({
+        level: 'structured',
+      }),
+      automation_recommendation: expect.objectContaining({
+        level: 'item_check',
+        suggested_review_mode: 'items_first',
       }),
     });
   });

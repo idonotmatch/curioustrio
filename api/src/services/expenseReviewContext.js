@@ -272,6 +272,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     ? senderQuality.top_changed_fields.map((entry) => entry.field).filter(Boolean)
     : [];
   const itemReliability = senderQuality?.item_reliability || null;
+  const automationRecommendation = senderQuality?.automation_recommendation || null;
   const fieldEvidence = deriveEmailFieldEvidence(expense, log);
   const reviewRouting = buildEmailReviewRouting(senderQuality, itemReliability, expense.review_mode || null);
 
@@ -290,6 +291,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
       item_reliability_level: itemReliability?.level || 'unknown',
       item_reliability_message: itemReliability?.message || null,
       item_top_signals: itemReliability?.top_signals || [],
+      automation_recommendation: automationRecommendation,
       review_mode: reviewRouting.review_mode,
       review_title: reviewRouting.review_title,
       review_message: reviewRouting.review_message,
@@ -329,6 +331,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     item_reliability_level: itemReliability?.level || 'unknown',
     item_reliability_message: itemReliability?.message || null,
     item_top_signals: itemReliability?.top_signals || [],
+    automation_recommendation: automationRecommendation,
     review_mode: reviewRouting.review_mode,
     review_title: reviewRouting.review_title,
     review_message: reviewRouting.review_message,
@@ -358,7 +361,7 @@ async function attachGmailReviewHint(expense, userId) {
   let senderQuality = { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
   if (log?.from_address) {
     try {
-      senderQuality = await getSenderImportQuality(userId, log.from_address);
+      senderQuality = await getSenderImportQuality(userId, log.from_address, log.subject || '');
     } catch (err) {
       console.error('[expenseReviewContext] gmail hint quality fallback:', err?.message || err);
       senderQuality = {

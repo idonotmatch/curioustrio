@@ -19,6 +19,7 @@ import { SummaryRecentActivity } from '../../components/SummaryRecentActivity';
 import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 import { toLocalDateString } from '../../services/date';
 import { stashNavigationPayload } from '../../services/navigationPayloadStore';
+import { saveInsightDetailSnapshot } from '../../services/insightLocalStore';
 import {
   getPastMonths,
   formatDate,
@@ -298,6 +299,7 @@ export default function SummaryScreen() {
 
     if (earlyDevelopingInsightTypes.has(insight?.type)) {
       const preloadedEvidence = buildPreloadedInsightEvidence(insight, expenses, householdExpenses);
+      saveInsightDetailSnapshot(insight, { preloadEvidence: preloadedEvidence }).catch(() => {});
       const payloadKey = stashNavigationPayload({
         metadata: insight.metadata || {},
         preloadEvidence: preloadedEvidence,
@@ -317,8 +319,24 @@ export default function SummaryScreen() {
       });
       return;
     }
-
-    Alert.alert(insight.title, insight.body);
+    saveInsightDetailSnapshot(insight, { preloadEvidence: [] }).catch(() => {});
+    const payloadKey = stashNavigationPayload({
+      metadata: insight.metadata || {},
+      preloadEvidence: [],
+    }, 'insight-detail');
+    router.push({
+      pathname: '/insight-detail',
+      params: {
+        insight_id: insight.id,
+        insight_type: insight.type,
+        title: insight.title,
+        body: insight.body,
+        severity: insight.severity || 'low',
+        entity_type: insight.entity_type || '',
+        entity_id: insight.entity_id || '',
+        payload_key: payloadKey,
+      },
+    });
   }
 
   const spent = Number(personalBudget?.total?.spent || 0);

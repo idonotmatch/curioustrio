@@ -9,6 +9,7 @@ import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../servi
 import { consumeNavigationPayload, stashNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { planningActionSummary } from '../services/planningPresentation';
+import { loadInsightDetailSnapshot } from '../services/insightLocalStore';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -292,17 +293,36 @@ export default function InsightDetailScreen() {
   const entityId = firstParam(params.entity_id);
   const metadataParam = firstParam(params.metadata);
   const preloadEvidenceParam = firstParam(params.preload_evidence);
+  const [storedSnapshot, setStoredSnapshot] = useState(null);
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
-  const metadata = useMemo(() => navPayload?.metadata || parseJsonParam(metadataParam, {}), [metadataParam, navPayload]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!insightId) return undefined;
+    loadInsightDetailSnapshot(insightId)
+      .then((snapshot) => {
+        if (!cancelled) setStoredSnapshot(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setStoredSnapshot(null);
+      });
+    return () => { cancelled = true; };
+  }, [insightId]);
+
+  const metadata = useMemo(
+    () => navPayload?.metadata || storedSnapshot?.insight?.metadata || parseJsonParam(metadataParam, {}),
+    [metadataParam, navPayload, storedSnapshot]
+  );
   const preloadedEvidence = useMemo(() => {
-    const rows = navPayload?.preloadEvidence || parseJsonParam(preloadEvidenceParam, []);
+    const rows = navPayload?.preloadEvidence
+      || storedSnapshot?.extras?.preloadEvidence
+      || parseJsonParam(preloadEvidenceParam, []);
     return Array.isArray(rows) ? rows : [];
-  }, [navPayload, preloadEvidenceParam]);
+  }, [navPayload, preloadEvidenceParam, storedSnapshot]);
 
   const insight = useMemo(() => ({
     id: `${insightId}`,

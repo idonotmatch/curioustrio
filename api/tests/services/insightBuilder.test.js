@@ -5,6 +5,7 @@ const {
   narrativeTheme,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
+  buildItemHistoryInsights,
   USAGE_INSIGHT_THRESHOLDS,
   summarizeExpenseRows,
   summarizeInsightList,
@@ -55,6 +56,7 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioRole(buildInsight({ type: 'projected_month_end_under_budget' }))).toBe('plan');
     expect(portfolioRole(buildInsight({ type: 'top_category_driver' }))).toBe('explain');
     expect(portfolioRole(buildInsight({ type: 'item_recent_price_jump' }))).toBe('act');
+    expect(portfolioRole(buildInsight({ type: 'item_repurchase_accelerating' }))).toBe('act');
   });
 
   it('prunes expired or stale generated candidates before they enter ranking', () => {
@@ -374,6 +376,10 @@ describe('insightBuilder orchestration', () => {
       metadata: { scope: 'personal', month: '2026-04' },
     }))).toBe('opportunity');
     expect(portfolioFamily(buildInsight({
+      type: 'item_repurchase_accelerating',
+      metadata: { scope: 'personal', month: '2026-04' },
+    }))).toBe('warning');
+    expect(portfolioFamily(buildInsight({
       type: 'item_staple_emerging',
       metadata: { scope: 'personal', month: '2026-04' },
     }))).toBe('explanation');
@@ -385,6 +391,34 @@ describe('insightBuilder orchestration', () => {
       type: 'item_merchant_variance',
       metadata: { scope: 'personal', month: '2026-04' },
     }))).toBe('recurring:personal:2026-04');
+  });
+
+  it('builds an accelerated item repurchase signal when the latest gap tightens materially', () => {
+    const insights = buildItemHistoryInsights([
+      {
+        group_key: 'beans',
+        item_name: 'Coffee beans',
+        occurrence_count: 4,
+        average_gap_days: 12,
+        median_amount: 18,
+        identity_confidence: 'medium',
+        last_purchased_at: '2026-04-24',
+        purchases: [
+          { date: '2026-03-18', amount: 17.99, merchant: 'Eight Ounce Coffee' },
+          { date: '2026-03-31', amount: 18.49, merchant: 'Eight Ounce Coffee' },
+          { date: '2026-04-15', amount: 18.99, merchant: 'Eight Ounce Coffee' },
+          { date: '2026-04-21', amount: 18.99, merchant: 'Eight Ounce Coffee' },
+        ],
+        merchant_breakdown: [],
+        merchants: ['Eight Ounce Coffee'],
+      },
+    ], 'personal');
+
+    const accelerating = insights.find((insight) => insight.type === 'item_repurchase_accelerating');
+    expect(accelerating).toBeTruthy();
+    expect(accelerating.title).toContain('sooner than usual');
+    expect(accelerating.metadata.latest_gap_days).toBe(6);
+    expect(accelerating.metadata.cadence_delta_days).toBe(6);
   });
 
   it('prefers a more diverse final portfolio over multiple similar cards', () => {

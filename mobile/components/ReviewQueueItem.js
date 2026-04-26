@@ -100,6 +100,8 @@ function reviewSubject(item = {}) {
 }
 
 export function reviewQueueGuidance(item = {}) {
+  const automationReason = `${item?.gmail_review_hint?.automation_recommendation?.reason || ''}`.trim();
+  if (automationReason) return automationReason;
   const itemCount = extractedItemCount(item);
   if (item?.gmail_review_hint?.review_mode === 'items_first' && itemCount > 0) {
     return `Review ${itemCount} extracted item${itemCount === 1 ? '' : 's'} before approving.`;
@@ -109,6 +111,8 @@ export function reviewQueueGuidance(item = {}) {
 
 export function reviewQueueLabel(item = {}) {
   if (item?.review_source === 'gmail' || item?.source === 'email') {
+    const automationLabel = `${item?.gmail_review_hint?.automation_recommendation?.label || ''}`.trim();
+    if (automationLabel) return `Gmail import · ${automationLabel}`;
     const mode = item?.gmail_review_hint?.review_mode;
     if (mode === 'quick_check') return 'Gmail import · Quick check';
     if (mode === 'items_first') return 'Gmail import · Items first';

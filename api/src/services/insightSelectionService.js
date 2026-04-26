@@ -113,6 +113,7 @@ function temporalRelevanceScore(insight) {
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_staple_emerging'
+    || type === 'item_repurchase_accelerating'
   ) {
     const recentAge = daysSince(metadata.latest_date || metadata.last_purchased_at);
     if (recentAge == null) return 0;
@@ -163,6 +164,7 @@ function temporalStalenessReason(insight) {
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_staple_emerging'
+    || type === 'item_repurchase_accelerating'
   ) {
     const recentAge = daysSince(metadata.latest_date || metadata.last_purchased_at);
     if (recentAge != null && recentAge > 21) return 'stale_temporal_window';
@@ -260,6 +262,7 @@ function portfolioRole(insight) {
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_recent_price_jump'
+    || type === 'item_repurchase_accelerating'
   ) return 'act';
 
   if (
@@ -473,6 +476,7 @@ function portfolioFamily(insight) {
     || type === 'recurring_price_spike'
     || type === 'recurring_cost_pressure'
     || type === 'item_recent_price_jump'
+    || type === 'item_repurchase_accelerating'
   ) return 'warning';
 
   if (
@@ -550,6 +554,7 @@ function narrativeClusterKey(insight) {
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_recent_price_jump'
+    || type === 'item_repurchase_accelerating'
   ) {
     return `recurring:${scope}:${month}`;
   }

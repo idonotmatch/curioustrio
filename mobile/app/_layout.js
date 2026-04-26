@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
 import { stashNavigationPayload } from '../services/navigationPayloadStore';
+import { saveInsightDetailSnapshot } from '../services/insightLocalStore';
 import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
 
 Notifications.setNotificationHandler({
@@ -113,7 +114,17 @@ function AppNavigator() {
         return;
       }
 
-      const payloadKey = stashNavigationPayload({ metadata }, 'push-insight');
+      saveInsightDetailSnapshot({
+        id: insightId,
+        type: insightType,
+        title: firstValue(data.title, content.title || 'Insight detail'),
+        body: firstValue(data.body, content.body || ''),
+        severity: firstValue(data.severity, 'low'),
+        entity_type: firstValue(data.entity_type, ''),
+        entity_id: firstValue(data.entity_id, ''),
+        metadata,
+      }).catch(() => {});
+      const payloadKey = stashNavigationPayload({ metadata, preloadEvidence: [] }, 'push-insight');
       router.push({
         pathname: '/insight-detail',
         params: {

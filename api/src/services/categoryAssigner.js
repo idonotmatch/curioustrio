@@ -58,9 +58,72 @@ function findCategoryByName(categories, categoryName) {
   return categories.find((category) => normalizeCategoryName(category.name) === normalizedName) || null;
 }
 
+function contextualCategoryHeuristic({ merchant, description, categories }) {
+  const merchantText = normalizeComparableText(merchant);
+  const descriptionText = normalizeComparableText(description);
+  const expenseText = [merchantText, descriptionText].filter(Boolean).join(' ');
+  if (!expenseText || !Array.isArray(categories) || categories.length === 0) return null;
+
+  const matches = (pattern) => pattern.test(expenseText);
+  const categoryResult = (categoryName, detail) => {
+    const category = findCategoryByName(categories, categoryName);
+    if (!category) return null;
+    return {
+      category_id: category.id,
+      source: 'heuristic',
+      confidence: 3,
+      reasoning: {
+        strategy: 'heuristic_context',
+        label: 'Matched merchant context',
+        detail,
+      },
+    };
+  };
+
+  if (/\buber\b/.test(merchantText)) {
+    if (/\beats\b|\bdelivery\b|\bmeal\b|\border\b/.test(descriptionText)) {
+      return categoryResult('Dining Out', 'The Uber merchant context looks like a food delivery purchase, so Adlo treated it as Dining Out.');
+    }
+    return categoryResult('Travel', 'The Uber merchant context looks like transportation, so Adlo treated it as Travel.');
+  }
+
+  if (/\blyft\b/.test(merchantText)) {
+    return categoryResult('Travel', 'The Lyft merchant context looks like transportation, so Adlo treated it as Travel.');
+  }
+
+  if (/\bcostco\b/.test(merchantText)) {
+    if (matches(/\bgas\b|\bfuel\b/)) {
+      return categoryResult('Gas', 'The Costco expense specifically mentions gas or fuel, so Adlo treated it as Gas.');
+    }
+    if (matches(/\bpharmacy\b|\bprescription\b|\bmedicine\b/)) {
+      return categoryResult('Healthcare', 'The Costco expense looks pharmacy-related, so Adlo treated it as Healthcare.');
+    }
+    if (matches(/\bgrocery\b|\bproduce\b|\bmilk\b|\beggs\b|\bmeat\b|\bfood\b/)) {
+      return categoryResult('Groceries', 'The Costco expense looks grocery-related, so Adlo treated it as Groceries.');
+    }
+  }
+
+  if (/\bamazon\b/.test(merchantText)) {
+    if (matches(/\bprime\b|\bmembership\b|\bsubscription\b|\brenewal\b/)) {
+      return categoryResult('Subscriptions', 'The Amazon expense looks like a membership or renewal, so Adlo treated it as Subscriptions.');
+    }
+    if (matches(/\bmovie\b|\bvideo\b|\bkindle\b|\bbook\b|\baudible\b/)) {
+      return categoryResult('Entertainment', 'The Amazon expense looks media-related, so Adlo treated it as Entertainment.');
+    }
+    if (matches(/\bgrocery\b|\bwhole foods\b|\bproduce\b|\bmilk\b|\beggs\b|\bfood\b/)) {
+      return categoryResult('Groceries', 'The Amazon expense looks grocery-related, so Adlo treated it as Groceries.');
+    }
+  }
+
+  return null;
+}
+
 function assignCategoryHeuristically({ merchant, description, categories }) {
   const expenseText = [merchant, description].filter(Boolean).join(' ');
   if (!expenseText || !Array.isArray(categories) || categories.length === 0) return null;
+
+  const contextual = contextualCategoryHeuristic({ merchant, description, categories });
+  if (contextual) return contextual;
 
   for (const category of categories) {
     const categoryName = `${category.name || ''}`.trim();
@@ -150,6 +213,13 @@ function shouldPreferHeuristicOverWeakMerchantMemory(merchantMapping, heuristic 
   return Number(merchantMapping.hit_count || 0) <= 1;
 }
 
+function shouldPreferContextualHeuristic(merchantMapping, heuristic = null) {
+  if (!merchantMapping?.category_id || !heuristic?.category_id) return false;
+  if (merchantMapping.category_id === heuristic.category_id) return false;
+  if (`${heuristic?.reasoning?.strategy || ''}` !== 'heuristic_context') return false;
+  return Number(merchantMapping.hit_count || 0) <= 3;
+}
+
 async function gatherAssignmentSignals({ householdId, merchant, description }) {
   const [merchantMapping, learnedDecision] = await Promise.all([
     merchant ? MerchantMapping.findByMerchant(householdId, merchant) : Promise.resolve(null),
@@ -189,6 +259,16 @@ async function assignCategory({ merchant, description, householdId, categories, 
       reasoning: {
         ...(heuristic.reasoning || {}),
         detail: 'The expense text was a stronger signal than the thin merchant memory, so Adlo followed the local heuristic match.',
+      },
+    };
+  }
+
+  if (heuristic && shouldPreferContextualHeuristic(merchantMapping, heuristic)) {
+    return {
+      ...heuristic,
+      reasoning: {
+        ...(heuristic.reasoning || {}),
+        detail: `${heuristic.reasoning?.detail || 'The merchant context was clearer than the remembered category.'} Adlo followed the more specific purchase context over the weaker merchant memory.`,
       },
     };
   }

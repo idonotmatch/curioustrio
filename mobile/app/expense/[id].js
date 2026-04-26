@@ -535,6 +535,7 @@ export default function ExpenseDetailScreen() {
           treatmentSuggestionSummary={treatmentSuggestionSummary}
           importMetaBits={importMetaBits}
           emailSnippet={emailSnippet}
+          automationRecommendation={gmailReviewHint?.automation_recommendation || null}
           priorityReviewFields={priorityReviewFields}
           isItemsFirstReview={isItemsFirstReview}
           editing={editing}

@@ -698,6 +698,37 @@ function recommendationHeadline(mode) {
   }
 }
 
+function recommendationType(mode, suggestedScenario = {}) {
+  if (mode === 'next_period') return 'wait';
+  if (mode === 'spread_3_periods') return 'spread';
+  if (suggestedScenario?.status === 'comfortable' || suggestedScenario?.status === 'absorbable') {
+    return 'do_now';
+  }
+  return 'compare';
+}
+
+function recommendationTradeoffFocus({ currentScenario, suggestedScenario, mode }) {
+  const currentPressure = Number(currentScenario?.recurring_pressure_amount || 0);
+  const suggestedPressure = Number(suggestedScenario?.recurring_pressure_amount || 0);
+  const roomDelta = Number(suggestedScenario?.risk_adjusted_headroom_amount || 0)
+    - Number(currentScenario?.risk_adjusted_headroom_amount || 0);
+
+  if (mode === 'next_period') {
+    if (roomDelta >= 60) return 'Creates a cleaner next budget window';
+    return 'Reduces current-month pressure';
+  }
+  if (mode === 'spread_3_periods') {
+    return 'Spreads the pressure instead of landing it all at once';
+  }
+  if (suggestedPressure > currentPressure) {
+    return 'Fits now, but tightens the recurring room behind it';
+  }
+  if (roomDelta >= 25) {
+    return 'Keeps more room available after the purchase lands';
+  }
+  return 'Fits without materially changing the month';
+}
+
 function buildRecommendationReason({ currentScenario, suggestedScenario }) {
   const currentStatus = statusLabel(currentScenario?.status);
   const suggestedStatus = statusLabel(suggestedScenario?.status);
@@ -880,12 +911,18 @@ function chooseScenarioRecommendation({ selectedMode, scenariosByMode = {}, timi
   return {
     timing_mode: best.mode,
     timing_label: timingModeLabel(best.mode),
+    recommendation_type: recommendationType(best.mode, best.scenario),
     status: best.scenario.status,
     status_label: statusLabel(best.scenario.status),
     headline: recommendationHeadline(best.mode),
     reason: buildRecommendationReason({
       currentScenario: { ...currentScenario, timing_mode: selectedMode },
       suggestedScenario: { ...best.scenario, timing_mode: best.mode },
+    }),
+    tradeoff_focus: recommendationTradeoffFocus({
+      currentScenario: { ...currentScenario, timing_mode: selectedMode },
+      suggestedScenario: { ...best.scenario, timing_mode: best.mode },
+      mode: best.mode,
     }),
     risk_adjusted_headroom_delta: Number(best.roomDelta.toFixed(2)),
     personalization_note: plannerRecommendationNote(best.mode, timingPreferences),

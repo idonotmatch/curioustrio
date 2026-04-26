@@ -7,7 +7,14 @@ import { useHousehold } from '../hooks/useHousehold';
 import { api } from '../services/api';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
-import { planningActionSummary, planningSnapshot, planningSuggestionAmounts } from '../services/planningPresentation';
+import {
+  planningActionSummary,
+  planningSnapshot,
+  planningSuggestionAmounts,
+  planningFeedbackSummary,
+  recentPlanDecisionSummary,
+  recentPlanResolutionSummary,
+} from '../services/planningPresentation';
 
 function formatCurrency(value) {
   const amount = Number(value);
@@ -222,7 +229,9 @@ export default function ScenarioCheckScreen() {
   const [recentPlans, setRecentPlans] = useState([]);
   const [intentLoading, setIntentLoading] = useState('');
   const [watchLoading, setWatchLoading] = useState(false);
+  const [resolutionLoading, setResolutionLoading] = useState('');
   const [showComposer, setShowComposer] = useState(false);
+  const [plannerFeedback, setPlannerFeedback] = useState(null);
   const autoRanRef = useRef(false);
   const bootstrappedInitialResultRef = useRef(false);
 
@@ -240,6 +249,22 @@ export default function ScenarioCheckScreen() {
   const displayLabel = scenario?.label || label.trim() || 'purchase';
   const displayAmount = scenario?.proposed_amount != null ? Number(scenario.proposed_amount) : parsedAmount;
   const amountShareOfRoom = currentHeadroom > 0 ? Math.round((displayAmount / currentHeadroom) * 100) : null;
+  const plannerFeedbackNote = useMemo(
+    () => planningFeedbackSummary(
+      plannerFeedback?.summary || {},
+      plannerFeedback?.timing_preferences || {},
+      scenario?.recommendation || null
+    ),
+    [plannerFeedback, scenario?.recommendation]
+  );
+  const currentPlanDecisionNote = useMemo(
+    () => recentPlanDecisionSummary(scenarioMemory || {}),
+    [scenarioMemory]
+  );
+  const currentPlanResolutionNote = useMemo(
+    () => recentPlanResolutionSummary(scenarioMemory || {}),
+    [scenarioMemory]
+  );
 
   function applyStarterAmount(nextAmount) {
     if (!Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) return;
@@ -391,6 +416,26 @@ export default function ScenarioCheckScreen() {
     }
   }
 
+  async function handleResolve(action) {
+    if (!scenarioMemory?.id || resolutionLoading) return;
+    const endpoint = action === 'revisit_next_month'
+      ? `/trends/scenario-memory/${scenarioMemory.id}/defer`
+      : `/trends/scenario-memory/${scenarioMemory.id}/resolve`;
+    const payload = action === 'revisit_next_month' ? {} : { action };
+
+    try {
+      setResolutionLoading(action);
+      setError('');
+      const data = await api.post(endpoint, payload);
+      setScenarioMemory(data?.scenario_memory || scenarioMemory);
+      loadRecentPlans();
+    } catch (err) {
+      setError(err?.message || 'Could not save what happened next right now.');
+    } finally {
+      setResolutionLoading('');
+    }
+  }
+
   async function applyTimingOption(mode) {
     if (!mode || loading) return;
     await handleSubmit(mode);
@@ -429,6 +474,18 @@ export default function ScenarioCheckScreen() {
     }
     setShowComposer(false);
   }, [scenario]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/trends/planner-feedback-summary')
+      .then((data) => {
+        if (!cancelled) setPlannerFeedback(data || null);
+      })
+      .catch(() => {
+        if (!cancelled) setPlannerFeedback(null);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -582,6 +639,23 @@ export default function ScenarioCheckScreen() {
                     </View>
                   ))}
                 </View>
+                {scenario?.recommendation?.tradeoff_focus ? (
+                  <View style={styles.recommendationCard}>
+                    <View style={styles.recommendationText}>
+                      <Text style={styles.recommendationEyebrow}>Recommended tradeoff</Text>
+                      <Text style={styles.recommendationTitle}>
+                        {scenario.recommendation.headline || 'Best timing option'}
+                      </Text>
+                      <Text style={styles.recommendationCopy}>{scenario.recommendation.tradeoff_focus}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {plannerFeedbackNote ? (
+                  <View style={styles.card}>
+                    <Text style={styles.cardTitle}>{plannerFeedbackNote.title}</Text>
+                    <Text style={styles.bodyRow}>{plannerFeedbackNote.body}</Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
@@ -678,6 +752,43 @@ export default function ScenarioCheckScreen() {
                 )}
               </TouchableOpacity>
             </View>
+
+            {scenarioMemory?.id ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>What happened next?</Text>
+                <Text style={styles.bodyRow}>
+                  This closes the loop so Adlo can learn whether the recommendation was useful in real life, not just on paper.
+                </Text>
+                {currentPlanDecisionNote ? (
+                  <Text style={styles.followUpMeta}>{currentPlanDecisionNote}</Text>
+                ) : null}
+                {currentPlanResolutionNote ? (
+                  <Text style={styles.followUpMeta}>{currentPlanResolutionNote}</Text>
+                ) : null}
+                <View style={styles.followUpRow}>
+                  {[
+                    { key: 'bought', label: 'I bought it' },
+                    { key: 'revisit_next_month', label: 'Next month instead' },
+                    { key: 'not_buying', label: 'Skipping it' },
+                  ].map((option) => {
+                    const isActive = scenarioMemory?.resolution_action === option.key;
+                    const isBusy = resolutionLoading === option.key;
+                    return (
+                      <TouchableOpacity
+                        key={option.key}
+                        style={[styles.intentChip, isActive && styles.intentChipActive]}
+                        onPress={() => handleResolve(option.key)}
+                        disabled={Boolean(resolutionLoading)}
+                      >
+                        <Text style={[styles.intentChipText, isActive && styles.intentChipTextActive]}>
+                          {isBusy ? 'Saving...' : option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </>
         )}
 
@@ -803,6 +914,8 @@ export default function ScenarioCheckScreen() {
               const changeCopy = recentPlanChangeCopy(plan);
               const whyChangedCopy = recentPlanWhyChangedCopy(plan);
               const statusCopy = recentPlanStatusCopy(plan);
+              const decisionCopy = recentPlanDecisionSummary(plan);
+              const resolutionCopy = recentPlanResolutionSummary(plan);
               return (
                 <TouchableOpacity
                   key={plan.id}
@@ -818,6 +931,12 @@ export default function ScenarioCheckScreen() {
                     ) : null}
                     {whyChangedCopy ? (
                       <Text style={styles.recentPlanWhy}>{whyChangedCopy}</Text>
+                    ) : null}
+                    {decisionCopy ? (
+                      <Text style={styles.recentPlanWhy}>{decisionCopy}</Text>
+                    ) : null}
+                    {resolutionCopy ? (
+                      <Text style={styles.recentPlanChange}>{resolutionCopy}</Text>
                     ) : null}
                   </View>
                   <View style={styles.recentPlanRight}>
@@ -1146,6 +1265,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  followUpRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  followUpMeta: {
+    color: '#9ca3af',
+    fontSize: 13,
+    lineHeight: 18,
   },
   intentChip: {
     borderRadius: 999,

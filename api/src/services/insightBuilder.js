@@ -209,6 +209,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
 
     const purchaseTrail = Array.isArray(history.purchases) ? history.purchases : [];
     const latestPurchase = purchaseTrail[purchaseTrail.length - 1] || null;
+    const previousPurchase = purchaseTrail[purchaseTrail.length - 2] || null;
     const latestAmount = latestPurchase?.amount == null ? null : Number(latestPurchase.amount);
     const medianAmount = history.median_amount == null ? null : Number(history.median_amount);
     const latestAgeMs = latestPurchase?.date ? new Date(`${latestPurchase.date}T12:00:00`).getTime() : null;
@@ -229,6 +230,23 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
       : null;
     const latestDeltaPercent = recentPriceJump
       ? Number((((latestAmount - medianAmount) / medianAmount) * 100).toFixed(1))
+      : null;
+    const latestPurchaseMs = latestPurchase?.date ? new Date(`${latestPurchase.date}T12:00:00`).getTime() : null;
+    const previousPurchaseMs = previousPurchase?.date ? new Date(`${previousPurchase.date}T12:00:00`).getTime() : null;
+    const latestGapDays = Number.isFinite(latestPurchaseMs) && Number.isFinite(previousPurchaseMs)
+      ? Math.max(0, Math.round((latestPurchaseMs - previousPurchaseMs) / (1000 * 60 * 60 * 24)))
+      : null;
+    const acceleratedRepurchase = latestPurchase
+      && latestGapDays != null
+      && Number(history.occurrence_count || 0) >= 4
+      && Number(history.average_gap_days || 0) >= 6
+      && latestAgeDays != null
+      && latestAgeDays <= 10
+      && latestGapDays >= 1
+      && latestGapDays <= Number(history.average_gap_days || 0) * 0.65
+      && (Number(history.average_gap_days || 0) - latestGapDays) >= 3;
+    const cadenceDeltaDays = acceleratedRepurchase
+      ? Number((Number(history.average_gap_days || 0) - latestGapDays).toFixed(1))
       : null;
 
     if (stapleEmerging && merchantVariance) {
@@ -283,6 +301,33 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
           delta_amount: latestDeltaAmount,
           delta_percent: latestDeltaPercent,
           continuity_key: `item_price:${scope}:${history.group_key}`,
+        },
+        actions: [],
+      });
+    }
+
+    if (acceleratedRepurchase) {
+      insights.push({
+        id: `item_repurchase_accelerating:${scope}:${history.group_key}:${latestPurchase.date}`,
+        type: 'item_repurchase_accelerating',
+        title: `${itemName} is showing up sooner than usual`,
+        body: `${itemName} came back after about ${latestGapDays} days, roughly ${Math.round(cadenceDeltaDays)} days sooner than your usual rhythm.`,
+        severity: cadenceDeltaDays >= 7 || Number(history.occurrence_count || 0) >= 5 ? 'medium' : 'low',
+        entity_type: 'item',
+        entity_id: history.group_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          ...history,
+          scope,
+          maturity: 'developing',
+          confidence: history.identity_confidence || 'medium',
+          latest_amount: latestAmount,
+          latest_merchant: latestPurchase.merchant || null,
+          latest_date: latestPurchase.date || null,
+          latest_gap_days: latestGapDays,
+          cadence_delta_days: cadenceDeltaDays,
+          continuity_key: `item_cadence:${scope}:${history.group_key}`,
         },
         actions: [],
       });
@@ -1007,6 +1052,7 @@ function isStaleGeneratedInsight(insight) {
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_staple_emerging'
     || type === 'item_recent_price_jump'
+    || type === 'item_repurchase_accelerating'
   ) {
     const latestDate = metadata.latest_date || metadata.last_purchased_at;
     if (latestDate) {
@@ -1041,10 +1087,23 @@ function buildDismissedContinuityKeySet(events = [], windowDays = 30) {
     const negativeReason = `${event?.metadata?.reason || ''}`.trim();
     const suppressByFeedback = eventType === 'not_helpful'
       && (negativeReason === 'wrong_timing' || negativeReason === 'not_relevant');
-    if (eventType !== 'dismissed' && !suppressByFeedback) continue;
+    const continuityKey = `${event?.metadata?.continuity_key || ''}`.trim();
+    const actedType = `${event?.metadata?.type || ''}`.trim();
+    const suppressByAction = eventType === 'acted'
+      && continuityKey
+      && (
+        actedType === 'usage_ready_to_plan'
+        || actedType === 'buy_soon_better_price'
+        || actedType === 'recurring_restock_window'
+        || actedType === 'recurring_repurchase_due'
+        || actedType === 'item_merchant_variance'
+        || actedType === 'item_staple_merchant_opportunity'
+        || actedType === 'item_recent_price_jump'
+        || actedType === 'item_repurchase_accelerating'
+      );
+    if (eventType !== 'dismissed' && !suppressByFeedback && !suppressByAction) continue;
     const createdAtMs = new Date(event?.created_at || 0).getTime();
     if (Number.isNaN(createdAtMs) || createdAtMs < cutoffMs) continue;
-    const continuityKey = `${event?.metadata?.continuity_key || ''}`.trim();
     if (!continuityKey) continue;
     keys.add(continuityKey);
     const scopeAgnostic = toScopeAgnosticKey(continuityKey);
@@ -1773,6 +1832,7 @@ module.exports = {
   buildInsightPreferencesForUser,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
+  buildItemHistoryInsights,
   summarizeExpenseRows,
   summarizeInsightList,
   tierGateSummary,
