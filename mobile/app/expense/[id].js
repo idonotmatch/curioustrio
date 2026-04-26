@@ -556,6 +556,17 @@ export default function ExpenseDetailScreen() {
           items={items}
           formatCurrency={formatCurrency}
           setItemsExpanded={setItemsExpanded}
+          merchant={merchant}
+          setMerchant={setMerchant}
+          amount={amount}
+          setAmount={setAmount}
+          date={date}
+          setDate={setDate}
+          categoryId={categoryId}
+          setCategoryId={setCategoryId}
+          categories={categories}
+          formattedDate={formattedDate}
+          toLocalDateString={toLocalDateString}
         />
       ) : reviewState ? (
         <View style={styles.reviewBanner}>
@@ -676,7 +687,7 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {editing && canEdit ? (
+      {editing && canEdit && !isPendingEmailReview ? (
         <View style={styles.editDetailsCard}>
           <Text style={styles.editDetailsTitle}>Details</Text>
           <View style={activeReviewField === 'date' ? styles.reviewFieldWrapActive : null}>
@@ -1040,6 +1051,79 @@ const styles = StyleSheet.create({
   },
   reviewSummaryChipLabel: { color: '#7f7f7f', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   reviewSummaryChipValue: { color: '#f3f3f3', fontSize: 13, fontWeight: '600' },
+  inlineSummaryInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    minHeight: 22,
+  },
+  inlineSummaryDollar: {
+    color: '#f3f3f3',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 2,
+  },
+  inlineSummaryInput: {
+    flex: 1,
+    minWidth: 0,
+    color: '#f3f3f3',
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+  },
+  inlineSummaryInputText: {
+    color: '#f3f3f3',
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    minHeight: 22,
+  },
+  inlineSummaryStaticValue: {
+    color: '#f3f3f3',
+    fontSize: 13,
+    fontWeight: '600',
+    minHeight: 22,
+  },
+  inlineDatePickerWrap: {
+    marginTop: 4,
+    marginLeft: -10,
+    minHeight: 28,
+    justifyContent: 'center',
+  },
+  inlineDatePicker: {
+    alignSelf: 'flex-start',
+  },
+  inlineCategoryScroller: {
+    marginTop: 6,
+    maxHeight: 34,
+  },
+  inlineCategoryRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingRight: 4,
+  },
+  inlineCategoryChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#151515',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  inlineCategoryChipActive: {
+    borderColor: '#8ab4ff',
+    backgroundColor: '#132033',
+  },
+  inlineCategoryChipText: {
+    color: '#cfcfcf',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  inlineCategoryChipTextActive: {
+    color: '#d7e7ff',
+  },
   reviewAttentionBody: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
   priorityFieldsCard: {
     marginHorizontal: 20,
