@@ -135,226 +135,231 @@ export default function ManualAddScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <View style={styles.heroRow}>
-          <View style={styles.hero}>
-            <Text style={styles.eyebrow}>Manual add</Text>
-            <Text style={styles.title}>Log it quickly</Text>
-            <Text style={styles.subtitle}>Start with the few things you always care about. Add the rest only if it helps.</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Close manual add"
-          >
-            <Ionicons name="close" size={18} color="#f5f5f5" />
-          </TouchableOpacity>
-        </View>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <Pressable style={styles.screenBackdrop} onPress={() => router.back()} />
+      <View style={styles.sheetShell}>
+        <DismissKeyboardScrollView style={styles.sheet} contentContainerStyle={styles.content}>
+          <View style={styles.grabber} />
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Core details</Text>
-
-          <View style={styles.compactDateRow}>
-            <Text style={styles.compactDateLabel}>Date</Text>
-            {Platform.OS === 'ios' ? (
-              <View style={styles.compactDateValue}>
-                <DateTimePicker
-                  value={new Date(`${date}T12:00:00`)}
-                  mode="date"
-                  display="compact"
-                  maximumDate={new Date()}
-                  onChange={onDateChange}
-                  themeVariant="dark"
-                />
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.compactDateValue} onPress={() => setShowDatePicker(true)}>
-                <Text style={styles.compactDateText}>{date}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Amount</Text>
-            <TextInput
-              style={styles.primaryInput}
-              value={amount}
-              onChangeText={(value) => setAmount(moneyInput(value))}
-              placeholder="62.05"
-              placeholderTextColor="#555"
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Merchant</Text>
-            <TextInput
-              style={styles.primaryInput}
-              value={merchant}
-              onChangeText={setMerchant}
-              placeholder="Amazon, lunch, hair clips..."
-              placeholderTextColor="#555"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Category</Text>
-            <TouchableOpacity style={styles.selectorButton} onPress={() => setCategoryPickerOpen(true)} activeOpacity={0.82}>
-              <Text style={styles.selectorButtonText} numberOfLines={1}>
-                {selectedCategory?.name || 'Choose a category'}
-              </Text>
-              <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
+          <View style={styles.heroRow}>
+            <View style={styles.hero}>
+              <Text style={styles.eyebrow}>Manual add</Text>
+              <Text style={styles.title}>Log it quickly</Text>
+              <Text style={styles.subtitle}>Start with the few things you always care about. Add the rest only if it helps.</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Close manual add"
+            >
+              <Ionicons name="close" size={18} color="#f5f5f5" />
             </TouchableOpacity>
           </View>
-        </View>
 
-        {Platform.OS === 'android' && showDatePicker ? (
-          <DateTimePicker
-            value={new Date(`${date}T12:00:00`)}
-            mode="date"
-            display="default"
-            maximumDate={new Date()}
-            onChange={onDateChange}
-          />
-        ) : null}
-
-        <TouchableOpacity
-          style={styles.expandToggle}
-          onPress={() => setAdvancedOpen((value) => !value)}
-          activeOpacity={0.82}
-        >
-          <View style={styles.expandCopy}>
-            <Text style={styles.expandTitle}>More detail</Text>
-            <Text style={styles.expandBody}>Payment, privacy, track-only, notes, and location.</Text>
-          </View>
-          <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#9a9a9a" />
-        </TouchableOpacity>
-
-        {advancedOpen ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Optional details</Text>
+            <Text style={styles.sectionTitle}>Core details</Text>
 
-            <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>Payment method</Text>
-              <View style={styles.segmentRow}>
-                {PAYMENT_METHODS.map((option) => {
-                  const active = paymentMethod === option.value;
-                  return (
-                    <TouchableOpacity
-                      key={option.value}
-                      style={[styles.segmentChip, active && styles.segmentChipActive]}
-                      onPress={() => setPaymentMethod(option.value)}
-                    >
-                      <Text style={[styles.segmentChipText, active && styles.segmentChipTextActive]}>{option.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {(paymentMethod === 'credit' || paymentMethod === 'debit') ? (
-              <View style={styles.row}>
-                <View style={[styles.fieldBlock, styles.rowField]}>
-                  <Text style={styles.fieldLabel}>Card label</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={cardLabel}
-                    onChangeText={setCardLabel}
-                    placeholder="Chase Sapphire"
-                    placeholderTextColor="#555"
+            <View style={styles.compactDateRow}>
+              <Text style={styles.compactDateLabel}>Date</Text>
+              {Platform.OS === 'ios' ? (
+                <View style={styles.compactDateValue}>
+                  <DateTimePicker
+                    value={new Date(`${date}T12:00:00`)}
+                    mode="date"
+                    display="compact"
+                    maximumDate={new Date()}
+                    onChange={onDateChange}
+                    themeVariant="dark"
                   />
                 </View>
-                <View style={[styles.fieldBlock, styles.rowField]}>
-                  <Text style={styles.fieldLabel}>Last 4</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={cardLast4}
-                    onChangeText={(value) => setCardLast4(value.replace(/\D/g, '').slice(0, 4))}
-                    placeholder="4242"
-                    placeholderTextColor="#555"
-                    keyboardType="number-pad"
-                  />
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.toggleBlock}>
-              <View style={styles.toggleCopy}>
-                <Text style={styles.toggleTitle}>Private</Text>
-                <Text style={styles.toggleBody}>Hide this from shared household views.</Text>
-              </View>
-              <Switch value={isPrivate} onValueChange={setIsPrivate} />
+              ) : (
+                <TouchableOpacity style={styles.compactDateValue} onPress={() => setShowDatePicker(true)}>
+                  <Text style={styles.compactDateText}>{date}</Text>
+                </TouchableOpacity>
+              )}
             </View>
-
-            <View style={styles.toggleBlock}>
-              <View style={styles.toggleCopy}>
-                <Text style={styles.toggleTitle}>Track only</Text>
-                <Text style={styles.toggleBody}>Keep it in your history without counting it toward the budget.</Text>
-              </View>
-              <Switch
-                value={excludeFromBudget}
-                onValueChange={(value) => {
-                  setExcludeFromBudget(value);
-                  if (!value) setBudgetExclusionReason(null);
-                  if (value && !budgetExclusionReason) setBudgetExclusionReason(TRACK_ONLY_REASONS[0].value);
-                }}
-              />
-            </View>
-
-            {excludeFromBudget ? (
-              <View style={styles.chipWrap}>
-                {TRACK_ONLY_REASONS.map((reason) => {
-                  const active = budgetExclusionReason === reason.value;
-                  return (
-                    <TouchableOpacity
-                      key={reason.value}
-                      style={[styles.categoryChip, active && styles.categoryChipActive]}
-                      onPress={() => setBudgetExclusionReason(reason.value)}
-                    >
-                      <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{reason.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : null}
 
             <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>Notes</Text>
+              <Text style={styles.fieldLabel}>Amount</Text>
               <TextInput
-                style={[styles.textInput, styles.notesInput]}
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Add context if it helps later"
+                style={styles.primaryInput}
+                value={amount}
+                onChangeText={(value) => setAmount(moneyInput(value))}
+                placeholder="62.05"
                 placeholderTextColor="#555"
-                multiline
+                keyboardType="decimal-pad"
               />
             </View>
 
             <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>Location</Text>
-              <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
+              <Text style={styles.fieldLabel}>Merchant</Text>
+              <TextInput
+                style={styles.primaryInput}
+                value={merchant}
+                onChangeText={setMerchant}
+                placeholder="Amazon, lunch, hair clips..."
+                placeholderTextColor="#555"
+                autoCorrect={false}
+              />
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Category</Text>
+              <TouchableOpacity style={styles.selectorButton} onPress={() => setCategoryPickerOpen(true)} activeOpacity={0.82}>
+                <Text style={styles.selectorButtonText} numberOfLines={1}>
+                  {selectedCategory?.name || 'Choose a category'}
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
+              </TouchableOpacity>
             </View>
           </View>
-        ) : null}
 
-        <View style={styles.footer}>
+          {Platform.OS === 'android' && showDatePicker ? (
+            <DateTimePicker
+              value={new Date(`${date}T12:00:00`)}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={onDateChange}
+            />
+          ) : null}
+
           <TouchableOpacity
-            style={[styles.saveButton, !canSave && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={!canSave}
-            activeOpacity={0.85}
+            style={styles.expandToggle}
+            onPress={() => setAdvancedOpen((value) => !value)}
+            activeOpacity={0.82}
           >
-            {saving ? (
-              <ActivityIndicator color="#000" size="small" />
-            ) : (
-              <Text style={styles.saveButtonText}>Save expense</Text>
-            )}
+            <View style={styles.expandCopy}>
+              <Text style={styles.expandTitle}>More detail</Text>
+              <Text style={styles.expandBody}>Payment, privacy, track-only, notes, and location.</Text>
+            </View>
+            <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#9a9a9a" />
           </TouchableOpacity>
-        </View>
-      </DismissKeyboardScrollView>
+
+          {advancedOpen ? (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Optional details</Text>
+
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>Payment method</Text>
+                <View style={styles.segmentRow}>
+                  {PAYMENT_METHODS.map((option) => {
+                    const active = paymentMethod === option.value;
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[styles.segmentChip, active && styles.segmentChipActive]}
+                        onPress={() => setPaymentMethod(option.value)}
+                      >
+                        <Text style={[styles.segmentChipText, active && styles.segmentChipTextActive]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {(paymentMethod === 'credit' || paymentMethod === 'debit') ? (
+                <View style={styles.row}>
+                  <View style={[styles.fieldBlock, styles.rowField]}>
+                    <Text style={styles.fieldLabel}>Card label</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={cardLabel}
+                      onChangeText={setCardLabel}
+                      placeholder="Chase Sapphire"
+                      placeholderTextColor="#555"
+                    />
+                  </View>
+                  <View style={[styles.fieldBlock, styles.rowField]}>
+                    <Text style={styles.fieldLabel}>Last 4</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={cardLast4}
+                      onChangeText={(value) => setCardLast4(value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="4242"
+                      placeholderTextColor="#555"
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.toggleBlock}>
+                <View style={styles.toggleCopy}>
+                  <Text style={styles.toggleTitle}>Private</Text>
+                  <Text style={styles.toggleBody}>Hide this from shared household views.</Text>
+                </View>
+                <Switch value={isPrivate} onValueChange={setIsPrivate} />
+              </View>
+
+              <View style={styles.toggleBlock}>
+                <View style={styles.toggleCopy}>
+                  <Text style={styles.toggleTitle}>Track only</Text>
+                  <Text style={styles.toggleBody}>Keep it in your history without counting it toward the budget.</Text>
+                </View>
+                <Switch
+                  value={excludeFromBudget}
+                  onValueChange={(value) => {
+                    setExcludeFromBudget(value);
+                    if (!value) setBudgetExclusionReason(null);
+                    if (value && !budgetExclusionReason) setBudgetExclusionReason(TRACK_ONLY_REASONS[0].value);
+                  }}
+                />
+              </View>
+
+              {excludeFromBudget ? (
+                <View style={styles.chipWrap}>
+                  {TRACK_ONLY_REASONS.map((reason) => {
+                    const active = budgetExclusionReason === reason.value;
+                    return (
+                      <TouchableOpacity
+                        key={reason.value}
+                        style={[styles.categoryChip, active && styles.categoryChipActive]}
+                        onPress={() => setBudgetExclusionReason(reason.value)}
+                      >
+                        <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{reason.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>Notes</Text>
+                <TextInput
+                  style={[styles.textInput, styles.notesInput]}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Add context if it helps later"
+                  placeholderTextColor="#555"
+                  multiline
+                />
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>Location</Text>
+                <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={[styles.saveButton, !canSave && styles.saveButtonDisabled]}
+              onPress={handleSave}
+              disabled={!canSave}
+              activeOpacity={0.85}
+            >
+              {saving ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
+                <Text style={styles.saveButtonText}>Save expense</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </DismissKeyboardScrollView>
+      </View>
 
       <Modal
         visible={categoryPickerOpen}
@@ -456,9 +461,33 @@ export default function ManualAddScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingBottom: 42, gap: 14 },
+  safeArea: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  screenBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  sheetShell: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  sheet: {
+    flex: 1,
+    backgroundColor: '#0d0d0e',
+    borderWidth: 1,
+    borderColor: '#202020',
+    borderRadius: 24,
+  },
+  content: { padding: 18, paddingBottom: 42, gap: 14 },
+  grabber: {
+    alignSelf: 'center',
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#2f2f31',
+    marginBottom: 14,
+  },
   heroRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   hero: { flex: 1, gap: 4 },
   eyebrow: { fontSize: 11, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1 },

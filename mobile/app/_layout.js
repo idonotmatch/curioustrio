@@ -371,9 +371,9 @@ function AppNavigator() {
       <Stack.Screen
         name="manual-add"
         options={{
-          title: 'Add expense',
-          presentation: 'modal',
-          headerBackTitle: 'Back',
+          headerShown: false,
+          presentation: 'transparentModal',
+          contentStyle: { backgroundColor: 'transparent' },
         }}
       />
       <Stack.Screen name="confirm" options={{ title: 'Confirm Expense', headerBackTitle: 'Summary' }} />
