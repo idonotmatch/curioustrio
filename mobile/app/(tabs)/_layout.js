@@ -73,9 +73,16 @@ export default function TabLayout() {
           name="index"
           options={{ tabBarIcon: ({ focused }) => <FeedIcon focused={focused} /> }}
         />
+        <Tabs.Screen
+          name="add"
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={24} color={focused ? '#6366f1' : '#555'} />
+            ),
+          }}
+        />
         <Tabs.Screen name="household" options={{ href: null }} />
         <Tabs.Screen name="pending" options={{ href: null }} />
-        <Tabs.Screen name="add" options={{ href: null }} />
         <Tabs.Screen
           name="settings"
           options={{

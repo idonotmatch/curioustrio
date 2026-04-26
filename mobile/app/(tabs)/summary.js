@@ -1,4 +1,4 @@
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
@@ -12,12 +12,10 @@ import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useInsights } from '../../hooks/useInsights';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
+import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
 import { SummaryInsightsRail } from '../../components/SummaryInsightsRail';
 import { SummaryMonthPicker } from '../../components/SummaryMonthPicker';
-import { SummaryQuickEntry } from '../../components/SummaryQuickEntry';
 import { SummaryRecentActivity } from '../../components/SummaryRecentActivity';
-import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
-import { toLocalDateString } from '../../services/date';
 import { stashNavigationPayload } from '../../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../../services/insightLocalStore';
 import {
@@ -26,7 +24,6 @@ import {
   formatRelativeTime,
   insightEventMetadata,
   buildRecurringItemPreload,
-  parseScenarioInput,
   buildPreloadedCategoryExpenses,
   buildPreloadedInsightEvidence,
 } from '../../services/summaryScreenHelpers';
@@ -56,9 +53,6 @@ export default function SummaryScreen() {
     logEvents,
   } = useInsights(1);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
-  const [entryMode, setEntryMode] = useState('add');
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
   const [watchedPlans, setWatchedPlans] = useState([]);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
@@ -355,95 +349,6 @@ export default function SummaryScreen() {
   const watchedImprovedCount = watchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
   const watchedWorsenedCount = watchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
 
-  function startManualEntry() {
-    setInput('');
-    router.push({
-      pathname: '/confirm',
-      params: { data: JSON.stringify(createManualExpenseDraft()) },
-    });
-  }
-
-  async function handleQuickAdd() {
-    if (!input.trim()) return;
-    try {
-      setLoading(true);
-      const today = toLocalDateString();
-      const parsed = await api.post('/expenses/parse', { input: input.trim(), today });
-      setInput('');
-      router.push({ pathname: '/confirm', params: { data: JSON.stringify({ ...parsed, source: 'manual' }) } });
-    } catch (err) {
-      const msg = err?.message || '';
-      if (msg.includes('Could not parse')) {
-        Alert.alert(
-          "Couldn't parse that",
-          "Try: '84.50 trader joes' or 'lunch 14'",
-          [
-            { text: 'Keep editing', style: 'cancel' },
-            { text: 'Start from scratch', onPress: startManualEntry },
-          ]
-        );
-      } else {
-        Alert.alert('Error', msg || 'Something went wrong. Check your connection.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleQuickCheck() {
-    return runQuickCheck();
-  }
-
-  async function runQuickCheck() {
-    const parsed = parseScenarioInput(input, { allowHousehold: isMultiMember });
-    if (!parsed?.amount) {
-      Alert.alert("Couldn't parse that", "Try: '180 running shoes' or 'household 240 costco run'");
-      return false;
-    }
-    try {
-      setLoading(true);
-      const data = await api.post('/trends/scenario-check', {
-        scope: parsed.scope,
-        month: currentMonthStr,
-        proposed_amount: Number(parsed.amount),
-        label: parsed.label || 'purchase',
-        timing_mode: parsed.timingMode || 'now',
-      });
-      setInput('');
-      router.push({
-        pathname: '/scenario-check',
-        params: {
-          month: currentMonthStr,
-          scope: parsed.scope,
-          amount: parsed.amount,
-          label: parsed.label,
-          timing_mode: parsed.timingMode || 'now',
-          initial_result: JSON.stringify(data),
-        },
-      });
-      return true;
-    } catch (err) {
-      Alert.alert('Could not run plan', err?.message || 'Something went wrong. Check your connection.');
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handlePrimaryEntry() {
-    if (entryMode === 'check') {
-      await handleQuickCheck();
-      return;
-    }
-    await handleQuickAdd();
-  }
-
-  const quickEntryProcessingMessage = loading
-    ? (entryMode === 'check'
-      ? 'Checking this plan against your current month...'
-      : 'Parsing your expense...')
-    : null;
-
   async function deleteExpense(id) {
     try {
       await api.delete(`/expenses/${id}`);
@@ -540,18 +445,6 @@ export default function SummaryScreen() {
         hint="Swipe for more"
       />
 
-      <SummaryQuickEntry
-        styles={styles}
-        entryMode={entryMode}
-        setEntryMode={setEntryMode}
-        input={input}
-        setInput={setInput}
-        handlePrimaryEntry={handlePrimaryEntry}
-        loading={loading}
-        quickEntryProcessingMessage={quickEntryProcessingMessage}
-        onPressScan={() => router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } })}
-      />
-
       {watchedPlans.length > 0 ? (
         <TouchableOpacity
           style={styles.watchingCard}
@@ -608,6 +501,7 @@ export default function SummaryScreen() {
       periodLabel={periodLabel}
       startDay={startDay}
     />
+    <GlobalAddLauncher router={router} bottomOffset={24} />
     </SafeAreaView>
   );
 }
@@ -659,9 +553,8 @@ const styles = StyleSheet.create({
   insightsErrorAction: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
-  quickAdd: { marginTop: 18, marginBottom: 28 },
   watchingCard: {
-    marginTop: -2,
+    marginTop: 12,
     marginBottom: 28,
     backgroundColor: '#0f1114',
     borderWidth: 1,

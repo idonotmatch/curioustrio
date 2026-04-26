@@ -13,6 +13,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { ActionNotice } from '../../components/ActionNotice';
 import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { ExpenseItem } from '../../components/ExpenseItem';
+import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
 import { ReviewQueueItem } from '../../components/ReviewQueueItem';
 import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
@@ -420,13 +421,7 @@ export default function FeedScreen() {
         }
       />
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/(tabs)/add')}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      <GlobalAddLauncher router={router} bottomOffset={24} />
 
       <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
         <View style={styles.monthPickerOverlay}>
@@ -584,17 +579,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   pendingMore: { color: '#888', fontSize: 14, textAlign: 'center' },
-
-  fab: {
-    position: 'absolute', bottom: 24, right: 24,
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: '#fff',
-    justifyContent: 'center', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
-  },
-  fabText: { fontSize: 28, color: '#000', lineHeight: 32, fontWeight: '300' },
-
   monthPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   monthPickerSheet: { backgroundColor: '#111', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
   monthPickerTitle: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
