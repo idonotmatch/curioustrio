@@ -78,6 +78,13 @@ export default function SummaryScreen() {
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
     : Math.max(280, windowWidth - 88);
+  const activeTopInsight = displayInsights[0] || null;
+  const pendingReviewCount = pendingExpenses.length;
+  const currentUtilityNote = pendingReviewCount > 0
+    ? `${pendingReviewCount} ${pendingReviewCount === 1 ? 'import needs' : 'imports need'} review`
+    : gmailRefreshTimestamp
+      ? `Gmail ${gmailRefreshVerb} ${formatRelativeTime(gmailRefreshTimestamp)}`
+      : 'Nothing needs your review right now';
   const loggedShownInsightIds = useRef(new Set());
   const insightNavigationResetRef = useRef(null);
   const [openingInsightId, setOpeningInsightId] = useState('');
@@ -505,6 +512,27 @@ export default function SummaryScreen() {
         )}
       </View>
 
+      <View style={styles.todayFocusCard}>
+        <Text style={styles.sectionLabelCompact}>Today</Text>
+        {activeTopInsight ? (
+          <>
+            <Text style={styles.todayFocusTitle}>{activeTopInsight.title || 'What matters now'}</Text>
+            <Text style={styles.todayFocusBody} numberOfLines={2}>
+              {activeTopInsight.body || 'Open the top card to decide what to do next.'}
+            </Text>
+            <Text style={styles.todayFocusMeta}>{currentUtilityNote}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.todayFocusTitle}>A quieter check-in</Text>
+            <Text style={styles.todayFocusBody}>
+              Nothing urgent is surfacing right now. Add an expense, pressure-test a purchase, or review recent activity below.
+            </Text>
+            <Text style={styles.todayFocusMeta}>{currentUtilityNote}</Text>
+          </>
+        )}
+      </View>
+
       {/* Household budget — shown for multi-member households */}
       {isMultiMember && (
         <View style={styles.householdCard}>
@@ -525,6 +553,20 @@ export default function SummaryScreen() {
           {hOver && <Text style={styles.hOverLabel}>${(hSpent - hLimit).toFixed(0)} over</Text>}
         </View>
       )}
+
+      <SummaryInsightsRail
+        styles={styles}
+        displayInsights={displayInsights}
+        insightsError={insightsError}
+        refreshInsights={refreshInsights}
+        hasMultipleInsights={hasMultipleInsights}
+        insightCardWidth={insightCardWidth}
+        handlePressInsight={handlePressInsight}
+        handleDismissInsight={handleDismissInsight}
+        openingInsightId={openingInsightId}
+        title="What matters now"
+        hint="Swipe for more"
+      />
 
       <SummaryQuickEntry
         styles={styles}
@@ -567,18 +609,6 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       ) : null}
 
-      <SummaryInsightsRail
-        styles={styles}
-        displayInsights={displayInsights}
-        insightsError={insightsError}
-        refreshInsights={refreshInsights}
-        hasMultipleInsights={hasMultipleInsights}
-        insightCardWidth={insightCardWidth}
-        handlePressInsight={handlePressInsight}
-        handleDismissInsight={handleDismissInsight}
-        openingInsightId={openingInsightId}
-      />
-
       <SummaryRecentActivity
         styles={styles}
         recent={recent}
@@ -616,6 +646,19 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 18 },
+  todayFocusCard: {
+    marginBottom: 18,
+    backgroundColor: '#101113',
+    borderWidth: 1,
+    borderColor: '#1a1d22',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 6,
+  },
+  todayFocusTitle: { color: '#f5f5f5', fontSize: 20, fontWeight: '700', lineHeight: 26 },
+  todayFocusBody: { color: '#b3bcc6', fontSize: 14, lineHeight: 20 },
+  todayFocusMeta: { color: '#7f8b97', fontSize: 12, lineHeight: 17, marginTop: 2 },
   globalHeader: { marginBottom: 12 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
   spendLabel: { fontSize: 13, color: '#888', marginBottom: 2 },
@@ -657,15 +700,15 @@ const styles = StyleSheet.create({
   insightsErrorAction: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
-  quickAdd: { marginTop: 18, marginBottom: 32 },
+  quickAdd: { marginTop: 18, marginBottom: 28 },
   watchingCard: {
-    marginTop: -6,
+    marginTop: -2,
     marginBottom: 28,
-    backgroundColor: '#101216',
+    backgroundColor: '#0f1114',
     borderWidth: 1,
-    borderColor: '#1d2730',
-    borderRadius: 16,
-    padding: 16,
+    borderColor: '#1a2027',
+    borderRadius: 14,
+    padding: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -677,12 +720,12 @@ const styles = StyleSheet.create({
   watchingBody: { color: '#afc0d5', fontSize: 14, lineHeight: 19, marginTop: 4 },
   watchingNote: { color: '#9cc3de', fontSize: 12, lineHeight: 17, marginTop: 4 },
   watchingCTA: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#171b20',
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  watchingCTAText: { color: '#000', fontSize: 13, fontWeight: '700' },
+  watchingCTAText: { color: '#dde8f2', fontSize: 13, fontWeight: '700' },
   sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   sectionLabelCompact: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 8 },

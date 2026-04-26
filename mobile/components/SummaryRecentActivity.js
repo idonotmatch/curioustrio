@@ -33,7 +33,7 @@ export function SummaryRecentActivity({
     <View style={styles.recent}>
       <View style={styles.recentHeader}>
         <View style={styles.recentHeading}>
-          <Text style={styles.sectionLabelCompact}>Recent</Text>
+          <Text style={styles.sectionLabelCompact}>Recent activity</Text>
           <Text style={styles.recentMeta}>
             {`${pendingExpensesCount} pending`}
             {gmailRefreshTimestamp ? ` · Gmail ${gmailRefreshVerb} ${formatRelativeTime(gmailRefreshTimestamp)}` : ''}

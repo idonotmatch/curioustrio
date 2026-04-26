@@ -98,6 +98,13 @@ export default function ScenarioCheckScreen() {
     () => recentPlanResolutionSummary(scenarioMemory || {}),
     [scenarioMemory]
   );
+  const recommendationHeadline = scenario?.recommendation?.headline || status.headline;
+  const recommendationBody = scenario?.recommendation?.tradeoff_focus || reasonCopy(result);
+  const recommendationSummary = [
+    `${scopeLabel(scope)} · ${timingModeLabel(scenario?.timing_mode || timingMode)}`,
+    currentHeadroom > 0 ? `${formatCurrency(currentHeadroom)} room before this` : null,
+    postPurchaseHeadroom !== currentHeadroom ? `${formatCurrency(postPurchaseHeadroom)} after` : null,
+  ].filter(Boolean).join('  ·  ');
 
   function applyStarterAmount(nextAmount) {
     if (!Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) return;
@@ -375,35 +382,23 @@ export default function ScenarioCheckScreen() {
               <Text style={styles.scopeContextCopy}>{scopeContextCopy(scope, isMultiMember)}</Text>
             </View>
 
-            <View style={styles.planSummaryCard}>
-              <View style={styles.planSummaryText}>
-                <Text style={styles.planSummaryLabel}>{displayLabel}</Text>
-                <Text style={styles.planSummaryMeta}>
-                  {scopeLabel(scope)} · {timingModeLabel(scenario?.timing_mode || timingMode)}
-                </Text>
-              </View>
-              <Text style={styles.planSummaryAmount}>{formatCurrency(displayAmount)}</Text>
-            </View>
-
-            <View style={styles.metricGrid}>
-              <View style={[styles.metricCard, styles.metricCardHalf]}>
-                <Text style={styles.metricLabel}>Current room</Text>
-                <Text style={styles.metricValue}>{formatCurrency(currentHeadroom)}</Text>
-              </View>
-              <View style={[styles.metricCard, styles.metricCardHalf]}>
-                <Text style={styles.metricLabel}>After purchase</Text>
-                <Text style={styles.metricValue}>{formatCurrency(postPurchaseHeadroom)}</Text>
-              </View>
-              <View style={[styles.metricCard, styles.metricCardFull]}>
-                <Text style={styles.metricLabel}>Recurring pressure still ahead</Text>
-                <Text style={styles.metricValue}>{formatCurrency(recurringPressure)}</Text>
+            <View style={styles.recommendationLeadCard}>
+              <View style={styles.recommendationLeadTop}>
+                <View style={styles.recommendationLeadText}>
+                  <Text style={styles.recommendationLeadEyebrow}>Recommended path</Text>
+                  <Text style={styles.recommendationLeadTitle}>{recommendationHeadline}</Text>
+                  <Text style={styles.recommendationLeadBody}>{recommendationBody}</Text>
+                  <Text style={styles.recommendationLeadMeta}>{recommendationSummary}</Text>
+                </View>
+                <Text style={styles.recommendationLeadAmount}>{formatCurrency(displayAmount)}</Text>
               </View>
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>What changed</Text>
+              <Text style={styles.cardTitle}>Why this landed here</Text>
               <Text style={styles.bodyRow}>Current month outlook: {projectionDeltaCopy(projection?.projected_budget_delta)}</Text>
               <Text style={styles.bodyRow}>After this purchase, risk-adjusted room: {formatCurrency(riskAdjustedHeadroom)}</Text>
+              <Text style={styles.bodyRow}>Recurring pressure still ahead: {formatCurrency(recurringPressure)}</Text>
               <Text style={styles.bodyRow}>{confidenceCopy(scenario.projection_confidence)}</Text>
               {Array.isArray(scenario.caveats) && scenario.caveats.length > 0 ? (
                 <View style={styles.caveatsBlock}>
@@ -472,17 +467,6 @@ export default function ScenarioCheckScreen() {
                     </View>
                   ))}
                 </View>
-                {scenario?.recommendation?.tradeoff_focus ? (
-                  <View style={styles.recommendationCard}>
-                    <View style={styles.recommendationText}>
-                      <Text style={styles.recommendationEyebrow}>Recommended tradeoff</Text>
-                      <Text style={styles.recommendationTitle}>
-                        {scenario.recommendation.headline || 'Best timing option'}
-                      </Text>
-                      <Text style={styles.recommendationCopy}>{scenario.recommendation.tradeoff_focus}</Text>
-                    </View>
-                  </View>
-                ) : null}
                 {plannerFeedbackNote ? (
                   <View style={styles.card}>
                     <Text style={styles.cardTitle}>{plannerFeedbackNote.title}</Text>
@@ -834,21 +818,21 @@ const styles = StyleSheet.create({
   },
   starterChipText: { color: '#eef5ff', fontSize: 13, fontWeight: '600' },
   scopeContextCopy: { fontSize: 13, color: '#8ca7bf', lineHeight: 18 },
-  planSummaryCard: {
-    backgroundColor: '#101010',
+  recommendationLeadCard: {
+    backgroundColor: '#101417',
     borderWidth: 1,
-    borderColor: '#181818',
+    borderColor: '#1b2a33',
     borderRadius: 14,
     padding: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     gap: 12,
   },
-  planSummaryText: { flex: 1, gap: 4 },
-  planSummaryLabel: { fontSize: 18, color: '#f5f5f5', fontWeight: '600' },
-  planSummaryMeta: { fontSize: 13, color: '#8f8f8f' },
-  planSummaryAmount: { fontSize: 24, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.6 },
+  recommendationLeadTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  recommendationLeadText: { flex: 1, gap: 6 },
+  recommendationLeadEyebrow: { fontSize: 11, color: '#8ca7bf', textTransform: 'uppercase', letterSpacing: 1.1 },
+  recommendationLeadTitle: { fontSize: 20, color: '#eef5ff', fontWeight: '700', lineHeight: 25 },
+  recommendationLeadBody: { fontSize: 14, color: '#c3d1df', lineHeight: 20 },
+  recommendationLeadMeta: { fontSize: 12, color: '#8ea2b7', lineHeight: 17 },
+  recommendationLeadAmount: { fontSize: 24, color: '#eef5ff', fontWeight: '700', letterSpacing: -0.6 },
   card: {
     backgroundColor: '#111',
     borderWidth: 1,
@@ -1037,49 +1021,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   statusChipText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
-  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  metricCard: {
-    backgroundColor: '#111',
-    borderWidth: 1,
-    borderColor: '#1a1a1a',
-    borderRadius: 14,
-    padding: 14,
-    gap: 8,
-  },
-  metricCardHalf: {
-    width: '48%',
-  },
-  metricCardFull: {
-    width: '100%',
-  },
-  metricLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
-  metricValue: { fontSize: 28, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
   bodyRow: { fontSize: 14, color: '#d4d4d4', lineHeight: 21 },
   caveatsBlock: { gap: 4, marginTop: 2 },
   caveatRow: { fontSize: 13, color: '#9ca3af', lineHeight: 18 },
-  recommendationCard: {
-    backgroundColor: '#101b24',
-    borderWidth: 1,
-    borderColor: '#1a2f40',
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
-  },
-  recommendationText: { gap: 4 },
-  recommendationEyebrow: { fontSize: 12, color: '#8ca7bf', textTransform: 'uppercase', letterSpacing: 1.1 },
-  recommendationTitle: { fontSize: 18, color: '#dfefff', fontWeight: '600' },
-  recommendationCopy: { fontSize: 14, color: '#b6cce0', lineHeight: 20 },
-  recommendationButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    minWidth: 132,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recommendationButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
   horizonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

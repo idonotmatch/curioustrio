@@ -11,15 +11,17 @@ export function SummaryInsightsRail({
   handlePressInsight,
   handleDismissInsight,
   openingInsightId,
+  title = 'What matters now',
+  hint,
 }) {
   if (!(displayInsights.length > 0 || insightsError)) return null;
 
   return (
     <View style={styles.insightsSection}>
       <View style={styles.insightsHeading}>
-        <Text style={styles.sectionLabel}>Insights</Text>
+        <Text style={styles.sectionLabel}>{title}</Text>
         {displayInsights.length > 1 ? (
-          <Text style={styles.insightsHint}>Swipe for more</Text>
+          <Text style={styles.insightsHint}>{hint || 'Swipe for more'}</Text>
         ) : null}
       </View>
       {insightsError ? (
