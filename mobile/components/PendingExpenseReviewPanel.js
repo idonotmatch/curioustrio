@@ -74,13 +74,13 @@ export function PendingExpenseReviewPanel({
 
       <View style={styles.reviewSummaryCard}>
         <View style={styles.reviewSummaryHeader}>
-          <View>
+          <View style={styles.headerCopyBlock}>
             <Text style={styles.reviewSectionEyebrow}>Approve this expense</Text>
             <Text style={styles.reviewSummaryTitle}>Confirm what will be saved</Text>
           </View>
           {!editing ? (
-            <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
-              <Text style={styles.priorityFieldsAction}>Edit</Text>
+            <TouchableOpacity style={styles.headerActionWrap} onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
+              <Text style={styles.priorityFieldsAction} numberOfLines={1}>Edit</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -100,7 +100,7 @@ export function PendingExpenseReviewPanel({
       {attentionFields.length ? (
         <View style={styles.priorityFieldsCard}>
           <View style={styles.priorityFieldsHeader}>
-            <View>
+            <View style={styles.headerCopyBlock}>
               <Text style={styles.reviewSectionEyebrow}>Needs attention</Text>
               <Text style={styles.priorityFieldsTitle}>
                 {reviewFocusSummary.title}
@@ -108,8 +108,8 @@ export function PendingExpenseReviewPanel({
               <Text style={styles.reviewAttentionBody}>{reviewFocusSummary.body}</Text>
             </View>
             {!editing ? (
-              <TouchableOpacity onPress={() => activateReviewField(attentionFields[0]?.key || 'amount')} activeOpacity={0.8}>
-                <Text style={styles.priorityFieldsAction}>Review</Text>
+              <TouchableOpacity style={styles.headerActionWrap} onPress={() => activateReviewField(attentionFields[0]?.key || 'amount')} activeOpacity={0.8}>
+                <Text style={styles.priorityFieldsAction} numberOfLines={1}>Review</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -136,7 +136,7 @@ export function PendingExpenseReviewPanel({
       {reviewItems.length > 0 ? (
         <View style={styles.priorityFieldsCard}>
           <View style={styles.priorityFieldsHeader}>
-            <View>
+            <View style={styles.headerCopyBlock}>
               <Text style={styles.reviewSectionEyebrow}>Extracted items</Text>
               <Text style={styles.priorityFieldsTitle}>
                 {reviewItems.length} {reviewItems.length === 1 ? 'item' : 'items'} found in the email
@@ -146,13 +146,14 @@ export function PendingExpenseReviewPanel({
               </Text>
             </View>
             <TouchableOpacity
+              style={styles.headerActionWrap}
               onPress={() => {
                 setItemsExpanded(true);
                 activateReviewField('items');
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.priorityFieldsAction}>Review</Text>
+              <Text style={styles.priorityFieldsAction} numberOfLines={1}>Review</Text>
             </TouchableOpacity>
           </View>
           {previewItems.map((item, index) => (

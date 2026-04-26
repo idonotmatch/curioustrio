@@ -1023,6 +1023,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   reviewSummaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
+  headerCopyBlock: { flex: 1, minWidth: 0 },
+  headerActionWrap: { flexShrink: 0, alignSelf: 'flex-start', paddingLeft: 4 },
   reviewSummaryTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
   reviewSummarySubtitle: { color: '#8d8d8d', fontSize: 12, lineHeight: 17, marginTop: 4 },
   reviewSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -1053,7 +1055,7 @@ const styles = StyleSheet.create({
   priorityFieldsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 8 },
   priorityFieldsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   priorityFieldsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
-  priorityFieldsAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600', marginTop: 2 },
+  priorityFieldsAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600', marginTop: 2, flexShrink: 0 },
   reviewControlsCard: {
     marginHorizontal: 20,
     marginTop: 12,
