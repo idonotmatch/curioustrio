@@ -55,8 +55,8 @@ describe('dispatchInsightPushesForUser', () => {
     });
 
     expect(copy).toEqual({
-      title: 'Better price spotted',
-      body: 'Pampers Pure is cheaper at Target. Target is 7% below your usual price.',
+      title: 'Price insight ready',
+      body: 'Open Adlo to review a recent price opportunity.',
     });
   });
 
@@ -79,12 +79,18 @@ describe('dispatchInsightPushesForUser', () => {
 
     expect(sendNotifications).toHaveBeenCalledTimes(1);
     expect(sendNotifications).toHaveBeenCalledWith([expect.objectContaining({
-      title: 'Better price spotted',
+      title: 'Price insight ready',
       data: expect.objectContaining({
         route: '/insight-detail',
         insight_id: 'buy_soon_better_price:product:abc:target:2026-04-04',
+        metadata: expect.objectContaining({
+          group_key: 'product:abc',
+        }),
       }),
     })]);
+    const sentMessage = sendNotifications.mock.calls[0][0][0];
+    expect(sentMessage.data.title).toBeUndefined();
+    expect(sentMessage.data.body).toBeUndefined();
     expect(InsightNotification.createBatch).toHaveBeenCalledWith(
       'user-1',
       ['buy_soon_better_price:product:abc:target:2026-04-04'],

@@ -33,9 +33,7 @@ router.post('/notify-pending', authenticate, async (req, res, next) => {
     const messages = tokens.map(t => ({
       to: t.token,
       title: due.length === 1 ? 'A recurring expense is coming up' : `${due.length} recurring expenses are coming up`,
-      body: due.length === 1
-        ? `${due[0].merchant} is likely due in the next few days.`
-        : `${due[0].merchant} and ${due.length - 1} more are likely due soon.`,
+      body: 'Open Adlo to review what may be due soon.',
       data: { type: 'recurring', route: '/watching-plans', count: due.length },
     }));
 

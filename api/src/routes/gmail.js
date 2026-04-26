@@ -187,8 +187,7 @@ router.get('/import-log', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-    const detail = `${req.query.detail || 'compact'}`.trim().toLowerCase() === 'full' ? 'full' : 'compact';
-    const logs = await EmailImportLog.listByUser(user.id, limit, { detail });
+    const logs = await EmailImportLog.listByUser(user.id, limit);
     res.json(logs);
   } catch (err) { next(err); }
 });

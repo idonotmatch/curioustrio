@@ -20,48 +20,48 @@ function trimSentence(value = '', max = 140) {
 }
 
 function pushCopyForInsight(insight) {
-  const merchant = insight?.metadata?.merchant_name || insight?.metadata?.merchant_key || null;
-  const store = insight?.metadata?.store_name || insight?.metadata?.retailer_name || null;
-  const product = insight?.metadata?.product_name || insight?.title || 'item';
-
   if (insight?.type === 'buy_soon_better_price') {
     return {
-      title: 'Better price spotted',
-      body: trimSentence(
-        `${product}${store ? ` is cheaper at ${store}` : ' is below your usual price'}${insight?.body ? `. ${insight.body}` : ''}`,
-        150
-      ),
+      title: 'Price insight ready',
+      body: 'Open Adlo to review a recent price opportunity.',
     };
   }
 
   if (insight?.type === 'recurring_price_spike') {
     return {
-      title: 'A usual buy got pricier',
-      body: trimSentence(
-        `${merchant || product} looks higher than usual${insight?.body ? `. ${insight.body}` : ''}`,
-        150
-      ),
+      title: 'Spending insight ready',
+      body: 'Open Adlo to review a recent price change.',
     };
   }
 
   if (insight?.type === 'recurring_repurchase_due') {
     return {
-      title: 'You may need this again soon',
-      body: trimSentence(
-        `${merchant || product} is due again soon${insight?.body ? `. ${insight.body}` : ''}`,
-        150
-      ),
+      title: 'Routine reminder ready',
+      body: 'Open Adlo to review a likely upcoming purchase.',
     };
   }
 
   return {
-    title: trimSentence(insight?.title || 'New insight', 60),
-    body: trimSentence(insight?.body || 'We noticed something worth a look.', 150),
+    title: 'New insight ready',
+    body: 'Open Adlo to review it.',
+  };
+}
+
+function pushNavigationMetadata(insight) {
+  const metadata = insight?.metadata || {};
+  return {
+    scope: metadata.scope || null,
+    month: metadata.month || null,
+    category_key: metadata.category_key || null,
+    merchant_key: metadata.merchant_key || null,
+    continuity_key: metadata.continuity_key || null,
+    group_key: metadata.group_key || null,
   };
 }
 
 function toPushMessage(token, insight) {
   const copy = pushCopyForInsight(insight);
+  const metadata = pushNavigationMetadata(insight);
   return {
     to: token.token,
     title: copy.title,
@@ -71,13 +71,13 @@ function toPushMessage(token, insight) {
       route: '/insight-detail',
       insight_id: insight.id,
       insight_type: insight.type,
-      title: insight.title,
-      body: insight.body,
       severity: insight.severity || null,
       entity_type: insight.entity_type,
       entity_id: insight.entity_id,
-      group_key: insight.metadata?.group_key || null,
-      metadata: insight.metadata || null,
+      scope: metadata.scope,
+      month: metadata.month,
+      group_key: metadata.group_key,
+      metadata,
     },
   };
 }

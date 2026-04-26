@@ -197,21 +197,18 @@ async function findByMessageId(userId, messageId) {
   }
 }
 
-async function listByUser(userId, limit = 100, { detail = 'compact' } = {}) {
-  const fullDetail = detail === 'full';
+async function listByUser(userId, limit = 100) {
   try {
     const result = await db.query(
       `SELECT l.id,
-              ${fullDetail ? 'l.user_id,' : ''}
-              ${fullDetail ? 'l.message_id,' : ''}
               l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
-              ${fullDetail ? 'l.snippet,' : 'NULL::text AS snippet,'}
+              NULL::text AS snippet,
               l.structured_item_block_level,
               l.deterministic_item_count,
               l.user_feedback, l.user_feedback_at,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
-              ${fullDetail ? 'e.notes,' : 'NULL::text AS notes,'}
+              NULL::text AS notes,
               e.review_required,
               e.review_mode,
               e.review_source
@@ -228,8 +225,6 @@ async function listByUser(userId, limit = 100, { detail = 'compact' } = {}) {
     if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id,
-              ${fullDetail ? 'l.user_id,' : ''}
-              ${fullDetail ? 'l.message_id,' : ''}
               l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
               NULL::text AS structured_item_block_level,
@@ -240,7 +235,7 @@ async function listByUser(userId, limit = 100, { detail = 'compact' } = {}) {
               '[]'::jsonb AS review_changed_fields,
               0::int AS review_edit_count,
               e.status AS expense_status,
-              ${fullDetail ? 'e.notes,' : 'NULL::text AS notes,'}
+              NULL::text AS notes,
               FALSE AS review_required,
               NULL::text AS review_mode,
               NULL::text AS review_source

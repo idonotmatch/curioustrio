@@ -268,7 +268,7 @@ function AppNavigator() {
     async function routeAuthenticatedSession(session) {
       const isAnon = session.user.is_anonymous === true;
       const cachedUser = await loadCachedCurrentUser();
-      const safeCachedUser = cachedUser?.provider_uid === session.user.id ? cachedUser : null;
+      const safeCachedUser = cachedUser?.auth_user_id === session.user.id ? cachedUser : null;
 
       if (!bootstrapped) {
         if (!isAnon && safeCachedUser && !safeCachedUser.household_id) {

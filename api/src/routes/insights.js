@@ -80,6 +80,12 @@ async function recordInsightExposures(userId, insights, limit) {
   await InsightEvent.createBatch(userId, events);
 }
 
+async function findInsightByIdForUser(user, insightId) {
+  if (!user?.id || !insightId) return null;
+  const insights = (await buildInsightsForUser({ user, limit: 50 })).map(attachInsightAction);
+  return insights.find((insight) => `${insight.id}` === `${insightId}`) || null;
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const user = await getUser(req);
@@ -173,6 +179,18 @@ router.post('/dispatch-push', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const result = await dispatchInsightPushesForUser(user);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const insight = await findInsightByIdForUser(user, req.params.id);
+    if (!insight) return res.status(404).json({ error: 'Insight not found' });
+    res.json(insight);
   } catch (err) {
     next(err);
   }

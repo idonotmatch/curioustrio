@@ -21,6 +21,31 @@ function resolveJwksUri() {
 
 const SUPABASE_JWKS_URI = resolveJwksUri();
 
+function deriveIssuerFromConfig() {
+  if (process.env.SUPABASE_URL) {
+    return `${process.env.SUPABASE_URL}`.trim().replace(/\/+$/, '') + '/auth/v1';
+  }
+  if (process.env.SUPABASE_PROJECT_REF) {
+    return `https://${process.env.SUPABASE_PROJECT_REF}.supabase.co/auth/v1`;
+  }
+  if (SUPABASE_JWKS_URI) {
+    return `${SUPABASE_JWKS_URI}`.replace(/\/\.well-known\/jwks\.json$/i, '');
+  }
+  return null;
+}
+
+function resolveAudience() {
+  const configured = `${process.env.SUPABASE_JWT_AUDIENCE || ''}`.trim();
+  if (!configured) return ['authenticated'];
+  return configured
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+const EXPECTED_ISSUER = deriveIssuerFromConfig();
+const EXPECTED_AUDIENCE = resolveAudience();
+
 let client;
 
 function getClient() {
@@ -57,7 +82,11 @@ async function authenticate(req, res, next) {
   const token = authHeader.slice(7);
   try {
     const decoded = await new Promise((resolve, reject) => {
-      jwt.verify(token, getKey, { algorithms: ['ES256'] }, (err, payload) => {
+      jwt.verify(token, getKey, {
+        algorithms: ['ES256'],
+        issuer: EXPECTED_ISSUER || undefined,
+        audience: EXPECTED_AUDIENCE.length ? EXPECTED_AUDIENCE : undefined,
+      }, (err, payload) => {
         if (err) reject(err);
         else if (!payload) reject(new Error('Empty payload'));
         else resolve(payload);
@@ -65,6 +94,7 @@ async function authenticate(req, res, next) {
     });
     req.userId = decoded.sub;
     req.isAnonymous = decoded.is_anonymous === true;
+    req.auth = decoded;
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid token' });

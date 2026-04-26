@@ -70,7 +70,7 @@ async function exchangeCode(code) {
 }
 
 async function getAuthenticatedClient(userId) {
-  const tokenRow = await OAuthToken.findByUserId(userId);
+  const tokenRow = await OAuthToken.findCredentialsByUserId(userId);
   if (!tokenRow) throw new Error('Gmail not connected for this user');
 
   const client = createOAuth2Client();

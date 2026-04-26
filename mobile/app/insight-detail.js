@@ -9,7 +9,7 @@ import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../servi
 import { consumeNavigationPayload, stashNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { planningActionSummary } from '../services/planningPresentation';
-import { loadInsightDetailSnapshot } from '../services/insightLocalStore';
+import { loadInsightDetailSnapshot, saveInsightDetailSnapshot } from '../services/insightLocalStore';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -295,6 +295,7 @@ export default function InsightDetailScreen() {
   const preloadEvidenceParam = firstParam(params.preload_evidence);
   const actionParam = firstParam(params.action);
   const [storedSnapshot, setStoredSnapshot] = useState(null);
+  const [remoteInsight, setRemoteInsight] = useState(null);
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
   const [feedbackReason, setFeedbackReason] = useState('');
@@ -314,9 +315,24 @@ export default function InsightDetailScreen() {
     return () => { cancelled = true; };
   }, [insightId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!insightId) return undefined;
+    api.get(`/insights/${encodeURIComponent(insightId)}`)
+      .then((freshInsight) => {
+        if (cancelled || !freshInsight) return;
+        setRemoteInsight(freshInsight);
+        saveInsightDetailSnapshot(freshInsight, { preloadEvidence: [] }).catch(() => {});
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteInsight(null);
+      });
+    return () => { cancelled = true; };
+  }, [insightId]);
+
   const metadata = useMemo(
-    () => navPayload?.metadata || storedSnapshot?.insight?.metadata || parseJsonParam(metadataParam, {}),
-    [metadataParam, navPayload, storedSnapshot]
+    () => remoteInsight?.metadata || navPayload?.metadata || storedSnapshot?.insight?.metadata || parseJsonParam(metadataParam, {}),
+    [metadataParam, navPayload, remoteInsight, storedSnapshot]
   );
   const preloadedEvidence = useMemo(() => {
     const rows = navPayload?.preloadEvidence
@@ -325,21 +341,21 @@ export default function InsightDetailScreen() {
     return Array.isArray(rows) ? rows : [];
   }, [navPayload, preloadEvidenceParam, storedSnapshot]);
   const actionPayload = useMemo(
-    () => navPayload?.action || storedSnapshot?.insight?.action || parseJsonParam(actionParam, null),
-    [actionParam, navPayload, storedSnapshot]
+    () => remoteInsight?.action || navPayload?.action || storedSnapshot?.insight?.action || parseJsonParam(actionParam, null),
+    [actionParam, navPayload, remoteInsight, storedSnapshot]
   );
 
   const insight = useMemo(() => ({
     id: `${insightId}`,
-    type: `${insightType}`,
-    title: `${title}`,
-    body: `${body}`,
-    severity: `${severity}`,
-    entity_type: `${entityType}`,
-    entity_id: `${entityId}`,
+    type: `${remoteInsight?.type || insightType}`,
+    title: `${remoteInsight?.title || title}`,
+    body: `${remoteInsight?.body || body}`,
+    severity: `${remoteInsight?.severity || severity}`,
+    entity_type: `${remoteInsight?.entity_type || entityType}`,
+    entity_id: `${remoteInsight?.entity_id || entityId}`,
     metadata,
     action: actionPayload,
-  }), [insightId, insightType, title, body, severity, entityType, entityId, metadata, actionPayload]);
+  }), [insightId, remoteInsight, insightType, title, body, severity, entityType, entityId, metadata, actionPayload]);
 
   const primaryAction = useMemo(() => {
     if (insight?.action) return insight.action;

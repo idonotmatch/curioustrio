@@ -1,6 +1,14 @@
 const db = require('../db');
 const { encrypt, decrypt } = require('../services/tokenCrypto');
 
+function serializeTokenRow(row, { includeRefreshToken = false } = {}) {
+  if (!row) return null;
+  return {
+    ...row,
+    refresh_token: includeRefreshToken && row.refresh_token ? decrypt(row.refresh_token) : null,
+  };
+}
+
 async function upsert({ userId, provider = 'google', accessToken, refreshToken, expiresAt, scope }) {
   const encryptedRefresh = refreshToken ? encrypt(refreshToken) : null;
   const result = await db.query(
@@ -16,7 +24,7 @@ async function upsert({ userId, provider = 'google', accessToken, refreshToken, 
     [userId, provider, null, encryptedRefresh, expiresAt, scope]
   );
   const row = result.rows[0];
-  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+  return serializeTokenRow(row);
 }
 
 async function findByUserId(userId, provider = 'google') {
@@ -24,9 +32,15 @@ async function findByUserId(userId, provider = 'google') {
     'SELECT * FROM oauth_tokens WHERE user_id = $1 AND provider = $2',
     [userId, provider]
   );
-  if (!result.rows[0]) return null;
-  const row = result.rows[0];
-  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+  return serializeTokenRow(result.rows[0]);
+}
+
+async function findCredentialsByUserId(userId, provider = 'google') {
+  const result = await db.query(
+    'SELECT * FROM oauth_tokens WHERE user_id = $1 AND provider = $2',
+    [userId, provider]
+  );
+  return serializeTokenRow(result.rows[0], { includeRefreshToken: true });
 }
 
 async function findAllWithGmail() {
@@ -47,9 +61,7 @@ async function markSyncAttempt(userId, { provider = 'google', source = null } = 
      RETURNING *`,
     [userId, provider, source]
   );
-  if (!result.rows[0]) return null;
-  const row = result.rows[0];
-  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+  return serializeTokenRow(result.rows[0]);
 }
 
 async function markSynced(userId, { provider = 'google', source = null } = {}) {
@@ -66,9 +78,7 @@ async function markSynced(userId, { provider = 'google', source = null } = {}) {
      RETURNING *`,
     [userId, provider, source]
   );
-  if (!result.rows[0]) return null;
-  const row = result.rows[0];
-  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+  return serializeTokenRow(result.rows[0]);
 }
 
 async function markSyncFailure(userId, { provider = 'google', source = null, error = null } = {}) {
@@ -84,14 +94,13 @@ async function markSyncFailure(userId, { provider = 'google', source = null, err
      RETURNING *`,
     [userId, provider, source, error]
   );
-  if (!result.rows[0]) return null;
-  const row = result.rows[0];
-  return { ...row, refresh_token: row.refresh_token ? decrypt(row.refresh_token) : null };
+  return serializeTokenRow(result.rows[0]);
 }
 
 module.exports = {
   upsert,
   findByUserId,
+  findCredentialsByUserId,
   findAllWithGmail,
   markSyncAttempt,
   markSynced,

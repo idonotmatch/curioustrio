@@ -49,7 +49,18 @@ describe('authenticate middleware', () => {
     await authenticate(req, res, next);
 
     expect(req.userId).toBe('supabase-uuid-123');
+    expect(req.auth).toEqual({ sub: 'supabase-uuid-123' });
     expect(next).toHaveBeenCalled();
+    expect(jwt.verify).toHaveBeenCalledWith(
+      'valid-token',
+      expect.any(Function),
+      expect.objectContaining({
+        algorithms: ['ES256'],
+        issuer: expect.stringContaining('/auth/v1'),
+        audience: ['authenticated'],
+      }),
+      expect.any(Function)
+    );
   });
 
   it('returns 401 when token verification fails', async () => {

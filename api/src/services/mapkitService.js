@@ -95,10 +95,11 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
       console.error('[places/search] Apple Maps HTTP error', {
         status: res.status,
         statusText: res.statusText,
-        query,
+        query_present: !!`${query || ''}`.trim(),
+        query_length: `${query || ''}`.trim().length,
         useLocationBias,
         includePoiFilter,
-        body: responseText?.slice(0, 300) || null,
+        body_present: !!responseText,
       });
       return [];
     }

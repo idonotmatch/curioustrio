@@ -249,6 +249,32 @@ describe('GET /insights', () => {
     expect(due.metadata?.planner_timing_note).toBe('You usually wait a bit longer unless the item is due right away.');
   });
 
+  it('returns a single insight by id', async () => {
+    const today = new Date();
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 42);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 28);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 14);
+
+    const e1 = await insertExpense('Whole Foods', 6.99, d1.toISOString().split('T')[0]);
+    const e2 = await insertExpense('Whole Foods', 7.09, d2.toISOString().split('T')[0]);
+    const e3 = await insertExpense('Whole Foods', 9.49, d3.toISOString().split('T')[0]);
+
+    await ExpenseItem.createBulk(e1, [{ description: 'Greek Yogurt', amount: 6.99, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e2, [{ description: 'Greek Yogurt', amount: 7.09, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+    await ExpenseItem.createBulk(e3, [{ description: 'Greek Yogurt', amount: 9.49, brand: 'Fage', product_size: '32', unit: 'oz' }]);
+
+    const listRes = await request(app).get('/insights?limit=5');
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.body)).toBe(true);
+    const insightId = listRes.body[0]?.id;
+    expect(insightId).toBeTruthy();
+
+    const detailRes = await request(app).get(`/insights/${encodeURIComponent(insightId)}`);
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body.id).toBe(insightId);
+    expect(detailRes.body.type).toBe(listRes.body[0].type);
+  });
+
   it('returns a recurring restock window insight when headroom can absorb a due-soon item', async () => {
     await db.query(
       `INSERT INTO budget_settings (user_id, category_id, monthly_limit) VALUES ($1, NULL, 700)`,

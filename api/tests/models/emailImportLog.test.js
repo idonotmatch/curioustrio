@@ -206,7 +206,7 @@ describe('EmailImportLog.listByUser', () => {
     });
 
     const logs = await EmailImportLog.listByUser(testUserId);
-    const row = logs.find((entry) => entry.message_id === 'msg-004-list-review-metadata');
+    const row = logs.find((entry) => entry.expense_id === expenseResult.rows[0].id);
 
     expect(row).toBeTruthy();
     expect(row.review_required).toBe(true);

@@ -17,6 +17,7 @@ export async function saveInsightDetailSnapshot(insight = {}, extras = {}) {
       entity_type: insight.entity_type || '',
       entity_id: insight.entity_id || '',
       metadata: insight.metadata || {},
+      action: insight.action || null,
     },
     extras: {
       preloadEvidence: Array.isArray(extras?.preloadEvidence) ? extras.preloadEvidence : [],

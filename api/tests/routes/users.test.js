@@ -8,6 +8,7 @@ const TEST_EMAIL = 'dang@test.com';
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
     req.userId = 'supabase-test-uuid-123';
+    req.auth = { email: 'dang@test.com' };
     next();
   },
 }));
@@ -30,9 +31,10 @@ describe('POST /users/sync', () => {
       .send({ name: 'Dang Nguyen', email: TEST_EMAIL });
 
     expect(res.status).toBe(200);
-    expect(res.body.provider_uid).toBe(TEST_UUID);
+    expect(res.body.auth_user_id).toBe(TEST_UUID);
     expect(res.body.name).toBe('Dang Nguyen');
     expect(res.body.email).toBe(TEST_EMAIL);
+    expect(res.body.provider_uid).toBeUndefined();
   });
 
   it('updates provider_uid when email match found (migration path)', async () => {
@@ -46,7 +48,7 @@ describe('POST /users/sync', () => {
       .send({ name: 'Dang Nguyen', email: TEST_EMAIL });
 
     expect(res.status).toBe(200);
-    expect(res.body.provider_uid).toBe(TEST_UUID);
+    expect(res.body.auth_user_id).toBe(TEST_UUID);
     expect(res.body.email).toBe(TEST_EMAIL);
   });
 
@@ -61,7 +63,7 @@ describe('POST /users/sync', () => {
       .send({ name: 'Dang Nguyen' }); // no email
 
     expect(res.status).toBe(200);
-    expect(res.body.provider_uid).toBe(TEST_UUID);
+    expect(res.body.auth_user_id).toBe(TEST_UUID);
   });
 
   it('creates new user when no email and no provider_uid match', async () => {
@@ -70,7 +72,16 @@ describe('POST /users/sync', () => {
       .send({ name: 'New Apple User' });
 
     expect(res.status).toBe(200);
-    expect(res.body.provider_uid).toBe(TEST_UUID);
+    expect(res.body.auth_user_id).toBe(TEST_UUID);
+  });
+
+  it('rejects syncing an email that does not match the authenticated token', async () => {
+    const res = await request(app)
+      .post('/users/sync')
+      .send({ name: 'Dang Nguyen', email: 'someoneelse@test.com' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/does not match/i);
   });
 
   it('returns 400 when name is missing', async () => {
@@ -94,7 +105,8 @@ describe('GET /users/me', () => {
     const res = await request(app).get('/users/me');
 
     expect(res.status).toBe(200);
-    expect(res.body.provider_uid).toBe(TEST_UUID);
+    expect(res.body.auth_user_id).toBe(TEST_UUID);
+    expect(res.body.provider_uid).toBeUndefined();
   });
 
   it('returns 404 when user not found', async () => {
