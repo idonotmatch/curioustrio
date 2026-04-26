@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { LocationPicker } from '../components/LocationPicker';
+import { SmartSuggestionCard } from '../components/SmartSuggestionCard';
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
@@ -317,23 +318,13 @@ export default function ManualAddScreen() {
                 <Text style={styles.locationSuggestionStatus}>Looking for a nearby match...</Text>
               ) : null}
               {!locationData && suggestedLocation?.value ? (
-                <View style={styles.locationSuggestionCard}>
-                  <View style={styles.locationSuggestionCopy}>
-                    <Text style={styles.locationSuggestionEyebrow}>Suggested location</Text>
-                    <Text style={styles.locationSuggestionTitle}>{suggestedLocation.value.place_name}</Text>
-                    {suggestedLocation.value.address ? (
-                      <Text style={styles.locationSuggestionBody}>{suggestedLocation.value.address}</Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.locationSuggestionActions}>
-                    <TouchableOpacity style={styles.locationSuggestionDismiss} onPress={dismissSuggestedLocation}>
-                      <Text style={styles.locationSuggestionDismissText}>Dismiss</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.locationSuggestionUse} onPress={acceptSuggestedLocation}>
-                      <Text style={styles.locationSuggestionUseText}>Use this</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                <SmartSuggestionCard
+                  eyebrow="Suggested location"
+                  title={suggestedLocation.value.place_name}
+                  body={suggestedLocation.value.address || ''}
+                  onDismiss={dismissSuggestedLocation}
+                  onAccept={acceptSuggestedLocation}
+                />
               ) : null}
             </View>
 
@@ -373,21 +364,13 @@ export default function ManualAddScreen() {
                 <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
               </TouchableOpacity>
               {!categoryId && suggestedCategory?.value ? (
-                <View style={styles.categorySuggestionCard}>
-                  <View style={styles.locationSuggestionCopy}>
-                    <Text style={styles.locationSuggestionEyebrow}>Suggested category</Text>
-                    <Text style={styles.locationSuggestionTitle}>{suggestedCategory.value.name}</Text>
-                    <Text style={styles.locationSuggestionBody}>Based on the merchant and place you entered.</Text>
-                  </View>
-                  <View style={styles.locationSuggestionActions}>
-                    <TouchableOpacity style={styles.locationSuggestionDismiss} onPress={dismissSuggestedCategory}>
-                      <Text style={styles.locationSuggestionDismissText}>Dismiss</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.locationSuggestionUse} onPress={acceptSuggestedCategory}>
-                      <Text style={styles.locationSuggestionUseText}>Use this</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                <SmartSuggestionCard
+                  eyebrow="Suggested category"
+                  title={suggestedCategory.value.name}
+                  body="Based on the merchant and place you entered."
+                  onDismiss={dismissSuggestedCategory}
+                  onAccept={acceptSuggestedCategory}
+                />
               ) : null}
             </View>
           </View>
@@ -699,36 +682,6 @@ const styles = StyleSheet.create({
   fieldBlock: { gap: 6 },
   fieldLabel: { fontSize: 12, color: '#999', fontWeight: '600' },
   locationSuggestionStatus: { color: '#7d7d7d', fontSize: 12, lineHeight: 16, marginTop: 2 },
-  locationSuggestionCard: {
-    marginTop: 2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#262626',
-    backgroundColor: '#151515',
-    padding: 12,
-    gap: 10,
-  },
-  locationSuggestionCopy: { gap: 3 },
-  locationSuggestionEyebrow: { color: '#8a8a8a', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.9 },
-  locationSuggestionTitle: { color: '#f4f4f4', fontSize: 14, fontWeight: '600' },
-  locationSuggestionBody: { color: '#8f8f8f', fontSize: 12, lineHeight: 17 },
-  locationSuggestionActions: { flexDirection: 'row', gap: 8 },
-  locationSuggestionDismiss: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#101010',
-  },
-  locationSuggestionDismissText: { color: '#bebebe', fontSize: 12, fontWeight: '600' },
-  locationSuggestionUse: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 999,
-    backgroundColor: '#f5f5f5',
-  },
-  locationSuggestionUseText: { color: '#000', fontSize: 12, fontWeight: '700' },
   primaryInput: {
     backgroundColor: '#181818',
     borderWidth: 1,
