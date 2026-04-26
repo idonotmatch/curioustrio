@@ -1,17 +1,15 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert, Linking, Platform
+  StyleSheet, ActivityIndicator, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../services/api';
-import { invalidateCacheByPrefix } from '../../services/cache';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { usePendingExpenseReviewActions } from '../../hooks/usePendingExpenseReviewActions';
-import { useExpenseVisibilityControls } from '../../hooks/useExpenseVisibilityControls';
+import { useExpenseDetailController } from '../../hooks/useExpenseDetailController';
 import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
@@ -20,7 +18,6 @@ import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
 import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
-import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, mergeExpenseData, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot, patchExpenseInCachedLists } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 import {
   formatImportedAt,
@@ -37,15 +34,6 @@ import {
   summarizeItemSignals,
 } from '../../services/expenseDetailPresentation';
 
-function parseExpenseParam(value) {
-  if (!value || typeof value !== 'string') return null;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
   { value: 'reimbursable', label: 'Reimbursable' },
@@ -55,199 +43,81 @@ const TRACK_ONLY_REASONS = [
   { value: 'other', label: 'Other' },
 ];
 
-function applyExpenseToState(record, setters) {
-  if (!record) return;
-  const {
-    setExpense,
-    setMerchant,
-    setAmount,
-    setDate,
-    setNotes,
-    setCategoryId,
-    setPaymentMethod,
-    setCardLast4,
-    setCardLabel,
-    setIsPrivate,
-    setExcludeFromBudget,
-    setBudgetExclusionReason,
-    setItems,
-    setLocationData,
-    setItemsEdits,
-  } = setters;
-  setExpense(record);
-  setMerchant(record.merchant || '');
-  setAmount(String(Math.abs(Number(record.amount))));
-  setDate(record.date ? record.date.slice(0, 10) : '');
-  setNotes(record.notes || '');
-  setCategoryId(record.category_id || null);
-  setPaymentMethod(record.payment_method || 'unknown');
-  setCardLast4(record.card_last4 || '');
-  setCardLabel(record.card_label || '');
-  setIsPrivate(record.is_private || false);
-  setExcludeFromBudget(record.exclude_from_budget || false);
-  setBudgetExclusionReason(record.budget_exclusion_reason || null);
-  setItems(record.items || []);
-  setLocationData(
-    record.place_name || record.address || record.mapkit_stable_id
-      ? {
-          place_name: record.place_name || '',
-          address: record.address || null,
-          mapkit_stable_id: record.mapkit_stable_id || null,
-        }
-      : null
-  );
-  setItemsEdits((record.items || []).map((it) => ({
-    ...it,
-    description: it.description,
-    amount: it.amount != null ? String(it.amount) : '',
-  })));
-}
-
-function mergeReviewMetadata(previous, next) {
-  if (!next) return previous || null;
-  if (!previous) return next;
-  return mergeExpenseData(previous, next);
-}
-
-const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
 
 export default function ExpenseDetailScreen() {
   const { id, expense: expenseParam } = useLocalSearchParams();
   const router = useRouter();
   const { categories } = useCategories();
   const { userId: currentUserId } = useCurrentUser();
-  const [expense, setExpense] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [actioning, setActioning] = useState(false);
-  const [showDismissReasonSheet, setShowDismissReasonSheet] = useState(false);
-
-  // Edit state
-  const [merchant, setMerchant] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState('');
-  const [notes, setNotes] = useState('');
-  const [categoryId, setCategoryId] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('unknown');
-  const [cardLast4, setCardLast4] = useState('');
-  const [cardLabel, setCardLabel] = useState('');
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [excludeFromBudget, setExcludeFromBudget] = useState(false);
-  const [budgetExclusionReason, setBudgetExclusionReason] = useState(null);
-  const [items, setItems] = useState([]);
-  const [itemsExpanded, setItemsExpanded] = useState(false);
-  const [itemsEdits, setItemsEdits] = useState([]);
-  const [locationData, setLocationData] = useState(null);
-  const [recurringPreference, setRecurringPreference] = useState(null);
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [recurringFrequencyDays, setRecurringFrequencyDays] = useState('');
-  const [recurringNotes, setRecurringNotes] = useState('');
-  const [secondaryDetailsExpanded, setSecondaryDetailsExpanded] = useState(false);
-  const [activeReviewField, setActiveReviewField] = useState(null);
-
-  useEffect(() => {
-    let active = true;
-    const routeExpense = parseExpenseParam(typeof expenseParam === 'string' ? expenseParam : null);
-
-    async function load() {
-      const setters = {
-        setExpense,
-        setMerchant,
-        setAmount,
-        setDate,
-        setNotes,
-        setCategoryId,
-        setPaymentMethod,
-        setCardLast4,
-        setCardLabel,
-        setIsPrivate,
-        setExcludeFromBudget,
-        setBudgetExclusionReason,
-        setItems,
-        setLocationData,
-        setItemsEdits,
-      };
-      const bootstrapped = routeExpense || await findExpenseSnapshotInCaches(id);
-      const cachedItems = await loadExpenseItemsSnapshot(id, {
-        maxAgeMs: ITEM_CACHE_FRESH_MS,
-        includeMeta: true,
-      });
-      const bootstrappedWithItems = bootstrapped && cachedItems?.items && !Array.isArray(bootstrapped.items)
-        ? {
-            ...bootstrapped,
-            items: cachedItems.items,
-            item_count: cachedItems.items.length,
-          }
-        : bootstrapped;
-      if (active && bootstrappedWithItems) {
-        applyExpenseToState(bootstrappedWithItems, setters);
-        setLoading(false);
-      }
-
-      try {
-        const fresh = await api.get(`/expenses/${id}`);
-        if (!active) return;
-        const merged = mergeReviewMetadata(bootstrappedWithItems, fresh);
-        applyExpenseToState(merged, setters);
-        setLoading(false);
-        saveExpenseSnapshot(merged);
-      } catch {
-        if (active && !bootstrapped) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { active = false; };
-  }, [id, expenseParam]);
-
-  useEffect(() => {
-    api.get(`/recurring/preferences?expense_id=${encodeURIComponent(id)}`)
-      .then((pref) => {
-        setRecurringPreference(pref || null);
-        setRecurringFrequencyDays(pref?.expected_frequency_days ? String(pref.expected_frequency_days) : '');
-        setRecurringNotes(pref?.notes || '');
-      })
-      .catch(() => {
-        setRecurringPreference(null);
-        setRecurringFrequencyDays('');
-        setRecurringNotes('');
-      });
-  }, [id]);
-
-  const canEdit = !!currentUserId && !!expense && String(expense.user_id) === String(currentUserId);
-  const itemSignals = summarizeItemSignals(items);
-  const canAdjustReviewControls = canEdit && expense?.status === 'pending' && expense?.source === 'email';
   const {
-    savingControls,
-    persistReviewControlsIfNeeded,
-    handleTogglePrivate,
-    handleToggleTrackOnly,
-    handleSelectBudgetExclusionReason,
-  } = useExpenseVisibilityControls({
-    expenseId: id,
     expense,
-    canEdit,
-    canAdjustReviewControls,
+    loading,
+    editing,
+    setEditing,
+    saving,
+    deleting,
+    actioning,
+    setActioning,
+    showDismissReasonSheet,
+    setShowDismissReasonSheet,
+    merchant,
+    setMerchant,
+    amount,
+    setAmount,
+    date,
+    setDate,
+    notes,
+    setNotes,
+    categoryId,
+    setCategoryId,
+    paymentMethod,
+    setPaymentMethod,
+    cardLast4,
+    setCardLast4,
+    cardLabel,
+    setCardLabel,
     isPrivate,
     setIsPrivate,
     excludeFromBudget,
     setExcludeFromBudget,
     budgetExclusionReason,
     setBudgetExclusionReason,
-    setExpense,
+    items,
+    setItemsExpanded,
+    itemsExpanded,
+    itemsEdits,
+    setItemsEdits,
+    locationData,
+    setLocationData,
+    recurringPreference,
+    showRecurringModal,
+    setShowRecurringModal,
+    recurringFrequencyDays,
+    setRecurringFrequencyDays,
+    recurringNotes,
+    setRecurringNotes,
+    secondaryDetailsExpanded,
+    setSecondaryDetailsExpanded,
+    activeReviewField,
+    setActiveReviewField,
+    canEdit,
+    canAdjustReviewControls,
+    handleSave,
+    handleDelete,
+    saveRecurringPreference,
+    removeRecurringPreference,
+    savingControls,
+    persistReviewControlsIfNeeded,
+    handleTogglePrivate,
+    handleToggleTrackOnly,
+    handleSelectBudgetExclusionReason,
+  } = useExpenseDetailController({
+    id,
+    expenseParam,
+    currentUserId,
+    router,
   });
-
-  useEffect(() => {
-    if (!canEdit && editing) setEditing(false);
-  }, [canEdit, editing]);
-
-  useEffect(() => {
-    if (!excludeFromBudget) {
-      setBudgetExclusionReason(null);
-    }
-  }, [excludeFromBudget, budgetExclusionReason]);
+  const itemSignals = summarizeItemSignals(items);
 
   const reviewState = expense?.status === 'pending' && expense?.source === 'email';
   const gmailReviewHint = expense?.gmail_review_hint || null;
@@ -265,138 +135,6 @@ export default function ExpenseDetailScreen() {
       setActiveReviewField((current) => current || 'items');
     }
   }, [isPendingEmailReview, items, itemsExpanded, isItemsFirstReview]);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      if (excludeFromBudget && !budgetExclusionReason) {
-        Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
-        return;
-      }
-      const updated = await api.patch(`/expenses/${id}`, {
-        merchant,
-        amount: parseFloat(amount),
-        date,
-        notes,
-        category_id: categoryId,
-        payment_method: paymentMethod,
-        card_last4: cardLast4 || null,
-        card_label: cardLabel || null,
-        is_private: isPrivate,
-        exclude_from_budget: excludeFromBudget,
-        budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
-        place_name: locationData?.place_name || null,
-        address: locationData?.address || null,
-        mapkit_stable_id: locationData?.mapkit_stable_id || null,
-        items: itemsEdits
-          .filter(it => it.description.trim())
-          .map(it => ({
-            description: it.description.trim(),
-            amount: it.amount ? parseFloat(it.amount) : null,
-            upc: it.upc || null,
-            sku: it.sku || null,
-            brand: it.brand || null,
-            product_size: it.product_size || null,
-            pack_size: it.pack_size || null,
-            unit: it.unit || null,
-          })),
-      });
-      const refreshed = mergeReviewMetadata(expense, updated);
-      applyExpenseToState(refreshed, {
-        setExpense,
-        setMerchant,
-        setAmount,
-        setDate,
-        setNotes,
-        setCategoryId,
-        setPaymentMethod,
-        setCardLast4,
-        setCardLabel,
-        setIsPrivate,
-        setExcludeFromBudget,
-        setBudgetExclusionReason,
-        setItems,
-        setLocationData,
-        setItemsEdits,
-      });
-      setExpense(refreshed);
-      saveExpenseSnapshot(refreshed);
-      patchExpenseInCachedLists(refreshed);
-      setEditing(false);
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete() {
-    Alert.alert('Delete expense', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          setDeleting(true);
-          try {
-            await api.delete(`/expenses/${id}`);
-            await removeExpenseFromCachedLists(id);
-            await removeExpenseSnapshot(id);
-            await Promise.all([
-              invalidateCacheByPrefix('cache:expenses:'),
-              invalidateCacheByPrefix('cache:budget:'),
-              invalidateCacheByPrefix('cache:household-expenses:'),
-            ]);
-            router.back();
-          } catch (e) {
-            Alert.alert('Error', e.message);
-            setDeleting(false);
-          }
-        },
-      },
-    ]);
-  }
-
-  async function saveRecurringPreference() {
-    try {
-      setActioning(true);
-      const saved = await api.post('/recurring/preferences', {
-        expense_id: id,
-        expected_frequency_days: recurringFrequencyDays.trim() ? parseInt(recurringFrequencyDays.trim(), 10) : null,
-        notes: recurringNotes.trim() || null,
-      });
-      setRecurringPreference(saved);
-      setRecurringFrequencyDays(saved?.expected_frequency_days ? String(saved.expected_frequency_days) : '');
-      setRecurringNotes(saved?.notes || '');
-      setShowRecurringModal(false);
-      await invalidateCacheByPrefix('cache:insights:');
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Could not save recurring details');
-    } finally {
-      setActioning(false);
-    }
-  }
-
-  async function removeRecurringPreference() {
-    if (!recurringPreference?.id) return;
-    try {
-      setActioning(true);
-      await api.delete(`/recurring/preferences/${recurringPreference.id}`);
-      setRecurringPreference(null);
-      setRecurringFrequencyDays('');
-      setRecurringNotes('');
-      setShowRecurringModal(false);
-      await invalidateCacheByPrefix('cache:insights:');
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Could not remove recurring flag');
-    } finally {
-      setActioning(false);
-    }
-  }
 
   if (loading) return <View style={styles.center}><ActivityIndicator color="#555" /></View>;
   if (!expense) return <View style={styles.center}><Text style={styles.muted}>Expense not found.</Text></View>;

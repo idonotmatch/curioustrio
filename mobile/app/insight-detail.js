@@ -341,16 +341,18 @@ export default function InsightDetailScreen() {
     action: actionPayload,
   }), [insightId, insightType, title, body, severity, entityType, entityId, metadata, actionPayload]);
 
+  const primaryAction = useMemo(() => {
+    if (insight?.action) return insight.action;
+    return getPrimaryActionForInsight({
+      insightType: `${insightType}`,
+      scope: metadata.scope || 'personal',
+      month: metadata.month || '',
+      categoryKey: metadata.category_key || '',
+      metadata,
+      trend: null,
+    });
+  }, [insight?.action, insightType, metadata]);
   const descriptor = getInsightActionDescriptor(insight);
-  const fallbackPrimaryAction = getPrimaryActionForInsight({
-    insightType: `${insightType}`,
-    scope: metadata.scope || 'personal',
-    month: metadata.month || '',
-    categoryKey: metadata.category_key || '',
-    metadata,
-    trend: null,
-  });
-  const primaryAction = insight?.action || fallbackPrimaryAction;
   const highlights = metadataHighlights(metadata);
   const technicalRows = transparencyRows(metadata);
   const categorySignal = categorySignalCopy(metadata);

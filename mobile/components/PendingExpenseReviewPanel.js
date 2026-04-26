@@ -1,7 +1,9 @@
-import { Platform, ScrollView, TextInput, View, Text, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { ExpenseVisibilityControls } from './ExpenseVisibilityControls';
+import { PendingExpenseEmailCard } from './PendingExpenseEmailCard';
+import { PendingExpenseApprovalCard } from './PendingExpenseApprovalCard';
+import { PendingExpenseAttentionCard } from './PendingExpenseAttentionCard';
+import { PendingExpenseItemsCard } from './PendingExpenseItemsCard';
 
 export function PendingExpenseReviewPanel({
   styles,
@@ -60,225 +62,63 @@ export function PendingExpenseReviewPanel({
       })
     : [];
 
-  const approvalFacts = Array.isArray(reviewDecisionFacts)
-    ? reviewDecisionFacts.filter((fact) => fact?.label !== 'Sender')
-    : [];
   const reviewItems = Array.isArray(items) ? items.filter((item) => item?.description) : [];
   const previewItems = reviewItems.slice(0, 3);
   const hasMoreItems = reviewItems.length > previewItems.length;
   const primaryReviewPath = automationRecommendation?.label || (isItemsFirstReview ? 'Check items first' : 'Review details');
   const categoryDetail = `${categoryExplanation?.detail || ''}`.trim();
-  const reviewCategories = Array.isArray(categories) ? categories : [];
-
-  function renderEditableSummaryFields() {
-    return (
-      <View style={styles.inlineEditFieldList}>
-        <View style={styles.inlineEditFieldCard}>
-          <Text style={styles.reviewSummaryChipLabel}>Total</Text>
-          <View style={styles.inlineEditAmountRow}>
-            <Text style={styles.inlineEditAmountDollar}>$</Text>
-            <TextInput
-              style={styles.inlineEditAmountInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor="#555"
-            />
-          </View>
-        </View>
-
-        <View style={styles.inlineEditFieldCard}>
-          <Text style={styles.reviewSummaryChipLabel}>Merchant</Text>
-          <TextInput
-            style={styles.inlineEditTextInput}
-            value={merchant}
-            onChangeText={setMerchant}
-            placeholder="Merchant"
-            placeholderTextColor="#555"
-          />
-        </View>
-
-        <View style={styles.inlineEditFieldCard}>
-          <Text style={styles.reviewSummaryChipLabel}>Date</Text>
-          <Text style={styles.inlineEditStaticValue}>{formattedDate || 'Select a date'}</Text>
-          <View style={styles.inlineEditDateRow}>
-            <DateTimePicker
-              value={date ? new Date(`${date}T12:00:00`) : new Date()}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'compact' : 'default'}
-              maximumDate={new Date()}
-              onChange={(_, selected) => {
-                if (selected) setDate(toLocalDateString(selected));
-              }}
-              themeVariant="dark"
-              style={styles.inlineEditDatePicker}
-            />
-          </View>
-        </View>
-
-        <View style={styles.inlineEditFieldCard}>
-          <Text style={styles.reviewSummaryChipLabel}>Category</Text>
-          <Text style={styles.inlineEditStaticValue} numberOfLines={1}>
-            {reviewCategories.find((category) => category.id === categoryId)?.name || 'Select a category'}
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inlineEditCategoryScroller}>
-            <View style={styles.inlineEditCategoryRow}>
-              {reviewCategories.map((category) => (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[styles.inlineEditCategoryChip, categoryId === category.id && styles.inlineEditCategoryChipActive]}
-                  onPress={() => setCategoryId(category.id)}
-                  activeOpacity={0.82}
-                >
-                  <Text style={[styles.inlineEditCategoryChipText, categoryId === category.id && styles.inlineEditCategoryChipTextActive]}>
-                    {category.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <>
-      <View style={styles.reviewProvenanceCard}>
-        <Text style={styles.reviewSectionEyebrow}>From email</Text>
-        <Text style={styles.reviewProvenanceTitle}>
-          {subjectLine || expenseMerchant || 'Gmail import awaiting review'}
-        </Text>
-        {importMetaBits.length ? <Text style={styles.reviewProvenanceMeta}>{importMetaBits.join('  ·  ')}</Text> : null}
-        <Text style={styles.reviewProvenanceSnippet} numberOfLines={1}>
-          {automationRecommendation?.reason || reviewFocusSummary.body}
-        </Text>
-        <Text style={styles.reviewProvenanceHint}>{primaryReviewPath}</Text>
-        {emailSnippet ? <Text style={styles.reviewProvenanceSnippet} numberOfLines={1}>{emailSnippet}</Text> : null}
-      </View>
+      <PendingExpenseEmailCard
+        styles={styles}
+        subjectLine={subjectLine}
+        expenseMerchant={expenseMerchant}
+        importMetaBits={importMetaBits}
+        automationRecommendation={automationRecommendation}
+        reviewFocusSummary={reviewFocusSummary}
+        primaryReviewPath={primaryReviewPath}
+        emailSnippet={emailSnippet}
+      />
 
-      <View style={styles.reviewSummaryCard}>
-        <View style={styles.reviewSummaryHeader}>
-          <View style={styles.headerCopyBlock}>
-            <Text style={styles.reviewSectionEyebrow}>Approve this expense</Text>
-            <Text style={styles.reviewSummaryTitle}>Confirm what will be saved</Text>
-          </View>
-          {!editing ? (
-            <TouchableOpacity style={styles.headerActionWrap} onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
-              <Text style={styles.priorityFieldsAction} numberOfLines={1}>Edit</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+      <PendingExpenseApprovalCard
+        styles={styles}
+        editing={editing}
+        activateReviewField={activateReviewField}
+        priorityReviewFields={priorityReviewFields}
+        reviewDecisionFacts={reviewDecisionFacts}
+        amount={amount}
+        setAmount={setAmount}
+        merchant={merchant}
+        setMerchant={setMerchant}
+        date={date}
+        setDate={setDate}
+        categoryId={categoryId}
+        setCategoryId={setCategoryId}
+        categories={categories}
+        formattedDate={formattedDate}
+        toLocalDateString={toLocalDateString}
+      />
 
-        {approvalFacts.length ? (
-          editing ? (
-            renderEditableSummaryFields()
-          ) : (
-            <View style={styles.reviewSummaryGrid}>
-              {approvalFacts.map((fact) => (
-                <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
-                  <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
-                  <Text style={styles.reviewSummaryChipValue} numberOfLines={1}>{fact.value}</Text>
-                </View>
-              ))}
-            </View>
-          )
-        ) : null}
-      </View>
+      <PendingExpenseAttentionCard
+        styles={styles}
+        attentionFields={attentionFields}
+        editing={editing}
+        activateReviewField={activateReviewField}
+        activeReviewField={activeReviewField}
+        reviewFocusSummary={reviewFocusSummary}
+        categoryDetail={categoryDetail}
+      />
 
-      {attentionFields.length ? (
-        <View style={styles.priorityFieldsCard}>
-          <View style={styles.priorityFieldsHeader}>
-            <View style={styles.headerCopyBlock}>
-              <Text style={styles.reviewSectionEyebrow}>Needs attention</Text>
-              <Text style={styles.priorityFieldsTitle}>
-                {reviewFocusSummary.title}
-              </Text>
-              <Text style={styles.reviewAttentionBody}>{reviewFocusSummary.body}</Text>
-            </View>
-            {!editing ? (
-              <TouchableOpacity style={styles.headerActionWrap} onPress={() => activateReviewField(attentionFields[0]?.key || 'amount')} activeOpacity={0.8}>
-                <Text style={styles.priorityFieldsAction} numberOfLines={1}>Review</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          {attentionFields.map((field) => (
-            <TouchableOpacity
-              key={field.key}
-              style={[styles.priorityFieldRow, activeReviewField === field.key && styles.priorityFieldRowActive]}
-              onPress={() => activateReviewField(field.key)}
-              activeOpacity={0.82}
-            >
-              <View style={styles.priorityFieldTop}>
-                <Text style={styles.priorityFieldLabel}>{field.label}</Text>
-                <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
-              </View>
-              <Text style={styles.priorityFieldValue}>{field.value}</Text>
-              <Text style={styles.priorityFieldReason}>
-                {field.key === 'category' && categoryDetail ? categoryDetail : field.reason}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
-
-      {reviewItems.length > 0 ? (
-        <View style={styles.priorityFieldsCard}>
-          <View style={styles.priorityFieldsHeader}>
-            <View style={styles.headerCopyBlock}>
-              <Text style={styles.reviewSectionEyebrow}>Extracted items</Text>
-              <Text style={styles.priorityFieldsTitle}>
-                {reviewItems.length} {reviewItems.length === 1 ? 'item' : 'items'} found in the email
-              </Text>
-              <Text style={styles.reviewAttentionBody}>
-                Check that the product names and amounts match what was actually ordered.
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.headerActionWrap}
-              onPress={() => {
-                setItemsExpanded(true);
-                activateReviewField('items');
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.priorityFieldsAction} numberOfLines={1}>Review</Text>
-            </TouchableOpacity>
-          </View>
-          {previewItems.map((item, index) => (
-            <TouchableOpacity
-              key={`${item.description}:${index}`}
-              style={[styles.priorityFieldRow, activeReviewField === 'items' && styles.priorityFieldRowActive]}
-              onPress={() => {
-                setItemsExpanded(true);
-                activateReviewField('items');
-              }}
-              activeOpacity={0.82}
-            >
-              <View style={styles.priorityFieldTop}>
-                <Text style={styles.priorityFieldLabel}>{item.description}</Text>
-                <Text style={styles.priorityFieldLabel}>
-                  {formatCurrency(item.amount) || '—'}
-                </Text>
-              </View>
-              {item.brand ? <Text style={styles.priorityFieldReason}>{item.brand}</Text> : null}
-            </TouchableOpacity>
-          ))}
-          {hasMoreItems ? (
-            <TouchableOpacity
-              style={styles.priorityFieldRow}
-              onPress={() => {
-                setItemsExpanded(true);
-                activateReviewField('items');
-              }}
-              activeOpacity={0.82}
-            >
-              <Text style={styles.priorityFieldsAction}>View all {reviewItems.length} items</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
+      <PendingExpenseItemsCard
+        styles={styles}
+        reviewItems={reviewItems}
+        previewItems={previewItems}
+        hasMoreItems={hasMoreItems}
+        activeReviewField={activeReviewField}
+        setItemsExpanded={setItemsExpanded}
+        activateReviewField={activateReviewField}
+        formatCurrency={formatCurrency}
+      />
 
       <View style={styles.reviewControlsCard}>
         {treatmentSuggestionSummary ? (

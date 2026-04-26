@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { MIGRATION_PLAN } = require('../src/db/migrationPlan');
 
 const DEFAULT_TEST_DATABASE_URL = 'postgres://test:test@localhost:5432/expense_tracker_test';
 const rawDatabaseUrl = process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL;
@@ -49,12 +50,23 @@ async function applyMigrations(databaseUrl) {
   });
 
   try {
-    const files = fs
+    const discoveredFiles = fs
       .readdirSync(migrationsDir)
       .filter((name) => name.endsWith('.sql'))
       .sort((left, right) => left.localeCompare(right));
+    const missingFromPlan = discoveredFiles.filter((name) => !MIGRATION_PLAN.includes(name));
+    const missingOnDisk = MIGRATION_PLAN.filter((name) => !discoveredFiles.includes(name));
+    if (missingFromPlan.length || missingOnDisk.length) {
+      throw new Error(
+        [
+          'migration plan is out of sync',
+          missingFromPlan.length ? `unplanned files: ${missingFromPlan.join(', ')}` : null,
+          missingOnDisk.length ? `missing files: ${missingOnDisk.join(', ')}` : null,
+        ].filter(Boolean).join(' | ')
+      );
+    }
 
-    for (const file of files) {
+    for (const file of MIGRATION_PLAN) {
       const filePath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(filePath, 'utf8');
       process.stdout.write(`[test-db] applying ${file}\n`);
