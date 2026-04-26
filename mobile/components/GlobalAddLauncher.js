@@ -11,7 +11,7 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
 
   function openAdd() {
     close();
-    router.push('/(tabs)/add');
+    router.push('/manual-add');
   }
 
   function openScan() {

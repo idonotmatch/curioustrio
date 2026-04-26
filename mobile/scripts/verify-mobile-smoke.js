@@ -5,6 +5,7 @@ const projectRoot = path.join(__dirname, '..');
 const filesToCheck = [
   'app/expense/[id].js',
   'app/insight-detail.js',
+  'app/manual-add.js',
   'app/scenario-check.js',
   'components/PendingExpenseReviewPanel.js',
   'components/PendingExpenseEmailCard.js',

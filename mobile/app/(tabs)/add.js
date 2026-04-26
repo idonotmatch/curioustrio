@@ -7,7 +7,6 @@ try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not ava
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 import { useEffect, useRef, useState } from 'react';
-import { createManualExpenseDraft } from '../../services/manualExpenseDraft';
 import { toLocalDateString } from '../../services/date';
 
 export default function AddScreen() {
@@ -24,10 +23,7 @@ export default function AddScreen() {
       : null;
 
   function startManualEntry() {
-    router.push({
-      pathname: '/confirm',
-      params: { data: JSON.stringify(createManualExpenseDraft()) },
-    });
+    router.push('/manual-add');
   }
 
   async function handleSubmit(input) {
@@ -140,14 +136,17 @@ export default function AddScreen() {
         </View>
       ) : null}
       <View style={styles.scanRow}>
+        <TouchableOpacity style={styles.scanBtn} onPress={startManualEntry} disabled={scanLoading || loading}>
+          <Text style={styles.scanText}>✍️  manual add</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.scanBtn} onPress={() => handleScan(false)} disabled={scanLoading}>
           <Text style={styles.scanText}>{scanLoading ? 'scanning...' : '📷  scan receipt'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.galleryBtn} onPress={() => handleScan(true)} disabled={scanLoading}>
           <Text style={styles.galleryText}>from camera roll</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.manualBtn} onPress={startManualEntry} disabled={scanLoading || loading}>
-          <Text style={styles.manualText}>start from scratch</Text>
+        <TouchableOpacity style={styles.manualBtn} onPress={() => router.push('/scenario-check')} disabled={scanLoading || loading}>
+          <Text style={styles.manualText}>check a purchase</Text>
         </TouchableOpacity>
       </View>
     </View>

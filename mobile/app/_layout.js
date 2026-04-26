@@ -368,6 +368,14 @@ function AppNavigator() {
     }}>
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="manual-add"
+        options={{
+          title: 'Add expense',
+          presentation: 'modal',
+          headerBackTitle: 'Back',
+        }}
+      />
       <Stack.Screen name="confirm" options={{ title: 'Confirm Expense', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="budget-period" options={{ title: 'Budget Period', headerBackTitle: 'Settings' }} />
