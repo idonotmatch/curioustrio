@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -39,6 +39,7 @@ export default function ManualAddScreen() {
   const { categories, loading: categoriesLoading } = useCategories();
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState(draft.merchant || '');
+  const [merchantEdited, setMerchantEdited] = useState(false);
   const [notes, setNotes] = useState(draft.notes || '');
   const [date, setDate] = useState(draft.date || toLocalDateString());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -63,6 +64,14 @@ export default function ManualAddScreen() {
     return categories.filter((category) => `${category.name || ''}`.toLowerCase().includes(query));
   }, [categories, categoryQuery]);
   const canSave = Number(amount) > 0 && merchant.trim().length > 0 && !saving;
+
+  useEffect(() => {
+    const placeName = `${locationData?.place_name || ''}`.trim();
+    if (!placeName) return;
+    if (!merchantEdited || !merchant.trim()) {
+      setMerchant(placeName);
+    }
+  }, [locationData?.place_name, merchantEdited, merchant]);
 
   function onDateChange(_, selectedDate) {
     if (Platform.OS === 'android') setShowDatePicker(false);
@@ -181,6 +190,11 @@ export default function ManualAddScreen() {
             </View>
 
             <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Location</Text>
+              <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
+            </View>
+
+            <View style={styles.fieldBlock}>
               <Text style={styles.fieldLabel}>Amount</Text>
               <TextInput
                 style={styles.primaryInput}
@@ -197,7 +211,10 @@ export default function ManualAddScreen() {
               <TextInput
                 style={styles.primaryInput}
                 value={merchant}
-                onChangeText={setMerchant}
+                onChangeText={(value) => {
+                  setMerchantEdited(true);
+                  setMerchant(value);
+                }}
                 placeholder="Amazon, lunch, hair clips..."
                 placeholderTextColor="#555"
                 autoCorrect={false}
@@ -335,11 +352,6 @@ export default function ManualAddScreen() {
                   placeholderTextColor="#555"
                   multiline
                 />
-              </View>
-
-              <View style={styles.fieldBlock}>
-                <Text style={styles.fieldLabel}>Location</Text>
-                <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
               </View>
             </View>
           ) : null}
