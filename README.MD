@@ -46,3 +46,38 @@ Notes:
 - `test:stability` runs without the full integration DB setup.
 - `check:schema` needs a live database connection for the target environment.
 - GitHub Actions now runs the focused API stability suite automatically on API pushes and PRs via [api-stability.yml](/Users/dangnguyen/curious-trio/.github/workflows/api-stability.yml).
+
+## Integration tests
+
+The DB-backed route/model suites now live in their own lane:
+
+```bash
+cd api
+npm test
+npm run test:routes
+npm run test:models
+```
+
+- `npm test` is the fast unit/default lane.
+- `test:routes` and `test:models` require a local Postgres test database at `postgres://test:test@localhost:5432/expense_tracker_test`.
+
+To start and prepare that database:
+
+```bash
+cd api
+npm run test:db:setup
+```
+
+What that does:
+- starts a local Docker Postgres container from [api/docker-compose.test-db.yml](/Users/dangnguyen/curious-trio/api/docker-compose.test-db.yml)
+- recreates `expense_tracker_test`
+- applies every SQL migration in [api/src/db/migrations](/Users/dangnguyen/curious-trio/api/src/db/migrations)
+
+Useful follow-ups:
+
+```bash
+cd api
+npm run test:db:prepare
+npm run test:integration
+npm run test:db:stop
+```
