@@ -12,6 +12,12 @@ import { toLocalDateString } from '../services/date';
 import { api } from '../services/api';
 import { insertExpenseIntoCachedLists, patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateCacheByPrefix } from '../services/cache';
+import { getCoords } from '../services/locationService';
+import {
+  normalizeMerchant,
+  selectSuggestedLocationCandidate,
+  shouldSuggestLocationFromMerchant,
+} from '../services/manualAddSuggestions';
 
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
@@ -51,9 +57,14 @@ export default function ManualAddScreen() {
   const [excludeFromBudget, setExcludeFromBudget] = useState(false);
   const [budgetExclusionReason, setBudgetExclusionReason] = useState(null);
   const [locationData, setLocationData] = useState(null);
+  const [locationSource, setLocationSource] = useState('empty');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState('');
+  const [suggestedLocation, setSuggestedLocation] = useState(null);
+  const [suggestingLocation, setSuggestingLocation] = useState(false);
+  const [dismissedMerchantSuggestion, setDismissedMerchantSuggestion] = useState('');
+  const [lastSuggestedMerchant, setLastSuggestedMerchant] = useState('');
   const [saving, setSaving] = useState(false);
 
   const topCategories = categories.slice(0, 8);
@@ -73,6 +84,56 @@ export default function ManualAddScreen() {
     }
   }, [locationData?.place_name, merchantEdited, merchant]);
 
+  useEffect(() => {
+    const normalizedMerchant = normalizeMerchant(merchant);
+    if (!shouldSuggestLocationFromMerchant({
+      merchant,
+      hasAcceptedLocation: !!locationData,
+      dismissedMerchantSuggestion,
+    })) {
+      setSuggestingLocation(false);
+      setSuggestedLocation(null);
+      return undefined;
+    }
+
+    if (normalizedMerchant === lastSuggestedMerchant && suggestedLocation) return undefined;
+
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      setSuggestingLocation(true);
+      try {
+        let coords = null;
+        try {
+          coords = await getCoords();
+        } catch {
+          coords = null;
+        }
+        const params = new URLSearchParams({ q: merchant.trim() });
+        if (coords?.latitude && coords?.longitude) {
+          params.set('lat', String(coords.latitude));
+          params.set('lng', String(coords.longitude));
+        }
+        const lookup = await api.get(`/places/search?${params.toString()}`);
+        if (cancelled) return;
+        const results = Array.isArray(lookup?.results)
+          ? lookup.results
+          : (lookup?.result ? [lookup.result] : []);
+        const nextSuggestion = selectSuggestedLocationCandidate(merchant, results);
+        setLastSuggestedMerchant(normalizedMerchant);
+        setSuggestedLocation(nextSuggestion);
+      } catch {
+        if (!cancelled) setSuggestedLocation(null);
+      } finally {
+        if (!cancelled) setSuggestingLocation(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [merchant, locationData, dismissedMerchantSuggestion, lastSuggestedMerchant, suggestedLocation]);
+
   function onDateChange(_, selectedDate) {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (selectedDate) setDate(toLocalDateString(selectedDate));
@@ -86,6 +147,27 @@ export default function ManualAddScreen() {
   function selectCategory(nextCategoryId) {
     setCategoryId(nextCategoryId);
     closeCategoryPicker();
+  }
+
+  function acceptSuggestedLocation() {
+    if (!suggestedLocation?.value) return;
+    setLocationData(suggestedLocation.value);
+    setLocationSource('merchant_suggestion');
+    setSuggestedLocation(null);
+    setDismissedMerchantSuggestion('');
+  }
+
+  function dismissSuggestedLocation() {
+    setSuggestedLocation(null);
+    setSuggestingLocation(false);
+    setDismissedMerchantSuggestion(normalizeMerchant(merchant));
+  }
+
+  function handleLocationChange(nextLocation) {
+    setLocationData(nextLocation);
+    setLocationSource(nextLocation ? 'manual_search' : 'empty');
+    setSuggestedLocation(null);
+    setDismissedMerchantSuggestion('');
   }
 
   async function handleSave() {
@@ -191,7 +273,29 @@ export default function ManualAddScreen() {
 
             <View style={styles.fieldBlock}>
               <Text style={styles.fieldLabel}>Location</Text>
-              <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
+              <LocationPicker onLocation={handleLocationChange} locationData={locationData} merchant={merchant} />
+              {!locationData && suggestingLocation ? (
+                <Text style={styles.locationSuggestionStatus}>Looking for a nearby match...</Text>
+              ) : null}
+              {!locationData && suggestedLocation?.value ? (
+                <View style={styles.locationSuggestionCard}>
+                  <View style={styles.locationSuggestionCopy}>
+                    <Text style={styles.locationSuggestionEyebrow}>Suggested location</Text>
+                    <Text style={styles.locationSuggestionTitle}>{suggestedLocation.value.place_name}</Text>
+                    {suggestedLocation.value.address ? (
+                      <Text style={styles.locationSuggestionBody}>{suggestedLocation.value.address}</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.locationSuggestionActions}>
+                    <TouchableOpacity style={styles.locationSuggestionDismiss} onPress={dismissSuggestedLocation}>
+                      <Text style={styles.locationSuggestionDismissText}>Dismiss</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.locationSuggestionUse} onPress={acceptSuggestedLocation}>
+                      <Text style={styles.locationSuggestionUseText}>Use this</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.fieldBlock}>
@@ -538,6 +642,37 @@ const styles = StyleSheet.create({
   compactDateText: { color: '#d7d7d7', fontSize: 14, fontWeight: '500' },
   fieldBlock: { gap: 6 },
   fieldLabel: { fontSize: 12, color: '#999', fontWeight: '600' },
+  locationSuggestionStatus: { color: '#7d7d7d', fontSize: 12, lineHeight: 16, marginTop: 2 },
+  locationSuggestionCard: {
+    marginTop: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#262626',
+    backgroundColor: '#151515',
+    padding: 12,
+    gap: 10,
+  },
+  locationSuggestionCopy: { gap: 3 },
+  locationSuggestionEyebrow: { color: '#8a8a8a', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.9 },
+  locationSuggestionTitle: { color: '#f4f4f4', fontSize: 14, fontWeight: '600' },
+  locationSuggestionBody: { color: '#8f8f8f', fontSize: 12, lineHeight: 17 },
+  locationSuggestionActions: { flexDirection: 'row', gap: 8 },
+  locationSuggestionDismiss: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#101010',
+  },
+  locationSuggestionDismissText: { color: '#bebebe', fontSize: 12, fontWeight: '600' },
+  locationSuggestionUse: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: '#f5f5f5',
+  },
+  locationSuggestionUseText: { color: '#000', fontSize: 12, fontWeight: '700' },
   primaryInput: {
     backgroundColor: '#181818',
     borderWidth: 1,

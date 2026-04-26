@@ -13,6 +13,7 @@ const filesToCheck = [
   'components/PendingExpenseAttentionCard.js',
   'components/PendingExpenseItemsCard.js',
   'services/insightPresentation.js',
+  'services/manualAddSuggestions.js',
   'services/scenarioCheckPresentation.js',
 ];
 
