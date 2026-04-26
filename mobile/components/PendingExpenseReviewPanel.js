@@ -70,18 +70,15 @@ export function PendingExpenseReviewPanel({
   const categoryDetail = `${categoryExplanation?.detail || ''}`.trim();
   const reviewCategories = Array.isArray(categories) ? categories : [];
 
-  function renderEditableSummaryChip(fact) {
-    if (!fact?.label) return null;
-    const lowerLabel = `${fact.label}`.toLowerCase();
-
-    if (lowerLabel === 'total') {
-      return (
-        <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
-          <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
-          <View style={styles.inlineSummaryInputWrap}>
-            <Text style={styles.inlineSummaryDollar}>$</Text>
+  function renderEditableSummaryFields() {
+    return (
+      <View style={styles.inlineEditFieldList}>
+        <View style={styles.inlineEditFieldCard}>
+          <Text style={styles.reviewSummaryChipLabel}>Total</Text>
+          <View style={styles.inlineEditAmountRow}>
+            <Text style={styles.inlineEditAmountDollar}>$</Text>
             <TextInput
-              style={styles.inlineSummaryInput}
+              style={styles.inlineEditAmountInput}
               value={amount}
               onChangeText={setAmount}
               keyboardType="decimal-pad"
@@ -90,30 +87,22 @@ export function PendingExpenseReviewPanel({
             />
           </View>
         </View>
-      );
-    }
 
-    if (lowerLabel === 'merchant') {
-      return (
-        <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
-          <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
+        <View style={styles.inlineEditFieldCard}>
+          <Text style={styles.reviewSummaryChipLabel}>Merchant</Text>
           <TextInput
-            style={styles.inlineSummaryInputText}
+            style={styles.inlineEditTextInput}
             value={merchant}
             onChangeText={setMerchant}
             placeholder="Merchant"
             placeholderTextColor="#555"
           />
         </View>
-      );
-    }
 
-    if (lowerLabel === 'date') {
-      return (
-        <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
-          <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
-          <Text style={styles.inlineSummaryStaticValue}>{formattedDate || fact.value}</Text>
-          <View style={styles.inlineDatePickerWrap}>
+        <View style={styles.inlineEditFieldCard}>
+          <Text style={styles.reviewSummaryChipLabel}>Date</Text>
+          <Text style={styles.inlineEditStaticValue}>{formattedDate || 'Select a date'}</Text>
+          <View style={styles.inlineEditDateRow}>
             <DateTimePicker
               value={date ? new Date(`${date}T12:00:00`) : new Date()}
               mode="date"
@@ -123,28 +112,26 @@ export function PendingExpenseReviewPanel({
                 if (selected) setDate(toLocalDateString(selected));
               }}
               themeVariant="dark"
-              style={styles.inlineDatePicker}
+              style={styles.inlineEditDatePicker}
             />
           </View>
         </View>
-      );
-    }
 
-    if (lowerLabel === 'category') {
-      return (
-        <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
-          <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
-          <Text style={styles.inlineSummaryStaticValue} numberOfLines={1}>{fact.value}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inlineCategoryScroller}>
-            <View style={styles.inlineCategoryRow}>
+        <View style={styles.inlineEditFieldCard}>
+          <Text style={styles.reviewSummaryChipLabel}>Category</Text>
+          <Text style={styles.inlineEditStaticValue} numberOfLines={1}>
+            {reviewCategories.find((category) => category.id === categoryId)?.name || 'Select a category'}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inlineEditCategoryScroller}>
+            <View style={styles.inlineEditCategoryRow}>
               {reviewCategories.map((category) => (
                 <TouchableOpacity
                   key={category.id}
-                  style={[styles.inlineCategoryChip, categoryId === category.id && styles.inlineCategoryChipActive]}
+                  style={[styles.inlineEditCategoryChip, categoryId === category.id && styles.inlineEditCategoryChipActive]}
                   onPress={() => setCategoryId(category.id)}
                   activeOpacity={0.82}
                 >
-                  <Text style={[styles.inlineCategoryChipText, categoryId === category.id && styles.inlineCategoryChipTextActive]}>
+                  <Text style={[styles.inlineEditCategoryChipText, categoryId === category.id && styles.inlineEditCategoryChipTextActive]}>
                     {category.name}
                   </Text>
                 </TouchableOpacity>
@@ -152,13 +139,6 @@ export function PendingExpenseReviewPanel({
             </View>
           </ScrollView>
         </View>
-      );
-    }
-
-    return (
-      <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
-        <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
-        <Text style={styles.reviewSummaryChipValue} numberOfLines={1}>{fact.value}</Text>
       </View>
     );
   }
@@ -192,16 +172,18 @@ export function PendingExpenseReviewPanel({
         </View>
 
         {approvalFacts.length ? (
-          <View style={styles.reviewSummaryGrid}>
-            {editing
-              ? approvalFacts.map((fact) => renderEditableSummaryChip(fact))
-              : approvalFacts.map((fact) => (
+          editing ? (
+            renderEditableSummaryFields()
+          ) : (
+            <View style={styles.reviewSummaryGrid}>
+              {approvalFacts.map((fact) => (
                 <View key={`${fact.label}:${fact.value}`} style={styles.reviewSummaryChip}>
                   <Text style={styles.reviewSummaryChipLabel}>{fact.label}</Text>
                   <Text style={styles.reviewSummaryChipValue} numberOfLines={1}>{fact.value}</Text>
                 </View>
               ))}
-          </View>
+            </View>
+          )
         ) : null}
       </View>
 

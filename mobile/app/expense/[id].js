@@ -1051,60 +1051,70 @@ const styles = StyleSheet.create({
   },
   reviewSummaryChipLabel: { color: '#7f7f7f', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   reviewSummaryChipValue: { color: '#f3f3f3', fontSize: 13, fontWeight: '600' },
-  inlineSummaryInputWrap: {
+  inlineEditFieldList: {
+    gap: 10,
+  },
+  inlineEditFieldCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+    backgroundColor: '#0d0d0d',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  inlineEditAmountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
-    minHeight: 22,
+    minHeight: 28,
   },
-  inlineSummaryDollar: {
+  inlineEditAmountDollar: {
     color: '#f3f3f3',
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '600',
-    marginRight: 2,
+    marginRight: 4,
   },
-  inlineSummaryInput: {
+  inlineEditAmountInput: {
     flex: 1,
     minWidth: 0,
     color: '#f3f3f3',
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: '600',
     paddingVertical: 0,
     paddingHorizontal: 0,
   },
-  inlineSummaryInputText: {
+  inlineEditTextInput: {
     color: '#f3f3f3',
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '600',
     paddingVertical: 0,
     paddingHorizontal: 0,
-    minHeight: 22,
-  },
-  inlineSummaryStaticValue: {
-    color: '#f3f3f3',
-    fontSize: 13,
-    fontWeight: '600',
-    minHeight: 22,
-  },
-  inlineDatePickerWrap: {
-    marginTop: 4,
-    marginLeft: -10,
     minHeight: 28,
-    justifyContent: 'center',
   },
-  inlineDatePicker: {
+  inlineEditStaticValue: {
+    color: '#f3f3f3',
+    fontSize: 16,
+    fontWeight: '600',
+    minHeight: 24,
+  },
+  inlineEditDateRow: {
+    minHeight: 32,
+    justifyContent: 'center',
+    marginLeft: -6,
+  },
+  inlineEditDatePicker: {
     alignSelf: 'flex-start',
   },
-  inlineCategoryScroller: {
-    marginTop: 6,
-    maxHeight: 34,
+  inlineEditCategoryScroller: {
+    marginTop: 2,
+    maxHeight: 36,
   },
-  inlineCategoryRow: {
+  inlineEditCategoryRow: {
     flexDirection: 'row',
     gap: 6,
     paddingRight: 4,
   },
-  inlineCategoryChip: {
+  inlineEditCategoryChip: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#2a2a2a',
@@ -1112,16 +1122,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
   },
-  inlineCategoryChipActive: {
+  inlineEditCategoryChipActive: {
     borderColor: '#8ab4ff',
     backgroundColor: '#132033',
   },
-  inlineCategoryChipText: {
+  inlineEditCategoryChipText: {
     color: '#cfcfcf',
     fontSize: 11,
     fontWeight: '600',
   },
-  inlineCategoryChipTextActive: {
+  inlineEditCategoryChipTextActive: {
     color: '#d7e7ff',
   },
   reviewAttentionBody: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
