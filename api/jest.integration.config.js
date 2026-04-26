@@ -9,5 +9,6 @@ module.exports = {
     '**/tests/services/duplicateDetector.test.js',
     '**/tests/services/recurringDetector.test.js',
   ],
+  testPathIgnorePatterns: ['/node_modules/'],
   globalSetup: '<rootDir>/tests/globalIntegrationSetup.js',
 };
