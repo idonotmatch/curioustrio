@@ -15,6 +15,7 @@ import { invalidateCacheByPrefix } from '../services/cache';
 import { getCoords } from '../services/locationService';
 import {
   normalizeMerchant,
+  selectSuggestedCategoryCandidate,
   selectSuggestedLocationCandidate,
   shouldSuggestLocationFromMerchant,
 } from '../services/manualAddSuggestions';
@@ -50,6 +51,7 @@ export default function ManualAddScreen() {
   const [date, setDate] = useState(draft.date || toLocalDateString());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [categoryId, setCategoryId] = useState(draft.category_id || null);
+  const [categoryEdited, setCategoryEdited] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState(draft.payment_method || 'unknown');
   const [cardLabel, setCardLabel] = useState(draft.card_label || '');
   const [cardLast4, setCardLast4] = useState(draft.card_last4 || '');
@@ -61,6 +63,8 @@ export default function ManualAddScreen() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState('');
+  const [suggestedCategory, setSuggestedCategory] = useState(null);
+  const [dismissedCategorySuggestionKey, setDismissedCategorySuggestionKey] = useState('');
   const [suggestedLocation, setSuggestedLocation] = useState(null);
   const [suggestingLocation, setSuggestingLocation] = useState(false);
   const [dismissedMerchantSuggestion, setDismissedMerchantSuggestion] = useState('');
@@ -134,6 +138,26 @@ export default function ManualAddScreen() {
     };
   }, [merchant, locationData, dismissedMerchantSuggestion, lastSuggestedMerchant, suggestedLocation]);
 
+  useEffect(() => {
+    if (categoryEdited || categoryId) {
+      setSuggestedCategory(null);
+      return;
+    }
+
+    const suggestion = selectSuggestedCategoryCandidate({
+      merchant,
+      location: locationData,
+      categories,
+    });
+
+    if (!suggestion || suggestion.key === dismissedCategorySuggestionKey) {
+      setSuggestedCategory(null);
+      return;
+    }
+
+    setSuggestedCategory(suggestion);
+  }, [merchant, locationData, categories, categoryEdited, categoryId, dismissedCategorySuggestionKey]);
+
   function onDateChange(_, selectedDate) {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (selectedDate) setDate(toLocalDateString(selectedDate));
@@ -145,7 +169,10 @@ export default function ManualAddScreen() {
   }
 
   function selectCategory(nextCategoryId) {
+    setCategoryEdited(true);
     setCategoryId(nextCategoryId);
+    setSuggestedCategory(null);
+    setDismissedCategorySuggestionKey('');
     closeCategoryPicker();
   }
 
@@ -168,6 +195,18 @@ export default function ManualAddScreen() {
     setLocationSource(nextLocation ? 'manual_search' : 'empty');
     setSuggestedLocation(null);
     setDismissedMerchantSuggestion('');
+  }
+
+  function acceptSuggestedCategory() {
+    if (!suggestedCategory?.value?.id) return;
+    setCategoryId(suggestedCategory.value.id);
+    setSuggestedCategory(null);
+    setDismissedCategorySuggestionKey('');
+  }
+
+  function dismissSuggestedCategory() {
+    setDismissedCategorySuggestionKey(suggestedCategory?.key || '');
+    setSuggestedCategory(null);
   }
 
   async function handleSave() {
@@ -333,6 +372,23 @@ export default function ManualAddScreen() {
                 </Text>
                 <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
               </TouchableOpacity>
+              {!categoryId && suggestedCategory?.value ? (
+                <View style={styles.categorySuggestionCard}>
+                  <View style={styles.locationSuggestionCopy}>
+                    <Text style={styles.locationSuggestionEyebrow}>Suggested category</Text>
+                    <Text style={styles.locationSuggestionTitle}>{suggestedCategory.value.name}</Text>
+                    <Text style={styles.locationSuggestionBody}>Based on the merchant and place you entered.</Text>
+                  </View>
+                  <View style={styles.locationSuggestionActions}>
+                    <TouchableOpacity style={styles.locationSuggestionDismiss} onPress={dismissSuggestedCategory}>
+                      <Text style={styles.locationSuggestionDismissText}>Dismiss</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.locationSuggestionUse} onPress={acceptSuggestedCategory}>
+                      <Text style={styles.locationSuggestionUseText}>Use this</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
             </View>
           </View>
 
