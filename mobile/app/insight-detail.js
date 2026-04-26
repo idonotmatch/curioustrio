@@ -293,6 +293,7 @@ export default function InsightDetailScreen() {
   const entityId = firstParam(params.entity_id);
   const metadataParam = firstParam(params.metadata);
   const preloadEvidenceParam = firstParam(params.preload_evidence);
+  const actionParam = firstParam(params.action);
   const [storedSnapshot, setStoredSnapshot] = useState(null);
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
@@ -323,6 +324,10 @@ export default function InsightDetailScreen() {
       || parseJsonParam(preloadEvidenceParam, []);
     return Array.isArray(rows) ? rows : [];
   }, [navPayload, preloadEvidenceParam, storedSnapshot]);
+  const actionPayload = useMemo(
+    () => navPayload?.action || storedSnapshot?.insight?.action || parseJsonParam(actionParam, null),
+    [actionParam, navPayload, storedSnapshot]
+  );
 
   const insight = useMemo(() => ({
     id: `${insightId}`,
@@ -333,10 +338,11 @@ export default function InsightDetailScreen() {
     entity_type: `${entityType}`,
     entity_id: `${entityId}`,
     metadata,
-  }), [insightId, insightType, title, body, severity, entityType, entityId, metadata]);
+    action: actionPayload,
+  }), [insightId, insightType, title, body, severity, entityType, entityId, metadata, actionPayload]);
 
   const descriptor = getInsightActionDescriptor(insight);
-  const primaryAction = getPrimaryActionForInsight({
+  const fallbackPrimaryAction = getPrimaryActionForInsight({
     insightType: `${insightType}`,
     scope: metadata.scope || 'personal',
     month: metadata.month || '',
@@ -344,6 +350,7 @@ export default function InsightDetailScreen() {
     metadata,
     trend: null,
   });
+  const primaryAction = insight?.action || fallbackPrimaryAction;
   const highlights = metadataHighlights(metadata);
   const technicalRows = transparencyRows(metadata);
   const categorySignal = categorySignalCopy(metadata);
@@ -507,6 +514,10 @@ export default function InsightDetailScreen() {
   }
 
   function openPrimaryAction() {
+    if (insight?.action?.route) {
+      router.push(insight.action.route);
+      return;
+    }
     if (`${insightType}` === 'usage_ready_to_plan') {
       const payloadKey = stashNavigationPayload({
         planningInsight: {

@@ -375,10 +375,29 @@ async function attachGmailReviewHint(expense, userId) {
   }
 
   let treatmentSuggestion = null;
+  let categoryExplanation = null;
   try {
     treatmentSuggestion = await buildExpenseTreatmentSuggestion(expense, userId);
   } catch (err) {
     console.error('[expenseReviewContext] treatment suggestion failed:', {
+      expense_id: expense?.id || null,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+  }
+
+  try {
+    if (expense?.category_id) {
+      const categories = await Category.findByHousehold(expense?.household_id || null);
+      categoryExplanation = await explainAssignedCategory({
+        householdId: expense?.household_id || null,
+        merchant: expense?.merchant || '',
+        description: expense?.description || expense?.notes || '',
+        categoryId: expense.category_id,
+        categories,
+      });
+    }
+  } catch (err) {
+    console.error('[expenseReviewContext] category explanation failed:', {
       expense_id: expense?.id || null,
       message: err?.message || String(err || 'unknown_error'),
     });
@@ -392,6 +411,7 @@ async function attachGmailReviewHint(expense, userId) {
     gmail_review_hint: {
       ...buildEmailReviewHint(expense, log, senderQuality),
       treatment_suggestion: treatmentSuggestion,
+      category_explanation: categoryExplanation,
     },
   };
 }

@@ -48,6 +48,13 @@ function buildReviewFocusSummary(gmailReviewHint = {}) {
     };
   }
 
+  if (gmailReviewHint?.automation_recommendation?.reason) {
+    return {
+      title: 'Most likely to need attention',
+      body: gmailReviewHint.automation_recommendation.reason,
+    };
+  }
+
   if (namedFields.length >= 2) {
     return {
       title: 'Most likely to need attention',
@@ -149,8 +156,8 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
       label: 'Category',
       value: categoryLabel,
       reason: likelySet.has('category_id')
-        ? 'This sender often needs a category correction.'
-        : 'Check this if the purchase type looks off.',
+        ? (gmailReviewHint?.category_explanation?.detail || 'This sender often needs a category correction.')
+        : (gmailReviewHint?.category_explanation?.detail || 'Check this if the purchase type looks off.'),
       weight: likelySet.has('category_id') ? 85 : 35,
     },
   ];

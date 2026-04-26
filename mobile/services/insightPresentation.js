@@ -1,4 +1,13 @@
 export function getInsightActionDescriptor(insight, context = {}) {
+  if (insight?.action?.cta || insight?.action?.title) {
+    const nextStepType = `${insight?.action?.reason || insight?.action?.next_step_type || ''}`
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return {
+      label: insight.action.cta || insight.action.title,
+      reason: nextStepType || 'Actionable now',
+    };
+  }
   const type = `${insight?.type || context.insightType || ''}`;
   const metadata = insight?.metadata || context.metadata || {};
   const trend = context.trend || null;

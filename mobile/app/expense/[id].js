@@ -536,6 +536,7 @@ export default function ExpenseDetailScreen() {
           importMetaBits={importMetaBits}
           emailSnippet={emailSnippet}
           automationRecommendation={gmailReviewHint?.automation_recommendation || null}
+          categoryExplanation={gmailReviewHint?.category_explanation || null}
           priorityReviewFields={priorityReviewFields}
           isItemsFirstReview={isItemsFirstReview}
           editing={editing}
@@ -1008,6 +1009,7 @@ const styles = StyleSheet.create({
   reviewSectionEyebrow: { color: '#8a816f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
   reviewProvenanceTitle: { color: '#f3efe8', fontSize: 15, fontWeight: '600', lineHeight: 20 },
   reviewProvenanceMeta: { color: '#a79b87', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  reviewProvenanceHint: { color: '#f3efe8', fontSize: 12, fontWeight: '600', lineHeight: 17, marginTop: 6 },
   reviewProvenanceSnippet: { color: '#c8bfaf', fontSize: 12, lineHeight: 18, marginTop: 8 },
   reviewSummaryCard: {
     marginHorizontal: 20,

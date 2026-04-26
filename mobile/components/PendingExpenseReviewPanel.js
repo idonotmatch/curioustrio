@@ -14,6 +14,7 @@ export function PendingExpenseReviewPanel({
   importMetaBits,
   emailSnippet,
   automationRecommendation,
+  categoryExplanation,
   priorityReviewFields,
   isItemsFirstReview,
   editing,
@@ -53,6 +54,8 @@ export function PendingExpenseReviewPanel({
   const reviewItems = Array.isArray(items) ? items.filter((item) => item?.description) : [];
   const previewItems = reviewItems.slice(0, 3);
   const hasMoreItems = reviewItems.length > previewItems.length;
+  const primaryReviewPath = automationRecommendation?.label || (isItemsFirstReview ? 'Check items first' : 'Review details');
+  const categoryDetail = `${categoryExplanation?.detail || ''}`.trim();
 
   return (
     <>
@@ -62,27 +65,18 @@ export function PendingExpenseReviewPanel({
           {subjectLine || expenseMerchant || 'Gmail import awaiting review'}
         </Text>
         {importMetaBits.length ? <Text style={styles.reviewProvenanceMeta}>{importMetaBits.join('  ·  ')}</Text> : null}
-        {emailSnippet ? <Text style={styles.reviewProvenanceSnippet} numberOfLines={2}>{emailSnippet}</Text> : null}
+        <Text style={styles.reviewProvenanceSnippet} numberOfLines={1}>
+          {automationRecommendation?.reason || reviewFocusSummary.body}
+        </Text>
+        <Text style={styles.reviewProvenanceHint}>{primaryReviewPath}</Text>
+        {emailSnippet ? <Text style={styles.reviewProvenanceSnippet} numberOfLines={1}>{emailSnippet}</Text> : null}
       </View>
-
-      {automationRecommendation?.label ? (
-        <View style={styles.reviewSuggestionCard}>
-          <View style={styles.reviewSuggestionCopy}>
-            <Text style={styles.reviewSuggestionEyebrow}>Likely fastest path</Text>
-            <Text style={styles.reviewSuggestionTitle}>{automationRecommendation.label}</Text>
-            <Text style={styles.reviewSuggestionDetail}>{automationRecommendation.reason}</Text>
-          </View>
-        </View>
-      ) : null}
 
       <View style={styles.reviewSummaryCard}>
         <View style={styles.reviewSummaryHeader}>
           <View>
             <Text style={styles.reviewSectionEyebrow}>Approve this expense</Text>
-            <Text style={styles.reviewSummaryTitle}>These are the details that will be saved</Text>
-            {expenseMerchant && subjectLine && subjectLine.toLowerCase() !== `${expenseMerchant}`.toLowerCase() ? (
-              <Text style={styles.reviewSummarySubtitle}>{expenseMerchant}</Text>
-            ) : null}
+            <Text style={styles.reviewSummaryTitle}>Confirm what will be saved</Text>
           </View>
           {!editing ? (
             <TouchableOpacity onPress={() => activateReviewField(priorityReviewFields[0]?.key || 'amount')} activeOpacity={0.8}>
@@ -131,7 +125,9 @@ export function PendingExpenseReviewPanel({
                 <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
               </View>
               <Text style={styles.priorityFieldValue}>{field.value}</Text>
-              <Text style={styles.priorityFieldReason}>{field.reason}</Text>
+              <Text style={styles.priorityFieldReason}>
+                {field.key === 'category' && categoryDetail ? categoryDetail : field.reason}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>

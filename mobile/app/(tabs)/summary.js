@@ -302,6 +302,7 @@ export default function SummaryScreen() {
       saveInsightDetailSnapshot(insight, { preloadEvidence: preloadedEvidence }).catch(() => {});
       const payloadKey = stashNavigationPayload({
         metadata: insight.metadata || {},
+        action: insight.action || null,
         preloadEvidence: preloadedEvidence,
       }, 'insight-detail');
       router.push({
@@ -314,6 +315,7 @@ export default function SummaryScreen() {
           severity: insight.severity || 'low',
           entity_type: insight.entity_type || '',
           entity_id: insight.entity_id || '',
+          action: insight.action ? JSON.stringify(insight.action) : '',
           payload_key: payloadKey,
         },
       });

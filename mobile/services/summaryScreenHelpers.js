@@ -57,6 +57,8 @@ export function insightEventMetadata(insight, surface = 'summary') {
     scope_relationship: insight?.metadata?.scope_relationship || null,
     consolidated_scopes: insight?.metadata?.consolidated_scopes || null,
     related_insight_ids: insight?.metadata?.related_insight_ids || null,
+    next_step_type: insight?.action?.next_step_type || null,
+    action_cta: insight?.action?.cta || null,
   };
 }
 
