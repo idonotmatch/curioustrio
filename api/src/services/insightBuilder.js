@@ -207,6 +207,30 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
       }
     }
 
+    const purchaseTrail = Array.isArray(history.purchases) ? history.purchases : [];
+    const latestPurchase = purchaseTrail[purchaseTrail.length - 1] || null;
+    const latestAmount = latestPurchase?.amount == null ? null : Number(latestPurchase.amount);
+    const medianAmount = history.median_amount == null ? null : Number(history.median_amount);
+    const latestAgeMs = latestPurchase?.date ? new Date(`${latestPurchase.date}T12:00:00`).getTime() : null;
+    const latestAgeDays = Number.isFinite(latestAgeMs)
+      ? Math.max(0, Math.floor((Date.now() - latestAgeMs) / (1000 * 60 * 60 * 24)))
+      : null;
+    const recentPriceJump = latestPurchase
+      && latestAmount != null
+      && medianAmount != null
+      && medianAmount > 0
+      && Number(history.occurrence_count || 0) >= 3
+      && latestAgeDays != null
+      && latestAgeDays <= 14
+      && (latestAmount - medianAmount) >= 2
+      && latestAmount >= medianAmount * 1.18;
+    const latestDeltaAmount = recentPriceJump
+      ? Number((latestAmount - medianAmount).toFixed(2))
+      : null;
+    const latestDeltaPercent = recentPriceJump
+      ? Number((((latestAmount - medianAmount) / medianAmount) * 100).toFixed(1))
+      : null;
+
     if (stapleEmerging && merchantVariance) {
       insights.push({
         id: `item_staple_merchant_opportunity:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
@@ -235,6 +259,33 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         actions: [],
       });
       continue;
+    }
+
+    if (recentPriceJump) {
+      insights.push({
+        id: `item_recent_price_jump:${scope}:${history.group_key}:${latestPurchase.date}`,
+        type: 'item_recent_price_jump',
+        title: `${itemName} came in above your usual price`,
+        body: `${latestPurchase.merchant || 'Your latest purchase'} was about ${latestDeltaPercent}% above your usual price for ${itemName}.`,
+        severity: latestDeltaPercent >= 25 || latestDeltaAmount >= 5 ? 'medium' : 'low',
+        entity_type: 'item',
+        entity_id: history.group_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          ...history,
+          scope,
+          maturity: 'developing',
+          confidence: history.identity_confidence || 'medium',
+          latest_amount: latestAmount,
+          latest_merchant: latestPurchase.merchant || null,
+          latest_date: latestPurchase.date || null,
+          delta_amount: latestDeltaAmount,
+          delta_percent: latestDeltaPercent,
+          continuity_key: `item_price:${scope}:${history.group_key}`,
+        },
+        actions: [],
+      });
     }
 
     if (stapleEmerging) {
@@ -923,6 +974,57 @@ function dedupeInsights(insights) {
   return [...picked.values()];
 }
 
+function isStaleGeneratedInsight(insight) {
+  if (!insight) return true;
+  const expiresAt = insight?.expires_at ? new Date(insight.expires_at).getTime() : null;
+  if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return true;
+
+  const metadata = insight?.metadata || {};
+  const type = `${insight?.type || ''}`.trim();
+
+  if (type === 'buy_soon_better_price') {
+    const observedAt = metadata.observed_at ? new Date(metadata.observed_at).getTime() : null;
+    if (Number.isFinite(observedAt)) {
+      const ageDays = Math.max(0, Math.floor((Date.now() - observedAt) / (1000 * 60 * 60 * 24)));
+      if (ageDays > 10) return true;
+    }
+  }
+
+  if (type === 'recurring_restock_window' || type === 'recurring_repurchase_due') {
+    const daysUntilDue = Number(metadata.days_until_due);
+    if (Number.isFinite(daysUntilDue)) {
+      if (type === 'recurring_restock_window' && daysUntilDue < -3) return true;
+      if (type === 'recurring_repurchase_due' && daysUntilDue < -10) return true;
+    }
+  }
+
+  if (
+    type === 'recurring_price_spike'
+    || type === 'recurring_better_than_usual'
+    || type === 'recurring_cheaper_elsewhere'
+    || type === 'recurring_cost_pressure'
+    || type === 'item_merchant_variance'
+    || type === 'item_staple_merchant_opportunity'
+    || type === 'item_staple_emerging'
+    || type === 'item_recent_price_jump'
+  ) {
+    const latestDate = metadata.latest_date || metadata.last_purchased_at;
+    if (latestDate) {
+      const latestMs = new Date(latestDate).getTime();
+      if (Number.isFinite(latestMs)) {
+        const ageDays = Math.max(0, Math.floor((Date.now() - latestMs) / (1000 * 60 * 60 * 24)));
+        if (ageDays > 21) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function pruneGeneratedInsights(insights = []) {
+  return (insights || []).filter((insight) => !isStaleGeneratedInsight(insight));
+}
+
 function buildDismissedContinuityKeySet(events = [], windowDays = 30) {
   const safeWindowDays = Math.max(1, Math.min(Number(windowDays) || 30, 180));
   const cutoffMs = Date.now() - safeWindowDays * 24 * 60 * 60 * 1000;
@@ -1542,11 +1644,13 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   let deduped = dedupeInsights(
-    insightSets
+    pruneGeneratedInsights(
+      insightSets
       .flat()
       .filter(Boolean)
       .filter((insight) => !!insight?.id)
       .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || new Date(b.created_at) - new Date(a.created_at))
+    )
   );
 
   if (deduped.length === 0 && user?.id) {
@@ -1687,6 +1791,7 @@ module.exports = {
   insightRankScore,
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,
+  pruneGeneratedInsights,
   insightDestinationAdjustment,
   portfolioRole,
   portfolioFamily,

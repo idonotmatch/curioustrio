@@ -43,6 +43,8 @@ export function getInsightActionDescriptor(insight, context = {}) {
         return { label: 'Compare merchants', reason: 'Actionable now' };
       case 'item_staple_emerging':
         return { label: 'Review item history', reason: 'Pattern forming' };
+      case 'item_recent_price_jump':
+        return { label: 'Review recent item price', reason: 'Price moved' };
       case 'recurring_price_spike':
         return { label: 'Review recent prices', reason: 'Price changed' };
       case 'buy_soon_better_price':
@@ -159,6 +161,7 @@ export function getInsightPrimaryMetric(insight, context = {}) {
       case 'item_staple_merchant_opportunity':
       case 'item_merchant_variance':
       case 'recurring_price_spike':
+      case 'item_recent_price_jump':
       case 'buy_soon_better_price':
         return metric(formatPercentShort(metadata.delta_percent ?? metadata.discount_percent), 'price difference');
       case 'item_staple_emerging':
@@ -316,6 +319,7 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
         route: null,
       };
     case 'recurring_price_spike':
+    case 'item_recent_price_jump':
     case 'buy_soon_better_price':
     case 'recurring_repurchase_due':
     case 'recurring_restock_window':

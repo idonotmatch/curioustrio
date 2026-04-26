@@ -45,6 +45,7 @@ export function useExpenseVisibilityControls({
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
         invalidateCacheByPrefix('cache:household-expenses:'),
+        invalidateCacheByPrefix('cache:insights:'),
       ]);
       return refreshed;
     } catch (e) {
@@ -90,6 +91,12 @@ export function useExpenseVisibilityControls({
       setExpense(refreshed);
       saveExpenseSnapshot(refreshed);
       patchExpenseInCachedLists(refreshed);
+      await Promise.all([
+        invalidateCacheByPrefix('cache:expenses:'),
+        invalidateCacheByPrefix('cache:budget:'),
+        invalidateCacheByPrefix('cache:household-expenses:'),
+        invalidateCacheByPrefix('cache:insights:'),
+      ]);
       return refreshed;
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save review options');

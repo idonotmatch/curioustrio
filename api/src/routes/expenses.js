@@ -423,7 +423,10 @@ router.post('/:id/dismiss', async (req, res, next) => {
     let expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     expense = await handleDismissedExpenseReview(expense, user.id, req.body?.dismissal_reason);
-    res.json(expense);
+    res.json(await attachExpenseReviewContext(expense, user.id, {
+      includeItems: true,
+      includeCategoryReasoning: true,
+    }));
   } catch (err) { next(err); }
 });
 

@@ -1059,6 +1059,11 @@ describe('PATCH /expenses/:id', () => {
       });
 
     expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.items.map((item) => item.description)).toEqual(
+      expect.arrayContaining(['NewItem1', 'NewItem2'])
+    );
 
     // Verify the items were replaced via GET /:id
     const getRes = await request(app).get(`/expenses/${expenseId}`);

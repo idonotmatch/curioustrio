@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
-import { invalidateCacheByPrefix, loadFreshWithCacheFallback } from '../services/cache';
+import { invalidateCacheByPrefix, loadWithCache } from '../services/cache';
 
 export function useInsights(limit = 5) {
   const [insights, setInsights] = useState([]);
@@ -10,7 +10,7 @@ export function useInsights(limit = 5) {
 
   const refresh = useCallback(async () => {
     setError(null);
-    await loadFreshWithCacheFallback(
+    await loadWithCache(
       cacheKey,
       () => api.get(`/insights?limit=${limit}`),
       (data) => { setInsights(data || []); setLoading(false); setError(null); },

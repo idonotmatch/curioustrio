@@ -20,7 +20,7 @@ import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
 import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
-import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, mergeExpenseData, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../../services/expenseLocalStore';
+import { findExpenseSnapshotInCaches, loadExpenseItemsSnapshot, mergeExpenseData, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot, patchExpenseInCachedLists } from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 import {
   formatImportedAt,
@@ -273,7 +273,7 @@ export default function ExpenseDetailScreen() {
         Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
         return;
       }
-      await api.patch(`/expenses/${id}`, {
+      const updated = await api.patch(`/expenses/${id}`, {
         merchant,
         amount: parseFloat(amount),
         date,
@@ -301,29 +301,33 @@ export default function ExpenseDetailScreen() {
             unit: it.unit || null,
           })),
       });
-      const refreshed = mergeReviewMetadata(expense, await api.get(`/expenses/${id}`));
+      const refreshed = mergeReviewMetadata(expense, updated);
+      applyExpenseToState(refreshed, {
+        setExpense,
+        setMerchant,
+        setAmount,
+        setDate,
+        setNotes,
+        setCategoryId,
+        setPaymentMethod,
+        setCardLast4,
+        setCardLabel,
+        setIsPrivate,
+        setExcludeFromBudget,
+        setBudgetExclusionReason,
+        setItems,
+        setLocationData,
+        setItemsEdits,
+      });
       setExpense(refreshed);
       saveExpenseSnapshot(refreshed);
       patchExpenseInCachedLists(refreshed);
       setEditing(false);
-      setItems(itemsEdits.filter(it => it.description.trim()).map(it => ({
-        ...it,
-        description: it.description.trim(),
-        amount: it.amount ? parseFloat(it.amount) : null,
-      })));
-      setLocationData(
-        refreshed.place_name || refreshed.address || refreshed.mapkit_stable_id
-          ? {
-              place_name: refreshed.place_name || '',
-              address: refreshed.address || null,
-              mapkit_stable_id: refreshed.mapkit_stable_id || null,
-            }
-          : null
-      );
       await Promise.all([
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
         invalidateCacheByPrefix('cache:household-expenses:'),
+        invalidateCacheByPrefix('cache:insights:'),
       ]);
     } catch (e) {
       Alert.alert('Error', e.message);

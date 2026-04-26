@@ -24,6 +24,7 @@ const {
   portfolioRole,
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,
+  pruneGeneratedInsights,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -45,6 +46,7 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioFamily(buildInsight({ type: 'one_off_expense_skewing_projection' }))).toBe('explanation');
     expect(portfolioFamily(buildInsight({ type: 'recurring_restock_window' }))).toBe('opportunity');
     expect(portfolioFamily(buildInsight({ type: 'recurring_repurchase_due' }))).toBe('reminder');
+    expect(portfolioFamily(buildInsight({ type: 'item_recent_price_jump' }))).toBe('warning');
   });
 
   it('classifies insights into portfolio roles', () => {
@@ -52,6 +54,31 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioRole(buildInsight({ type: 'projected_month_end_over_budget' }))).toBe('act');
     expect(portfolioRole(buildInsight({ type: 'projected_month_end_under_budget' }))).toBe('plan');
     expect(portfolioRole(buildInsight({ type: 'top_category_driver' }))).toBe('explain');
+    expect(portfolioRole(buildInsight({ type: 'item_recent_price_jump' }))).toBe('act');
+  });
+
+  it('prunes expired or stale generated candidates before they enter ranking', () => {
+    const pruned = pruneGeneratedInsights([
+      buildInsight({
+        id: 'fresh',
+        type: 'buy_soon_better_price',
+        expires_at: '2026-05-01T12:00:00.000Z',
+        metadata: { observed_at: '2026-04-24T12:00:00.000Z' },
+      }),
+      buildInsight({
+        id: 'expired',
+        type: 'buy_soon_better_price',
+        expires_at: '2026-04-10T12:00:00.000Z',
+        metadata: { observed_at: '2026-04-10T12:00:00.000Z' },
+      }),
+      buildInsight({
+        id: 'old-item',
+        type: 'item_recent_price_jump',
+        metadata: { latest_date: '2026-03-20' },
+      }),
+    ]);
+
+    expect(pruned.map((insight) => insight.id)).toEqual(['fresh']);
   });
 
   it('scores mature personal action insights above early household explanation insights', () => {

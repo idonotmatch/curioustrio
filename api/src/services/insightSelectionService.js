@@ -259,6 +259,7 @@ function portfolioRole(insight) {
     || type === 'buy_soon_better_price'
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
+    || type === 'item_recent_price_jump'
   ) return 'act';
 
   if (
@@ -471,6 +472,7 @@ function portfolioFamily(insight) {
     || type === 'projected_category_surge'
     || type === 'recurring_price_spike'
     || type === 'recurring_cost_pressure'
+    || type === 'item_recent_price_jump'
   ) return 'warning';
 
   if (
@@ -547,6 +549,7 @@ function narrativeClusterKey(insight) {
     || type === 'recurring_cost_pressure'
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
+    || type === 'item_recent_price_jump'
   ) {
     return `recurring:${scope}:${month}`;
   }

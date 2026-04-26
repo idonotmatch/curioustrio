@@ -36,6 +36,7 @@ export function usePendingExpenseReviewActions({
         invalidateCacheByPrefix('cache:expenses:'),
         invalidateCacheByPrefix('cache:budget:'),
         invalidateCacheByPrefix('cache:household-expenses:'),
+        invalidateCacheByPrefix('cache:insights:'),
       ]);
       removePendingExpense(expenseId);
       router.back();
@@ -51,8 +52,14 @@ export function usePendingExpenseReviewActions({
       await api.post(`/expenses/${expenseId}/dismiss`, { dismissal_reason: dismissalReason });
       await removeExpenseFromCachedLists(expenseId);
       await removeExpenseSnapshot(expenseId);
-      const { invalidateCache } = await import('../services/cache');
-      await invalidateCache('cache:expenses:pending');
+      const { invalidateCache, invalidateCacheByPrefix } = await import('../services/cache');
+      await Promise.all([
+        invalidateCache('cache:expenses:pending'),
+        invalidateCacheByPrefix('cache:expenses:'),
+        invalidateCacheByPrefix('cache:budget:'),
+        invalidateCacheByPrefix('cache:household-expenses:'),
+        invalidateCacheByPrefix('cache:insights:'),
+      ]);
       removePendingExpense(expenseId);
       setShowDismissReasonSheet(false);
       router.back();
