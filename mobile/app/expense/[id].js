@@ -482,7 +482,7 @@ export default function ExpenseDetailScreen() {
 
       {/* Hero */}
       <View style={styles.hero}>
-        {editing && canEdit ? (
+        {editing && canEdit && !isPendingEmailReview ? (
           <View style={styles.editRow}>
             <TextInput style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]} value={merchant} onChangeText={setMerchant} placeholderTextColor="#444" placeholder="Merchant" />
             <TextInput style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#444" />
