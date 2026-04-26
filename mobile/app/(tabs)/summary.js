@@ -78,13 +78,6 @@ export default function SummaryScreen() {
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
     : Math.max(280, windowWidth - 88);
-  const activeTopInsight = displayInsights[0] || null;
-  const pendingReviewCount = pendingExpenses.length;
-  const currentUtilityNote = pendingReviewCount > 0
-    ? `${pendingReviewCount} ${pendingReviewCount === 1 ? 'import needs' : 'imports need'} review`
-    : gmailRefreshTimestamp
-      ? `Gmail ${gmailRefreshVerb} ${formatRelativeTime(gmailRefreshTimestamp)}`
-      : 'Nothing needs your review right now';
   const loggedShownInsightIds = useRef(new Set());
   const insightNavigationResetRef = useRef(null);
   const [openingInsightId, setOpeningInsightId] = useState('');
@@ -512,27 +505,6 @@ export default function SummaryScreen() {
         )}
       </View>
 
-      <View style={styles.todayFocusCard}>
-        <Text style={styles.sectionLabelCompact}>Today</Text>
-        {activeTopInsight ? (
-          <>
-            <Text style={styles.todayFocusTitle}>{activeTopInsight.title || 'What matters now'}</Text>
-            <Text style={styles.todayFocusBody} numberOfLines={2}>
-              {activeTopInsight.body || 'Open the top card to decide what to do next.'}
-            </Text>
-            <Text style={styles.todayFocusMeta}>{currentUtilityNote}</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.todayFocusTitle}>A quieter check-in</Text>
-            <Text style={styles.todayFocusBody}>
-              Nothing urgent is surfacing right now. Add an expense, pressure-test a purchase, or review recent activity below.
-            </Text>
-            <Text style={styles.todayFocusMeta}>{currentUtilityNote}</Text>
-          </>
-        )}
-      </View>
-
       {/* Household budget — shown for multi-member households */}
       {isMultiMember && (
         <View style={styles.householdCard}>
@@ -646,19 +618,6 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 18 },
-  todayFocusCard: {
-    marginBottom: 18,
-    backgroundColor: '#101113',
-    borderWidth: 1,
-    borderColor: '#1a1d22',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    gap: 6,
-  },
-  todayFocusTitle: { color: '#f5f5f5', fontSize: 20, fontWeight: '700', lineHeight: 26 },
-  todayFocusBody: { color: '#b3bcc6', fontSize: 14, lineHeight: 20 },
-  todayFocusMeta: { color: '#7f8b97', fontSize: 12, lineHeight: 17, marginTop: 2 },
   globalHeader: { marginBottom: 12 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
   spendLabel: { fontSize: 13, color: '#888', marginBottom: 2 },

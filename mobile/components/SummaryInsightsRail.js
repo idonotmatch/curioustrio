@@ -11,7 +11,7 @@ export function SummaryInsightsRail({
   handlePressInsight,
   handleDismissInsight,
   openingInsightId,
-  title = 'What matters now',
+  title = 'Insights',
   hint,
 }) {
   if (!(displayInsights.length > 0 || insightsError)) return null;
@@ -48,6 +48,7 @@ export function SummaryInsightsRail({
             onPress={handlePressInsight}
             onDismiss={handleDismissInsight}
             disabled={Boolean(openingInsightId)}
+            emphasis={displayInsights[0]?.id === insight.id ? 'primary' : 'default'}
           />
         ))}
       </ScrollView>

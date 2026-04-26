@@ -99,14 +99,21 @@ function shouldShowPrimaryMetric(insight, primaryMetric) {
   return !body.includes(metricValue);
 }
 
-export function InsightCard({ insight, width, onPress, onDismiss, disabled = false }) {
+export function InsightCard({ insight, width, onPress, onDismiss, disabled = false, emphasis = 'default' }) {
   const tone = insightToneStyles(insight);
   const primaryMetric = getInsightPrimaryMetric(insight);
   const showPrimaryMetric = shouldShowPrimaryMetric(insight, primaryMetric);
+  const isPrimary = emphasis === 'primary';
 
   return (
     <TouchableOpacity
-      style={[styles.insightCard, tone.card, disabled && styles.insightCardDisabled, { width }]}
+      style={[
+        styles.insightCard,
+        tone.card,
+        isPrimary && styles.insightCardPrimary,
+        disabled && styles.insightCardDisabled,
+        { width },
+      ]}
       activeOpacity={0.92}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
@@ -136,22 +143,22 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
             <Ionicons name="close" size={16} color="#666" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.insightTitle} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{insight.title}</Text>
-        <View style={styles.insightMetricSlot}>
+        <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{insight.title}</Text>
+        <View style={[styles.insightMetricSlot, isPrimary && styles.insightMetricSlotPrimary]}>
           {showPrimaryMetric ? (
             <View style={styles.insightMetricRow}>
-              <Text style={styles.insightMetricValue} numberOfLines={1}>{primaryMetric.value}</Text>
-              <Text style={styles.insightMetricLabel} numberOfLines={1}>{primaryMetric.label}</Text>
+              <Text style={[styles.insightMetricValue, isPrimary && styles.insightMetricValuePrimary]} numberOfLines={1}>{primaryMetric.value}</Text>
+              <Text style={[styles.insightMetricLabel, isPrimary && styles.insightMetricLabelPrimary]} numberOfLines={1}>{primaryMetric.label}</Text>
             </View>
           ) : null}
         </View>
       </View>
       <View style={styles.insightContent}>
-        <Text style={styles.insightBody} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{insight.body}</Text>
+        <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{insight.body}</Text>
       </View>
-      <View style={styles.insightFooter}>
-        <Text style={styles.insightActionReason}>{insightActionReason(insight)}</Text>
-        <Text style={styles.insightActionLabel}>{insightActionLabel(insight)}</Text>
+      <View style={[styles.insightFooter, isPrimary && styles.insightFooterPrimary]}>
+        <Text style={[styles.insightActionReason, isPrimary && styles.insightActionReasonPrimary]}>{insightActionReason(insight)}</Text>
+        <Text style={[styles.insightActionLabel, isPrimary && styles.insightActionLabelPrimary]}>{insightActionLabel(insight)}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -167,6 +174,11 @@ const styles = StyleSheet.create({
     borderColor: '#1a1a1a',
     minHeight: INSIGHT_CARD_MIN_HEIGHT,
     justifyContent: 'space-between',
+  },
+  insightCardPrimary: {
+    minHeight: 190,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   insightCardWarn: { backgroundColor: '#141111', borderColor: '#2d1d1d' },
   insightCardPlan: { backgroundColor: '#101317', borderColor: '#1b2a38' },
@@ -206,9 +218,13 @@ const styles = StyleSheet.create({
   insightRoleTextLearning: { color: '#a9e0b3' },
   insightRoleTextExplain: { color: '#b6c1cc' },
   insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
+  insightTitlePrimary: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   insightMetricSlot: {
     minHeight: 20,
     justifyContent: 'flex-end',
+  },
+  insightMetricSlotPrimary: {
+    minHeight: 24,
   },
   insightMetricRow: {
     marginTop: 1,
@@ -223,6 +239,12 @@ const styles = StyleSheet.create({
     color: '#d5dde6',
     fontWeight: '500',
   },
+  insightMetricValuePrimary: {
+    fontSize: 20,
+    lineHeight: 24,
+    color: '#edf4fb',
+    fontWeight: '600',
+  },
   insightMetricLabel: {
     fontSize: 10,
     lineHeight: 13,
@@ -231,8 +253,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     flexShrink: 1,
   },
+  insightMetricLabelPrimary: {
+    color: '#96a7b7',
+  },
   insightContent: { flex: 1, justifyContent: 'flex-start', marginTop: 8 },
   insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
+  insightBodyPrimary: { fontSize: 14, color: '#b7c2cd', lineHeight: 20 },
   insightFooter: {
     marginTop: 14,
     paddingTop: 10,
@@ -243,6 +269,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  insightFooterPrimary: {
+    marginTop: 16,
+    paddingTop: 12,
+  },
   insightActionReason: { fontSize: 11, color: '#7e8791', textTransform: 'uppercase', letterSpacing: 0.8, flexShrink: 1 },
   insightActionLabel: { fontSize: 12, color: '#dce8f5', fontWeight: '700', textAlign: 'right', flexShrink: 0 },
+  insightActionReasonPrimary: { color: '#90a0af' },
+  insightActionLabelPrimary: { color: '#eef5ff', fontSize: 13 },
 });
