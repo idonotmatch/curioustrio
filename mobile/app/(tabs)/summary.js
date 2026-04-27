@@ -53,13 +53,14 @@ export default function SummaryScreen() {
     logEvents,
   } = useInsights(1);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
+  const [allowMockInsights, setAllowMockInsights] = useState(__DEV__);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
   const [watchedPlans, setWatchedPlans] = useState([]);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
   const watchedHouseholdCount = watchedPlans.filter((plan) => plan.scope === 'household').length;
   const watchedPersonalCount = watchedPlans.filter((plan) => plan.scope !== 'household').length;
   const watchedPreferenceNote = watchedPlans.find((plan) => plan?.timing_preference_note)?.timing_preference_note || '';
-  const displayInsights = __DEV__ && insights.length === 0
+  const displayInsights = allowMockInsights && insights.length === 0
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
   const displayGmailImportSummary = gmailImportSummary || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
@@ -140,6 +141,13 @@ export default function SummaryScreen() {
       insightNavigationResetRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    if (insights.length > 0 || insightsError) {
+      setAllowMockInsights(false);
+    }
+  }, [insights.length, insightsError]);
 
   useEffect(() => {
     if (__DEV__ && insights.length === 0) return;
