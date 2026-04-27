@@ -6,7 +6,13 @@ import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useMonth, currentPeriod } from '../../contexts/MonthContext';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
-function FeedIcon({ focused }) {
+function ActivityIcon({ focused }) {
+  return (
+    <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
+  );
+}
+
+function PendingIcon({ focused }) {
   const { expenses, refresh } = usePendingExpenses();
   const count = expenses?.length ?? 0;
 
@@ -15,7 +21,7 @@ function FeedIcon({ focused }) {
   }, [focused]);
   return (
     <View>
-      <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
+      <Ionicons name={focused ? 'time' : 'time-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
       {count > 0 && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{count > 9 ? '9+' : count}</Text>
@@ -64,6 +70,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="summary"
           options={{
+            title: 'Summary',
             tabBarIcon: ({ focused }) => (
               <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
             ),
@@ -71,21 +78,23 @@ export default function TabLayout() {
         />
         <Tabs.Screen
           name="index"
-          options={{ tabBarIcon: ({ focused }) => <FeedIcon focused={focused} /> }}
-        />
-        <Tabs.Screen
-          name="add"
           options={{
-            tabBarIcon: ({ focused }) => (
-              <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={24} color={focused ? '#6366f1' : '#555'} />
-            ),
+            title: 'Activity',
+            tabBarIcon: ({ focused }) => <ActivityIcon focused={focused} />,
           }}
         />
         <Tabs.Screen name="household" options={{ href: null }} />
-        <Tabs.Screen name="pending" options={{ href: null }} />
+        <Tabs.Screen
+          name="pending"
+          options={{
+            title: 'Pending',
+            tabBarIcon: ({ focused }) => <PendingIcon focused={focused} />,
+          }}
+        />
         <Tabs.Screen
           name="settings"
           options={{
+            title: 'Settings',
             tabBarIcon: ({ focused }) => (
               <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={focused ? '#6366f1' : '#555'} />
             ),

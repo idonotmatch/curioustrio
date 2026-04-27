@@ -38,7 +38,7 @@ export default function ReviewQueueScreen() {
       resolveMockExpense(id);
       remove(id);
       setDismissingId(null);
-      setNotice('Dismissed from your review queue');
+      setNotice('Dismissed from pending actions');
       return;
     }
     try {
@@ -48,7 +48,7 @@ export default function ReviewQueueScreen() {
       await invalidateCache('cache:expenses:pending');
       remove(id);
       setDismissingId(null);
-      setNotice('Dismissed from your review queue');
+      setNotice('Dismissed from pending actions');
     } catch {
       // ignore
     }
@@ -58,7 +58,7 @@ export default function ReviewQueueScreen() {
     if (isUsingMockData) {
       resolveMockExpense(id);
       remove(id);
-      setNotice('Approved and added to your expenses');
+      setNotice('Approved and moved into your expenses');
       return;
     }
     try {
@@ -78,7 +78,7 @@ export default function ReviewQueueScreen() {
         invalidateCacheByPrefix('cache:household-expenses:'),
       ]);
       remove(id);
-      setNotice('Approved and added to your expenses');
+      setNotice('Approved and moved into your expenses');
     } catch {
       // ignore
     }
@@ -108,9 +108,9 @@ export default function ReviewQueueScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={(
             <View style={styles.header}>
-              <Text style={styles.subtitle}>Confirm your Gmail imports before they are counted.</Text>
+              <Text style={styles.subtitle}>Things that need your attention before they settle into the app.</Text>
               {displayExpenses.length > 0 ? (
-                <Text style={styles.hint}>{isUsingMockData ? 'Dev preview queue' : 'Swipe to approve or dismiss'}</Text>
+                <Text style={styles.hint}>{isUsingMockData ? 'Dev preview actions' : 'Swipe to approve or dismiss'}</Text>
               ) : null}
             </View>
           )}
@@ -118,7 +118,7 @@ export default function ReviewQueueScreen() {
             !loading && (
               error
                 ? <Text style={styles.error}>{error}</Text>
-                : <Text style={styles.empty}>Nothing in your review queue. You're all caught up!</Text>
+                : <Text style={styles.empty}>Nothing needs your attention right now. You&apos;re all caught up.</Text>
             )
           }
         />

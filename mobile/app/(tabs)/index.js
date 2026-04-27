@@ -7,20 +7,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
-import { usePendingExpenses, removePendingExpense } from '../../hooks/usePendingExpenses';
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
-import { ActionNotice } from '../../components/ActionNotice';
-import { DismissReasonSheet } from '../../components/DismissReasonSheet';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
-import { ReviewQueueItem } from '../../components/ReviewQueueItem';
-import { api } from '../../services/api';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
-import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../../services/expenseLocalStore';
-
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest' },
   { key: 'amount', label: 'Amount' },
@@ -172,22 +163,6 @@ function SpendHeader({ myBudget, householdBudget, isMultiMember, selectedMonth, 
   );
 }
 
-function pendingModeSummary(expenses = []) {
-  const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
-  for (const expense of expenses) {
-    const mode = expense?.gmail_review_hint?.review_mode;
-    if (mode === 'quick_check') counts.quickCheck += 1;
-    else if (mode === 'items_first') counts.itemsFirst += 1;
-    else counts.review += 1;
-  }
-
-  return [
-    counts.quickCheck > 0 ? `${counts.quickCheck} quick check` : null,
-    counts.itemsFirst > 0 ? `${counts.itemsFirst} items first` : null,
-    counts.review > 0 ? `${counts.review} review` : null,
-  ].filter(Boolean).join(' · ');
-}
-
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
@@ -204,21 +179,12 @@ export default function FeedScreen() {
   const { expenses: householdExpenses, loading: householdLoading, error: householdError, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, error: personalBudgetError, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, error: householdBudgetError, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
-  const { expenses: pending, error: pendingError, refresh: refreshPending, isUsingMockData: isUsingMockPending, resolveMockExpense } = usePendingExpenses();
   const { categories } = useCategories();
   const router = useRouter();
-  const [notice, setNotice] = useState('');
-  const [dismissingId, setDismissingId] = useState(null);
 
   useEffect(() => {
     setSelectedMonth(currentPeriod(transactionStartDay));
   }, [transactionStartDay]);
-  useEffect(() => {
-    if (!notice) return undefined;
-    const timer = setTimeout(() => setNotice(''), 1800);
-    return () => clearTimeout(timer);
-  }, [notice]);
-
   const expenses = mode === 'mine' ? myExpenses : householdExpenses;
   const loading = mode === 'mine' ? myLoading : householdLoading;
   const expenseError = mode === 'mine' ? myError : householdError;
@@ -233,134 +199,20 @@ export default function FeedScreen() {
     if (isMultiMember) refreshHouseholdExpenses();
     refreshPersonalBudget();
     if (isMultiMember) refreshHouseholdBudget();
-    refreshPending();
     refreshHousehold();
-  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshPending, refreshHousehold, isMultiMember]);
+  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshHousehold, isMultiMember]);
 
   useFocusEffect(useCallback(() => {
     if (isMultiMember) refreshHouseholdExpenses();
     if (isMultiMember) refreshHouseholdBudget();
     refreshPersonalBudget();
-    refreshPending();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, refreshPending, isMultiMember]));
-
-  function requestDismissPending(id) {
-    setDismissingId(id);
-  }
-
-  async function dismissPending(id, dismissalReason) {
-    if (isUsingMockPending) {
-      resolveMockExpense(id);
-      setDismissingId(null);
-      setNotice('Dismissed from your review queue');
-      return;
-    }
-    try {
-      await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
-      await removeExpenseFromCachedLists(id);
-      await removeExpenseSnapshot(id);
-      removePendingExpense(id);
-      setDismissingId(null);
-      setNotice('Dismissed from your review queue');
-      const { invalidateCache } = await import('../../services/cache');
-      await invalidateCache('cache:expenses:pending');
-    } catch { /* ignore */ }
-  }
-
-  async function approvePending(id) {
-    if (isUsingMockPending) {
-      resolveMockExpense(id);
-      setNotice('Approved and added to your expenses');
-      return;
-    }
-    try {
-      const approved = await api.post(`/expenses/${id}/approve`);
-      if (approved?.id) {
-        await saveExpenseSnapshot(approved);
-        await patchExpenseInCachedLists(approved);
-      }
-      removePendingExpense(id);
-      setNotice('Approved and added to your expenses');
-      const { invalidateCache, invalidateCacheByPrefix } = await import('../../services/cache');
-      await Promise.all([
-        invalidateCache('cache:expenses:pending'),
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
-      refreshMine();
-      refreshHouseholdExpenses();
-      refreshPersonalBudget();
-      refreshHouseholdBudget();
-    } catch { /* ignore */ }
-  }
+  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, isMultiMember]));
 
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 
-  const selectedDate = new Date(selectedMonth + '-02');
-  const listData = [
-    { _type: 'pending_section', items: pending || [] },
-    ...displayExpenses.map(e => ({ _type: 'expense', ...e })),
-  ];
+  const listData = displayExpenses;
 
   const renderItem = ({ item }) => {
-    if (item._type === 'pending_section') {
-      const modeSummary = pendingModeSummary(item.items);
-      return (
-        <View style={styles.pendingSection}>
-          <Text style={styles.pendingLabel}>Needs your review · {item.items.length}</Text>
-          {modeSummary ? (
-            <Text style={styles.pendingModeSummary}>{modeSummary}</Text>
-          ) : null}
-          {isUsingMockPending ? (
-            <Text style={styles.pendingPreviewNote}>Dev preview queue</Text>
-          ) : null}
-          {pendingError ? (
-            <View style={styles.pendingErrorState}>
-              <Text style={styles.pendingErrorTitle}>Could not load your review queue</Text>
-              <Text style={styles.pendingErrorBody}>{pendingError}</Text>
-            </View>
-          ) : null}
-          {!pendingError && item.items.length === 0 ? (
-            <View style={styles.pendingEmptyState}>
-              <View style={styles.pendingEmptyIconWrap}>
-                <Ionicons name="checkmark-done" size={18} color="#d5e5da" />
-              </View>
-              <View style={styles.pendingEmptyCopy}>
-                <Text style={styles.pendingEmptyTitle}>You’re all caught up</Text>
-                <Text style={styles.pendingEmptyBody}>New Gmail imports will land here when they need your review.</Text>
-              </View>
-            </View>
-          ) : null}
-          {item.items.slice(0, 3).map(e => (
-            <ReviewQueueItem
-              key={e.id}
-              item={e}
-              variant="preview"
-              onOpen={(entry) => router.push({
-                pathname: '/expense/[id]',
-                params: {
-                  id: entry.id,
-                  expense: JSON.stringify(entry),
-                },
-              })}
-              onApprove={approvePending}
-              onDismiss={requestDismissPending}
-            />
-          ))}
-          {item.items.length > 3 && (
-            <TouchableOpacity
-              style={styles.pendingMoreButton}
-              onPress={() => router.push('/review-queue')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.pendingMore}>+{item.items.length - 3} more</Text>
-              <Ionicons name="chevron-forward" size={14} color="#888" />
-            </TouchableOpacity>
-          )}
-        </View>
-      );
-    }
     return <ExpenseItem expense={item} categories={categories} onDelete={handleDelete} showUser={mode === 'household'} />;
   };
 
@@ -402,7 +254,7 @@ export default function FeedScreen() {
 
       <FlatList
         data={listData}
-        keyExtractor={(item, i) => item.id || `section-${i}`}
+        keyExtractor={(item, i) => item.id || `expense-${i}`}
         renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
         contentContainerStyle={styles.list}
@@ -469,12 +321,6 @@ export default function FeedScreen() {
           </View>
         </View>
       </Modal>
-      <DismissReasonSheet
-        visible={!!dismissingId}
-        onClose={() => setDismissingId(null)}
-        onSelect={(reason) => dismissPending(dismissingId, reason)}
-      />
-      <ActionNotice message={notice} />
     </View>
   );
 }
@@ -529,14 +375,6 @@ const styles = StyleSheet.create({
 
   list: { padding: 16 },
   empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
-
-  pendingSection: { backgroundColor: '#111', borderRadius: 10, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#1f1f1f' },
-  pendingLabel: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 12 },
-  pendingModeSummary: { fontSize: 11, color: '#7f8da4', paddingHorizontal: 12, paddingBottom: 2 },
-  pendingPreviewNote: { fontSize: 11, color: '#8ab4ff', paddingHorizontal: 12, paddingBottom: 4 },
-  pendingErrorState: { paddingHorizontal: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  pendingErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
-  pendingErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
   feedErrorState: {
     marginHorizontal: 16,
     marginBottom: 14,
@@ -549,36 +387,6 @@ const styles = StyleSheet.create({
   },
   feedErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
   feedErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
-  pendingEmptyState: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  pendingEmptyIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: '#102017',
-    borderWidth: 1,
-    borderColor: '#22372a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pendingEmptyCopy: { flex: 1, minWidth: 0 },
-  pendingEmptyTitle: { fontSize: 13, color: '#f5f5f5', fontWeight: '600', marginBottom: 2 },
-  pendingEmptyBody: { fontSize: 11, color: '#8a8a8a', lineHeight: 16 },
-  pendingMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-  },
-  pendingMore: { color: '#888', fontSize: 14, textAlign: 'center' },
   monthPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   monthPickerSheet: { backgroundColor: '#111', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
   monthPickerTitle: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },

@@ -383,9 +383,9 @@ function AppNavigator() {
       <Stack.Screen name="accounts" options={{ title: 'Accounts', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="gmail-import" options={{ title: 'Gmail Import', headerBackTitle: 'Settings' }} />
-      <Stack.Screen name="review-queue" options={{ title: 'Your review queue', headerBackTitle: 'Transactions' }} />
+      <Stack.Screen name="review-queue" options={{ title: 'Pending actions', headerBackTitle: 'Activity' }} />
       <Stack.Screen name="payment-methods" options={{ title: 'Saved Card Labels', headerBackTitle: 'Settings' }} />
-      <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Feed' }} />
+      <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Activity' }} />
       <Stack.Screen name="scenario-check" options={{ title: 'Scenario Check', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="watching-plans" options={{ title: 'Watching', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="trend-detail" options={{ title: 'Trend detail', headerBackTitle: 'Summary' }} />
