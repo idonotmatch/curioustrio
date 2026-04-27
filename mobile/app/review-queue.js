@@ -10,12 +10,25 @@ import { api } from '../services/api';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
 import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
 
+function summarizeReviewModes(expenses = []) {
+  const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
+  for (const expense of expenses) {
+    const mode = expense?.gmail_review_hint?.review_mode;
+    if (mode === 'quick_check') counts.quickCheck += 1;
+    else if (mode === 'items_first') counts.itemsFirst += 1;
+    else counts.review += 1;
+  }
+  return counts;
+}
+
 export default function ReviewQueueScreen() {
   const router = useRouter();
   const { expenses, loading, error, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
   const [notice, setNotice] = useState('');
   const [dismissingId, setDismissingId] = useState(null);
+  const reviewModeCounts = summarizeReviewModes(displayExpenses);
+  const totalActions = displayExpenses.length;
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
   useEffect(() => {
@@ -108,17 +121,46 @@ export default function ReviewQueueScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={(
             <View style={styles.header}>
+              <Text style={styles.eyebrow}>Pending actions</Text>
+              <Text style={styles.title}>
+                {totalActions > 0 ? `${totalActions} thing${totalActions === 1 ? '' : 's'} to clear` : 'You are caught up'}
+              </Text>
               <Text style={styles.subtitle}>Things that need your attention before they settle into the app.</Text>
-              {displayExpenses.length > 0 ? (
-                <Text style={styles.hint}>{isUsingMockData ? 'Dev preview actions' : 'Swipe to approve or dismiss'}</Text>
+
+              {totalActions > 0 ? (
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryPill}>
+                    <Text style={styles.summaryPillValue}>{totalActions}</Text>
+                    <Text style={styles.summaryPillLabel}>waiting now</Text>
+                  </View>
+                  {reviewModeCounts.quickCheck > 0 ? (
+                    <View style={styles.summaryPill}>
+                      <Text style={styles.summaryPillValue}>{reviewModeCounts.quickCheck}</Text>
+                      <Text style={styles.summaryPillLabel}>quick checks</Text>
+                    </View>
+                  ) : null}
+                  {reviewModeCounts.itemsFirst > 0 ? (
+                    <View style={styles.summaryPill}>
+                      <Text style={styles.summaryPillValue}>{reviewModeCounts.itemsFirst}</Text>
+                      <Text style={styles.summaryPillLabel}>item reviews</Text>
+                    </View>
+                  ) : null}
+                </View>
               ) : null}
+
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Review imports</Text>
+                {displayExpenses.length > 0 ? (
+                  <Text style={styles.hint}>{isUsingMockData ? 'Dev preview actions' : 'Swipe to approve or dismiss'}</Text>
+                ) : null}
+              </View>
             </View>
           )}
           ListEmptyComponent={
             !loading && (
               error
                 ? <Text style={styles.error}>{error}</Text>
-                : <Text style={styles.empty}>Nothing needs your attention right now. You&apos;re all caught up.</Text>
+                : <Text style={styles.empty}>Nothing needs your attention right now. New review work will land here when it needs you.</Text>
             )
           }
         />
@@ -139,12 +181,40 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 16, paddingBottom: 16 },
   header: {
     paddingTop: 4,
-    paddingBottom: 10,
-    marginBottom: 8,
+    paddingBottom: 14,
+    marginBottom: 10,
     backgroundColor: '#0a0a0a',
   },
-  subtitle: { fontSize: 13, color: '#8a8a8a', marginBottom: 8 },
-  hint: { fontSize: 12, color: '#444', textAlign: 'center', letterSpacing: 0.3 },
-  empty: { color: '#555', textAlign: 'center', marginTop: 40 },
+  eyebrow: {
+    color: '#8a8a8a',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  title: { color: '#f5f5f5', fontSize: 28, fontWeight: '700', marginBottom: 8 },
+  subtitle: { fontSize: 14, color: '#8a8a8a', lineHeight: 20, marginBottom: 14 },
+  summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
+  summaryPill: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  summaryPillValue: { color: '#f5f5f5', fontSize: 18, fontWeight: '700', marginBottom: 2 },
+  summaryPillLabel: { color: '#8a8a8a', fontSize: 12 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  sectionTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
+  hint: { fontSize: 12, color: '#666', letterSpacing: 0.2 },
+  empty: { color: '#555', textAlign: 'center', marginTop: 40, lineHeight: 20 },
   error: { color: '#fca5a5', textAlign: 'center', marginTop: 40, lineHeight: 20 },
 });

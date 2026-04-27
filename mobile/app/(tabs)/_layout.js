@@ -83,11 +83,12 @@ export default function TabLayout() {
             tabBarIcon: ({ focused }) => <ActivityIcon focused={focused} />,
           }}
         />
+        <Tabs.Screen name="add" options={{ href: null }} />
         <Tabs.Screen name="household" options={{ href: null }} />
         <Tabs.Screen
           name="pending"
           options={{
-            title: 'Pending',
+            title: 'Actions',
             tabBarIcon: ({ focused }) => <PendingIcon focused={focused} />,
           }}
         />
