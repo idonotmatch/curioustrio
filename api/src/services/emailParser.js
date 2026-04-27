@@ -28,6 +28,8 @@ Return ONLY a JSON object with:
 - card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
 - items (array or null): individual line items from the email, each as { "description": string, "amount": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. For fee/tax/shipping lines set upc/sku/brand/product_size/pack_size/unit to null. Set items to null if the email does not list individual items.
 
+Do NOT treat itinerary, reservation, guest, policy, loyalty-credit, support, or informational lines as items. Examples that should usually NOT become items: check-in/check-out times, guest names, cancellation policy text, "dollars used", "for more information", website links, confirmation headlines, or marketing upgrade offers unless they are clearly billed as purchased line items in an itemized block.
+
 If the email describes a refund or return, set amount as a negative number.
 If the email is not purchase/refund related, return null.
 Do not include any text outside the JSON object.`;
@@ -102,11 +104,23 @@ function isAddressLikeLine(line = '') {
   return /\b\d{2,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\s(?:st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place)\b/i.test(`${line || ''}`);
 }
 
+function isClearlyNonItemLine(line = '') {
+  const text = `${line || ''}`.trim();
+  if (!text) return false;
+  if (/\b(?:https?:\/\/|www\.|[a-z0-9.-]+\.(?:com|net|org|io|co|travel)\b)/i.test(text)) return true;
+  if (/^(?:confirmed:?|confirmation:?|reservation:?|itinerary:?|created:?|guest name:?|room \d+\s+guest name:?|check-?in:?|check-?out:?|dollars used:?|for more information:?)/i.test(text)) return true;
+  if (/(?:cancellation policy|policy deadlines|24-hour clock format|unless otherwise stated|cost\s*&\s*billing|terms\b|please visit\b|manage booking\b|view itinerary\b)/i.test(text)) return true;
+  if (/\byour trip to\b/i.test(text)) return true;
+  if (/\bwhen available\b/i.test(text)) return true;
+  return false;
+}
+
 function isLikelyProductAnchor(line = '') {
   const text = `${line || ''}`.trim();
   if (!text) return false;
   if (text.length < 3 || text.length > 120) return false;
   if (isSummaryLikeLine(text) || isMoneyOnlyLine(text) || isAddressLikeLine(text)) return false;
+  if (isClearlyNonItemLine(text)) return false;
   if (!/[a-z]/i.test(text)) return false;
   return true;
 }
@@ -132,6 +146,7 @@ function selectItemLikeLines(structured = '', limit = 18) {
       .filter((line) => {
         if (isSummaryLikeLine(line)) return false;
         if (isMoneyOnlyLine(line)) return false;
+        if (isClearlyNonItemLine(line)) return false;
         if (line.length < 3 || line.length > 80) return false;
         return /[a-z]/i.test(line);
       }),
@@ -156,6 +171,7 @@ function selectItemBlockLines(structured = '', limit = 32) {
     for (let offset = 0; offset <= 5; offset += 1) {
       const candidate = lines[index + offset];
       if (!candidate) break;
+      if (isClearlyNonItemLine(candidate) && offset > 0) break;
       if (isSummaryLikeLine(candidate) && !isPriceBearingLine(candidate)) break;
       if (isPriceBearingLine(candidate) || isMoneyOnlyLine(candidate)) {
         moneyIndex = index + offset;
@@ -169,6 +185,7 @@ function selectItemBlockLines(structured = '', limit = 32) {
       const candidate = lines[cursor];
       if (!candidate || seenIndexes.has(cursor)) continue;
       if (isAddressLikeLine(candidate)) continue;
+      if (isClearlyNonItemLine(candidate) && cursor !== moneyIndex) continue;
       if (
         cursor !== moneyIndex &&
         !isLikelyProductAnchor(candidate) &&
@@ -481,6 +498,20 @@ function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
   return false;
 }
 
+function sanitizeParsedItems(items = []) {
+  if (!Array.isArray(items)) return null;
+
+  const sanitized = items
+    .map((item) => ({
+      ...item,
+      description: `${item?.description || ''}`.trim(),
+    }))
+    .filter((item) => item.description)
+    .filter((item) => !isClearlyNonItemLine(item.description));
+
+  return sanitized.length > 0 ? sanitized : null;
+}
+
 function normalizeParsedPaymentFields(parsed = {}) {
   if (!parsed || typeof parsed !== 'object') return parsed;
   const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
@@ -547,16 +578,20 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
 
   const parsed = normalizeParsedPaymentFields(parseJsonResponse(text));
   if (!parsed || typeof parsed !== 'object') return parsed;
+  const sanitizedParsed = {
+    ...parsed,
+    items: sanitizeParsedItems(parsed.items),
+  };
 
   const fallbackItems = extractFallbackItemsFromEmailBody(emailBody);
-  if (shouldUseFallbackItems(parsed, fallbackItems)) {
+  if (shouldUseFallbackItems(sanitizedParsed, fallbackItems)) {
     return {
-      ...parsed,
+      ...sanitizedParsed,
       items: fallbackItems,
     };
   }
 
-  return parsed;
+  return sanitizedParsed;
 }
 
 function clampExpenseDate(candidateDate, maxDate) {

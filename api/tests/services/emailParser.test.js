@@ -31,6 +31,7 @@ describe('emailParser', () => {
       payment_method: null,
       card_label: null,
       card_last4: null,
+      items: null,
     });
   });
 
@@ -406,6 +407,51 @@ $41.98`
       deterministic_item_count: 2,
       has_anchor_label: true,
     }));
+  });
+
+  it('does not extract travel itinerary and policy lines as fallback items', () => {
+    const emailBody = `Confirmed: your trip to Charlotte
+$96.00
+Check-out: Saturday, May 16, 2026
+$1.00
+Room 1 Guest Name:
+$2.00
+Cancellation policy deadlines are in 24-hour clock format, unless otherwise stated.
+$550.00
+Start your day sooner with 12pm check-in, when available Room Upgrade
+$100.00
+Keep your vacation going with guaranteed 4pm check-out Cost & Billing
+$429.00
+Dollars used:
+$494.42
+For more information, please visit americanexpress.com/travelterms .
+$100.00`;
+
+    expect(extractFallbackItemsFromEmailBody(emailBody)).toEqual([]);
+  });
+
+  it('filters clearly informational travel rows from parsed items', async () => {
+    complete.mockResolvedValue(`{
+      "merchant":"Amex Travel",
+      "amount":96.00,
+      "date":"2026-04-21",
+      "notes":"Imported from Gmail",
+      "items":[
+        { "description":"Confirmed: your trip to Charlotte", "amount":96.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null },
+        { "description":"Check-out: Saturday, May 16, 2026", "amount":1.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null },
+        { "description":"Cancellation policy deadlines are in 24-hour clock format, unless otherwise stated.", "amount":550.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null }
+      ]
+    }`);
+
+    const result = await parseEmailExpense(
+      `Confirmed: your trip to Charlotte
+Total charged: $96.00`,
+      'Your trip is confirmed',
+      'travel@americanexpress.com',
+      '2026-04-21'
+    );
+
+    expect(result.items).toBeNull();
   });
 
   it('sends structured extraction text to the parser prompt', async () => {
