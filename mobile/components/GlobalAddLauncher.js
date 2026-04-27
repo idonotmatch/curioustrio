@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NLInput } from './NLInput';
 import { api } from '../services/api';
@@ -8,9 +8,22 @@ import { toLocalDateString } from '../services/date';
 export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   function close() {
     setOpen(false);
+    setKeyboardVisible(false);
   }
 
   function openAdd() {
@@ -69,49 +82,69 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={close}>
-          <View style={styles.sheet}>
-            <Text style={styles.eyebrow}>Quick action</Text>
-            <Text style={styles.title}>Add it the fast way</Text>
-            <Text style={styles.subtitle}>Type it naturally, or open a cleaner form if you want to start from scratch.</Text>
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+        >
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={close} />
+          <View style={[styles.sheet, keyboardVisible && styles.sheetRaised]}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+              contentContainerStyle={styles.sheetContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.eyebrow}>Quick action</Text>
+              <Text style={styles.title}>Add it the fast way</Text>
+              {!keyboardVisible ? (
+                <Text style={styles.subtitle}>Type it naturally, or open a cleaner form if you want to start from scratch.</Text>
+              ) : null}
 
-            <NLInput onSubmit={handleQuickParse} loading={loading} />
+              <NLInput onSubmit={handleQuickParse} loading={loading} />
 
-            <TouchableOpacity style={styles.actionRow} onPress={openAdd} activeOpacity={0.82}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="create-outline" size={18} color="#f5f5f5" />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Manual add</Text>
-                <Text style={styles.actionBody}>Start from scratch with the structured form.</Text>
-              </View>
-            </TouchableOpacity>
+              {!keyboardVisible ? (
+                <>
+                  <TouchableOpacity style={styles.actionRow} onPress={openAdd} activeOpacity={0.82}>
+                    <View style={styles.actionIcon}>
+                      <Ionicons name="create-outline" size={18} color="#f5f5f5" />
+                    </View>
+                    <View style={styles.actionCopy}>
+                      <Text style={styles.actionTitle}>Manual add</Text>
+                      <Text style={styles.actionBody}>Start from scratch with the structured form.</Text>
+                    </View>
+                  </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionRow} onPress={openScan} activeOpacity={0.82}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="camera-outline" size={18} color="#f5f5f5" />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Scan receipt</Text>
-                <Text style={styles.actionBody}>Use the camera or photo library to pull details in.</Text>
-              </View>
-            </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionRow} onPress={openScan} activeOpacity={0.82}>
+                    <View style={styles.actionIcon}>
+                      <Ionicons name="camera-outline" size={18} color="#f5f5f5" />
+                    </View>
+                    <View style={styles.actionCopy}>
+                      <Text style={styles.actionTitle}>Scan receipt</Text>
+                      <Text style={styles.actionBody}>Use the camera or photo library to pull details in.</Text>
+                    </View>
+                  </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionRow} onPress={openCheck} activeOpacity={0.82}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="sparkles-outline" size={18} color="#f5f5f5" />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Check a purchase</Text>
-                <Text style={styles.actionBody}>Pressure-test whether something fits right now.</Text>
-              </View>
-            </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionRow} onPress={openCheck} activeOpacity={0.82}>
+                    <View style={styles.actionIcon}>
+                      <Ionicons name="sparkles-outline" size={18} color="#f5f5f5" />
+                    </View>
+                    <View style={styles.actionCopy}>
+                      <Text style={styles.actionTitle}>Check a purchase</Text>
+                      <Text style={styles.actionBody}>Pressure-test whether something fits right now.</Text>
+                    </View>
+                  </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cancelButton} onPress={close} activeOpacity={0.8}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+                  <TouchableOpacity style={styles.cancelButton} onPress={close} activeOpacity={0.8}>
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.keyboardHint}>Dismiss the keyboard to scan, start from scratch, or check a purchase.</Text>
+              )}
+            </ScrollView>
           </View>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -138,6 +171,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
   sheet: {
     backgroundColor: '#111',
     borderTopLeftRadius: 18,
@@ -145,11 +181,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 34,
+    maxHeight: '88%',
+  },
+  sheetRaised: {
+    paddingBottom: Platform.OS === 'ios' ? 18 : 22,
+  },
+  sheetContent: {
     gap: 12,
   },
   eyebrow: { fontSize: 11, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 22, color: '#f5f5f5', fontWeight: '700', marginBottom: 2 },
   subtitle: { fontSize: 13, color: '#9a9a9a', lineHeight: 18, marginBottom: 2 },
+  keyboardHint: { fontSize: 12, color: '#7e7e7e', lineHeight: 18, marginTop: 2 },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
