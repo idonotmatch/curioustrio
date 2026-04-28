@@ -1,4 +1,4 @@
-import { View, Text } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 
 export function PendingExpenseEmailCard({
   styles,
@@ -9,6 +9,9 @@ export function PendingExpenseEmailCard({
   reviewFocusSummary,
   primaryReviewPath,
   emailSnippet,
+  canReprocessEmail,
+  reprocessingEmail,
+  onReprocessEmail,
 }) {
   const reviewReason = automationRecommendation?.reason || reviewFocusSummary.body;
   return (
@@ -26,6 +29,18 @@ export function PendingExpenseEmailCard({
       ) : null}
       <View style={styles.reviewPathRow}>
         <Text style={styles.reviewProvenanceHint}>{primaryReviewPath}</Text>
+        {canReprocessEmail ? (
+          <TouchableOpacity
+            style={styles.reviewSecondaryAction}
+            onPress={onReprocessEmail}
+            disabled={reprocessingEmail}
+            activeOpacity={0.82}
+          >
+            <Text style={styles.reviewSecondaryActionText}>
+              {reprocessingEmail ? 'Reprocessing...' : 'Reprocess email'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
       {emailSnippet ? (
         <View style={styles.reviewSnippetBlock}>
