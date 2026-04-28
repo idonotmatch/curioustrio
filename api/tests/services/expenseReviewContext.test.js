@@ -135,7 +135,6 @@ describe('expenseReviewContext', () => {
     expect(result.duplicate_flags).toEqual([{ id: 'dup-1', confidence: 'low' }]);
     expect(result.items).toEqual([{ description: 'Airport ride', amount: 42.5 }]);
     expect(result.gmail_review_hint).toMatchObject({
-      message_id: 'gmail-msg-1',
       sender_domain: 'amazon.com',
       from_address: 'uber@uber.com',
       message_subject: 'Uber trip "receipt"',
@@ -325,7 +324,6 @@ describe('expenseReviewContext', () => {
     expect(results).toHaveLength(2);
     expect(results[0].duplicate_flags).toEqual([{ id: 'dup-a' }]);
     expect(results[0].gmail_review_hint).toMatchObject({
-      message_id: 'msg-a',
       message_subject: 'Receipt A',
       message_snippet: 'Total $10.00',
     });

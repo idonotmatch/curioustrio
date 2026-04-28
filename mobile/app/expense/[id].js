@@ -1,9 +1,9 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Linking, Platform, Alert
+  StyleSheet, ActivityIndicator, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useCategories } from '../../hooks/useCategories';
@@ -18,14 +18,6 @@ import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
 import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
-import { api } from '../../services/api';
-import { invalidateCacheByPrefix } from '../../services/cache';
-import {
-  patchExpenseInCachedLists,
-  removeExpenseFromCachedLists,
-  removeExpenseSnapshot,
-  saveExpenseSnapshot,
-} from '../../services/expenseLocalStore';
 import { toLocalDateString } from '../../services/date';
 import {
   formatImportedAt,
@@ -58,7 +50,6 @@ export default function ExpenseDetailScreen() {
   const router = useRouter();
   const { categories } = useCategories();
   const { userId: currentUserId } = useCurrentUser();
-  const [reprocessingEmail, setReprocessingEmail] = useState(false);
   const {
     expense,
     loading,
@@ -217,49 +208,6 @@ export default function ExpenseDetailScreen() {
     }
   }
 
-  async function handleReprocessEmail() {
-    const messageId = gmailReviewHint?.message_id;
-    if (!messageId || reprocessingEmail) return;
-
-    setReprocessingEmail(true);
-    try {
-      const result = await api.post(`/gmail/message/${encodeURIComponent(messageId)}/reprocess`, {});
-      const refreshedExpense = result?.expense || null;
-
-      await removeExpenseFromCachedLists(expense.id);
-      await removeExpenseSnapshot(expense.id);
-
-      if (refreshedExpense?.id) {
-        await saveExpenseSnapshot(refreshedExpense);
-        await patchExpenseInCachedLists(refreshedExpense);
-      }
-
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:pending'),
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
-
-      if (refreshedExpense?.id) {
-        router.replace({
-          pathname: '/expense/[id]',
-          params: {
-            id: refreshedExpense.id,
-            expense: JSON.stringify(refreshedExpense),
-          },
-        });
-        return;
-      }
-
-      router.back();
-    } catch (err) {
-      Alert.alert('Could not reprocess email', err?.message || 'Please try again in a moment.');
-      setReprocessingEmail(false);
-    }
-  }
-
   return (
     <DismissKeyboardScrollView style={styles.container}>
       <Stack.Screen options={{
@@ -327,9 +275,6 @@ export default function ExpenseDetailScreen() {
           importMetaBits={importMetaBits}
           emailSnippet={emailSnippet}
           automationRecommendation={gmailReviewHint?.automation_recommendation || null}
-          canReprocessEmail={!!gmailReviewHint?.message_id}
-          reprocessingEmail={reprocessingEmail}
-          onReprocessEmail={handleReprocessEmail}
           categoryExplanation={gmailReviewHint?.category_explanation || null}
           priorityReviewFields={priorityReviewFields}
           isItemsFirstReview={isItemsFirstReview}
@@ -825,16 +770,6 @@ const styles = StyleSheet.create({
   reviewReasonBody: { color: '#dfd5c4', fontSize: 12, lineHeight: 18 },
   reviewPathRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   reviewProvenanceHint: { color: '#f3efe8', fontSize: 12, fontWeight: '600', lineHeight: 17 },
-  reviewSecondaryAction: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2d2922',
-    backgroundColor: '#1a1610',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexShrink: 0,
-  },
-  reviewSecondaryActionText: { color: '#e5d8bb', fontSize: 11, fontWeight: '700' },
   reviewSnippetBlock: {
     marginTop: 10,
     borderTopWidth: 1,

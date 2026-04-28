@@ -18,9 +18,6 @@ export function PendingExpenseReviewPanel({
   importMetaBits,
   emailSnippet,
   automationRecommendation,
-  canReprocessEmail,
-  reprocessingEmail,
-  onReprocessEmail,
   categoryExplanation,
   priorityReviewFields,
   isItemsFirstReview,
@@ -95,9 +92,6 @@ export function PendingExpenseReviewPanel({
         reviewFocusSummary={reviewFocusSummary}
         primaryReviewPath={primaryReviewPath}
         emailSnippet={emailSnippet}
-        canReprocessEmail={canReprocessEmail}
-        reprocessingEmail={reprocessingEmail}
-        onReprocessEmail={onReprocessEmail}
       />
 
       {isItemsFirstReview ? itemsCard : null}

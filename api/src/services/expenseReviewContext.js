@@ -79,7 +79,6 @@ async function attachGmailReviewHint(expense, userId) {
     email_from_address: log.from_address || null,
     email_snippet: decodeEmailField(log.snippet),
     gmail_review_hint: {
-      message_id: log.message_id,
       ...buildEmailReviewHint(expense, {
         ...log,
         subject: decodeEmailField(log.subject),
