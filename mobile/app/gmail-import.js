@@ -60,6 +60,7 @@ export default function GmailImportScreen() {
   const [learningExpanded, setLearningExpanded] = useState(false);
   const [senderSectionExpanded, setSenderSectionExpanded] = useState(false);
   const [reprocessingDebugMessage, setReprocessingDebugMessage] = useState(false);
+  const [inspectingDebugMessage, setInspectingDebugMessage] = useState(false);
   const shouldForceMockPreview = FORCE_MOCK_GMAIL_IMPORT_PREVIEW && __DEV__;
   const isUsingMockData = shouldForceMockPreview;
   const displayGmailStatus = isUsingMockData
@@ -288,6 +289,28 @@ export default function GmailImportScreen() {
     }
   }
 
+  async function inspectDebugMessage() {
+    setInspectingDebugMessage(true);
+    try {
+      const result = await api.get(`/gmail/message/${DEBUG_REPROCESS_MESSAGE_ID}/debug-parse`);
+      const parsedAmount = result?.parsed?.amount;
+      const preview = `${result?.selected_body_preview || ''}`.slice(0, 280);
+      Alert.alert(
+        'Parser debug',
+        [
+          `Source: ${result?.chosen_source || 'unknown'}`,
+          `Parsed amount: ${parsedAmount == null ? 'n/a' : parsedAmount}`,
+          result?.parsed?.merchant ? `Merchant: ${result.parsed.merchant}` : null,
+          preview ? `Preview: ${preview}` : null,
+        ].filter(Boolean).join('\n\n')
+      );
+    } catch (e) {
+      Alert.alert('Debug inspect failed', e?.message || 'Could not inspect this email');
+    } finally {
+      setInspectingDebugMessage(false);
+    }
+  }
+
   return (
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
@@ -342,6 +365,16 @@ export default function GmailImportScreen() {
             >
               <Text style={styles.actionBtnText}>
                 {reprocessingDebugMessage ? 'Reprocessing...' : 'Reprocess email'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, inspectingDebugMessage && styles.actionBtnDisabled]}
+              onPress={inspectDebugMessage}
+              disabled={inspectingDebugMessage}
+              activeOpacity={0.82}
+            >
+              <Text style={styles.actionBtnText}>
+                {inspectingDebugMessage ? 'Inspecting...' : 'Inspect parser'}
               </Text>
             </TouchableOpacity>
           </View>

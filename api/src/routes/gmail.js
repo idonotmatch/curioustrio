@@ -6,9 +6,10 @@ const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
-const { getAuthUrl, exchangeCode } = require('../services/gmailClient');
+const { getAuthUrl, exchangeCode, getMessageDebug } = require('../services/gmailClient');
 const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reprocessImportLog } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
+const { parseEmailExpense } = require('../services/emailParser');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 function gmailAppReturnUrl() {
@@ -225,6 +226,34 @@ router.post('/message/:messageId/reprocess', authenticate, async (req, res, next
     }
     next(err);
   }
+});
+
+router.get('/message/:messageId/debug-parse', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const messageId = `${req.params.messageId || ''}`.trim();
+    if (!messageId) return res.status(400).json({ error: 'messageId required' });
+    const debugMessage = await getMessageDebug(user.id, messageId);
+    const parsed = await parseEmailExpense(
+      debugMessage.selected_body_preview || '',
+      debugMessage.subject || '',
+      debugMessage.from || '',
+      debugMessage.receivedAt || new Date().toISOString().split('T')[0],
+      debugMessage.snippet || '',
+    );
+    res.json({
+      message_id: messageId,
+      chosen_source: debugMessage.chosen_source,
+      plain_score: debugMessage.plain_score,
+      html_score: debugMessage.html_score,
+      parsed,
+      subject: debugMessage.subject,
+      from: debugMessage.from,
+      snippet: debugMessage.snippet,
+      selected_body_preview: debugMessage.selected_body_preview,
+    });
+  } catch (err) { next(err); }
 });
 
 router.post('/retry-failed', authenticate, async (req, res, next) => {
