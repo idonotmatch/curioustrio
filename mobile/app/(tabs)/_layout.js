@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useMonth, currentPeriod } from '../../contexts/MonthContext';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -54,6 +55,9 @@ function StartDaySyncer() {
 }
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const visualTabBarHeight = 52;
+
   return (
     <>
       <StartDaySyncer />
@@ -61,11 +65,15 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: '#0a0a0a',
           borderTopColor: '#111',
-          height: 60,
-          paddingBottom: 8,
+          height: visualTabBarHeight + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 8),
         },
         headerShown: false,
         tabBarShowLabel: false,
+        tabBarItemStyle: {
+          paddingVertical: 0,
+        },
       }}>
         <Tabs.Screen
           name="summary"
