@@ -360,6 +360,43 @@ function parsePriceValue(line = '') {
   return match ? Number(match[1]) : null;
 }
 
+function extractDeterministicTotalAmount(emailBody = '') {
+  const structured = cleanStructuredText(redactSensitiveText(emailBody));
+  if (!structured) return null;
+
+  const lines = structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const candidates = [];
+  const exactLabelPattern = /^(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total)$/i;
+  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total)\b[^$\d-]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/total savings/i.test(line)) continue;
+
+    const inlineMatch = line.match(inlineLabelPattern);
+    if (inlineMatch) {
+      const amount = Number(inlineMatch[2]);
+      if (Number.isFinite(amount) && amount !== 0) {
+        candidates.push(amount);
+      }
+      continue;
+    }
+
+    if (!exactLabelPattern.test(line)) continue;
+    const nextLine = lines[index + 1];
+    const amount = parsePriceValue(nextLine);
+    if (Number.isFinite(amount) && amount !== 0) {
+      candidates.push(amount);
+    }
+  }
+
+  return candidates.length ? candidates[candidates.length - 1] : null;
+}
+
 function looksLikeBrandLine(line = '') {
   const text = `${line || ''}`.trim();
   if (!text || isSummaryLikeLine(text) || isSkuLikeLine(text) || isQuantityLine(text) || isMoneyOnlyLine(text)) return false;
@@ -609,6 +646,29 @@ function normalizeParsedPaymentFields(parsed = {}) {
   };
 }
 
+function shouldOverrideParsedAmount(parsed = {}, deterministicTotalAmount = null) {
+  if (!Number.isFinite(Number(deterministicTotalAmount)) || Number(deterministicTotalAmount) === 0) return false;
+
+  const parsedAmount = Number(parsed?.amount);
+  if (!Number.isFinite(parsedAmount) || parsedAmount === 0) return true;
+
+  const parsedAbs = Math.abs(parsedAmount);
+  const totalAbs = Math.abs(Number(deterministicTotalAmount));
+  if (Math.abs(parsedAbs - totalAbs) < 0.01) return false;
+
+  const rawLast4 = typeof parsed?.card_last4 === 'string'
+    ? parsed.card_last4
+    : parsed?.card_last4 != null
+      ? String(parsed.card_last4)
+      : '';
+  const cardLast4 = /^\d{4}$/.test(rawLast4.trim()) ? Number(rawLast4.trim()) : null;
+
+  if (cardLast4 && Math.abs(parsedAbs - cardLast4) < 0.01) return true;
+  if (totalAbs > 0 && parsedAbs > totalAbs * 10) return true;
+
+  return false;
+}
+
 async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate, snippet = '') {
   if (!emailBody || typeof emailBody !== 'string' || emailBody.trim().length === 0) {
     throw new Error('emailBody is required');
@@ -661,8 +721,12 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
 
   const parsed = normalizeParsedPaymentFields(parseJsonResponse(text));
   if (!parsed || typeof parsed !== 'object') return parsed;
+  const deterministicTotalAmount = extractDeterministicTotalAmount(emailBody);
   const sanitizedParsed = {
     ...parsed,
+    amount: shouldOverrideParsedAmount(parsed, deterministicTotalAmount)
+      ? deterministicTotalAmount
+      : parsed.amount,
     items: sanitizeParsedItems(parsed.items),
   };
 
