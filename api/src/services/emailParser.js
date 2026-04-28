@@ -108,11 +108,28 @@ function isClearlyNonItemLine(line = '') {
   const text = `${line || ''}`.trim();
   if (!text) return false;
   if (/\b(?:https?:\/\/|www\.|[a-z0-9.-]+\.(?:com|net|org|io|co|travel)\b)/i.test(text)) return true;
-  if (/^(?:confirmed:?|confirmation:?|reservation:?|itinerary:?|created:?|guest name:?|room \d+\s+guest name:?|check-?in:?|check-?out:?|dollars used:?|for more information:?)/i.test(text)) return true;
-  if (/(?:cancellation policy|policy deadlines|24-hour clock format|unless otherwise stated|cost\s*&\s*billing|terms\b|please visit\b|manage booking\b|view itinerary\b)/i.test(text)) return true;
+  if (/^(?:confirmed:?|confirmation:?|reservation:?|itinerary:?|created:?|guest name:?|room \d+\s+guest name:?|check-?in:?|check-?out:?|dollars used:?|for more information:?|how was your trip\??|provide feedback|view all items|payment method(?:\(s\))?:?|transaction id:?)/i.test(text)) return true;
+  if (/(?:cancellation policy|policy deadlines|24-hour clock format|unless otherwise stated|cost\s*&\s*billing|terms\b|please visit\b|manage booking\b|view itinerary\b|order\s*#\s*\d{3,}|american express \*?\d{4}\b)/i.test(text)) return true;
   if (/\byour trip to\b/i.test(text)) return true;
   if (/\bwhen available\b/i.test(text)) return true;
   return false;
+}
+
+function isItemsPurchasedAnchor(line = '') {
+  return /^items purchased(?::\s*\d+)?$/i.test(`${line || ''}`.trim());
+}
+
+function isUnitPriceQuantityLine(line = '') {
+  return /^qty:\s*\d+\s*@\s*\$?\d+(?:\.\d{2})?\s*each$/i.test(`${line || ''}`.trim());
+}
+
+function parseUnitPriceQuantityLine(line = '') {
+  const match = `${line || ''}`.match(/^qty:\s*(\d+)\s*@\s*\$?(\d+(?:\.\d{2})?)\s*each$/i);
+  if (!match) return null;
+  return {
+    quantity: Number(match[1]),
+    unitPrice: Number(match[2]),
+  };
 }
 
 function isLikelyProductAnchor(line = '') {
@@ -349,6 +366,63 @@ function looksLikeBrandLine(line = '') {
   return /\b(coffee|roasters|company|co\.?|inc\.?|llc|market|foods|kitchen|bakery|shop|store)\b/i.test(text);
 }
 
+function extractItemsPurchasedSectionItems(lines = []) {
+  const anchorIndex = lines.findIndex((line) => isItemsPurchasedAnchor(line));
+  if (anchorIndex === -1) return [];
+
+  const items = [];
+  const sectionLines = lines.slice(anchorIndex + 1);
+
+  for (let index = 0; index < sectionLines.length; index += 1) {
+    const line = sectionLines[index];
+    if (!isUnitPriceQuantityLine(line)) continue;
+
+    const qtyData = parseUnitPriceQuantityLine(line);
+    if (!qtyData) continue;
+
+    const amountLine = sectionLines[index + 1];
+    const amount = amountLine ? parsePriceValue(amountLine) : null;
+    const finalAmount = Number.isFinite(amount) && amount > 0
+      ? amount
+      : Number((qtyData.quantity * qtyData.unitPrice).toFixed(2));
+
+    const descriptionLines = [];
+    for (let cursor = index - 1; cursor >= 0 && descriptionLines.length < 3; cursor -= 1) {
+      const candidate = `${sectionLines[cursor] || ''}`.trim();
+      if (!candidate) break;
+      if (
+        isItemsPurchasedAnchor(candidate)
+        || isMoneyOnlyLine(candidate)
+        || isPriceBearingLine(candidate)
+        || isUnitPriceQuantityLine(candidate)
+        || isSummaryLikeLine(candidate)
+        || isClearlyNonItemLine(candidate)
+      ) {
+        break;
+      }
+      descriptionLines.unshift(candidate);
+    }
+
+    const description = descriptionLines.join(' ').trim();
+    if (!description || description.length < 3) continue;
+
+    items.push({
+      description,
+      amount: finalAmount,
+      upc: null,
+      sku: null,
+      brand: null,
+      product_size: null,
+      pack_size: qtyData.quantity > 1 ? String(qtyData.quantity) : null,
+      unit: null,
+    });
+
+    index += 1;
+  }
+
+  return items;
+}
+
 function extractFallbackItemsFromEmailBody(emailBody = '') {
   const structured = cleanStructuredText(redactSensitiveText(emailBody));
   if (!structured) return [];
@@ -357,6 +431,9 @@ function extractFallbackItemsFromEmailBody(emailBody = '') {
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
+
+  const purchasedSectionItems = extractItemsPurchasedSectionItems(allLines);
+  if (purchasedSectionItems.length >= 2) return purchasedSectionItems;
 
   let lines = allLines;
   const itemSectionIndex = allLines.findIndex((line) => /^item description$/i.test(line));
@@ -479,6 +556,10 @@ function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
     const type = classifyExpenseItemType(item?.description);
     return type === 'summary' || type === 'fee' || type === 'discount';
   }).length;
+  const parsedProductAmount = parsedItems
+    .filter((item) => classifyExpenseItemType(item?.description) === 'product')
+    .reduce((sum, item) => sum + Math.abs(Number(item?.amount || 0)), 0);
+  const parsedTotalAmount = Math.abs(Number(parsed?.amount || 0));
   const fallbackDescriptions = new Set(
     fallbackItems
       .map((item) => `${item?.description || ''}`.trim().toLowerCase())
@@ -493,7 +574,9 @@ function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
 
   if (parsedProductCount === 0 && fallbackProductCount > 0) return true;
   if (parsedProductCount < fallbackProductCount / 2 && fallbackProductCount >= 2) return true;
+  if (fallbackProductCount >= 3 && parsedProductCount < fallbackProductCount) return true;
   if (fallbackProductCount >= 2 && parsedSummaryOrFeeCount >= parsedItems.length && parsedProductCount < fallbackProductCount) return true;
+  if (parsedTotalAmount > 0 && parsedProductAmount > parsedTotalAmount * 2 && fallbackProductCount > 0) return true;
   if (fallbackProductCount >= 3 && overlappingDescriptions === 0) return true;
   return false;
 }

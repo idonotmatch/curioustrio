@@ -454,6 +454,129 @@ Total charged: $96.00`,
     expect(result.items).toBeNull();
   });
 
+  it('extracts whole foods style purchased items from qty and each-price rows', () => {
+    const emailBody = `April 27, 2026
+Whole Foods Market - Winston-Salem
+Order # 113-8680173-4268209
+Transaction Id KFKJW1HV3I
+Payment Method(s)
+American Express *9749
+$19.84
+
+Subtotal
+$20.94
+Total Savings
+-$1.61
+Sales Tax
+$0.51
+Total
+$19.84
+
+How was your trip?
+Provide Feedback
+
+Items Purchased: 6
+365 by Whole Foods Market Organic Lasagne,
+16 OZ
+Qty: 3 @ $1.79 each
+$5.37
+
+OLIPOP Crisp Apple Prebiotic Soda, 12 FZ
+Qty: 1 @ $2.59 each
+$2.59
+
+365 by Whole Foods Market Organic Feta
+Crumbles, 4 OZ
+Qty: 1 @ $4.99 each
+$4.99
+
+VAN LEEUWEN Earl Grey Ice Cream, 14 FZ
+Qty: 1 @ $7.99 each
+$6.38
+$1.61 promotions applied
+
+View All Items`;
+
+    expect(extractFallbackItemsFromEmailBody(emailBody)).toEqual([
+      expect.objectContaining({ description: '365 by Whole Foods Market Organic Lasagne, 16 OZ', amount: 5.37, pack_size: '3' }),
+      expect.objectContaining({ description: 'OLIPOP Crisp Apple Prebiotic Soda, 12 FZ', amount: 2.59 }),
+      expect.objectContaining({ description: '365 by Whole Foods Market Organic Feta Crumbles, 4 OZ', amount: 4.99 }),
+      expect.objectContaining({ description: 'VAN LEEUWEN Earl Grey Ice Cream, 14 FZ', amount: 6.38 }),
+    ]);
+  });
+
+  it('prefers extracted grocery items over corrupted parsed header rows', async () => {
+    complete.mockResolvedValue(`{
+      "merchant":"Whole Foods Market",
+      "amount":19.84,
+      "date":"2026-04-27",
+      "notes":"Imported from Gmail",
+      "payment_method":"credit",
+      "card_label":"American Express",
+      "card_last4":"9749",
+      "items":[
+        { "description":"April 27, 2026 Order # 113-8680173-4268209", "amount":9749.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null },
+        { "description":"How was your trip? Provide Feedback", "amount":3.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null },
+        { "description":"OLIPOP Crisp Apple Prebiotic Soda, 12 FZ", "amount":1.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null },
+        { "description":"VAN LEEUWEN Earl Grey Ice Cream, 14 FZ", "amount":1.00, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null }
+      ]
+    }`);
+
+    const result = await parseEmailExpense(
+      `April 27, 2026
+Whole Foods Market - Winston-Salem
+Order # 113-8680173-4268209
+Transaction Id KFKJW1HV3I
+Payment Method(s)
+American Express *9749
+$19.84
+
+Subtotal
+$20.94
+Total Savings
+-$1.61
+Sales Tax
+$0.51
+Total
+$19.84
+
+How was your trip?
+Provide Feedback
+
+Items Purchased: 6
+365 by Whole Foods Market Organic Lasagne,
+16 OZ
+Qty: 3 @ $1.79 each
+$5.37
+
+OLIPOP Crisp Apple Prebiotic Soda, 12 FZ
+Qty: 1 @ $2.59 each
+$2.59
+
+365 by Whole Foods Market Organic Feta
+Crumbles, 4 OZ
+Qty: 1 @ $4.99 each
+$4.99
+
+VAN LEEUWEN Earl Grey Ice Cream, 14 FZ
+Qty: 1 @ $7.99 each
+$6.38
+$1.61 promotions applied
+
+View All Items`,
+      'Whole Foods receipt',
+      'orders@wholefoodsmarket.com',
+      '2026-04-27'
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ description: '365 by Whole Foods Market Organic Lasagne, 16 OZ', amount: 5.37 }),
+      expect.objectContaining({ description: 'OLIPOP Crisp Apple Prebiotic Soda, 12 FZ', amount: 2.59 }),
+      expect.objectContaining({ description: '365 by Whole Foods Market Organic Feta Crumbles, 4 OZ', amount: 4.99 }),
+      expect.objectContaining({ description: 'VAN LEEUWEN Earl Grey Ice Cream, 14 FZ', amount: 6.38 }),
+    ]);
+  });
+
   it('sends structured extraction text to the parser prompt', async () => {
     complete.mockResolvedValue('null');
     await parseEmailExpense(
