@@ -1,8 +1,19 @@
 const {
+  findLikelyAmount,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
 } = require('../../src/services/gmailImporter');
+
+describe('findLikelyAmount', () => {
+  it('prefers an explicit total over trailing savings-like amounts', () => {
+    expect(findLikelyAmount(
+      'Whole Foods receipt',
+      '',
+      'Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84 $1.61 promotions applied'
+    )).toBe(19.84);
+  });
+});
 
 describe('buildGmailImportPushPayload', () => {
   it('prioritizes review queue messaging when imported expenses need confirmation', () => {

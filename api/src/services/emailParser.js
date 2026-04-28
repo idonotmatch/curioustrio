@@ -786,6 +786,7 @@ function clampExpenseDate(candidateDate, maxDate) {
 module.exports = {
   parseEmailExpense,
   classifyEmailExpense,
+  extractDeterministicTotalAmount,
   selectRelevantEmailText,
   extractFallbackItemsFromEmailBody,
   summarizeStructuredItemBlock,

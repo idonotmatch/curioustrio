@@ -9,6 +9,7 @@ const { listRecentMessages, getMessage } = require('./gmailClient');
 const {
   classifyEmailExpense,
   parseEmailExpense,
+  extractDeterministicTotalAmount,
   extractFallbackItemsFromEmailBody,
   summarizeStructuredItemBlock,
   analyzeEmailSignals,
@@ -40,6 +41,12 @@ function findLikelyAmount(...parts) {
     .filter(Boolean)
     .map((part) => `${part}`)
     .join('\n');
+
+  const deterministicTotal = extractDeterministicTotalAmount(body);
+  if (Number.isFinite(deterministicTotal) && deterministicTotal !== 0) {
+    return deterministicTotal;
+  }
+
   const patterns = [
     /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund total)[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
     /\btotal\b[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
@@ -637,6 +644,7 @@ module.exports = {
   retryFailedImportLog,
   retryFailedImportsForUser,
   reprocessImportLog,
+  findLikelyAmount,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
