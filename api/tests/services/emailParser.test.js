@@ -652,6 +652,28 @@ $1.61 promotions applied`,
     expect(result.amount).toBe(19.84);
   });
 
+  it('finds the explicit total even when summary amounts are collapsed onto one line', async () => {
+    complete.mockResolvedValue(`{
+      "merchant":"Whole Foods Market",
+      "amount":1.61,
+      "date":"2026-04-27",
+      "notes":"Imported from Gmail",
+      "payment_method":"credit",
+      "card_label":"American Express",
+      "card_last4":"9749",
+      "items":null
+    }`);
+
+    const result = await parseEmailExpense(
+      'Whole Foods Market - Winston-Salem Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84 $1.61 promotions applied',
+      'Whole Foods receipt',
+      'orders@wholefoodsmarket.com',
+      '2026-04-27'
+    );
+
+    expect(result.amount).toBe(19.84);
+  });
+
   it('sends structured extraction text to the parser prompt', async () => {
     complete.mockResolvedValue('null');
     await parseEmailExpense(

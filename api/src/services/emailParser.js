@@ -371,21 +371,22 @@ function extractDeterministicTotalAmount(emailBody = '') {
 
   const candidates = [];
   const exactLabelPattern = /^(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total)$/i;
-  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total)\b[^$\d-]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i;
+  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total(?!\s+savings))\b[^$\d-]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/gi;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (/total savings/i.test(line)) continue;
-
-    const inlineMatch = line.match(inlineLabelPattern);
-    if (inlineMatch) {
-      const amount = Number(inlineMatch[2]);
-      if (Number.isFinite(amount) && amount !== 0) {
-        candidates.push(amount);
+    const inlineMatches = [...line.matchAll(inlineLabelPattern)];
+    if (inlineMatches.length > 0) {
+      for (const match of inlineMatches) {
+        const amount = Number(match[2]);
+        if (Number.isFinite(amount) && amount !== 0) {
+          candidates.push(amount);
+        }
       }
       continue;
     }
 
+    if (/^total savings$/i.test(line)) continue;
     if (!exactLabelPattern.test(line)) continue;
     const nextLine = lines[index + 1];
     const amount = parsePriceValue(nextLine);
