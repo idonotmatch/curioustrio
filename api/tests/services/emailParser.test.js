@@ -614,6 +614,44 @@ $19.84`,
     expect(result.card_last4).toBe('9749');
   });
 
+  it('overrides savings-like parsed amounts when the email has a clean explicit total', async () => {
+    complete.mockResolvedValue(`{
+      "merchant":"Whole Foods Market",
+      "amount":1.61,
+      "date":"2026-04-27",
+      "notes":"Imported from Gmail",
+      "payment_method":"credit",
+      "card_label":"American Express",
+      "card_last4":"9749",
+      "items":[
+        { "description":"VAN LEEUWEN Earl Grey Ice Cream, 14 FZ", "amount":6.38, "upc":null, "sku":null, "brand":null, "product_size":null, "pack_size":null, "unit":null }
+      ]
+    }`);
+
+    const result = await parseEmailExpense(
+      `April 27, 2026
+Whole Foods Market - Winston-Salem
+Payment Method(s)
+American Express *9749
+
+Subtotal
+$20.94
+Total Savings
+-$1.61
+Sales Tax
+$0.51
+Total
+$19.84
+
+$1.61 promotions applied`,
+      'Whole Foods receipt',
+      'orders@wholefoodsmarket.com',
+      '2026-04-27'
+    );
+
+    expect(result.amount).toBe(19.84);
+  });
+
   it('sends structured extraction text to the parser prompt', async () => {
     complete.mockResolvedValue('null');
     await parseEmailExpense(

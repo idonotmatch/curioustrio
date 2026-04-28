@@ -397,6 +397,36 @@ function extractDeterministicTotalAmount(emailBody = '') {
   return candidates.length ? candidates[candidates.length - 1] : null;
 }
 
+function extractDiscountLikeAmounts(emailBody = '') {
+  const structured = cleanStructuredText(redactSensitiveText(emailBody));
+  if (!structured) return [];
+
+  const lines = structured
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const candidates = [];
+  const inlinePattern = /\b(total savings|savings|discount|reward|promotions? applied|credit applied)\b[^$\d-]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const inlineMatch = line.match(inlinePattern);
+    if (inlineMatch) {
+      const amount = Math.abs(Number(inlineMatch[2]));
+      if (Number.isFinite(amount) && amount > 0) candidates.push(amount);
+      continue;
+    }
+
+    if (!/\b(total savings|savings|discount|reward|promotions? applied|credit applied)\b/i.test(line)) continue;
+    const nextLine = lines[index + 1];
+    const amount = Math.abs(Number(parsePriceValue(nextLine)));
+    if (Number.isFinite(amount) && amount > 0) candidates.push(amount);
+  }
+
+  return candidates;
+}
+
 function looksLikeBrandLine(line = '') {
   const text = `${line || ''}`.trim();
   if (!text || isSummaryLikeLine(text) || isSkuLikeLine(text) || isQuantityLine(text) || isMoneyOnlyLine(text)) return false;
@@ -646,7 +676,7 @@ function normalizeParsedPaymentFields(parsed = {}) {
   };
 }
 
-function shouldOverrideParsedAmount(parsed = {}, deterministicTotalAmount = null) {
+function shouldOverrideParsedAmount(parsed = {}, deterministicTotalAmount = null, discountLikeAmounts = []) {
   if (!Number.isFinite(Number(deterministicTotalAmount)) || Number(deterministicTotalAmount) === 0) return false;
 
   const parsedAmount = Number(parsed?.amount);
@@ -664,7 +694,11 @@ function shouldOverrideParsedAmount(parsed = {}, deterministicTotalAmount = null
   const cardLast4 = /^\d{4}$/.test(rawLast4.trim()) ? Number(rawLast4.trim()) : null;
 
   if (cardLast4 && Math.abs(parsedAbs - cardLast4) < 0.01) return true;
+  if (Array.isArray(discountLikeAmounts) && discountLikeAmounts.some((amount) => Math.abs(parsedAbs - Math.abs(Number(amount || 0))) < 0.01)) {
+    return true;
+  }
   if (totalAbs > 0 && parsedAbs > totalAbs * 10) return true;
+  if (totalAbs > 0 && parsedAbs < totalAbs * 0.5) return true;
 
   return false;
 }
@@ -722,9 +756,10 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
   const parsed = normalizeParsedPaymentFields(parseJsonResponse(text));
   if (!parsed || typeof parsed !== 'object') return parsed;
   const deterministicTotalAmount = extractDeterministicTotalAmount(emailBody);
+  const discountLikeAmounts = extractDiscountLikeAmounts(emailBody);
   const sanitizedParsed = {
     ...parsed,
-    amount: shouldOverrideParsedAmount(parsed, deterministicTotalAmount)
+    amount: shouldOverrideParsedAmount(parsed, deterministicTotalAmount, discountLikeAmounts)
       ? deterministicTotalAmount
       : parsed.amount,
     items: sanitizeParsedItems(parsed.items),
