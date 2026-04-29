@@ -453,6 +453,21 @@ export default function SummaryScreen() {
         hint="Swipe for more"
       />
 
+      {displayInsights.length === 0 && !insightsError ? (
+        <TouchableOpacity
+          style={styles.insightEmptyCard}
+          activeOpacity={0.88}
+          onPress={() => router.push('/insight-diagnostics')}
+        >
+          <Text style={styles.insightEmptyEyebrow}>What matters now</Text>
+          <Text style={styles.insightEmptyTitle}>No insight cards are surfacing right now</Text>
+          <Text style={styles.insightEmptyBody}>
+            That can mean Adlo does not have any strong signals yet, or that current candidates are being filtered out. Open diagnostics to see which one it is.
+          </Text>
+          <Text style={styles.insightEmptyAction}>Open insight diagnostics</Text>
+        </TouchableOpacity>
+      ) : null}
+
       {watchedPlans.length > 0 ? (
         <TouchableOpacity
           style={styles.watchingCard}
@@ -561,6 +576,39 @@ const styles = StyleSheet.create({
   insightsErrorAction: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
+  insightEmptyCard: {
+    marginBottom: 28,
+    backgroundColor: '#111214',
+    borderColor: '#20252b',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+    gap: 6,
+  },
+  insightEmptyEyebrow: {
+    color: '#8894a1',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  insightEmptyTitle: {
+    color: '#f5f5f5',
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: '700',
+  },
+  insightEmptyBody: {
+    color: '#acb7c3',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  insightEmptyAction: {
+    color: '#e5eef8',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   watchingCard: {
     marginTop: 12,
     marginBottom: 28,

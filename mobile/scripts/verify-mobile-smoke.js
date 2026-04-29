@@ -6,6 +6,7 @@ const filesToCheck = [
   'app/accounts.js',
   'app/expense/[id].js',
   'app/gmail-import.js',
+  'app/insight-diagnostics.js',
   'app/insight-detail.js',
   'app/manual-add.js',
   'app/scenario-check.js',

@@ -164,6 +164,17 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>INSIGHTS</Text>
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/insight-diagnostics')}>
+          <View>
+            <Text style={styles.navRowText}>Insight diagnostics</Text>
+            <Text style={styles.navRowSub}>See whether Adlo has surfaced anything, or whether nothing is eligible right now</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#888" />
+        </TouchableOpacity>
+      </View>
+
       {/* Categories */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>CATEGORIES</Text>
