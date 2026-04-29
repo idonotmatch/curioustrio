@@ -1,4 +1,22 @@
-const { htmlToReadableText, GMAIL_SEARCH_QUERY, chooseBestMessageBody, bodyRichnessScore } = require('../../src/services/gmailClient');
+jest.mock('node-fetch', () => jest.fn());
+jest.mock('../../src/models/oauthToken', () => ({
+  findCredentialsByUserId: jest.fn(),
+  deleteByUserId: jest.fn(),
+}));
+jest.mock('../../src/db', () => ({
+  query: jest.fn(),
+}));
+
+const fetch = require('node-fetch');
+const OAuthToken = require('../../src/models/oauthToken');
+const db = require('../../src/db');
+const {
+  htmlToReadableText,
+  GMAIL_SEARCH_QUERY,
+  chooseBestMessageBody,
+  bodyRichnessScore,
+  disconnectGmailConnection,
+} = require('../../src/services/gmailClient');
 
 describe('gmailClient helpers', () => {
   it('broadens the Gmail search query beyond basic receipt subjects', () => {
@@ -112,5 +130,44 @@ $107.95`;
 
     expect(bodyRichnessScore(htmlText)).toBeGreaterThan(bodyRichnessScore(plain));
     expect(chooseBestMessageBody(plain, htmlText, 'Order #RT-270233 confirmed')).toBe(htmlText);
+  });
+});
+
+describe('disconnectGmailConnection', () => {
+  beforeEach(() => {
+    fetch.mockReset();
+    OAuthToken.findCredentialsByUserId.mockReset();
+    OAuthToken.deleteByUserId.mockReset();
+    db.query.mockReset();
+  });
+
+  it('cleans up local Gmail state even when no token exists', async () => {
+    OAuthToken.findCredentialsByUserId.mockResolvedValue(null);
+    db.query.mockResolvedValue({ rows: [], rowCount: 0 });
+
+    await expect(disconnectGmailConnection('user-1')).resolves.toEqual({
+      disconnected: true,
+      revoked: false,
+      had_token: false,
+    });
+
+    expect(OAuthToken.deleteByUserId).not.toHaveBeenCalled();
+    expect(db.query).toHaveBeenCalledWith('DELETE FROM gmail_oauth_states WHERE user_id = $1', ['user-1']);
+  });
+
+  it('deletes local Gmail state even if revoke fails', async () => {
+    OAuthToken.findCredentialsByUserId.mockResolvedValue({ refresh_token: 'refresh-token' });
+    fetch.mockRejectedValue(new Error('network down'));
+    OAuthToken.deleteByUserId.mockResolvedValue({});
+    db.query.mockResolvedValue({ rows: [], rowCount: 0 });
+
+    await expect(disconnectGmailConnection('user-1')).resolves.toEqual({
+      disconnected: true,
+      revoked: false,
+      had_token: true,
+    });
+
+    expect(OAuthToken.deleteByUserId).toHaveBeenCalledWith('user-1');
+    expect(db.query).toHaveBeenCalledWith('DELETE FROM gmail_oauth_states WHERE user_id = $1', ['user-1']);
   });
 });

@@ -48,6 +48,11 @@ function cleanStructuredText(value) {
     .trim();
 }
 
+function extractSenderDomain(fromAddress = '') {
+  const match = `${fromAddress || ''}`.toLowerCase().match(/@([a-z0-9.-]+\.[a-z]{2,})/i);
+  return match?.[1] || '';
+}
+
 function redactSensitiveText(value) {
   return (value || '')
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
@@ -307,12 +312,47 @@ function extractEmailLocationCandidate(subject = '', fromAddress = '', emailBody
   };
 }
 
-function selectRelevantEmailText(emailBody, snippet = '') {
+function deriveEmailReceiptFamily(subject = '', fromAddress = '', emailBody = '') {
+  const domain = extractSenderDomain(fromAddress);
+  const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
+
+  const grocerySignals = (
+    /^(wholefoods\.com|amazon\.com|walmart\.com|target\.com|instacart\.com|kroger\.com|costco\.com|shipt\.com)$/.test(domain)
+    || /items purchased(?::\s*\d+)?/i.test(emailBody)
+    || /qty:\s*\d+\s*@\s*\$?\d+(?:\.\d{2})?\s*each/i.test(emailBody)
+    || /\bthanks for shopping with us today\b/i.test(text)
+  );
+  if (grocerySignals) return 'grocery_receipt';
+
+  const travelSignals = (
+    /(booking confirmation|reservation confirmed|stay receipt|hotel receipt|trip confirmation|your trip|check-?in|check-?out|guest name|room \d+\s+guest name|cancellation policy|dollars used)/i.test(text)
+    || /@(booking|expedia|travelocity|hotels|hilton|marriott|delta|united|americanairlines|southwest|airbnb)\./i.test(fromAddress)
+  );
+  if (travelSignals) return 'travel_receipt';
+
+  const rideSignals = (
+    /(ride receipt|your ride|thanks for riding|trip receipt|trip total|fare|tolls?)/i.test(text)
+    || /@(uber|lyftmail)\./i.test(fromAddress)
+  );
+  if (rideSignals) return 'ride_receipt';
+
+  const digitalSignals = (
+    /(subscription|renewal|membership|plan renewal|monthly charge|annual charge|digital receipt)/i.test(text)
+    || /@(spotify|netflix|apple|google|hulu|hbomax|max)\./i.test(fromAddress)
+  );
+  if (digitalSignals) return 'digital_receipt';
+
+  return 'generic_order';
+}
+
+function selectRelevantEmailText(emailBody, snippet = '', familyOverride = null) {
   const cleaned = cleanText(redactSensitiveText(emailBody));
   const structured = cleanStructuredText(redactSensitiveText(emailBody));
   const normalizedSnippet = cleanText(redactSensitiveText(snippet));
   const structuredSnippet = cleanStructuredText(redactSensitiveText(snippet));
   if (!cleaned) return { classifierText: '', extractionText: '' };
+
+  const family = familyOverride || deriveEmailReceiptFamily('', '', emailBody);
 
   const topStructured = structured.slice(0, 1200);
   const bottomStructured = selectBottomStructuredLines(structured, 14).join('\n');
@@ -328,7 +368,17 @@ function selectRelevantEmailText(emailBody, snippet = '') {
 
   const classifierText = focusedSummary.slice(0, 1800);
 
-  const extractionText = [structuredSnippet, keywordLines, itemBlockLines, itemLines, bottomStructured, topStructured]
+  const familyExtractionParts = (() => {
+    if (family === 'travel_receipt' || family === 'ride_receipt' || family === 'digital_receipt') {
+      return [structuredSnippet, keywordLines, bottomStructured, topStructured];
+    }
+    if (family === 'grocery_receipt') {
+      return [structuredSnippet, keywordLines, itemBlockLines, bottomStructured, topStructured];
+    }
+    return [structuredSnippet, keywordLines, itemBlockLines, itemLines, bottomStructured, topStructured];
+  })();
+
+  const extractionText = familyExtractionParts
     .filter(Boolean)
     .join('\n...\n')
     .slice(0, 3600);
@@ -491,7 +541,12 @@ function extractItemsPurchasedSectionItems(lines = []) {
   return items;
 }
 
-function extractFallbackItemsFromEmailBody(emailBody = '') {
+function extractFallbackItemsFromEmailBody(emailBody = '', familyOverride = null) {
+  const family = familyOverride || deriveEmailReceiptFamily('', '', emailBody);
+  if (family === 'travel_receipt' || family === 'ride_receipt' || family === 'digital_receipt') {
+    return [];
+  }
+
   const structured = cleanStructuredText(redactSensitiveText(emailBody));
   if (!structured) return [];
 
@@ -570,7 +625,8 @@ function extractFallbackItemsFromEmailBody(emailBody = '') {
   return items;
 }
 
-function summarizeStructuredItemBlock(emailBody = '') {
+function summarizeStructuredItemBlock(emailBody = '', familyOverride = null) {
+  const family = familyOverride || deriveEmailReceiptFamily('', '', emailBody);
   const structured = cleanStructuredText(redactSensitiveText(emailBody));
   if (!structured) {
     return {
@@ -586,7 +642,7 @@ function summarizeStructuredItemBlock(emailBody = '') {
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const deterministicItems = extractFallbackItemsFromEmailBody(emailBody);
+  const deterministicItems = extractFallbackItemsFromEmailBody(emailBody, family);
   const hasAnchorLabel = lines.some((line) => /^(item description|items|order items|line items)$/i.test(line));
   const skuLineCount = lines.filter((line) => isSkuLikeLine(line)).length;
   const quantityLineCount = lines.filter((line) => isQuantityLine(line)).length;
@@ -649,7 +705,24 @@ function shouldUseFallbackItems(parsed = {}, fallbackItems = []) {
   return false;
 }
 
-function sanitizeParsedItems(items = []) {
+function isAllowedParsedItemForFamily(description = '', family = 'generic_order') {
+  const text = `${description || ''}`.trim().toLowerCase();
+  if (!text) return false;
+
+  if (family === 'travel_receipt') {
+    return /(room|night|rate|tax|fee|parking|resort|service|cleaning|ticket|fare|seat|baggage|insurance|charge|credit)/i.test(text);
+  }
+  if (family === 'ride_receipt') {
+    return /(fare|tip|booking fee|service fee|tax|toll|credit|discount|ride)/i.test(text);
+  }
+  if (family === 'digital_receipt') {
+    return /(subscription|membership|monthly|annual|plan|tax|fee|renewal)/i.test(text);
+  }
+  return true;
+}
+
+function sanitizeParsedItems(items = [], familyOverride = null) {
+  const family = familyOverride || 'generic_order';
   if (!Array.isArray(items)) return null;
 
   const sanitized = items
@@ -660,7 +733,9 @@ function sanitizeParsedItems(items = []) {
     .filter((item) => item.description)
     .filter((item) => !isClearlyNonItemLine(item.description));
 
-  return sanitized.length > 0 ? sanitized : null;
+  const familySanitized = sanitized.filter((item) => isAllowedParsedItemForFamily(item.description, family));
+
+  return familySanitized.length > 0 ? familySanitized : null;
 }
 
 function normalizeParsedPaymentFields(parsed = {}) {
@@ -717,7 +792,8 @@ async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate, 
     return { disposition: heuristic, merchant: null, reason: 'heuristic_skip' };
   }
 
-  const { classifierText } = selectRelevantEmailText(emailBody, snippet);
+  const family = deriveEmailReceiptFamily(subject, fromAddress, emailBody);
+  const { classifierText } = selectRelevantEmailText(emailBody, snippet, family);
   const text = await complete({
     system: CLASSIFIER_SYSTEM_PROMPT,
     messages: [{
@@ -744,7 +820,8 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
     throw new Error('todayDate must be a valid ISO date string (YYYY-MM-DD)');
   }
 
-  const { extractionText } = selectRelevantEmailText(emailBody, snippet);
+  const family = deriveEmailReceiptFamily(subject, fromAddress, emailBody);
+  const { extractionText } = selectRelevantEmailText(emailBody, snippet, family);
 
   const text = await complete({
     system: SYSTEM_PROMPT,
@@ -763,10 +840,10 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
     amount: shouldOverrideParsedAmount(parsed, deterministicTotalAmount, discountLikeAmounts)
       ? deterministicTotalAmount
       : parsed.amount,
-    items: sanitizeParsedItems(parsed.items),
+    items: sanitizeParsedItems(parsed.items, family),
   };
 
-  const fallbackItems = extractFallbackItemsFromEmailBody(emailBody);
+  const fallbackItems = extractFallbackItemsFromEmailBody(emailBody, family);
   if (shouldUseFallbackItems(sanitizedParsed, fallbackItems)) {
     return {
       ...sanitizedParsed,
@@ -786,6 +863,7 @@ function clampExpenseDate(candidateDate, maxDate) {
 module.exports = {
   parseEmailExpense,
   classifyEmailExpense,
+  deriveEmailReceiptFamily,
   extractDeterministicTotalAmount,
   extractDiscountLikeAmounts,
   shouldOverrideParsedAmount,

@@ -20,7 +20,8 @@
     "start": "next start",
     "dev:api": "cd api && npm run dev",
     "dev:mobile": "cd mobile && npm run start",
-    "ios": "cd mobile && npm run ios"
+    "ios": "cd mobile && npm run ios",
+    "test:launch": "npm --prefix api run test:launch && npm --prefix mobile test"
   },
   "repository": {
     "type": "git",

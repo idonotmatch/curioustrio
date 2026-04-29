@@ -7,6 +7,7 @@ const { complete } = require('../../src/services/ai');
 const {
   parseEmailExpense,
   classifyEmailExpense,
+  deriveEmailReceiptFamily,
   heuristicDisposition,
   selectRelevantEmailText,
   extractFallbackItemsFromEmailBody,
@@ -112,6 +113,24 @@ describe('emailParser', () => {
     expect(uberSignals.shouldSurfaceToReview).toBe(true);
     expect(lyftSignals.senderLooksTransactional).toBe(true);
     expect(lyftSignals.shouldSurfaceToReview).toBe(true);
+  });
+
+  it('derives receipt families for grocery, travel, and ride emails', () => {
+    expect(deriveEmailReceiptFamily(
+      'Your Whole Foods receipt',
+      'auto-confirm@wholefoods.com',
+      'Items Purchased: 6\nQty: 1 @ $2.59 each\nTotal $19.84'
+    )).toBe('grocery_receipt');
+    expect(deriveEmailReceiptFamily(
+      'Your stay is confirmed',
+      'reservations@hilton.com',
+      'Check-in Saturday, May 16, 2026\nGuest name: Dang'
+    )).toBe('travel_receipt');
+    expect(deriveEmailReceiptFamily(
+      'Thanks for riding with Lyft',
+      'receipt@lyftmail.com',
+      'Ride receipt total $24.18'
+    )).toBe('ride_receipt');
   });
 
   it('throws when emailBody is empty', async () => {
@@ -279,6 +298,45 @@ $41.98`;
         brand: 'DAK Coffee Roasters',
         sku: 'COF-DA-0397',
       }),
+    ]);
+  });
+
+  it('does not use fallback item extraction for travel-style reservation emails', () => {
+    const emailBody = `Confirmed: your trip to Charlotte
+Check-out: Saturday, May 16, 2026
+Room 1 Guest Name:
+Cancellation policy deadlines are in 24-hour clock format, unless otherwise stated.
+Start your day sooner with 12pm check-in, when available Room Upgrade
+Keep your vacation going with guaranteed 4pm check-out Cost & Billing
+For more information, please visit americanexpress.com/travelterms .
+Total
+$550.00`;
+    expect(extractFallbackItemsFromEmailBody(emailBody, 'travel_receipt')).toEqual([]);
+  });
+
+  it('filters parsed ride and travel pseudo-items that are not real charges', async () => {
+    complete.mockResolvedValue(JSON.stringify({
+      merchant: 'Hilton',
+      amount: 184.22,
+      date: '2026-05-16',
+      notes: 'Imported from Gmail',
+      items: [
+        { description: 'Check-out: Saturday, May 16, 2026', amount: 1.0 },
+        { description: 'Room rate', amount: 160.0 },
+        { description: 'Taxes and fees', amount: 24.22 },
+      ],
+    }));
+
+    const result = await parseEmailExpense(
+      'Check-out: Saturday, May 16, 2026\nRoom rate\n$160.00\nTaxes and fees\n$24.22\nTotal\n$184.22',
+      'Your stay receipt',
+      'reservations@hilton.com',
+      '2026-05-16'
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ description: 'Room rate' }),
+      expect.objectContaining({ description: 'Taxes and fees' }),
     ]);
   });
 
