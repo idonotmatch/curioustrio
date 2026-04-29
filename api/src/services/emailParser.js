@@ -787,6 +787,8 @@ module.exports = {
   parseEmailExpense,
   classifyEmailExpense,
   extractDeterministicTotalAmount,
+  extractDiscountLikeAmounts,
+  shouldOverrideParsedAmount,
   selectRelevantEmailText,
   extractFallbackItemsFromEmailBody,
   summarizeStructuredItemBlock,

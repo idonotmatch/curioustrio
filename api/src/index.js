@@ -4,9 +4,11 @@ if (process.env.NODE_ENV !== 'test') {
 // Prefer IPv4 DNS results — belt-and-suspenders alongside the pooler URL which
 // already resolves to IPv4 on AWS. This must be called before any network I/O.
 require('dns').setDefaultResultOrder('ipv4first');
+const crypto = require('crypto');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const db = require('./db');
 const { errorHandler } = require('./middleware/errorHandler');
 const { standard } = require('./middleware/rateLimit');
 const expensesRouter = require('./routes/expenses');
@@ -33,10 +35,25 @@ const app = express();
 // requests. '1' means trust the first hop (Render's LB).
 app.set('trust proxy', 1);
 
+app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  req.requestId = `${requestId}`;
+  res.setHeader('x-request-id', req.requestId);
+  next();
+});
+
 // Health check — registered before all other middleware so it responds
 // immediately regardless of rate limits, auth, or body parsing. Render's
 // internal health checker pings this to confirm the service is alive.
-app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/health', (req, res) => res.json({ ok: true, request_id: req.requestId || null }));
+app.get('/ready', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ ok: true, db: 'ready', request_id: req.requestId || null });
+  } catch (err) {
+    res.status(503).json({ ok: false, db: 'unavailable', request_id: req.requestId || null });
+  }
+});
 
 const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean);

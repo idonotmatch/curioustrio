@@ -10,6 +10,8 @@ const {
   classifyEmailExpense,
   parseEmailExpense,
   extractDeterministicTotalAmount,
+  extractDiscountLikeAmounts,
+  shouldOverrideParsedAmount,
   extractFallbackItemsFromEmailBody,
   summarizeStructuredItemBlock,
   analyzeEmailSignals,
@@ -62,6 +64,25 @@ function findLikelyAmount(...parts) {
 
 function hasValidParsedAmount(parsed) {
   return Number.isFinite(Number(parsed?.amount)) && Number(parsed.amount) !== 0;
+}
+
+function normalizeParsedAmountAgainstDeterministicTotal(parsed = null, body = '', classification = {}) {
+  if (!parsed || typeof parsed !== 'object') return parsed;
+
+  const deterministicTotal = extractDeterministicTotalAmount(body);
+  const discountLikeAmounts = extractDiscountLikeAmounts(body);
+  if (!shouldOverrideParsedAmount(parsed, deterministicTotal, discountLikeAmounts)) {
+    return parsed;
+  }
+
+  const normalizedAmount = classification?.disposition === 'refund'
+    ? -Math.abs(Number(deterministicTotal))
+    : Math.abs(Number(deterministicTotal));
+
+  return {
+    ...parsed,
+    amount: normalizedAmount,
+  };
 }
 
 function createOutcomes() {
@@ -296,6 +317,7 @@ async function processMessageImport(user, msgId, {
     }
 
     let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
+    parsed = normalizeParsedAmountAgainstDeterministicTotal(parsed, body, classification);
     const deterministicFallbackItems = extractFallbackItemsFromEmailBody(body);
     let importedAsPendingReview = false;
     const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
@@ -645,6 +667,7 @@ module.exports = {
   retryFailedImportsForUser,
   reprocessImportLog,
   findLikelyAmount,
+  normalizeParsedAmountAgainstDeterministicTotal,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,

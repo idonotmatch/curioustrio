@@ -6,10 +6,9 @@ const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
-const { getAuthUrl, exchangeCode, getMessageDebug } = require('../services/gmailClient');
-const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reprocessImportLog } = require('../services/gmailImporter');
+const { getAuthUrl, exchangeCode, disconnectGmailConnection } = require('../services/gmailClient');
+const { importForUser, retryFailedImportLog, retryFailedImportsForUser } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
-const { parseEmailExpense } = require('../services/emailParser');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 function gmailAppReturnUrl() {
@@ -132,6 +131,21 @@ router.get('/status', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.delete('/connection', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const result = await disconnectGmailConnection(user.id);
+    res.json({
+      disconnected: true,
+      revoked: !!result?.revoked,
+      had_token: !!result?.had_token,
+      connected: false,
+      email: user.email || null,
+    });
+  } catch (err) { next(err); }
+});
+
 // POST /gmail/import — trigger email import for authenticated user
 router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
   try {
@@ -202,57 +216,6 @@ router.post('/import-log/:id/retry', authenticate, async (req, res, next) => {
     if (log.status !== 'failed') return res.status(400).json({ error: 'Only failed imports can be retried' });
     const result = await retryFailedImportLog(user, log);
     res.json(result);
-  } catch (err) { next(err); }
-});
-
-router.post('/message/:messageId/reprocess', authenticate, async (req, res, next) => {
-  try {
-    const user = await User.findByProviderUid(req.userId);
-    if (!user) return res.status(401).json({ error: 'User not synced' });
-    const messageId = `${req.params.messageId || ''}`.trim();
-    if (!messageId) return res.status(400).json({ error: 'messageId required' });
-    const log = await EmailImportLog.findByMessageId(user.id, messageId);
-    if (!log) return res.status(404).json({ error: 'Import log not found' });
-    const result = await reprocessImportLog(user, log);
-    res.json(result);
-  } catch (err) {
-    const message = `${err?.message || ''}`;
-    if (
-      message.includes('Only pending Gmail imports can be reprocessed')
-      || message.includes('Only Gmail-imported expenses can be reprocessed')
-      || message.includes('Import log does not belong to this user')
-    ) {
-      return res.status(400).json({ error: message });
-    }
-    next(err);
-  }
-});
-
-router.get('/message/:messageId/debug-parse', authenticate, async (req, res, next) => {
-  try {
-    const user = await User.findByProviderUid(req.userId);
-    if (!user) return res.status(401).json({ error: 'User not synced' });
-    const messageId = `${req.params.messageId || ''}`.trim();
-    if (!messageId) return res.status(400).json({ error: 'messageId required' });
-    const debugMessage = await getMessageDebug(user.id, messageId);
-    const parsed = await parseEmailExpense(
-      debugMessage.selected_body_preview || '',
-      debugMessage.subject || '',
-      debugMessage.from || '',
-      debugMessage.receivedAt || new Date().toISOString().split('T')[0],
-      debugMessage.snippet || '',
-    );
-    res.json({
-      message_id: messageId,
-      chosen_source: debugMessage.chosen_source,
-      plain_score: debugMessage.plain_score,
-      html_score: debugMessage.html_score,
-      parsed,
-      subject: debugMessage.subject,
-      from: debugMessage.from,
-      snippet: debugMessage.snippet,
-      selected_body_preview: debugMessage.selected_body_preview,
-    });
   } catch (err) { next(err); }
 });
 

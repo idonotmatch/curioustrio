@@ -1,5 +1,6 @@
 const {
   findLikelyAmount,
+  normalizeParsedAmountAgainstDeterministicTotal,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
@@ -12,6 +13,16 @@ describe('findLikelyAmount', () => {
       '',
       'Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84 $1.61 promotions applied'
     )).toBe(19.84);
+  });
+});
+
+describe('normalizeParsedAmountAgainstDeterministicTotal', () => {
+  it('replaces savings-like parsed amounts when the receipt has an explicit final total', () => {
+    expect(normalizeParsedAmountAgainstDeterministicTotal(
+      { amount: 1.61, card_last4: '9749' },
+      'Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84',
+      { disposition: 'expense' }
+    )).toEqual(expect.objectContaining({ amount: 19.84 }));
   });
 });
 

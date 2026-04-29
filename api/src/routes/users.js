@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
+const { disconnectGmailConnection } = require('../services/gmailClient');
+const { deleteAccountDataForUser } = require('../services/accountDeletionService');
 
 function normalizeEmail(value) {
   const email = `${value || ''}`.trim().toLowerCase();
@@ -29,6 +31,29 @@ router.get('/me', authenticate, async (req, res, next) => {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(serializeUser(user));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/me', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    try {
+      await disconnectGmailConnection(user.id);
+    } catch (disconnectError) {
+      console.error('[users delete] could not revoke gmail connection before deletion', {
+        user_id: user.id,
+        message: disconnectError?.message || null,
+      });
+    }
+
+    const result = await deleteAccountDataForUser(user.id);
+    if (!result) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ deleted: true });
   } catch (err) {
     next(err);
   }

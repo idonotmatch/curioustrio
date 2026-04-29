@@ -8,11 +8,13 @@ import { signOut } from '../lib/auth';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { invalidateCacheByPrefix } from '../services/cache';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 
 export default function AccountsScreen() {
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const [householdData, setHouseholdData] = useState(null);
   const [householdLoading, setHouseholdLoading] = useState(true);
@@ -55,6 +57,32 @@ export default function AccountsScreen() {
   async function handleSignOut() {
     setSigningOut(true);
     try { await signOut(); } catch { setSigningOut(false); }
+  }
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      'Delete account and data',
+      'This will permanently remove your Adlo account, expenses, Gmail connection, and review history from this app. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete everything',
+          style: 'destructive',
+          onPress: async () => {
+            if (deletingAccount) return;
+            setDeletingAccount(true);
+            try {
+              await api.delete('/users/me');
+              await invalidateCacheByPrefix('cache:');
+              await signOut();
+            } catch (e) {
+              setDeletingAccount(false);
+              Alert.alert('Could not delete account', e?.message || 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function saveHouseholdName() {
@@ -353,6 +381,18 @@ export default function AccountsScreen() {
               ? <ActivityIndicator color="#ef4444" size="small" />
               : <Text style={styles.signOutText}>Sign out</Text>}
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteAccountBtn, deletingAccount && styles.actionBtnDisabled]}
+            onPress={confirmDeleteAccount}
+            disabled={deletingAccount}
+          >
+            {deletingAccount
+              ? <ActivityIndicator color="#ef4444" size="small" />
+              : <Text style={styles.deleteAccountText}>Delete Adlo account and data</Text>}
+          </TouchableOpacity>
+          <Text style={styles.deleteAccountMeta}>
+            This deletes your data inside Adlo. It does not delete your Apple or Google identity itself.
+          </Text>
         </View>
 
       </DismissKeyboardScrollView>
@@ -389,6 +429,9 @@ const styles = StyleSheet.create({
   actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontSize: 15 },
+  deleteAccountBtn: { paddingVertical: 14, alignItems: 'center' },
+  deleteAccountText: { color: '#f87171', fontSize: 14, fontWeight: '600' },
+  deleteAccountMeta: { color: '#555', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 4 },
   tokenCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a', padding: 14, marginTop: 4 },
   tokenLabel: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
   tokenValue: { color: '#f5f5f5', fontSize: 13, fontFamily: 'monospace', lineHeight: 20, marginBottom: 6 },

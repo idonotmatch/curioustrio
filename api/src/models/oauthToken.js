@@ -97,6 +97,16 @@ async function markSyncFailure(userId, { provider = 'google', source = null, err
   return serializeTokenRow(result.rows[0]);
 }
 
+async function deleteByUserId(userId, provider = 'google') {
+  const result = await db.query(
+    `DELETE FROM oauth_tokens
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider]
+  );
+  return serializeTokenRow(result.rows[0], { includeRefreshToken: true });
+}
+
 module.exports = {
   upsert,
   findByUserId,
@@ -105,4 +115,5 @@ module.exports = {
   markSyncAttempt,
   markSynced,
   markSyncFailure,
+  deleteByUserId,
 };

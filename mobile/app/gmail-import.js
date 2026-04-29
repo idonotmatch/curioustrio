@@ -39,7 +39,6 @@ import { buildMockGmailImportState, buildMockPendingExpenses } from '../fixtures
 
 const SUMMARY_WINDOW_DAYS = 90;
 const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
-const DEBUG_REPROCESS_MESSAGE_ID = '19dd13aa1784b85f';
 
 const MOCK_GMAIL_IMPORT_STATE = buildMockGmailImportState();
 
@@ -59,8 +58,7 @@ export default function GmailImportScreen() {
   const [senderTrustExpanded, setSenderTrustExpanded] = useState(false);
   const [learningExpanded, setLearningExpanded] = useState(false);
   const [senderSectionExpanded, setSenderSectionExpanded] = useState(false);
-  const [reprocessingDebugMessage, setReprocessingDebugMessage] = useState(false);
-  const [inspectingDebugMessage, setInspectingDebugMessage] = useState(false);
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
   const shouldForceMockPreview = FORCE_MOCK_GMAIL_IMPORT_PREVIEW && __DEV__;
   const isUsingMockData = shouldForceMockPreview;
   const displayGmailStatus = isUsingMockData
@@ -171,6 +169,38 @@ export default function GmailImportScreen() {
     }
   }
 
+  async function disconnectGmail() {
+    Alert.alert(
+      'Disconnect Gmail',
+      'Adlo will stop syncing new email receipts and remove the current Gmail connection from this account.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            setDisconnectingGmail(true);
+            try {
+              await api.delete('/gmail/connection');
+              await invalidateCache('cache:expenses:pending');
+              setImportSummary(null);
+              setImportLog([]);
+              setPendingReviewItems([]);
+              setPendingReviewError(null);
+              setImportLogExpanded(false);
+              await loadGmailStatus();
+              Alert.alert('Gmail disconnected', 'You can reconnect Gmail anytime from this screen.');
+            } catch (e) {
+              Alert.alert('Could not disconnect Gmail', e?.message || 'Please try again.');
+            } finally {
+              setDisconnectingGmail(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   async function loadImportLog() {
     setImportLogLoading(true);
     try {
@@ -270,47 +300,6 @@ export default function GmailImportScreen() {
     }
   }
 
-  async function reprocessDebugMessage() {
-    setReprocessingDebugMessage(true);
-    try {
-      const result = await api.post(`/gmail/message/${DEBUG_REPROCESS_MESSAGE_ID}/reprocess`, {});
-      await invalidateCache('cache:expenses:pending');
-      await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
-      Alert.alert(
-        'Email reprocessed',
-        result?.expense?.id
-          ? 'The email was re-run and the pending expense was rebuilt.'
-          : 'The email was re-run.'
-      );
-    } catch (e) {
-      Alert.alert('Reprocess failed', e?.message || 'Could not reprocess this email');
-    } finally {
-      setReprocessingDebugMessage(false);
-    }
-  }
-
-  async function inspectDebugMessage() {
-    setInspectingDebugMessage(true);
-    try {
-      const result = await api.get(`/gmail/message/${DEBUG_REPROCESS_MESSAGE_ID}/debug-parse`);
-      const parsedAmount = result?.parsed?.amount;
-      const preview = `${result?.selected_body_preview || ''}`.slice(0, 280);
-      Alert.alert(
-        'Parser debug',
-        [
-          `Source: ${result?.chosen_source || 'unknown'}`,
-          `Parsed amount: ${parsedAmount == null ? 'n/a' : parsedAmount}`,
-          result?.parsed?.merchant ? `Merchant: ${result.parsed.merchant}` : null,
-          preview ? `Preview: ${preview}` : null,
-        ].filter(Boolean).join('\n\n')
-      );
-    } catch (e) {
-      Alert.alert('Debug inspect failed', e?.message || 'Could not inspect this email');
-    } finally {
-      setInspectingDebugMessage(false);
-    }
-  }
-
   return (
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
@@ -320,6 +309,8 @@ export default function GmailImportScreen() {
           displayGmailStatus={displayGmailStatus}
           isUsingMockData={isUsingMockData}
           connectGmail={connectGmail}
+          disconnectGmail={disconnectGmail}
+          disconnectingGmail={disconnectingGmail}
           gmailSyncing={gmailSyncing}
           syncGmail={syncGmail}
           importSummaryLoading={importSummaryLoading}
@@ -351,34 +342,6 @@ export default function GmailImportScreen() {
           visibleSenderCards={visibleSenderCards}
           summaryWindowDays={displayImportSummary?.window_days || SUMMARY_WINDOW_DAYS}
         />
-
-        {__DEV__ ? (
-          <View style={styles.debugCard}>
-            <Text style={styles.debugEyebrow}>Debug</Text>
-            <Text style={styles.debugTitle}>Reprocess a specific Gmail message</Text>
-            <Text style={styles.debugBody}>{DEBUG_REPROCESS_MESSAGE_ID}</Text>
-            <TouchableOpacity
-              style={[styles.actionBtn, reprocessingDebugMessage && styles.actionBtnDisabled]}
-              onPress={reprocessDebugMessage}
-              disabled={reprocessingDebugMessage}
-              activeOpacity={0.82}
-            >
-              <Text style={styles.actionBtnText}>
-                {reprocessingDebugMessage ? 'Reprocessing...' : 'Reprocess email'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, inspectingDebugMessage && styles.actionBtnDisabled]}
-              onPress={inspectDebugMessage}
-              disabled={inspectingDebugMessage}
-              activeOpacity={0.82}
-            >
-              <Text style={styles.actionBtnText}>
-                {inspectingDebugMessage ? 'Inspecting...' : 'Inspect parser'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
 
         <GmailPendingReviewSection
           styles={styles}
@@ -433,18 +396,8 @@ const styles = StyleSheet.create({
   actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
   actionBtnDisabled: { opacity: 0.4 },
   actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
-  debugCard: {
-    marginBottom: 24,
-    backgroundColor: '#111',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#1e1e1e',
-    padding: 14,
-    gap: 10,
-  },
-  debugEyebrow: { color: '#8ab4ff', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6 },
-  debugTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
-  debugBody: { color: '#9aa5b1', fontSize: 12, lineHeight: 18 },
+  inlineDangerLink: { marginTop: 10, alignSelf: 'flex-start' },
+  inlineDangerLinkText: { color: '#f87171', fontSize: 12, fontWeight: '600' },
   loadingBlock: { alignSelf: 'flex-start', marginTop: 12 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   summaryCard: {

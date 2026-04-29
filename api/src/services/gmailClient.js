@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { google } = require('googleapis');
+const fetch = require('node-fetch');
 const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
 const { decodeHtmlEntities } = require('../utils/htmlEntities');
@@ -91,6 +92,37 @@ async function getAuthenticatedClient(userId) {
   client.setCredentials(credentials); // in-memory only, valid for this request
 
   return client;
+}
+
+async function revokeRefreshToken(refreshToken) {
+  if (!refreshToken) return false;
+  const response = await fetch('https://oauth2.googleapis.com/revoke', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `token=${encodeURIComponent(refreshToken)}`,
+  });
+  return response.ok;
+}
+
+async function disconnectGmailConnection(userId) {
+  const tokenRow = await OAuthToken.findCredentialsByUserId(userId);
+  if (!tokenRow) {
+    await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
+    return { disconnected: true, revoked: false, had_token: false };
+  }
+
+  let revoked = false;
+  try {
+    revoked = await revokeRefreshToken(tokenRow.refresh_token);
+  } catch {
+    revoked = false;
+  }
+
+  await OAuthToken.deleteByUserId(userId);
+  await db.query(`DELETE FROM gmail_oauth_states WHERE user_id = $1`, [userId]);
+  return { disconnected: true, revoked, had_token: true };
 }
 
 async function listRecentMessages(userId, maxResults = 50) {
@@ -241,68 +273,14 @@ async function getMessage(userId, messageId) {
   return { subject, from, snippet, body, receivedAt };
 }
 
-async function getMessageDebug(userId, messageId) {
-  const auth = await getAuthenticatedClient(userId);
-  const gmail = google.gmail({ version: 'v1', auth });
-  const response = await gmail.users.messages.get({
-    userId: 'me',
-    id: messageId,
-    format: 'full',
-  });
-
-  const payload = response.data.payload;
-  const snippet = decodeHtmlEntities(response.data.snippet || '');
-  const receivedAt = response.data.internalDate
-    ? new Date(Number(response.data.internalDate)).toISOString().split('T')[0]
-    : null;
-  const headers = payload?.headers || [];
-  const subject = decodeHtmlEntities(headers.find((h) => h.name === 'Subject')?.value || '');
-  const from = decodeHtmlEntities(headers.find((h) => h.name === 'From')?.value || '');
-
-  let plainBody = '';
-  let htmlBody = '';
-  function extractBody(part) {
-    if (part.mimeType === 'text/plain' && part.body?.data) {
-      plainBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
-    } else if (part.mimeType === 'text/html' && part.body?.data) {
-      htmlBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
-    }
-    if (part.parts) part.parts.forEach(extractBody);
-  }
-  if (payload) extractBody(payload);
-
-  const normalizedPlain = plainBody
-    .replace(/\r/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  const normalizedHtml = htmlToReadableText(htmlBody);
-  const plainScore = bodyRichnessScore(normalizedPlain);
-  const htmlScore = bodyRichnessScore(normalizedHtml);
-  const body = chooseBestMessageBody(normalizedPlain, normalizedHtml, snippet);
-
-  return {
-    subject,
-    from,
-    snippet,
-    receivedAt,
-    chosen_source: body === normalizedHtml ? 'html' : (body === normalizedPlain ? 'plain' : 'snippet'),
-    plain_score: plainScore,
-    html_score: htmlScore,
-    plain_preview: normalizedPlain.slice(0, 4000),
-    html_preview: normalizedHtml.slice(0, 4000),
-    selected_body_preview: body.slice(0, 4000),
-  };
-}
-
 module.exports = {
   GMAIL_SEARCH_QUERY,
   getAuthUrl,
   exchangeCode,
   getAuthenticatedClient,
+  disconnectGmailConnection,
   listRecentMessages,
   getMessage,
-  getMessageDebug,
   htmlToReadableText,
   chooseBestMessageBody,
   bodyRichnessScore,

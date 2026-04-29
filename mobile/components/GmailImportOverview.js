@@ -6,6 +6,8 @@ export function GmailImportOverview({
   displayGmailStatus,
   isUsingMockData,
   connectGmail,
+  disconnectGmail,
+  disconnectingGmail,
   gmailSyncing,
   syncGmail,
   importSummaryLoading,
@@ -59,6 +61,18 @@ export function GmailImportOverview({
             <Text style={styles.rowMetaAlert}>
               {syncErrorMessage(displayGmailStatus, displayImportSummary)}
             </Text>
+          ) : null}
+          {displayGmailStatus?.connected && !isUsingMockData ? (
+            <TouchableOpacity
+              style={styles.inlineDangerLink}
+              onPress={disconnectGmail}
+              disabled={disconnectingGmail}
+              activeOpacity={0.82}
+            >
+              <Text style={styles.inlineDangerLinkText}>
+                {disconnectingGmail ? 'Disconnecting…' : 'Disconnect Gmail'}
+              </Text>
+            </TouchableOpacity>
           ) : null}
         </View>
         <View style={styles.btnGroup}>
