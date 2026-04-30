@@ -51,7 +51,7 @@ export default function SummaryScreen() {
     markSeen,
     dismiss: dismissInsight,
     logEvents,
-  } = useInsights(1);
+  } = useInsights(1, { fetchLimit: 5 });
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [allowMockInsights, setAllowMockInsights] = useState(__DEV__);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
