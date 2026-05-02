@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { toLocalDateString } from '../services/date';
+import { stashNavigationPayload } from '../services/navigationPayloadStore';
 
 function formatCurrency(value) {
   const amount = Number(value);
@@ -278,19 +279,24 @@ export default function WatchingPlansScreen() {
                           <View style={styles.actionsRow}>
                             <TouchableOpacity
                               style={styles.primaryAction}
-                              onPress={() => router.push({
-                                pathname: '/confirm',
-                                params: {
-                                  data: JSON.stringify({
+                              onPress={() => {
+                                const payloadKey = stashNavigationPayload({
+                                  confirmData: {
                                     merchant: plan.label,
                                     description: plan.label,
                                     amount: Number(plan.amount),
                                     date: toLocalDateString(),
                                     source: 'manual',
                                     scenario_memory_id: plan.id,
-                                  }),
-                                },
-                              })}
+                                  },
+                                }, 'confirm');
+                                router.push({
+                                  pathname: '/confirm',
+                                  params: {
+                                    payload_key: payloadKey,
+                                  },
+                                });
+                              }}
                             >
                               <Text style={styles.primaryActionText}>Bought it</Text>
                             </TouchableOpacity>

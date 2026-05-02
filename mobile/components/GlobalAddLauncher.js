@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NLInput } from './NLInput';
 import { api } from '../services/api';
 import { toLocalDateString } from '../services/date';
+import { stashNavigationPayload } from '../services/navigationPayloadStore';
 
 export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
   const [open, setOpen] = useState(false);
@@ -36,10 +37,11 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
       setLoading(true);
       const today = toLocalDateString();
       const parsed = await api.post('/expenses/parse', { input, today });
+      const payloadKey = stashNavigationPayload({ confirmData: { ...parsed, source: 'manual' } }, 'confirm');
       close();
       router.push({
         pathname: '/confirm',
-        params: { data: JSON.stringify({ ...parsed, source: 'manual' }) },
+        params: { payload_key: payloadKey },
       });
     } catch (err) {
       if (`${err?.message || ''}`.includes('Could not parse')) {
@@ -81,13 +83,13 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
         <Ionicons name="add" size={26} color="#000" />
       </TouchableOpacity>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!loading) close(); }}>
         <KeyboardAvoidingView
           style={styles.overlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={close} />
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => { if (!loading) close(); }} />
           <View style={[styles.sheet, keyboardVisible && styles.sheetRaised]}>
             <ScrollView
               keyboardShouldPersistTaps="handled"
@@ -103,9 +105,19 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
 
               <NLInput onSubmit={handleQuickParse} loading={loading} />
 
+              {loading ? (
+                <View style={styles.processingBanner}>
+                  <ActivityIndicator color="#f5f5f5" />
+                  <View style={styles.processingCopy}>
+                    <Text style={styles.processingTitle}>Parsing your expense...</Text>
+                    <Text style={styles.processingBody}>We&apos;ll open the confirmation screen as soon as it&apos;s ready.</Text>
+                  </View>
+                </View>
+              ) : null}
+
               {!keyboardVisible ? (
                 <>
-                  <TouchableOpacity style={styles.actionRow} onPress={openAdd} activeOpacity={0.82}>
+                  <TouchableOpacity style={[styles.actionRow, loading && styles.actionRowDisabled]} onPress={openAdd} activeOpacity={0.82} disabled={loading}>
                     <View style={styles.actionIcon}>
                       <Ionicons name="create-outline" size={18} color="#f5f5f5" />
                     </View>
@@ -115,7 +127,7 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
                     </View>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.actionRow} onPress={openScan} activeOpacity={0.82}>
+                  <TouchableOpacity style={[styles.actionRow, loading && styles.actionRowDisabled]} onPress={openScan} activeOpacity={0.82} disabled={loading}>
                     <View style={styles.actionIcon}>
                       <Ionicons name="camera-outline" size={18} color="#f5f5f5" />
                     </View>
@@ -125,7 +137,7 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
                     </View>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.actionRow} onPress={openCheck} activeOpacity={0.82}>
+                  <TouchableOpacity style={[styles.actionRow, loading && styles.actionRowDisabled]} onPress={openCheck} activeOpacity={0.82} disabled={loading}>
                     <View style={styles.actionIcon}>
                       <Ionicons name="sparkles-outline" size={18} color="#f5f5f5" />
                     </View>
@@ -135,7 +147,7 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
                     </View>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.cancelButton} onPress={close} activeOpacity={0.8}>
+                  <TouchableOpacity style={[styles.cancelButton, loading && styles.actionRowDisabled]} onPress={close} activeOpacity={0.8} disabled={loading}>
                     <Text style={styles.cancelText}>Cancel</Text>
                   </TouchableOpacity>
                 </>
@@ -193,6 +205,21 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, color: '#f5f5f5', fontWeight: '700', marginBottom: 2 },
   subtitle: { fontSize: 13, color: '#9a9a9a', lineHeight: 18, marginBottom: 2 },
   keyboardHint: { fontSize: 12, color: '#7e7e7e', lineHeight: 18, marginTop: 2 },
+  processingBanner: {
+    marginTop: 2,
+    backgroundColor: '#171717',
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  processingCopy: { flex: 1, gap: 2 },
+  processingTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '700' },
+  processingBody: { color: '#a1a1a1', fontSize: 12, lineHeight: 17 },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -203,6 +230,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
   },
+  actionRowDisabled: { opacity: 0.45 },
   actionIcon: {
     width: 34,
     height: 34,

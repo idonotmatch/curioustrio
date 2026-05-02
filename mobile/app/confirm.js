@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
@@ -12,6 +12,7 @@ import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollVi
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
+import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 
 function parseConfirmData(value) {
   try {
@@ -19,6 +20,11 @@ function parseConfirmData(value) {
   } catch {
     return {};
   }
+}
+
+function firstParam(value, fallback = '') {
+  if (Array.isArray(value)) return value[0] ?? fallback;
+  return value ?? fallback;
 }
 
 function savedCardKey(card = {}) {
@@ -35,8 +41,17 @@ const TRACK_ONLY_REASONS = [
 ];
 
 export default function ConfirmScreen() {
-  const { data } = useLocalSearchParams();
-  const parsed = createManualExpenseDraft(parseConfirmData(data));
+  const params = useLocalSearchParams();
+  const dataParam = firstParam(params.data, '');
+  const payloadKey = firstParam(params.payload_key, '');
+  const navigationPayload = useMemo(
+    () => consumeNavigationPayload(payloadKey, null),
+    [payloadKey]
+  );
+  const parsed = useMemo(
+    () => createManualExpenseDraft(navigationPayload?.confirmData || parseConfirmData(dataParam)),
+    [navigationPayload, dataParam]
+  );
   const router = useRouter();
   const { categories, refresh: refreshCategories } = useCategories();
   const isWatchedPlanFlow = Boolean(parsed?.scenario_memory_id);
@@ -79,6 +94,48 @@ export default function ConfirmScreen() {
   const hasReviewHint = reviewFields.length > 0;
   const fieldConfidence = expense?.field_confidence || {};
   const parsedHasLocation = !!(parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id);
+
+  useEffect(() => {
+    setExpense(parsed);
+    setAmountText(String(Math.abs(parsed?.amount ?? 0)));
+    setMerchant(parsed?.merchant || '');
+    setDescription(parsed?.description || '');
+    setSaveToRoll(false);
+    setIsRefund((parsed?.amount ?? 0) < 0);
+    setPaymentMethod(parsed?.payment_method || 'unknown');
+    setCardLast4(parsed?.card_last4 || '');
+    setCardLabel(parsed?.card_label || '');
+    setExcludeFromBudget(parsed?.exclude_from_budget || false);
+    setBudgetExclusionReason(parsed?.budget_exclusion_reason || null);
+    setSelectedSavedCardKey(null);
+    setSavedCardMatchNote(null);
+    setIsPrivate(Boolean(parsed?.is_private));
+    setShowCategoryPicker(false);
+    setCatSearch('');
+    setCatCreating(false);
+    setCatSuggestion(null);
+    setCatSuggestionLoading(false);
+    setShowDatePicker(false);
+    setItems(
+      Array.isArray(parsed?.items) && parsed.items.length > 0
+        ? parsed.items.map((it) => ({
+            ...it,
+            description: it.description || '',
+            amount: it.amount != null ? String(it.amount) : '',
+          }))
+        : []
+    );
+    setLocationData(
+      parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id
+        ? {
+            place_name: parsed.place_name || parsed.merchant || '',
+            address: parsed.address || null,
+            mapkit_stable_id: parsed.mapkit_stable_id || null,
+          }
+        : null
+    );
+    autoLocationAttemptRef.current = '';
+  }, [payloadKey, dataParam, parsed]);
 
   function confidenceMeta(field) {
     const level = fieldConfidence[field];

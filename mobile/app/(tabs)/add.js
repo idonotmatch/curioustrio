@@ -8,6 +8,7 @@ import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 import { useEffect, useRef, useState } from 'react';
 import { toLocalDateString } from '../../services/date';
+import { stashNavigationPayload } from '../../services/navigationPayloadStore';
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
@@ -31,7 +32,8 @@ export default function AddScreen() {
       setLoading(true);
       const today = toLocalDateString();
       const parsed = await api.post('/expenses/parse', { input, today });
-      router.push({ pathname: '/confirm', params: { data: JSON.stringify({ ...parsed, source: 'manual' }) } });
+      const payloadKey = stashNavigationPayload({ confirmData: { ...parsed, source: 'manual' } }, 'confirm');
+      router.push({ pathname: '/confirm', params: { payload_key: payloadKey } });
     } catch (err) {
       if (err.message.includes('Could not parse')) {
         Alert.alert(
@@ -90,9 +92,10 @@ export default function AddScreen() {
 
       const today = toLocalDateString();
       const parsed = await api.post('/expenses/scan', { image_base64: imageBase64, today });
+      const payloadKey = stashNavigationPayload({ confirmData: { ...parsed, source: 'camera', image_uri: asset.uri } }, 'confirm');
       router.push({
         pathname: '/confirm',
-        params: { data: JSON.stringify({ ...parsed, source: 'camera', image_uri: asset.uri }) }
+        params: { payload_key: payloadKey }
       });
     } catch (err) {
       const msg = err?.message || '';

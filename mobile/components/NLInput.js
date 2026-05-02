@@ -1,13 +1,17 @@
 import { useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 export function NLInput({ onSubmit, loading }) {
   const [value, setValue] = useState('');
 
-  function handleSubmit() {
-    if (value.trim()) {
-      onSubmit(value.trim());
+  async function handleSubmit() {
+    const submitted = value.trim();
+    if (!submitted || loading) return;
+    try {
+      await onSubmit(submitted);
       setValue('');
+    } catch {
+      // Keep the typed value in place so the user can keep editing.
     }
   }
 
@@ -24,7 +28,7 @@ export function NLInput({ onSubmit, loading }) {
         autoCorrect={false}
       />
       <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={loading}>
-        <Text style={styles.buttonText}>→</Text>
+        {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.buttonText}>→</Text>}
       </TouchableOpacity>
     </View>
   );
