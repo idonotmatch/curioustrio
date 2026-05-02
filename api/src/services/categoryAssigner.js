@@ -1,6 +1,7 @@
 const { complete } = require('./ai');
 const MerchantMapping = require('../models/merchantMapping');
 const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
+const { strictCategoryFallbackEnabled } = require('./parsingOptimizationConfig');
 
 function confidenceFromHitCount(hitCount) {
   if (hitCount >= 5) return 4;
@@ -51,6 +52,24 @@ function isDescriptionSpecificEnough(description) {
   if (!normalized) return false;
   if (normalized.length < 8) return false;
   return descriptionTokenCount(normalized) >= 2;
+}
+
+function looksGenericDescription(description = '') {
+  const normalized = normalizeComparableText(description);
+  if (!normalized) return true;
+  return [
+    'shopping',
+    'purchase',
+    'order',
+    'expense',
+    'food',
+    'meal',
+    'groceries',
+    'gas',
+    'coffee',
+    'lunch',
+    'dinner',
+  ].includes(normalized);
 }
 
 function findCategoryByName(categories, categoryName) {
@@ -297,6 +316,31 @@ async function assignCategory({ merchant, description, householdId, categories, 
   }
 
   if (heuristic) return heuristic;
+
+  const specificDescription = isDescriptionSpecificEnough(description);
+  const genericDescription = looksGenericDescription(description);
+  const normalizedMerchant = normalizeComparableText(merchant);
+  const shouldSkipAiFallback = strictCategoryFallbackEnabled() && (
+    categories.length === 0
+    || (!normalizedMerchant && !specificDescription)
+    || (!normalizedMerchant && genericDescription)
+  );
+
+  if (shouldSkipAiFallback) {
+    return {
+      category_id: null,
+      source: 'deferred',
+      confidence: 0,
+      reasoning: {
+        strategy: 'fallback_gate',
+        label: 'AI fallback skipped',
+        detail: categories.length === 0
+          ? 'No categories were available, so the AI fallback was skipped.'
+          : 'The expense did not include enough specific merchant or description detail to justify an AI category fallback.',
+        fallback_skipped_reason: categories.length === 0 ? 'no_categories' : 'insufficient_specificity',
+      },
+    };
+  }
 
   // 3. Claude fallback — use both merchant and description so generic inputs
   //    like "lunch 14" (merchant=null, description="lunch") still get matched.

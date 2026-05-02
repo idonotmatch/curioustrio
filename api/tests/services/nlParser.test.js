@@ -1,5 +1,6 @@
 const {
   parseExpense,
+  parseExpenseDetailed,
   cleanParsedExpense,
   parseJsonWithRecovery,
   normalizePersonPaymentFields,
@@ -41,6 +42,16 @@ describe('nlParser system prompt', () => {
 });
 
 describe('parseExpense', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
   it('parses amount and merchant from simple NL input', async () => {
     const result = await parseExpense('242.50 trader joes', '2026-03-20');
     expect(result.merchant).toBe("Trader Joe's");
@@ -301,5 +312,50 @@ describe('parseExpense', () => {
       counterparty_type: null,
       merchant_source: null,
     });
+  });
+
+  it('uses the deterministic fast path when explicitly enabled', async () => {
+    process.env.PARSING_NL_FAST_PATH_MODE = 'enabled';
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockClear();
+
+    const result = await parseExpenseDetailed('amazon 34 yesterday', '2026-05-02');
+
+    expect(result.parsed).toMatchObject({
+      merchant: 'Amazon',
+      amount: 34,
+      date: '2026-05-01',
+    });
+    expect(result.diagnostics.parser_mode).toBe('deterministic_fast_path');
+    expect(result.diagnostics.model_call_count).toBe(0);
+    expect(instance.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('records shadow agreement data when fast path is in shadow mode', async () => {
+    process.env.PARSING_NL_FAST_PATH_MODE = 'shadow';
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: JSON.stringify({
+          merchant: 'Amazon',
+          description: null,
+          amount: 34,
+          date: '2026-05-01',
+          notes: null,
+          payment_method: null,
+          card_label: null,
+          items: null,
+        }),
+      }],
+    });
+
+    const result = await parseExpenseDetailed('amazon 34 yesterday', '2026-05-02');
+
+    expect(result.diagnostics.fast_path_candidate_present).toBe(true);
+    expect(result.diagnostics.fast_path_shadow_agreement).toBe(true);
+    expect(result.diagnostics.fast_path_shadow_pattern).toBe('single_amount_terminal');
+    expect(result.diagnostics.model_call_count).toBe(1);
   });
 });

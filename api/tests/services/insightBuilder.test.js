@@ -42,6 +42,10 @@ function buildInsight(overrides = {}) {
 }
 
 describe('insightBuilder orchestration', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('classifies insights into portfolio families', () => {
     expect(portfolioFamily(buildInsight({ type: 'projected_month_end_over_budget' }))).toBe('warning');
     expect(portfolioFamily(buildInsight({ type: 'one_off_expense_skewing_projection' }))).toBe('explanation');
@@ -60,6 +64,8 @@ describe('insightBuilder orchestration', () => {
   });
 
   it('prunes expired or stale generated candidates before they enter ranking', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-04-29T12:00:00.000Z'));
     const pruned = pruneGeneratedInsights([
       buildInsight({
         id: 'fresh',
@@ -81,6 +87,7 @@ describe('insightBuilder orchestration', () => {
     ]);
 
     expect(pruned.map((insight) => insight.id)).toEqual(['fresh']);
+    jest.useRealTimers();
   });
 
   it('scores mature personal action insights above early household explanation insights', () => {
@@ -394,6 +401,8 @@ describe('insightBuilder orchestration', () => {
   });
 
   it('builds an accelerated item repurchase signal when the latest gap tightens materially', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-04-29T12:00:00.000Z'));
     const insights = buildItemHistoryInsights([
       {
         group_key: 'beans',
@@ -419,6 +428,7 @@ describe('insightBuilder orchestration', () => {
     expect(accelerating.title).toContain('sooner than usual');
     expect(accelerating.metadata.latest_gap_days).toBe(6);
     expect(accelerating.metadata.cadence_delta_days).toBe(6);
+    jest.useRealTimers();
   });
 
   it('prefers a more diverse final portfolio over multiple similar cards', () => {

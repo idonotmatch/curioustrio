@@ -50,6 +50,16 @@ beforeEach(() => {
 });
 
 describe('assignCategory', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
   it('returns category from MerchantMapping when available', async () => {
     CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce({
@@ -82,6 +92,28 @@ describe('assignCategory', () => {
     expect(result.category_id).toBe('cat-grocery-id');
     expect(result.source).toBe('claude');
     expect(result.confidence).toBe(1); // Claude fallback → 1 dot
+  });
+
+  it('skips AI fallback for low-specificity generic descriptions when strict gating is on', async () => {
+    process.env.PARSING_CATEGORY_AI_FALLBACK_STRICT = 'true';
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
+    MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
+    const callsBefore = mockCreate().mock.calls.length;
+
+    const result = await assignCategory({
+      merchant: null,
+      description: 'stuff',
+      householdId: 'hh-1',
+      categories: mockCategories,
+    });
+
+    expect(result).toMatchObject({
+      category_id: null,
+      source: 'deferred',
+      confidence: 0,
+    });
+    expect(result.reasoning.fallback_skipped_reason).toBe('insufficient_specificity');
+    expect(mockCreate().mock.calls.length).toBe(callsBefore);
   });
 
   it('uses local category heuristics before the Claude fallback', async () => {

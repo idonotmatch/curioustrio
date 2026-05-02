@@ -1,4 +1,5 @@
 const { complete } = require('./ai');
+const { nlFastPathMode } = require('./parsingOptimizationConfig');
 
 const SYSTEM_PROMPT = `You are an expense parser. Extract structured data from natural language expense input.
 Return ONLY a JSON object with these fields:
@@ -124,6 +125,10 @@ function titleCaseWords(value) {
     .join(' ');
 }
 
+function normalizeComparableText(value) {
+  return `${value || ''}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function extractPersonPaymentPayload(prefixPattern, description) {
   const match = `${description || ''}`.trim().match(prefixPattern);
   if (!match) return null;
@@ -236,6 +241,126 @@ function extractExplicitItemsFromInput(input = '') {
     explicit_item_count: items.length,
     explicit_item_amount_sum: Number(amountSum.toFixed(2)),
     explicit_item_has_missing_amounts: items.some((item) => item.amount == null),
+  };
+}
+
+function merchantizeLabel(label = '') {
+  const trimmed = `${label || ''}`.trim();
+  if (!trimmed) return null;
+  return trimmed
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function applyRelativeDateToken(todayDate, token) {
+  if (!token) return todayDate;
+  const base = new Date(`${todayDate}T12:00:00Z`);
+  if (Number.isNaN(base.getTime())) return todayDate;
+  if (token === 'yesterday') base.setUTCDate(base.getUTCDate() - 1);
+  if (token === 'today') base.setUTCDate(base.getUTCDate());
+  return base.toISOString().slice(0, 10);
+}
+
+function looksMerchantLike(label = '') {
+  const normalized = normalizeComparableText(label);
+  if (!normalized) return false;
+  if (normalized.length < 3 || normalized.length > 40) return false;
+  const generic = [
+    'lunch',
+    'dinner',
+    'breakfast',
+    'coffee',
+    'groceries',
+    'gas',
+    'shopping',
+    'food',
+    'meal',
+    'rent',
+    'utilities',
+    'subscription',
+  ];
+  if (generic.includes(normalized)) return false;
+  return /^[a-z0-9'&.\- ]+$/.test(normalized);
+}
+
+function parseDeterministicExpense(input, todayDate) {
+  const original = `${input || ''}`.trim();
+  if (!original) return null;
+
+  let working = original;
+  let isRefund = false;
+  if (/^refund(?:\s+from)?\s+/i.test(working)) {
+    isRefund = true;
+    working = working.replace(/^refund(?:\s+from)?\s+/i, '').trim();
+  }
+
+  let paymentMethod = null;
+  let cardLabel = null;
+  const paymentPatterns = [
+    { pattern: /\bwith cash\b|\bcash\b/i, payment_method: 'cash', card_label: null },
+    { pattern: /\bdebit(?: card)?\b/i, payment_method: 'debit', card_label: 'debit card' },
+    { pattern: /\b(amex platinum|amex gold|platinum amex|chase sapphire|blue visa|visa|mastercard|amex|american express|credit card)\b/i, payment_method: 'credit' },
+  ];
+  for (const entry of paymentPatterns) {
+    const match = working.match(entry.pattern);
+    if (!match) continue;
+    paymentMethod = entry.payment_method;
+    cardLabel = entry.card_label || match[1] || match[0];
+    working = working.replace(match[0], '').trim();
+    break;
+  }
+
+  let explicitDate = todayDate;
+  const dateMatch = working.match(/\b(yesterday|today)\b/i);
+  if (dateMatch) {
+    explicitDate = applyRelativeDateToken(todayDate, dateMatch[1].toLowerCase());
+    working = working.replace(dateMatch[0], '').trim();
+  }
+
+  const amountMatches = [...working.matchAll(/(^|\s)(-?\$?\d+(?:\.\d{1,2})?)(?=\s|$)/g)];
+  if (amountMatches.length !== 1) return null;
+  const amountText = amountMatches[0][2];
+  let amount = Number(`${amountText}`.replace(/^\$/, ''));
+  if (!Number.isFinite(amount) || amount === 0) return null;
+  if (isRefund && amount > 0) amount = -amount;
+
+  const amountStart = amountMatches[0].index + amountMatches[0][1].length;
+  const amountEnd = amountStart + amountText.length;
+  const beforeAmount = working.slice(0, amountStart).trim();
+  const afterAmount = working.slice(amountEnd).trim();
+  if (afterAmount) return null;
+
+  let label = beforeAmount
+    .replace(/\b(at|for|from|on)\b$/i, '')
+    .trim();
+  if (!label) return null;
+  label = label.replace(/\b(at|for|from|on)\b\s*$/i, '').trim();
+  if (!label) return null;
+
+  const merchant = looksMerchantLike(label) ? merchantizeLabel(label) : null;
+  const description = merchant ? null : label;
+
+  const parsed = cleanParsedExpense({
+    merchant,
+    description,
+    amount,
+    date: explicitDate,
+    notes: null,
+    payment_method: paymentMethod,
+    card_label: cardLabel ? `${cardLabel}`.trim() : null,
+    items: null,
+  }, todayDate);
+
+  if (!parsed) return null;
+  return {
+    parsed,
+    diagnostics: {
+      fast_path_used: true,
+      fast_path_pattern: 'single_amount_terminal',
+      fast_path_mode: nlFastPathMode(),
+      fast_path_shadow_agreement: null,
+    },
   };
 }
 
@@ -370,6 +495,24 @@ async function parseExpenseDetailed(input, todayDate) {
     throw new Error('todayDate must be a valid ISO date string (YYYY-MM-DD)');
   }
 
+  const fastPathCandidate = parseDeterministicExpense(input, todayDate);
+  const fastPathMode = nlFastPathMode();
+  if (fastPathCandidate && fastPathMode === 'enabled') {
+    return {
+      parsed: fastPathCandidate.parsed,
+      failureReason: null,
+      raw: null,
+      diagnostics: {
+        ...buildNlDiagnostics(input, fastPathCandidate.parsed),
+        ...fastPathCandidate.diagnostics,
+        parser_mode: 'deterministic_fast_path',
+        response_length: 0,
+        raw_text_preview: null,
+        model_call_count: 0,
+      },
+    };
+  }
+
   const text = await complete({
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: `Today's date: ${todayDate}\nExpense input: ${input}` }],
@@ -390,6 +533,7 @@ async function parseExpenseDetailed(input, todayDate) {
     raw_text_preview: clipTextPreview(text),
     response_length: text.length,
     parser_mode,
+    model_call_count: 1,
     explicit_item_syntax_detected: Boolean(explicitItems),
     explicit_item_count: explicitItems?.explicit_item_count || 0,
     explicit_item_amount_sum: explicitItems?.explicit_item_amount_sum ?? null,
@@ -409,7 +553,18 @@ async function parseExpenseDetailed(input, todayDate) {
     ...buildNlDiagnostics(input, mergedRaw),
     ...baseDiagnostics,
     explicit_item_has_missing_amounts: explicitItems?.explicit_item_has_missing_amounts || false,
+    fast_path_candidate_present: Boolean(fastPathCandidate),
+    fast_path_mode: fastPathMode,
   };
+  if (fastPathCandidate && fastPathMode === 'shadow') {
+    diagnostics.fast_path_shadow_agreement = (
+      fastPathCandidate.parsed?.amount === parsed?.amount
+      && `${fastPathCandidate.parsed?.merchant || ''}` === `${parsed?.merchant || ''}`
+      && `${fastPathCandidate.parsed?.description || ''}` === `${parsed?.description || ''}`
+      && `${fastPathCandidate.parsed?.date || ''}` === `${parsed?.date || ''}`
+    );
+    diagnostics.fast_path_shadow_pattern = fastPathCandidate.diagnostics.fast_path_pattern;
+  }
   if (parsed) return { parsed, failureReason: null, raw, diagnostics };
 
   const amount = Number(mergedRaw?.amount);

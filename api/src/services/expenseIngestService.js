@@ -5,6 +5,11 @@ const { parseReceiptDetailed } = require('./receiptParser');
 const { assignCategory } = require('./categoryAssigner');
 const { searchPlace } = require('./mapkitService');
 const { buildReceiptParsingContext } = require('./receiptContextService');
+const {
+  receiptRetryPolicyMode,
+  asyncPlaceEnrichmentEnabled,
+} = require('./parsingOptimizationConfig');
+const { finalizeIngestMetadata } = require('./parseIngestMetadata');
 
 function truncateInputPreview(input, max = 180) {
   const text = `${input || ''}`.trim();
@@ -99,6 +104,7 @@ function buildCategoryResponseFields(assignment, matchedCategory) {
 }
 
 async function parseExpenseInput({ userPromise, input, todayDate }) {
+  const startedAt = Date.now();
   let parsedResult;
   try {
     parsedResult = await parseExpenseDetailed(input, todayDate);
@@ -134,6 +140,7 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
   }
 
   const { assignment, matchedCategory } = await assignParsedCategory(user, parsed);
+  const totalDurationMs = Date.now() - startedAt;
   const attempt = await IngestAttemptLog.create({
     userId: user?.id || null,
     source: 'nl',
@@ -141,12 +148,26 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
     inputPreview: truncateInputPreview(input),
     parseStatus: parsed.parse_status,
     reviewFields: parsed.review_fields,
-    metadata: {
+    metadata: finalizeIngestMetadata({
+      status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
+      parsed: {
+        ...parsed,
+        category_id: assignment.category_id,
+        category_source: assignment.source,
+      },
+      source: 'nl',
+      metadata: {
       ...(parsedResult?.diagnostics || {}),
+      total_parse_duration_ms: totalDurationMs,
       category_id: assignment.category_id,
       category_source: assignment.source,
       category_confidence: assignment.confidence,
-    },
+      category_ai_fallback_used: assignment.source === 'claude',
+      category_ai_fallback_skipped: assignment.source === 'deferred',
+      category_fallback_reason: assignment?.reasoning?.fallback_skipped_reason || null,
+      route_family: 'expenses_parse',
+      },
+    }),
   });
 
   return {
@@ -162,11 +183,14 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
 
 async function scanReceiptInput({ user, imageBase64, todayDate }) {
   const scanStartedAt = Date.now();
+  const useSingleRetryPolicy = receiptRetryPolicyMode() === 'single';
   let parsedResult;
   let initialParseDurationMs = 0;
   try {
     const initialParseStartedAt = Date.now();
-    parsedResult = await parseReceiptDetailed(imageBase64, todayDate);
+    parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
+      passMode: useSingleRetryPolicy ? 'primary_only' : 'full',
+    });
     initialParseDurationMs = Date.now() - initialParseStartedAt;
   } catch (err) {
     await IngestAttemptLog.create({
@@ -187,9 +211,93 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
   let contextLookupDurationMs = 0;
   let contextRetryDurationMs = 0;
   let contextRetrySkippedReason = null;
+  let retryStrategy = 'none';
   const merchantHint = parsedResult?.parsed?.merchant || parsedResult?.raw?.merchant || null;
 
-  if (user?.household_id && shouldRetryReceiptWithContext(parsedResult, merchantHint)) {
+  if (useSingleRetryPolicy) {
+    const firstPassPrimaryOnly = parsedResult;
+    const needsRetry = shouldRetryReceiptWithContext(firstPassPrimaryOnly, merchantHint);
+    if (user?.household_id && needsRetry) {
+      const contextLookupStartedAt = Date.now();
+      const context = await buildReceiptParsingContext({
+        householdId: user.household_id,
+        merchantHint,
+      });
+      contextLookupDurationMs = Date.now() - contextLookupStartedAt;
+
+      const hasMerchantSpecificPriors = context.merchant_alias_count > 0 || context.merchant_item_count > 0;
+      const hasUsefulFallbackPriors = Boolean(merchantHint) || firstPassOutcome.parse_status === 'partial';
+      if (context.prior_count > 0 && (hasMerchantSpecificPriors || hasUsefulFallbackPriors)) {
+        contextRetryAttempted = true;
+        retryStrategy = 'contextual_primary_only';
+        try {
+          const contextRetryStartedAt = Date.now();
+          const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, {
+            priors: context.priors,
+            passMode: 'primary_only',
+            familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
+          });
+          contextRetryDurationMs = Date.now() - contextRetryStartedAt;
+          const contextualParsed = contextualResult?.parsed || null;
+          const currentParsed = parsedResult?.parsed || null;
+          const currentReviewCount = Array.isArray(currentParsed?.review_fields) ? currentParsed.review_fields.length : 99;
+          const contextualReviewCount = Array.isArray(contextualParsed?.review_fields) ? contextualParsed.review_fields.length : 99;
+          const isBetter = contextualParsed && (!currentParsed || contextualReviewCount <= currentReviewCount);
+
+          if (isBetter) {
+            parsedResult = {
+              ...contextualResult,
+              diagnostics: {
+                ...(contextualResult.diagnostics || {}),
+                context_retry_used: true,
+                context_prior_count: context.prior_count,
+                context_merchant_hint: context.merchant_hint,
+              },
+            };
+          } else if (parsedResult?.diagnostics) {
+            parsedResult.diagnostics = {
+              ...parsedResult.diagnostics,
+              context_retry_used: false,
+              context_prior_count: context.prior_count,
+              context_merchant_hint: context.merchant_hint,
+            };
+          }
+        } catch {
+          contextRetryDurationMs = 0;
+          if (parsedResult?.diagnostics) {
+            parsedResult.diagnostics = {
+              ...parsedResult.diagnostics,
+              context_retry_used: false,
+              context_prior_count: context.prior_count,
+              context_merchant_hint: context.merchant_hint,
+            };
+          }
+        }
+      } else {
+        contextRetrySkippedReason = context.prior_count <= 0 ? 'no_priors' : 'low_value_priors';
+        if (!parsedResult?.parsed) {
+          retryStrategy = 'fallback_only';
+          const fallbackStartedAt = Date.now();
+          parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
+            passMode: 'fallback_only',
+            familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
+          });
+          contextRetryDurationMs = Date.now() - fallbackStartedAt;
+        }
+      }
+    } else if (!parsedResult?.parsed) {
+      retryStrategy = 'fallback_only';
+      const fallbackStartedAt = Date.now();
+      parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
+        passMode: 'fallback_only',
+        familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
+      });
+      contextRetryDurationMs = Date.now() - fallbackStartedAt;
+      contextRetrySkippedReason = merchantHint ? 'fallback_without_context' : 'fallback_without_merchant_hint';
+    } else {
+      contextRetrySkippedReason = merchantHint ? 'not_eligible' : 'no_merchant_hint';
+    }
+  } else if (user?.household_id && shouldRetryReceiptWithContext(parsedResult, merchantHint)) {
     const contextLookupStartedAt = Date.now();
     const context = await buildReceiptParsingContext({
       householdId: user.household_id,
@@ -201,6 +309,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     const hasUsefulFallbackPriors = Boolean(merchantHint) || firstPassOutcome.parse_status === 'partial';
     if (context.prior_count > 0 && (hasMerchantSpecificPriors || hasUsefulFallbackPriors)) {
       contextRetryAttempted = true;
+      retryStrategy = 'legacy_contextual_full';
       try {
         const contextRetryStartedAt = Date.now();
         const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, { priors: context.priors });
@@ -259,7 +368,11 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       source: 'receipt',
       status: 'failed',
       failureReason: failure.reason_code,
-      metadata: {
+      metadata: finalizeIngestMetadata({
+        status: 'failed',
+        parsed: null,
+        source: 'receipt',
+        metadata: {
         ...(parsedResult?.diagnostics || { image_size: imageBase64.length, raw_present: Boolean(parsedResult?.raw) }),
         ...outcomeComparison,
         context_retry_attempted: contextRetryAttempted,
@@ -268,25 +381,38 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         initial_parse_duration_ms: initialParseDurationMs,
         total_scan_duration_ms: totalScanDurationMs,
         context_retry_skipped_reason: contextRetrySkippedReason,
-      },
+        retry_strategy: retryStrategy,
+        route_family: 'expenses_scan',
+        },
+      }),
     });
     return { errorStatus: 422, errorBody: failure };
   }
 
   const { assignment, matchedCategory } = await assignParsedCategory(user, parsed);
-  let matchedLocation = null;
   const locationQuery = [
     parsed.merchant,
     parsed.store_number ? `Store ${parsed.store_number}` : null,
     parsed.store_address,
   ].filter(Boolean).join(' ');
-
-  if (locationQuery) {
+  let matchedLocation = null;
+  let locationLookupDurationMs = 0;
+  let locationLookupAttempted = false;
+  let locationEnrichmentStatus = asyncPlaceEnrichmentEnabled() ? 'deferred' : 'synchronous';
+  if (locationQuery && !asyncPlaceEnrichmentEnabled()) {
+    locationLookupAttempted = true;
+    const locationStartedAt = Date.now();
     try {
       matchedLocation = await searchPlace(locationQuery);
+      locationLookupDurationMs = Date.now() - locationStartedAt;
+      locationEnrichmentStatus = matchedLocation ? 'enriched' : 'missing';
     } catch {
+      locationLookupDurationMs = Date.now() - locationStartedAt;
       matchedLocation = null;
+      locationEnrichmentStatus = 'lookup_failed';
     }
+  } else if (!locationQuery) {
+    locationEnrichmentStatus = 'missing';
   }
 
   const attempt = await IngestAttemptLog.create({
@@ -295,7 +421,18 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
     parseStatus: parsed.parse_status,
     reviewFields: parsed.review_fields,
-    metadata: {
+    metadata: finalizeIngestMetadata({
+      status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
+      parsed: {
+        ...parsed,
+        category_id: assignment.category_id,
+        category_source: assignment.source,
+        place_name: matchedLocation?.place_name || parsed.merchant || null,
+        address: matchedLocation?.address || parsed.store_address || null,
+        mapkit_stable_id: matchedLocation?.mapkit_stable_id || null,
+      },
+      source: 'receipt',
+      metadata: {
       ...(parsedResult?.diagnostics || {}),
       ...outcomeComparison,
       context_retry_attempted: contextRetryAttempted,
@@ -304,10 +441,20 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       initial_parse_duration_ms: initialParseDurationMs,
       total_scan_duration_ms: totalScanDurationMs,
       context_retry_skipped_reason: contextRetrySkippedReason,
+      retry_strategy: retryStrategy,
       category_id: assignment.category_id,
       category_source: assignment.source,
       category_confidence: assignment.confidence,
-    },
+      category_ai_fallback_used: assignment.source === 'claude',
+      category_ai_fallback_skipped: assignment.source === 'deferred',
+      category_fallback_reason: assignment?.reasoning?.fallback_skipped_reason || null,
+      place_lookup_attempted: locationLookupAttempted,
+      place_lookup_duration_ms: locationLookupDurationMs,
+      location_query_present: Boolean(locationQuery),
+      location_enrichment_status: locationEnrichmentStatus,
+      route_family: 'expenses_scan',
+      },
+    }),
   });
 
   return {
@@ -320,6 +467,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       place_name: matchedLocation?.place_name || parsed.merchant || null,
       address: matchedLocation?.address || parsed.store_address || null,
       mapkit_stable_id: matchedLocation?.mapkit_stable_id || null,
+      location_status: locationEnrichmentStatus,
     },
   };
 }

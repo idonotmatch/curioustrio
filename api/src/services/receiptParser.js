@@ -1,4 +1,7 @@
 const { completeWithImage } = require('./ai');
+const {
+  receiptFamilyStrategiesMode,
+} = require('./parsingOptimizationConfig');
 
 const SYSTEM_PROMPT = `You are a receipt parser. Extract structured data from a receipt image.
 Return ONLY a JSON object with these fields:
@@ -177,21 +180,67 @@ function cleanParsedReceipt(parsed, todayDate) {
   };
 }
 
+function normalizeComparableText(value) {
+  return `${value || ''}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function classifyReceiptFamily({ merchant = '', items = [], priors = [] } = {}) {
+  const merchantText = normalizeComparableText(merchant);
+  const itemText = Array.isArray(items)
+    ? items.map((item) => normalizeComparableText(item?.description || '')).join(' ')
+    : '';
+  const priorText = Array.isArray(priors)
+    ? priors.map((value) => normalizeComparableText(value)).join(' ')
+    : '';
+  const corpus = [merchantText, itemText, priorText].filter(Boolean).join(' ');
+
+  const rules = [
+    { family: 'grocery_receipt', confidence: 'high', pattern: /\b(whole foods|trader joes|trader joe s|aldi|kroger|safeway|publix|wegmans|food lion|produce|bananas|milk|eggs|feta|lasagne|lasagna)\b/ },
+    { family: 'restaurant_receipt', confidence: 'high', pattern: /\b(starbucks|chipotle|sweetgreen|restaurant|cafe|pizza|burger|sushi|coffee|latte)\b/ },
+    { family: 'pharmacy_receipt', confidence: 'high', pattern: /\b(cvs|walgreens|rite aid|pharmacy|prescription|medicine)\b/ },
+    { family: 'gas_receipt', confidence: 'high', pattern: /\b(shell|chevron|exxon|bp|mobil|sunoco|fuel|gallons)\b/ },
+    { family: 'big_box_retail_receipt', confidence: 'medium', pattern: /\b(target|walmart|costco|home depot|lowes|lowe s)\b/ },
+  ];
+
+  for (const rule of rules) {
+    if (rule.pattern.test(corpus)) return { family: rule.family, confidence: rule.confidence };
+  }
+
+  return { family: 'generic_receipt', confidence: 'low' };
+}
+
+function buildPrimaryPrompt(todayDate, priors = [], familyHint = null) {
+  const priorSection = Array.isArray(priors) && priors.length
+    ? `\nKnown household purchase priors:\n- ${priors.join('\n- ')}\nUse these only to disambiguate uncertain merchant abbreviations or product lines. Do not invent unseen items.`
+    : '';
+  const familySection = familyHint && receiptFamilyStrategiesMode() !== 'off'
+    ? `\nLikely receipt family: ${familyHint.family}. Use that as a soft hint only if it helps extract merchant, total, and line items more cleanly.`
+    : '';
+  return `Today's date: ${todayDate}. Extract expense data from this receipt.${familySection}${priorSection}`;
+}
+
 async function parseReceipt(imageBase64, todayDate, options = {}) {
   const result = await parseReceiptDetailed(imageBase64, todayDate, options);
   return result.parsed;
 }
 
-function buildFallbackPrompt(todayDate, priors = []) {
+function buildFallbackPrompt(todayDate, priors = [], familyHint = null) {
   const priorSection = Array.isArray(priors) && priors.length
     ? `\nKnown household purchase priors:\n- ${priors.join('\n- ')}\nUse these only to disambiguate uncertain line items or merchant abbreviations. Do not invent unseen items.`
     : '';
-  return `Today's date: ${todayDate}. Extract the merchant, final total, date, and up to 30 obvious line items from this grocery receipt. If more than 30 items are visible or item details are messy, still prioritize merchant, final total, and valid JSON over exhaustive extraction.${priorSection}`;
+  const familySection = familyHint && receiptFamilyStrategiesMode() !== 'off'
+    ? ` This likely behaves like a ${familyHint.family.replace(/_/g, ' ')}.`
+    : '';
+  return `Today's date: ${todayDate}. Extract the merchant, final total, date, and up to 30 obvious line items from this receipt.${familySection} If more than 30 items are visible or item details are messy, still prioritize merchant, final total, and valid JSON over exhaustive extraction.${priorSection}`;
 }
 
 async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
   const startedAt = Date.now();
   const priors = Array.isArray(options?.priors) ? options.priors.filter(Boolean) : [];
+  const passMode = options?.passMode || 'full';
+  const familyHint = options?.familyHint || null;
+  const shouldRunPrimary = passMode !== 'fallback_only';
+  const shouldRunFallback = passMode !== 'primary_only';
   if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
     throw new Error('imageBase64 must be a non-empty string');
   }
@@ -200,16 +249,20 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     throw new Error('todayDate must be a valid ISO date string (YYYY-MM-DD)');
   }
 
-  const primaryStartedAt = Date.now();
-  const text = await completeWithImage({
-    system: SYSTEM_PROMPT,
-    imageBase64,
-    text: `Today's date: ${todayDate}. Extract expense data from this receipt.`,
-    maxTokens: 1400,
-  });
-  const primaryDurationMs = Date.now() - primaryStartedAt;
+  let text = null;
+  let primaryDurationMs = 0;
+  if (shouldRunPrimary) {
+    const primaryStartedAt = Date.now();
+    text = await completeWithImage({
+      system: SYSTEM_PROMPT,
+      imageBase64,
+      text: buildPrimaryPrompt(todayDate, priors, familyHint),
+      maxTokens: 1400,
+    });
+    primaryDurationMs = Date.now() - primaryStartedAt;
+  }
 
-  if (!text) {
+  if (shouldRunPrimary && !text) {
     return {
       parsed: null,
       failureReason: 'empty_model_response',
@@ -220,21 +273,34 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
         parser_mode: 'empty',
         primary_duration_ms: primaryDurationMs,
         fallback_duration_ms: 0,
+        model_call_count: shouldRunPrimary ? 1 : 0,
         total_parse_duration_ms: Date.now() - startedAt,
       }),
     };
   }
 
-  const { raw, parser_mode } = parseJsonWithRecovery(text);
+  const { raw, parser_mode } = shouldRunPrimary
+    ? parseJsonWithRecovery(text)
+    : { raw: null, parser_mode: 'skipped' };
+  const familyClassification = classifyReceiptFamily({
+    merchant: raw?.merchant || familyHint?.merchant || '',
+    items: raw?.items || [],
+    priors,
+  });
   const diagnostics = buildReceiptDiagnostics(imageBase64, raw, {
-    response_length: `${text}`.length,
-    raw_text_preview: clipTextPreview(text),
+    response_length: text ? `${text}`.length : 0,
+    raw_text_preview: text ? clipTextPreview(text) : null,
     parser_mode,
-    fallback_attempted: false,
+    fallback_attempted: shouldRunFallback && !shouldRunPrimary ? true : false,
     fallback_succeeded: false,
     context_prior_count: priors.length,
     primary_duration_ms: primaryDurationMs,
     fallback_duration_ms: 0,
+    model_call_count: shouldRunPrimary ? 1 : 0,
+    receipt_family: familyClassification.family,
+    receipt_family_confidence: familyClassification.confidence,
+    receipt_family_mode: receiptFamilyStrategiesMode(),
+    pass_mode: passMode,
   });
 
   const primaryParsed = raw ? cleanParsedReceipt(raw, todayDate) : null;
@@ -262,11 +328,23 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     }
   }
 
+  if (!shouldRunFallback) {
+    return {
+      parsed: null,
+      failureReason: primaryFailureReason,
+      raw,
+      diagnostics: {
+        ...diagnostics,
+        total_parse_duration_ms: Date.now() - startedAt,
+      },
+    };
+  }
+
   const fallbackStartedAt = Date.now();
   const fallbackText = await completeWithImage({
     system: FALLBACK_SYSTEM_PROMPT,
     imageBase64,
-    text: buildFallbackPrompt(todayDate, priors),
+    text: buildFallbackPrompt(todayDate, priors, familyHint || familyClassification),
     maxTokens: 1200,
   });
   const fallbackDurationMs = Date.now() - fallbackStartedAt;
@@ -284,12 +362,18 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
         fallback_raw_text_preview: null,
         fallback_parser_mode: 'empty',
         fallback_duration_ms: fallbackDurationMs,
+        model_call_count: (diagnostics.model_call_count || 0) + 1,
         total_parse_duration_ms: Date.now() - startedAt,
       },
     };
   }
 
   const { raw: fallbackRaw, parser_mode: fallbackParserMode } = parseJsonWithRecovery(fallbackText);
+  const fallbackFamilyClassification = classifyReceiptFamily({
+    merchant: fallbackRaw?.merchant || raw?.merchant || '',
+    items: fallbackRaw?.items || [],
+    priors,
+  });
   const fallbackDiagnostics = buildReceiptDiagnostics(imageBase64, fallbackRaw, {
     ...diagnostics,
     fallback_attempted: true,
@@ -298,6 +382,9 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     fallback_raw_text_preview: clipTextPreview(fallbackText),
     fallback_parser_mode: fallbackParserMode,
     fallback_duration_ms: fallbackDurationMs,
+    model_call_count: (diagnostics.model_call_count || 0) + 1,
+    receipt_family: fallbackFamilyClassification.family,
+    receipt_family_confidence: fallbackFamilyClassification.confidence,
   });
 
   if (!fallbackRaw) {

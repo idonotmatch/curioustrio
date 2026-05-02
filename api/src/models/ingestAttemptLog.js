@@ -39,6 +39,24 @@ async function create({
   }
 }
 
+async function findByIdForUser(attemptId, userId) {
+  if (!attemptId || !userId) return null;
+  try {
+    const result = await db.query(
+      `SELECT *
+       FROM ingest_attempt_log
+       WHERE id = $1
+         AND user_id = $2
+       LIMIT 1`,
+      [attemptId, userId]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingTableError(err)) throw err;
+    return null;
+  }
+}
+
 async function appendPaymentFeedback(attemptId, userId, {
   originalPaymentMethod = null,
   originalCardLabel = null,
@@ -82,9 +100,15 @@ async function appendPaymentFeedback(attemptId, userId, {
   }
 }
 
-async function markConfirmed(attemptId, userId, { expenseId = null } = {}) {
+async function markConfirmed(attemptId, userId, { expenseId = null, correctionFeedback = null } = {}) {
   if (!attemptId || !userId) return null;
   try {
+    const payload = {
+      confirm_status: 'confirmed',
+      confirmed_expense_id: expenseId,
+      confirmed_at: new Date().toISOString(),
+      ...(correctionFeedback || {}),
+    };
     const result = await db.query(
       `UPDATE ingest_attempt_log
        SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
@@ -94,11 +118,7 @@ async function markConfirmed(attemptId, userId, { expenseId = null } = {}) {
       [
         attemptId,
         userId,
-        JSON.stringify({
-          confirm_status: 'confirmed',
-          confirmed_expense_id: expenseId,
-          confirmed_at: new Date().toISOString(),
-        }),
+        JSON.stringify(payload),
       ]
     );
     return result.rows[0] || null;
@@ -157,9 +177,14 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
          COUNT(*) FILTER (WHERE COALESCE((metadata->>'fallback_succeeded')::boolean, false))::int AS fallback_succeeded,
          COUNT(*) FILTER (WHERE COALESCE((metadata->>'context_retry_attempted')::boolean, false))::int AS context_retry_attempted,
          COUNT(*) FILTER (WHERE COALESCE((metadata->>'context_retry_used')::boolean, false))::int AS context_retry_used,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'category_ai_fallback_used')::boolean, false))::int AS category_ai_fallback_used,
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'category_ai_fallback_skipped')::boolean, false))::int AS category_ai_fallback_skipped,
          COUNT(*) FILTER (WHERE COALESCE((metadata->>'did_status_improve')::boolean, false))::int AS status_improved,
          COUNT(*) FILTER (WHERE COALESCE((metadata->>'did_review_count_improve')::boolean, false))::int AS review_count_improved,
-         COUNT(*) FILTER (WHERE COALESCE((metadata->>'retry_was_unnecessary')::boolean, false))::int AS retry_unnecessary
+         COUNT(*) FILTER (WHERE COALESCE((metadata->>'retry_was_unnecessary')::boolean, false))::int AS retry_unnecessary,
+         ROUND(AVG(NULLIF((metadata->>'model_call_count')::numeric, 0)), 2) AS avg_model_call_count,
+         ROUND(AVG(NULLIF((metadata->>'metadata_size_bytes')::numeric, 0)), 2) AS avg_metadata_size_bytes,
+         ROUND(AVG(NULLIF((metadata->>'place_lookup_duration_ms')::numeric, 0)), 2) AS avg_place_lookup_duration_ms
        FROM ingest_attempt_log
        WHERE user_id = $1
          AND created_at >= NOW() - ($2::text || ' days')::interval
@@ -196,10 +221,13 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
              COALESCE((metadata->>'fallback_succeeded')::boolean, false) AS fallback_succeeded,
              COALESCE((metadata->>'context_retry_attempted')::boolean, false) AS context_retry_attempted,
              COALESCE((metadata->>'context_retry_used')::boolean, false) AS context_retry_used,
+             COALESCE((metadata->>'category_ai_fallback_used')::boolean, false) AS category_ai_fallback_used,
              COALESCE((metadata->>'retry_was_unnecessary')::boolean, false) AS retry_was_unnecessary,
              NULLIF((metadata->>'total_scan_duration_ms')::numeric, 0) AS total_scan_duration_ms,
              NULLIF((metadata->>'initial_parse_duration_ms')::numeric, 0) AS initial_parse_duration_ms,
-             NULLIF((metadata->>'context_retry_duration_ms')::numeric, 0) AS context_retry_duration_ms
+             NULLIF((metadata->>'context_retry_duration_ms')::numeric, 0) AS context_retry_duration_ms,
+             NULLIF((metadata->>'model_call_count')::numeric, 0) AS model_call_count,
+             NULLIF((metadata->>'metadata_size_bytes')::numeric, 0) AS metadata_size_bytes
            FROM ingest_attempt_log
            WHERE user_id = $1
              AND created_at >= NOW() - ($2::text || ' days')::interval
@@ -216,11 +244,14 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
            COUNT(*) FILTER (WHERE fallback_succeeded)::int AS fallback_succeeded,
            COUNT(*) FILTER (WHERE context_retry_attempted)::int AS context_retry_attempted,
            COUNT(*) FILTER (WHERE context_retry_used)::int AS context_retry_used,
+           COUNT(*) FILTER (WHERE category_ai_fallback_used)::int AS category_ai_fallback_used,
            COUNT(*) FILTER (WHERE did_status_improve)::int AS status_improved,
            COUNT(*) FILTER (WHERE retry_was_unnecessary)::int AS retry_unnecessary,
            ROUND(AVG(total_scan_duration_ms))::int AS avg_total_scan_duration_ms,
            ROUND(AVG(initial_parse_duration_ms))::int AS avg_initial_parse_duration_ms,
-           ROUND(AVG(context_retry_duration_ms))::int AS avg_context_retry_duration_ms
+           ROUND(AVG(context_retry_duration_ms))::int AS avg_context_retry_duration_ms,
+           ROUND(AVG(model_call_count), 2) AS avg_model_call_count,
+           ROUND(AVG(metadata_size_bytes), 1) AS avg_metadata_size_bytes
          FROM attempts
          GROUP BY COALESCE(merchant, 'Unknown merchant')
          ORDER BY attempts DESC, merchant ASC
@@ -241,4 +272,4 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
   }
 }
 
-module.exports = { create, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser };
+module.exports = { create, findByIdForUser, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser };

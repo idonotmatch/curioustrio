@@ -88,9 +88,44 @@ async function captureReceiptLineCorrections({ householdId, merchant, originalIt
   }
 }
 
-async function appendConfirmPaymentFeedback({ ingestAttemptId, userId, source, parsedPaymentSnapshot, paymentMethod, cardLabel, cardLast4, expenseId }) {
+async function appendConfirmPaymentFeedback({
+  ingestAttemptId,
+  userId,
+  source,
+  parsedPaymentSnapshot,
+  paymentMethod,
+  cardLabel,
+  cardLast4,
+  merchant,
+  description,
+  amount,
+  date,
+  placeName,
+  address,
+  mapkitStableId,
+  itemCount,
+  expenseId,
+}) {
   if (!['manual', 'camera', 'refund'].includes(source) || !ingestAttemptId || !userId) return;
   try {
+    const attempt = await IngestAttemptLog.findByIdForUser(ingestAttemptId, userId);
+    const parsedSnapshot = attempt?.metadata?.parsed_snapshot || null;
+    const correctionFeedback = parsedSnapshot ? {
+      correction_feedback_recorded: true,
+      correction_changed_fields: [
+        ['merchant', parsedSnapshot.merchant, merchant],
+        ['description', parsedSnapshot.description, description],
+        ['amount', parsedSnapshot.amount, amount],
+        ['date', parsedSnapshot.date, date],
+        ['place_name', parsedSnapshot.place_name, placeName],
+        ['address', parsedSnapshot.address, address],
+        ['mapkit_stable_id', parsedSnapshot.mapkit_stable_id, mapkitStableId],
+        ['item_count', parsedSnapshot.item_count, itemCount],
+      ]
+        .filter(([, originalValue, finalValue]) => `${originalValue ?? ''}` !== `${finalValue ?? ''}`)
+        .map(([field]) => field),
+    } : null;
+
     await IngestAttemptLog.appendPaymentFeedback(ingestAttemptId, userId, {
       originalPaymentMethod: parsedPaymentSnapshot?.payment_method || null,
       originalCardLabel: parsedPaymentSnapshot?.card_label || null,
@@ -99,7 +134,10 @@ async function appendConfirmPaymentFeedback({ ingestAttemptId, userId, source, p
       finalCardLabel: cardLabel || null,
       finalCardLast4: cardLast4 || null,
     });
-    await IngestAttemptLog.markConfirmed(ingestAttemptId, userId, { expenseId });
+    await IngestAttemptLog.markConfirmed(ingestAttemptId, userId, {
+      expenseId,
+      correctionFeedback,
+    });
   } catch (logErr) {
     console.error('Confirm ingest log update failed (non-fatal):', logErr.message);
   }
@@ -208,6 +246,14 @@ async function createConfirmedExpense({
     paymentMethod: payload.payment_method,
     cardLabel: payload.card_label,
     cardLast4: payload.card_last4,
+    merchant: payload.merchant,
+    description: payload.description,
+    amount: payload.amount,
+    date: payload.date,
+    placeName: payload.place_name,
+    address: payload.address,
+    mapkitStableId: payload.mapkit_stable_id,
+    itemCount: Array.isArray(payload.items) ? payload.items.length : 0,
     expenseId: expense.id,
   });
 

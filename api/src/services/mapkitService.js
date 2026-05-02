@@ -1,10 +1,17 @@
 const jwt = require('jsonwebtoken');
 const fetch = require('node-fetch');
+const { withTimeout, VendorTimeoutError } = require('./ai');
+const {
+  mapkitTimeoutMs,
+  enrichmentCacheEnabled,
+  enrichmentCacheTtlMs,
+} = require('./parsingOptimizationConfig');
 
 const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
 
 let cachedJwt = null;
 let jwtExpiry = 0;
+const searchCache = new Map();
 
 class MapkitSearchUnavailableError extends Error {
   constructor(message = 'Place search unavailable', details = null) {
@@ -61,12 +68,46 @@ function mapResult(top, query) {
   return { place_name, address, mapkit_stable_id };
 }
 
+function cacheKey({ query, lat, lng, radiusMeters, limit }) {
+  return JSON.stringify({
+    query: `${query || ''}`.trim().toLowerCase(),
+    lat: lat == null ? null : Number(lat).toFixed(3),
+    lng: lng == null ? null : Number(lng).toFixed(3),
+    radiusMeters,
+    limit,
+  });
+}
+
+function readCachedResults(key) {
+  if (!enrichmentCacheEnabled()) return null;
+  const entry = searchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() >= entry.expiresAt) {
+    searchCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function writeCachedResults(key, value) {
+  if (!enrichmentCacheEnabled()) return;
+  searchCache.set(key, {
+    value,
+    expiresAt: Date.now() + enrichmentCacheTtlMs(),
+  });
+}
+
 async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5) {
+  const normalizedQuery = `${query || ''}`.trim();
+  const key = cacheKey({ query: normalizedQuery, lat, lng, radiusMeters, limit });
+  const cached = readCachedResults(key);
+  if (cached) return cached;
+
   const token = getSignedJwt();
   let hadOperationalFailure = false;
   async function searchOnce({ useLocationBias = false, includePoiFilter = false }) {
     const url = new URL(MAPKIT_SEARCH_URL);
-    url.searchParams.set('q', query);
+    url.searchParams.set('q', normalizedQuery);
     if (useLocationBias && lat != null && lng != null) {
       url.searchParams.set('userLocation', `${lat},${lng}`);
       url.searchParams.set('searchLocation', `${lat},${lng}`);
@@ -81,8 +122,11 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     }
     url.searchParams.set('lang', 'en-US');
 
-    const res = await fetch(url.toString(), {
+    const res = await withTimeout(fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
+    }), {
+      service: 'mapkit_search',
+      timeoutMs: mapkitTimeoutMs(),
     });
     if (!res.ok) {
       hadOperationalFailure = true;
@@ -95,8 +139,8 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
       console.error('[places/search] Apple Maps HTTP error', {
         status: res.status,
         statusText: res.statusText,
-        query_present: !!`${query || ''}`.trim(),
-        query_length: `${query || ''}`.trim().length,
+        query_present: !!normalizedQuery,
+        query_length: normalizedQuery.length,
         useLocationBias,
         includePoiFilter,
         body_present: !!responseText,
@@ -114,7 +158,7 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     const results = Array.isArray(data.results) ? data.results : [];
     if (!results.length) return [];
 
-    return results.slice(0, limit).map((result) => mapResult(result, query));
+    return results.slice(0, limit).map((result) => mapResult(result, normalizedQuery));
   }
 
   // Try the tightest/highest-quality match first, but fall back progressively.
@@ -132,17 +176,25 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     let results = [];
     try {
       results = await searchOnce(strategy);
-    } catch {
+    } catch (error) {
+      if (error instanceof VendorTimeoutError) {
+        hadOperationalFailure = true;
+        continue;
+      }
       hadOperationalFailure = true;
       continue;
     }
-    if (results.length) return results;
+    if (results.length) {
+      writeCachedResults(key, results);
+      return results;
+    }
   }
 
   if (hadOperationalFailure) {
-    throw new MapkitSearchUnavailableError('Place search unavailable', `MapKit search failed for query "${query}"`);
+    throw new MapkitSearchUnavailableError('Place search unavailable', `MapKit search failed for query "${normalizedQuery}"`);
   }
 
+  writeCachedResults(key, []);
   return [];
 }
 

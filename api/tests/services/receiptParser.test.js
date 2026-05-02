@@ -152,6 +152,42 @@ describe('parseReceipt', () => {
     await expect(parseReceipt('', '2026-03-21')).rejects.toThrow();
   });
 
+  it('supports primary-only receipt parsing for single-retry routing', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockClear();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: '{"merchant":"Whole Foods","amount":19.84,"date":"2026-04-27","notes":null,"items":[{"description":"Lasagne","amount":5.37}]}'
+      }]
+    });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-04-27', { passMode: 'primary_only' });
+
+    expect(result.parsed.amount).toBe(19.84);
+    expect(result.diagnostics.pass_mode).toBe('primary_only');
+    expect(result.diagnostics.model_call_count).toBe(1);
+    expect(instance.messages.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports fallback-only receipt parsing as the second retry strategy', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockClear();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: '{"merchant":"Whole Foods","amount":19.84,"date":"2026-04-27","notes":null,"items":[{"description":"Lasagne","amount":5.37}]}'
+      }]
+    });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-04-27', { passMode: 'fallback_only' });
+
+    expect(result.parsed.amount).toBe(19.84);
+    expect(result.diagnostics.pass_mode).toBe('fallback_only');
+    expect(result.diagnostics.model_call_count).toBe(1);
+    expect(instance.messages.create).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when imageBase64 is missing/null', async () => {
     await expect(parseReceipt(null, '2026-03-21')).rejects.toThrow();
   });
@@ -195,6 +231,21 @@ describe('parseReceipt', () => {
     }, '2026-03-21');
 
     expect(result).toBeNull();
+  });
+
+  it('classifies a grocery receipt family in diagnostics', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: '{"merchant":"Whole Foods","amount":19.84,"date":"2026-04-27","notes":null,"items":[{"description":"Organic feta crumbles","amount":4.99}]}'
+      }]
+    });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-04-27');
+
+    expect(result.diagnostics.receipt_family).toBe('grocery_receipt');
+    expect(result.diagnostics.receipt_family_confidence).toBe('high');
   });
 });
 
