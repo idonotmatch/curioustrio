@@ -23,6 +23,7 @@ const filesToCheck = [
   'components/SmartSuggestionCard.js',
   'services/insightPresentation.js',
   'services/manualAddSuggestions.js',
+  'services/confirmNavigation.js',
   'services/scenarioCheckPresentation.js',
 ];
 

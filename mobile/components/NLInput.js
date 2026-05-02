@@ -8,8 +8,10 @@ export function NLInput({ onSubmit, loading }) {
     const submitted = value.trim();
     if (!submitted || loading) return;
     try {
-      await onSubmit(submitted);
-      setValue('');
+      const result = await onSubmit(submitted);
+      if (result !== false) {
+        setValue('');
+      }
     } catch {
       // Keep the typed value in place so the user can keep editing.
     }

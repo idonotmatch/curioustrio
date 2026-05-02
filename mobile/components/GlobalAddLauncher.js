@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NLInput } from './NLInput';
 import { api } from '../services/api';
 import { toLocalDateString } from '../services/date';
-import { stashNavigationPayload } from '../services/navigationPayloadStore';
+import { pushConfirmDraft } from '../services/confirmNavigation';
 
 export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
   const [open, setOpen] = useState(false);
@@ -37,12 +37,9 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
       setLoading(true);
       const today = toLocalDateString();
       const parsed = await api.post('/expenses/parse', { input, today });
-      const payloadKey = stashNavigationPayload({ confirmData: { ...parsed, source: 'manual' } }, 'confirm');
       close();
-      router.push({
-        pathname: '/confirm',
-        params: { payload_key: payloadKey },
-      });
+      pushConfirmDraft(router, { ...parsed, source: 'manual' });
+      return true;
     } catch (err) {
       if (`${err?.message || ''}`.includes('Could not parse')) {
         Alert.alert(
@@ -56,6 +53,7 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
       } else {
         Alert.alert('Error', err?.message || 'Could not parse that expense right now.');
       }
+      return false;
     } finally {
       setLoading(false);
     }

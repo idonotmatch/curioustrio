@@ -12,7 +12,7 @@ import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollVi
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
-import { consumeNavigationPayload } from '../services/navigationPayloadStore';
+import { clearNavigationPayload, getNavigationPayload } from '../services/navigationPayloadStore';
 
 function parseConfirmData(value) {
   try {
@@ -45,7 +45,7 @@ export default function ConfirmScreen() {
   const dataParam = firstParam(params.data, '');
   const payloadKey = firstParam(params.payload_key, '');
   const navigationPayload = useMemo(
-    () => consumeNavigationPayload(payloadKey, null),
+    () => getNavigationPayload(payloadKey, null),
     [payloadKey]
   );
   const parsed = useMemo(
@@ -136,6 +136,13 @@ export default function ConfirmScreen() {
     );
     autoLocationAttemptRef.current = '';
   }, [payloadKey, dataParam, parsed]);
+
+  useEffect(() => {
+    if (!payloadKey) return undefined;
+    return () => {
+      clearNavigationPayload(payloadKey);
+    };
+  }, [payloadKey]);
 
   function confidenceMeta(field) {
     const level = fieldConfidence[field];

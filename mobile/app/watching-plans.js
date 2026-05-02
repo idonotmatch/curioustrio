@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { toLocalDateString } from '../services/date';
-import { stashNavigationPayload } from '../services/navigationPayloadStore';
+import { pushConfirmDraft } from '../services/confirmNavigation';
 
 function formatCurrency(value) {
   const amount = Number(value);
@@ -280,21 +280,13 @@ export default function WatchingPlansScreen() {
                             <TouchableOpacity
                               style={styles.primaryAction}
                               onPress={() => {
-                                const payloadKey = stashNavigationPayload({
-                                  confirmData: {
-                                    merchant: plan.label,
-                                    description: plan.label,
-                                    amount: Number(plan.amount),
-                                    date: toLocalDateString(),
-                                    source: 'manual',
-                                    scenario_memory_id: plan.id,
-                                  },
-                                }, 'confirm');
-                                router.push({
-                                  pathname: '/confirm',
-                                  params: {
-                                    payload_key: payloadKey,
-                                  },
+                                pushConfirmDraft(router, {
+                                  merchant: plan.label,
+                                  description: plan.label,
+                                  amount: Number(plan.amount),
+                                  date: toLocalDateString(),
+                                  source: 'manual',
+                                  scenario_memory_id: plan.id,
                                 });
                               }}
                             >
