@@ -175,15 +175,92 @@ function whatChangedCopy(metadata = {}, body = '') {
   };
 }
 
+function insightFamily(insightType, metadata = {}) {
+  const type = `${insightType || ''}`;
+  if (metadata.group_key || type.startsWith('item_') || type.startsWith('recurring_') || type === 'buy_soon_better_price') {
+    return 'recurring';
+  }
+  if (
+    type === 'spend_pace_ahead'
+    || type === 'spend_pace_behind'
+    || type === 'budget_too_low'
+    || type === 'budget_too_high'
+    || type === 'projected_month_end_over_budget'
+    || type === 'projected_month_end_under_budget'
+    || type === 'early_budget_pace'
+  ) {
+    return 'budget';
+  }
+  if (
+    type === 'top_category_driver'
+    || type === 'projected_category_surge'
+    || type === 'projected_category_under_baseline'
+    || type === 'early_top_category'
+    || type === 'developing_category_shift'
+    || metadata.category_key
+  ) {
+    return 'category';
+  }
+  if (
+    type === 'early_repeated_merchant'
+    || type === 'developing_repeated_merchant'
+    || metadata.merchant_key
+  ) {
+    return 'merchant';
+  }
+  if (
+    type === 'one_off_expense_skewing_projection'
+    || type === 'one_offs_driving_variance'
+    || metadata.largest_expense
+  ) {
+    return 'one_off';
+  }
+  if (
+    type === 'usage_start_logging'
+    || type === 'usage_set_budget'
+    || type === 'usage_building_history'
+    || type === 'usage_ready_to_plan'
+    || type === 'early_cleanup'
+    || type === 'early_logging_momentum'
+  ) {
+    return 'setup';
+  }
+  if (type.startsWith('early_') || type.startsWith('developing_')) {
+    return 'emerging';
+  }
+  return 'general';
+}
+
 function whyItMattersCopy(insightType, metadata = {}) {
+  const family = insightFamily(insightType, metadata);
+  if (metadata.scope_relationship === 'personal_household_overlap') {
+    return 'Your own spending is affecting the shared picture too, so even a personal change can shift what the household month feels like.';
+  }
+  if (family === 'budget') {
+    return metadata.scope === 'household'
+      ? 'This changes how much room the household has left this month, which makes it more useful to notice now than at the end.'
+      : 'This changes how much room you have left this month, so it is worth noticing while there is still time to steer it.';
+  }
+  if (family === 'category') {
+    return 'A category-level change usually tells you where the month is bending, not just that spending is up or down overall.';
+  }
+  if (family === 'merchant') {
+    return 'Merchant patterns are useful because they often show routine behavior early, before it turns into a bigger monthly result.';
+  }
+  if (family === 'one_off') {
+    return 'A one-off can make the month look more pressured than it really is, so separating it from the lasting pattern helps you react more appropriately.';
+  }
+  if (family === 'recurring') {
+    return 'Repeated purchases are where small timing or price changes quietly add up, so these reads can matter even when each individual purchase feels ordinary.';
+  }
+  if (family === 'setup') {
+    return 'This is less about a finished conclusion and more about helping Adlo get to sharper reads faster.';
+  }
   if (`${insightType}`.startsWith('early_')) {
     return 'This is meant to catch a direction early, while there is still time to adjust before it becomes a bigger pattern.';
   }
   if (`${insightType}`.startsWith('developing_')) {
     return 'This pattern is forming, but it is still early enough to steer with a small change.';
-  }
-  if (metadata.scope_relationship === 'personal_household_overlap') {
-    return 'Your own spending is driving part of the shared household picture, so a personal change can have a visible household effect.';
   }
   if (metadata.scope === 'household') {
     return 'This affects the shared budget, so it is useful for planning together instead of reacting later.';
@@ -199,7 +276,26 @@ function nextStepCopy(descriptor, primaryAction) {
   };
 }
 
-function contextCopy(type) {
+function contextCopy(type, metadata = {}) {
+  const family = insightFamily(type, metadata);
+  if (family === 'budget') {
+    return 'This read compares the pace of this month to your budget and to the shape of your usual spending so far.';
+  }
+  if (family === 'category') {
+    return 'This read is looking at which category is doing the most to pull the month away from its usual path.';
+  }
+  if (family === 'merchant') {
+    return 'This read is looking for a merchant pattern that is showing up often enough to matter, even if the month is still young.';
+  }
+  if (family === 'one_off') {
+    return 'This read is trying to separate unusual purchases from the steadier month-to-month pattern.';
+  }
+  if (family === 'recurring') {
+    return 'This read is built from repurchase timing, recent prices, and merchant differences across the same item or recurring pattern.';
+  }
+  if (family === 'setup') {
+    return 'This read is about how usable your current data is, and what would make the next cards more specific.';
+  }
   if (`${type}`.startsWith('early_')) {
     return 'This is an early read. It is meant to be useful before there is enough history for a mature trend.';
   }
@@ -207,6 +303,52 @@ function contextCopy(type) {
     return 'This is a developing read from short-term activity. It should get more tailored as the pattern either repeats or fades.';
   }
   return 'This card is based on the current insight signal and your recent activity.';
+}
+
+function strengthCopy(insightType, metadata = {}, stage = null, technicalSummary = '') {
+  const family = insightFamily(insightType, metadata);
+  if (family === 'budget') {
+    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Budget reads tend to strengthen as the month fills in and the spending shape settles.`;
+  }
+  if (family === 'category') {
+    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Category reads depend a lot on how clean the underlying categorization is.`;
+  }
+  if (family === 'merchant') {
+    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Merchant reads usually get clearer when the same behavior repeats a few more times.`;
+  }
+  if (family === 'one_off') {
+    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} One-off reads are strongest when the unusual purchase clearly stands apart from your normal month.`;
+  }
+  if (family === 'recurring') {
+    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Recurring reads get stronger when the same timing or price pattern shows up more than once.`;
+  }
+  if (family === 'setup') {
+    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} These are meant to guide the setup of better future reads rather than deliver a final answer today.`;
+  }
+  return technicalSummary || stage?.detail || 'This is the current read strength behind the card.';
+}
+
+function fullDetailIntroCopy(insightType, metadata = {}) {
+  const family = insightFamily(insightType, metadata);
+  if (family === 'budget') {
+    return 'Open this if you want the spending trail and supporting data behind the budget read.';
+  }
+  if (family === 'category') {
+    return 'Open this if you want to see the category activity and supporting purchases behind the shift.';
+  }
+  if (family === 'merchant') {
+    return 'Open this if you want the merchant trail and the activity that made the pattern stand out.';
+  }
+  if (family === 'one_off') {
+    return 'Open this if you want to see the purchase trail that is making the month look unusually high or low.';
+  }
+  if (family === 'recurring') {
+    return 'Open this if you want the item history, merchant comparisons, and timing details behind the recurring read.';
+  }
+  if (family === 'setup') {
+    return 'Open this if you want the underlying data quality and the context shaping the setup suggestion.';
+  }
+  return 'Open this if you want the supporting data and the fuller trail behind the insight.';
 }
 
 function consolidatedCopy(metadata = {}) {
@@ -589,7 +731,7 @@ export default function InsightDetailScreen() {
           <Text style={styles.cardTitle}>Why this matters</Text>
           <Text style={styles.cardCopy}>{whyItMatters}</Text>
           <Text style={styles.cardSupportTitle}>What this is picking up</Text>
-          <Text style={styles.cardCopy}>{contextCopy(insightType)}</Text>
+          <Text style={styles.cardCopy}>{contextCopy(insightType, metadata)}</Text>
         </View>
 
         <View style={styles.card}>
@@ -613,7 +755,7 @@ export default function InsightDetailScreen() {
           <Text style={styles.cardEyebrow}>How strong the read is</Text>
           <Text style={styles.cardTitle}>{stage.label}</Text>
           <Text style={styles.cardCopy}>
-            {technicalSummary || stage.detail || 'This is the current read strength behind the card.'}
+            {strengthCopy(insightType, metadata, stage, technicalSummary)}
           </Text>
           {technicalRows.length > 0 ? (
             <View style={styles.metricList}>
@@ -644,7 +786,7 @@ export default function InsightDetailScreen() {
             <Text style={styles.cardCopy}>
               {showTechnicalDetails
                 ? 'This is the full supporting data, evidence, and signal context behind the card.'
-                : 'Open this if you want the supporting data and the fuller trail behind the insight.'}
+                : fullDetailIntroCopy(insightType, metadata)}
             </Text>
             {showTechnicalDetails && supportRows.length > 0 ? (
               <View style={styles.supportBlock}>
