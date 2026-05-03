@@ -305,11 +305,15 @@ export default function RecurringItemScreen() {
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>Supporting activity</Text>
               <Text style={styles.cardTitle}>Recent purchases</Text>
-              {purchaseHistory.map((purchase) => {
+              {purchaseHistory.map((purchase, index) => {
                 const purchaseId = purchase.id || purchase.expense_id || null;
+                const expenseItemId = purchase.expense_item_id || null;
+                const purchaseKey = expenseItemId
+                  ? `expense-item:${expenseItemId}`
+                  : `${purchaseId || purchase.date}:${purchase.merchant}:${purchase.item_amount}:${purchase.estimated_unit_price ?? 'na'}:${index}`;
                 return (
                 <TouchableOpacity
-                  key={`${purchaseId || purchase.date}:${purchase.merchant}:${purchase.item_amount}`}
+                  key={purchaseKey}
                   style={styles.purchaseRow}
                   activeOpacity={purchaseId ? 0.82 : 1}
                   disabled={!purchaseId}

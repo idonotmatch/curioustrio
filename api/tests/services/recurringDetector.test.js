@@ -319,10 +319,11 @@ describe('getRecurringItemHistory', () => {
     });
     expect(history.purchases).toHaveLength(3);
     expect(history.purchases).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: e1 }),
-      expect.objectContaining({ id: e2 }),
-      expect.objectContaining({ id: e3 }),
+      expect.objectContaining({ id: e1, expense_item_id: expect.any(String) }),
+      expect.objectContaining({ id: e2, expense_item_id: expect.any(String) }),
+      expect.objectContaining({ id: e3, expense_item_id: expect.any(String) }),
     ]));
+    expect(new Set(history.purchases.map((purchase) => purchase.expense_item_id)).size).toBe(3);
     expect(history.merchant_price_history).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ merchant: 'Trader Joes', occurrence_count: 1 }),

@@ -13,6 +13,7 @@ const filesToCheck = [
   'app/insight-detail.js',
   'app/manual-add.js',
   'app/onboarding.js',
+  'app/recurring-item.js',
   'app/scenario-check.js',
   'app/watching-plans.js',
   'app/(tabs)/settings.js',
