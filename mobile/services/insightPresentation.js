@@ -161,6 +161,80 @@ function formatCountLabel(count, singular, plural = `${singular}s`) {
   return `${Number(count)} ${Number(count) === 1 ? singular : plural}`;
 }
 
+function addRow(rows, label, value) {
+  if (!value) return;
+  if (rows.some((row) => row.label === label && row.value === value)) return;
+  rows.push({ label, value });
+}
+
+function stageLabelForInsightType(type, maturity = '') {
+  const cleanMaturity = `${maturity || ''}`.trim();
+  if (cleanMaturity === 'early' || type.startsWith('early_')) {
+    return { label: 'Early read', detail: 'More directional than final' };
+  }
+  if (cleanMaturity === 'developing' || type.startsWith('developing_')) {
+    return { label: 'Pattern forming', detail: 'Useful before it hardens' };
+  }
+  if (cleanMaturity === 'mature') {
+    return { label: 'Clear signal', detail: 'Built on steadier history' };
+  }
+  return { label: 'Worth a look', detail: 'Current signal' };
+}
+
+function strengthLabelForInsight(confidence = '') {
+  const cleanConfidence = `${confidence || ''}`.trim();
+  switch (cleanConfidence) {
+    case 'observed':
+      return { label: 'Observed signal', detail: 'Tied to repeated activity' };
+    case 'comparative':
+      return { label: 'Strong signal', detail: 'Grounded in a comparison to your usual pattern' };
+    case 'descriptive':
+      return { label: 'Directional signal', detail: 'Useful, but still taking shape' };
+    case 'directional':
+      return { label: 'Directional signal', detail: 'Useful for a first pass' };
+    case 'low':
+      return { label: 'Soft signal', detail: 'Treat this as a prompt to look closer' };
+    default:
+      return { label: '', detail: '' };
+  }
+}
+
+function categoryQualityLabel(metadata = {}) {
+  if (metadata.category_trust_score == null) return null;
+  const score = Number(metadata.category_trust_score || 0);
+  if (score >= 0.9) return 'Strong category quality';
+  if (score >= 0.75) return 'Solid category quality';
+  if (score >= 0.55) return 'Mixed category quality';
+  return 'Weak category quality';
+}
+
+function historyLabel(metadata = {}, type = '') {
+  if (Number.isFinite(Number(metadata.historical_period_count)) && Number(metadata.historical_period_count) > 0) {
+    return formatCountLabel(metadata.historical_period_count, 'month');
+  }
+  if (type.startsWith('item_') || type.startsWith('recurring_') || type === 'buy_soon_better_price') {
+    return formatCountLabel(metadata.occurrence_count, 'purchase');
+  }
+  if (Number.isFinite(Number(metadata.expense_count)) && Number(metadata.expense_count) > 0) {
+    return formatCountLabel(metadata.expense_count, 'expense');
+  }
+  if (Number.isFinite(Number(metadata.merchant_count)) && Number(metadata.merchant_count) > 0) {
+    return formatCountLabel(metadata.merchant_count, 'visit');
+  }
+  return null;
+}
+
+function genericSupportRows(metadata = {}) {
+  const rows = [];
+  addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date ?? metadata.current_spend));
+  addRow(rows, 'Usual spend', formatCurrencyShort(metadata.previous_spend));
+  addRow(rows, 'Projected gap', formatCurrencyShort(metadata.projected_budget_delta ?? metadata.projected_over_under));
+  addRow(rows, 'History compared', historyLabel(metadata));
+  addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count, 'expense'));
+  addRow(rows, 'Active days', formatCountLabel(metadata.active_day_count, 'day'));
+  return rows;
+}
+
 export function getInsightPrimaryMetric(insight, context = {}) {
   const type = `${insight?.type || context.insightType || ''}`;
   const metadata = insight?.metadata || context.metadata || {};
@@ -248,6 +322,208 @@ export function getInsightPrimaryMetric(insight, context = {}) {
     default:
       return null;
   }
+}
+
+export function getInsightScopeLabel(insight, context = {}) {
+  const metadata = insight?.metadata || context.metadata || {};
+  const scopes = Array.isArray(metadata.consolidated_scopes) ? metadata.consolidated_scopes : [];
+  if (scopes.includes('personal') && scopes.includes('household')) return 'You + household';
+  if (metadata.scope === 'household') return 'Household';
+  if (metadata.scope === 'personal') return 'You';
+  return insight?.entity_type === 'item' ? 'Household' : 'You';
+}
+
+export function getInsightStageDescriptor(insight, context = {}) {
+  const type = `${insight?.type || context.insightType || ''}`;
+  const metadata = insight?.metadata || context.metadata || {};
+  return stageLabelForInsightType(type, metadata.maturity);
+}
+
+export function getInsightSupportRows(insight, context = {}) {
+  const type = `${insight?.type || context.insightType || ''}`;
+  const metadata = insight?.metadata || context.metadata || {};
+  const rows = [];
+
+  if (insight?.entity_type === 'item' && metadata?.group_key) {
+    switch (type) {
+      case 'item_staple_merchant_opportunity':
+      case 'item_merchant_variance':
+        addRow(rows, 'Best merchant', metadata.cheaper_merchant);
+        addRow(rows, 'Price difference', formatPercentShort(metadata.delta_percent));
+        addRow(rows, 'Recent purchases', formatCountLabel(metadata.occurrence_count, 'purchase'));
+        break;
+      case 'item_recent_price_jump':
+      case 'recurring_price_spike':
+        addRow(rows, 'Latest merchant', metadata.latest_merchant);
+        addRow(rows, 'Price jump', formatPercentShort(metadata.delta_percent));
+        addRow(rows, 'Usual price', formatCurrencyShort(metadata.median_amount));
+        break;
+      case 'item_repurchase_accelerating':
+        if (Number.isFinite(Number(metadata.latest_gap_days))) {
+          addRow(rows, 'Latest gap', `${Number(metadata.latest_gap_days)} days`);
+        }
+        if (Number.isFinite(Number(metadata.average_gap_days))) {
+          addRow(rows, 'Usual gap', `${Number(metadata.average_gap_days)} days`);
+        }
+        addRow(rows, 'Recent purchases', formatCountLabel(metadata.occurrence_count, 'purchase'));
+        break;
+      case 'item_staple_emerging':
+        addRow(rows, 'Recent purchases', formatCountLabel(metadata.occurrence_count, 'purchase'));
+        if (Number.isFinite(Number(metadata.average_gap_days))) {
+          addRow(rows, 'Usual gap', `${Number(metadata.average_gap_days)} days`);
+        }
+        addRow(rows, 'Typical spend', formatCurrencyShort(metadata.median_amount));
+        break;
+      case 'buy_soon_better_price':
+        addRow(rows, 'Lower-price merchant', metadata.merchant);
+        addRow(rows, 'Price difference', formatPercentShort(metadata.discount_percent));
+        if (Number.isFinite(Number(metadata.days_until_due))) {
+          const days = Number(metadata.days_until_due);
+          addRow(rows, 'Need timing', days <= 0 ? 'Due now' : `${days} days`);
+        }
+        break;
+      case 'recurring_repurchase_due':
+        if (Number.isFinite(Number(metadata.days_until_due))) {
+          const days = Number(metadata.days_until_due);
+          addRow(rows, 'Need timing', days <= 0 ? 'Due now' : `${days} days`);
+        }
+        if (Number.isFinite(Number(metadata.average_gap_days))) {
+          addRow(rows, 'Usual gap', `${Number(metadata.average_gap_days)} days`);
+        }
+        break;
+      case 'recurring_restock_window':
+        addRow(rows, 'Budget room', formatCurrencyShort(metadata.projected_headroom_amount));
+        if (Number.isFinite(Number(metadata.days_until_due))) {
+          addRow(rows, 'Need timing', `${Math.max(Number(metadata.days_until_due), 0)} days`);
+        }
+        break;
+      case 'recurring_cost_pressure':
+        addRow(rows, 'Extra cost', formatCurrencyShort(metadata.total_delta_amount));
+        addRow(rows, 'Items involved', formatCountLabel(metadata.recurring_line_count, 'line'));
+        addRow(rows, 'History used', formatCountLabel(metadata.occurrence_count, 'purchase'));
+        break;
+      default:
+        break;
+    }
+  } else {
+    switch (type) {
+      case 'early_budget_pace':
+        addRow(rows, 'Budget used', formatPercentShort(metadata.budget_used_percent));
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
+        addRow(rows, 'Expenses logged', formatCountLabel(metadata.expense_count, 'expense'));
+        break;
+      case 'early_top_category':
+      case 'developing_category_shift':
+      case 'top_category_driver':
+      case 'projected_category_surge':
+      case 'projected_category_under_baseline':
+        addRow(rows, 'Category', metadata.category_name);
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date ?? metadata.current_spend));
+        addRow(rows, 'Usual spend', formatCurrencyShort(metadata.previous_spend));
+        addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count, 'expense'));
+        break;
+      case 'early_repeated_merchant':
+      case 'developing_repeated_merchant':
+        addRow(rows, 'Merchant', metadata.merchant_name);
+        addRow(rows, 'Visits', formatCountLabel(metadata.merchant_count, 'visit'));
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend));
+        break;
+      case 'early_spend_concentration':
+        addRow(rows, 'Share of spend', formatPercentShort(metadata.share_of_spend));
+        addRow(rows, 'Largest purchase', formatCurrencyShort(metadata.largest_expense?.amount));
+        addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count, 'expense'));
+        break;
+      case 'early_cleanup':
+        addRow(rows, 'Needs category', formatCountLabel(metadata.uncategorized_count, 'expense'));
+        addRow(rows, 'Expenses logged', formatCountLabel(metadata.expense_count, 'expense'));
+        break;
+      case 'early_logging_momentum':
+        addRow(rows, 'Expenses logged', formatCountLabel(metadata.expense_count, 'expense'));
+        addRow(rows, 'Active days', formatCountLabel(metadata.active_day_count, 'day'));
+        break;
+      case 'developing_weekly_spend_change':
+        addRow(rows, 'Recent shift', formatCurrencyShort(metadata.delta_amount));
+        addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count, 'expense'));
+        addRow(rows, 'Active days', formatCountLabel(metadata.active_day_count, 'day'));
+        break;
+      case 'usage_building_history':
+      case 'usage_ready_to_plan':
+        addRow(rows, 'History available', formatCountLabel(metadata.historical_period_count, 'month'));
+        addRow(rows, 'Budget room', formatCurrencyShort(metadata.projected_headroom_amount));
+        break;
+      case 'spend_pace_ahead':
+      case 'spend_pace_behind':
+        addRow(rows, 'Pace difference', formatPercentShort(metadata.delta_percent));
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
+        addRow(rows, 'History compared', formatCountLabel(metadata.historical_period_count, 'month'));
+        break;
+      case 'budget_too_low':
+      case 'budget_too_high':
+      case 'projected_month_end_over_budget':
+      case 'projected_month_end_under_budget':
+        addRow(rows, 'Month-end gap', formatCurrencyShort(metadata.projected_budget_delta ?? metadata.projected_over_under));
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
+        addRow(rows, 'History compared', formatCountLabel(metadata.historical_period_count, 'month'));
+        break;
+      case 'one_off_expense_skewing_projection':
+      case 'one_offs_driving_variance':
+        addRow(rows, 'One-off impact', formatCurrencyShort(metadata.one_off_delta_amount));
+        addRow(rows, 'Largest purchase', formatCurrencyShort(metadata.largest_expense?.amount));
+        addRow(rows, 'Merchant', metadata.largest_expense?.merchant);
+        break;
+      case 'recurring_cost_pressure':
+        addRow(rows, 'Recurring pressure', formatCurrencyShort(metadata.total_delta_amount));
+        addRow(rows, 'Items involved', formatCountLabel(metadata.recurring_line_count, 'line'));
+        addRow(rows, 'History compared', formatCountLabel(metadata.historical_period_count, 'month'));
+        break;
+      default:
+        break;
+    }
+  }
+
+  const fallbackRows = genericSupportRows(metadata);
+  for (const row of fallbackRows) addRow(rows, row.label, row.value);
+
+  return rows.slice(0, Math.max(1, Number(context.limit || 2)));
+}
+
+export function getInsightTechnicalSummary(insight, context = {}) {
+  const metadata = insight?.metadata || context.metadata || {};
+  const type = `${insight?.type || context.insightType || ''}`;
+  const stage = stageLabelForInsightType(type, metadata.maturity);
+  const strength = strengthLabelForInsight(metadata.confidence);
+  const scope = getInsightScopeLabel(insight, context);
+  const history = historyLabel(metadata, type);
+  const categoryQuality = categoryQualityLabel(metadata);
+  const parts = [stage.label];
+  if (strength.label) parts.push(strength.label);
+  if (scope) parts.push(scope);
+  if (history) parts.push(`Using ${history}`);
+  if (categoryQuality) parts.push(categoryQuality);
+  return parts.filter(Boolean).slice(0, 4).join(' • ');
+}
+
+export function getInsightTechnicalRows(insight, context = {}) {
+  const metadata = insight?.metadata || context.metadata || {};
+  const type = `${insight?.type || context.insightType || ''}`;
+  const stage = stageLabelForInsightType(type, metadata.maturity);
+  const strength = strengthLabelForInsight(metadata.confidence);
+  const categoryQuality = categoryQualityLabel(metadata);
+  const rows = [];
+
+  addRow(rows, 'Read stage', stage.label);
+  addRow(rows, 'Signal strength', strength.label);
+  addRow(rows, 'Scope', getInsightScopeLabel(insight, context));
+  addRow(rows, 'History used', historyLabel(metadata, type));
+  addRow(rows, 'Category quality', categoryQuality);
+
+  if (metadata.scope_relationship === 'personal_household_overlap') {
+    addRow(rows, 'Combined view', 'Personal activity with household overlap');
+  } else if (Array.isArray(metadata.consolidated_scopes) && metadata.consolidated_scopes.length > 1) {
+    addRow(rows, 'Combined view', metadata.consolidated_scopes.map((scope) => `${scope}`.replace(/\b\w/g, (char) => char.toUpperCase())).join(' + '));
+  }
+
+  return rows;
 }
 
 export function getPrimaryActionForInsight({ insightType, scope, month, categoryKey, trend, metadata = {} }) {

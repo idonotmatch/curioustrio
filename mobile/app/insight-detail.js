@@ -5,7 +5,15 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { selectInsightEvidence } from '../services/insightEvidence';
-import { getInsightActionDescriptor, getPrimaryActionForInsight } from '../services/insightPresentation';
+import {
+  getInsightActionDescriptor,
+  getPrimaryActionForInsight,
+  getInsightScopeLabel,
+  getInsightStageDescriptor,
+  getInsightSupportRows,
+  getInsightTechnicalRows,
+  getInsightTechnicalSummary,
+} from '../services/insightPresentation';
 import { consumeNavigationPayload, stashNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { planningActionSummary } from '../services/planningPresentation';
@@ -369,8 +377,11 @@ export default function InsightDetailScreen() {
     });
   }, [insight?.action, insightType, metadata]);
   const descriptor = getInsightActionDescriptor(insight);
-  const highlights = metadataHighlights(metadata);
-  const technicalRows = transparencyRows(metadata);
+  const scopeLabel = getInsightScopeLabel(insight);
+  const stage = getInsightStageDescriptor(insight);
+  const supportRows = getInsightSupportRows(insight, { limit: 4 });
+  const technicalRows = getInsightTechnicalRows(insight);
+  const technicalSummary = getInsightTechnicalSummary(insight);
   const categorySignal = categorySignalCopy(metadata);
   const consolidationNote = consolidatedCopy(metadata);
   const consolidationRows = consolidatedRows(metadata);
@@ -381,10 +392,10 @@ export default function InsightDetailScreen() {
   const planningNextStep = `${insightType}` === 'usage_ready_to_plan'
     ? planningActionSummary(metadata)
     : null;
-  const keyFacts = highlights.slice(0, 4);
   const merchantComparisons = merchantComparisonRows(metadata);
   const purchaseHistory = purchaseHistoryRows(metadata);
   const hasSupportingDetail = merchantComparisons.length > 0 || purchaseHistory.length > 0 || !!evidenceMode;
+  const hasBehindRead = technicalRows.length > 0 || !!categorySignal || !!consolidationNote || consolidationRows.length > 0;
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -566,49 +577,29 @@ export default function InsightDetailScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.hero}>
           <View style={styles.chipRow}>
-            <Text style={styles.scopeChip}>{metadata.scope === 'household' ? 'Household' : 'You'}</Text>
-            <Text style={styles.tierChip}>{formatLabel(metadata.maturity || 'Insight')}</Text>
-            {metadata.scope_relationship === 'personal_household_overlap' ? (
-              <Text style={styles.combinedChip}>Combined</Text>
-            ) : null}
+            <Text style={styles.scopeChip}>{scopeLabel}</Text>
           </View>
           <Text style={styles.heroTitle}>{title}</Text>
           <Text style={styles.heroCopy}>{changed.headline}</Text>
           {changed.facts ? <Text style={styles.heroFacts}>{changed.facts}</Text> : null}
-          <Text style={styles.heroContext}>{contextCopy(insightType)}</Text>
         </View>
 
-        {consolidationNote ? (
-          <View style={styles.contextBanner}>
-            <Text style={styles.contextBannerTitle}>Personal first, household layered in</Text>
-            <Text style={styles.contextBannerCopy}>{consolidationNote}</Text>
-            {consolidationRows.length > 0 ? (
-              <View style={styles.foldedList}>
-                {consolidationRows.map((row) => (
-                  <View key={row.id} style={styles.foldedRow}>
-                    <View style={styles.foldedText}>
-                      <Text style={styles.foldedScope}>{row.scope}</Text>
-                      <Text style={styles.foldedType}>{row.type}</Text>
-                    </View>
-                    <Text style={styles.foldedMeta}>
-                      {[row.maturity, row.severity].filter(Boolean).join(' / ')}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+        <View style={styles.card}>
+          <Text style={styles.cardEyebrow}>Why this matters</Text>
+          <Text style={styles.cardTitle}>Why this matters</Text>
+          <Text style={styles.cardCopy}>{whyItMatters}</Text>
+          <Text style={styles.cardSupportTitle}>What this is picking up</Text>
+          <Text style={styles.cardCopy}>{contextCopy(insightType)}</Text>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.cardEyebrow}>What to do</Text>
           <Text style={styles.cardTitle}>{planningNextStep?.title || nextStep.title}</Text>
-          <Text style={styles.cardSupportTitle}>Why it matters</Text>
-          <Text style={styles.cardCopy}>{whyItMatters}</Text>
-          {(planningNextStep?.body || nextStep.body) ? (
+          <Text style={styles.cardCopy}>{planningNextStep?.body || nextStep.body || descriptor.reason}</Text>
+          {primaryAction?.route && nextStep.cta ? (
             <>
               <Text style={styles.cardSupportTitle}>Suggested move</Text>
-              <Text style={styles.cardCopy}>{planningNextStep?.body || nextStep.body}</Text>
+              <Text style={styles.cardCopy}>{nextStep.cta}</Text>
             </>
           ) : null}
           {primaryAction?.route && nextStep.cta ? (
@@ -618,24 +609,58 @@ export default function InsightDetailScreen() {
           ) : null}
         </View>
 
-        {keyFacts.length > 0 ? (
-          <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>Key facts</Text>
-            <Text style={styles.cardTitle}>Key facts</Text>
-            {keyFacts.map((row) => (
-              <View key={row.label} style={styles.metricRow}>
-                <Text style={styles.metricLabel}>{row.label}</Text>
-                <Text style={styles.metricValue}>{row.value}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
+        <View style={styles.card}>
+          <Text style={styles.cardEyebrow}>How strong the read is</Text>
+          <Text style={styles.cardTitle}>{stage.label}</Text>
+          <Text style={styles.cardCopy}>
+            {technicalSummary || stage.detail || 'This is the current read strength behind the card.'}
+          </Text>
+          {technicalRows.length > 0 ? (
+            <View style={styles.metricList}>
+              {technicalRows.slice(0, 4).map((row) => (
+                <View key={row.label} style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>{row.label}</Text>
+                  <Text style={styles.metricValue}>{row.value}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {categorySignal ? <Text style={styles.technicalHint}>{categorySignal}</Text> : null}
+        </View>
 
-        {hasSupportingDetail ? (
+        {(supportRows.length > 0 || hasSupportingDetail || consolidationNote || consolidationRows.length > 0) ? (
           <View style={styles.card}>
-            <Text style={styles.cardEyebrow}>Supporting detail</Text>
-            <Text style={styles.cardTitle}>Evidence behind this card</Text>
-            {merchantComparisons.length > 0 ? (
+            <TouchableOpacity
+              style={styles.technicalHeader}
+              onPress={() => setShowTechnicalDetails((value) => !value)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.technicalHeaderText}>
+                <Text style={styles.cardEyebrow}>Supporting detail</Text>
+                <Text style={styles.cardTitle}>Open the full detail</Text>
+              </View>
+              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Hide' : 'Show'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.cardCopy}>
+              {showTechnicalDetails
+                ? 'This is the full supporting data, evidence, and signal context behind the card.'
+                : 'Open this if you want the supporting data and the fuller trail behind the insight.'}
+            </Text>
+            {showTechnicalDetails && supportRows.length > 0 ? (
+              <View style={styles.supportBlock}>
+                <Text style={styles.supportBlockTitle}>At a glance</Text>
+                <View style={styles.metricList}>
+                  {supportRows.map((row) => (
+                    <View key={row.label} style={styles.metricRow}>
+                      <Text style={styles.metricLabel}>{row.label}</Text>
+                      <Text style={styles.metricValue}>{row.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {showTechnicalDetails && merchantComparisons.length > 0 ? (
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>Merchant comparison</Text>
                 <View style={styles.metricList}>
@@ -661,7 +686,7 @@ export default function InsightDetailScreen() {
               </View>
             ) : null}
 
-            {purchaseHistory.length > 0 ? (
+            {showTechnicalDetails && purchaseHistory.length > 0 ? (
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>Recent purchases</Text>
                 <View style={styles.expenseList}>
@@ -692,7 +717,7 @@ export default function InsightDetailScreen() {
               </View>
             ) : null}
 
-            {evidenceMode ? (
+            {showTechnicalDetails && evidenceMode ? (
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
                 {evidenceLoading ? (
@@ -725,38 +750,26 @@ export default function InsightDetailScreen() {
                 )}
               </View>
             ) : null}
-          </View>
-        ) : null}
 
-        {technicalRows.length > 0 ? (
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.technicalHeader}
-              onPress={() => setShowTechnicalDetails((value) => !value)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.technicalHeaderText}>
-                <Text style={styles.cardEyebrow}>Transparency</Text>
-                <Text style={styles.cardTitle}>Why this showed up</Text>
-              </View>
-              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Hide' : 'Show'}</Text>
-            </TouchableOpacity>
-            <Text style={styles.cardCopy}>
-              {showTechnicalDetails
-                ? 'Open this if you want the scoring context and hierarchy behind the card.'
-                : transparencySummary(metadata)}
-            </Text>
-            {!showTechnicalDetails && categorySignal ? (
-              <Text style={styles.technicalHint}>{categorySignal}</Text>
-            ) : null}
-            {showTechnicalDetails ? (
-              <View style={styles.metricList}>
-                {technicalRows.map((row) => (
-                  <View key={row.label} style={styles.metricRow}>
-                    <Text style={styles.metricLabel}>{row.label}</Text>
-                    <Text style={styles.metricValue}>{row.value}</Text>
+            {showTechnicalDetails && consolidationNote ? (
+              <View style={styles.technicalNoteBlock}>
+                <Text style={styles.supportBlockTitle}>Combined signals</Text>
+                <Text style={styles.cardCopy}>{consolidationNote}</Text>
+                {consolidationRows.length > 0 ? (
+                  <View style={styles.foldedList}>
+                    {consolidationRows.map((row) => (
+                      <View key={row.id} style={styles.foldedRow}>
+                        <View style={styles.foldedText}>
+                          <Text style={styles.foldedScope}>{row.scope}</Text>
+                          <Text style={styles.foldedType}>{row.type}</Text>
+                        </View>
+                        <Text style={styles.foldedMeta}>
+                          {[row.maturity, row.severity].filter(Boolean).join(' / ')}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -965,6 +978,7 @@ const styles = StyleSheet.create({
   metricSub: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
   metricValue: { color: '#f5f5f5', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
   technicalHint: { color: '#a9a39a', fontSize: 12, lineHeight: 18, marginTop: -2 },
+  technicalNoteBlock: { gap: 10, marginTop: 4 },
   feedbackRow: { flexDirection: 'row', gap: 10 },
   feedbackButton: {
     flex: 1,

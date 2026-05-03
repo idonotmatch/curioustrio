@@ -1,20 +1,14 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getInsightActionDescriptor, getInsightPrimaryMetric } from '../services/insightPresentation';
+import {
+  getInsightActionDescriptor,
+  getInsightPrimaryMetric,
+  getInsightScopeLabel,
+} from '../services/insightPresentation';
 
-const INSIGHT_CARD_MIN_HEIGHT = 174;
+const INSIGHT_CARD_MIN_HEIGHT = 182;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
-const INSIGHT_SUMMARY_BODY_LINES = 3;
-
-function insightScopeLabel(insight) {
-  const scopes = Array.isArray(insight?.metadata?.consolidated_scopes)
-    ? insight.metadata.consolidated_scopes
-    : [];
-  if (scopes.includes('personal') && scopes.includes('household')) return 'You + Household';
-  if (insight?.metadata?.scope === 'personal') return 'You';
-  if (insight?.metadata?.scope === 'household') return 'Household';
-  return insight?.entity_type === 'item' ? 'Household' : 'You';
-}
+const INSIGHT_SUMMARY_BODY_LINES = 2;
 
 function insightRoleLabel(insight) {
   const type = `${insight?.type || ''}`;
@@ -104,6 +98,7 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
   const primaryMetric = getInsightPrimaryMetric(insight);
   const showPrimaryMetric = shouldShowPrimaryMetric(insight, primaryMetric);
   const isPrimary = emphasis === 'primary';
+  const scopeLabel = getInsightScopeLabel(insight);
 
   return (
     <TouchableOpacity
@@ -124,10 +119,7 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
         <View style={styles.insightHeaderTop}>
           <View style={styles.insightMetaRow}>
             <View style={styles.insightScopeChip}>
-              <Text style={styles.insightScopeText}>{insightScopeLabel(insight)}</Text>
-            </View>
-            <View style={[styles.insightRoleChip, tone.roleChip]}>
-              <Text style={[styles.insightRoleText, tone.roleText]}>{insightRoleLabel(insight)}</Text>
+              <Text style={styles.insightScopeText}>{scopeLabel}</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -157,8 +149,12 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
         <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{insight.body}</Text>
       </View>
       <View style={[styles.insightFooter, isPrimary && styles.insightFooterPrimary]}>
-        <Text style={[styles.insightActionReason, isPrimary && styles.insightActionReasonPrimary]}>{insightActionReason(insight)}</Text>
-        <Text style={[styles.insightActionLabel, isPrimary && styles.insightActionLabelPrimary]}>{insightActionLabel(insight)}</Text>
+        <View style={styles.insightFooterCopy}>
+          <Text style={styles.insightActionEyebrow}>Next step</Text>
+          <Text style={[styles.insightActionLabel, isPrimary && styles.insightActionLabelPrimary]} numberOfLines={2}>{insightActionLabel(insight)}</Text>
+          <Text style={[styles.insightActionReason, isPrimary && styles.insightActionReasonPrimary]} numberOfLines={2}>{insightActionReason(insight)}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={isPrimary ? '#eef5ff' : '#dce8f5'} />
       </View>
     </TouchableOpacity>
   );
@@ -199,19 +195,11 @@ const styles = StyleSheet.create({
     borderColor: '#262626',
   },
   insightScopeText: { fontSize: 11, color: '#cfcfcf', fontWeight: '600', letterSpacing: 0.3 },
-  insightRoleChip: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderWidth: 1,
-  },
   insightRoleChipWarn: { backgroundColor: '#251717', borderColor: '#4a2424' },
   insightRoleChipPlan: { backgroundColor: '#13202b', borderColor: '#28435b' },
   insightRoleChipSetup: { backgroundColor: '#252110', borderColor: '#4b4118' },
   insightRoleChipLearning: { backgroundColor: '#132219', borderColor: '#275234' },
   insightRoleChipExplain: { backgroundColor: '#171b20', borderColor: '#2d353e' },
-  insightRoleText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
   insightRoleTextWarn: { color: '#f2b4b4' },
   insightRoleTextPlan: { color: '#a9d2f8' },
   insightRoleTextSetup: { color: '#e6d08d' },
@@ -266,15 +254,23 @@ const styles = StyleSheet.create({
     borderTopColor: '#1f1f1f',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   insightFooterPrimary: {
     marginTop: 16,
     paddingTop: 12,
   },
-  insightActionReason: { fontSize: 11, color: '#7e8791', textTransform: 'uppercase', letterSpacing: 0.8, flexShrink: 1 },
-  insightActionLabel: { fontSize: 12, color: '#dce8f5', fontWeight: '700', textAlign: 'right', flexShrink: 0 },
+  insightFooterCopy: { flex: 1, gap: 4 },
+  insightActionEyebrow: {
+    fontSize: 10,
+    color: '#7f8994',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  insightActionReason: { fontSize: 12, color: '#7e8791', lineHeight: 16, flexShrink: 1 },
+  insightActionLabel: { fontSize: 13, color: '#dce8f5', fontWeight: '700', flexShrink: 1 },
   insightActionReasonPrimary: { color: '#90a0af' },
-  insightActionLabelPrimary: { color: '#eef5ff', fontSize: 13 },
+  insightActionLabelPrimary: { color: '#eef5ff', fontSize: 14 },
 });
