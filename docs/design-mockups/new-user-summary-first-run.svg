@@ -1,34 +1,24 @@
 <svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="390" height="844" fill="#0a0a0a"/>
+  <rect width="390" height="844" fill="#0B0B0B"/>
 
-  <text x="24" y="64" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="600">Summary</text>
-  <text x="299" y="64" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">May 2026</text>
+  <text x="24" y="64" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="600">Summary</text>
+  <text x="297" y="64" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">May 2026</text>
 
-  <rect x="24" y="94" width="342" height="150" rx="10" fill="#111111" stroke="#1a1a1a"/>
-  <text x="40" y="120" fill="#666666" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.2">GETTING STARTED</text>
-  <text x="40" y="149" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="700">A little setup unlocks the useful stuff</text>
-  <text x="40" y="171" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">You do not need much history yet. Start here so Adlo can learn your pace.</text>
-  <text x="40" y="198" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">○ Add your first expense</text>
-  <text x="40" y="219" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">○ Set a monthly budget</text>
-  <text x="40" y="240" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">○ Connect Gmail</text>
+  <rect x="24" y="100" width="342" height="108" rx="8" fill="#121212" stroke="#1C1C1C"/>
+  <text x="40" y="126" fill="#6F6F6F" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.1">GETTING STARTED</text>
+  <text x="40" y="156" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" font-weight="700">Add your first expense</text>
+  <text x="40" y="178" fill="#8E8E8E" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">That is the fastest way to get Adlo working for you.</text>
+  <rect x="250" y="144" width="92" height="40" rx="8" fill="#F5F5F5"/>
+  <text x="296" y="168" text-anchor="middle" fill="#0B0B0B" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="700">Open</text>
 
-  <rect x="24" y="268" width="342" height="56" rx="8" fill="#f5f5f5"/>
-  <text x="112" y="302" fill="#0a0a0a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="700">Add first expense</text>
+  <text x="24" y="256" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.5">SPEND</text>
+  <rect x="24" y="268" width="342" height="108" rx="8" fill="#101010"/>
+  <text x="24" y="302" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="42" font-weight="600">$0</text>
+  <text x="24" y="326" fill="#9A9A9A" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17">$0 spent so far</text>
+  <text x="24" y="352" fill="#666666" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Your pace will start showing up here after the first few expenses.</text>
 
-  <text x="24" y="366" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.5">SPEND</text>
-  <rect x="24" y="378" width="342" height="116" rx="10" fill="#0a0a0a"/>
-  <text x="24" y="408" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="42" font-weight="600" letter-spacing="-2">$0</text>
-  <text x="24" y="430" fill="#999999" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18">$0 spent so far</text>
-  <text x="24" y="458" fill="#666666" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Once you add expenses, this area will show budget pace and remaining room.</text>
-
-  <text x="24" y="538" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.5">WHAT MATTERS NOW</text>
-  <rect x="24" y="550" width="342" height="96" rx="10" fill="#111111" stroke="#1a1a1a"/>
-  <text x="40" y="580" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">Insights will start surfacing here</text>
-  <text x="40" y="603" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">After a few expenses or a Gmail connection, Adlo can start highlighting what changed.</text>
-  <text x="40" y="624" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Until then, setup guidance should take priority over diagnostics.</text>
-
-  <text x="24" y="686" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.5">RECENT ACTIVITY</text>
-  <rect x="24" y="698" width="342" height="84" rx="10" fill="#0a0a0a"/>
-  <text x="24" y="736" fill="#999999" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15">No confirmed expenses yet.</text>
-  <text x="24" y="758" fill="#666666" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Your timeline will start building as soon as you add the first one.</text>
+  <text x="24" y="430" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.5">WHAT MATTERS NOW</text>
+  <rect x="24" y="442" width="342" height="88" rx="8" fill="#121212" stroke="#1C1C1C"/>
+  <text x="40" y="472" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">Insights will show up here soon</text>
+  <text x="40" y="495" fill="#8E8E8E" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">For now, keep the next step small and simple.</text>
 </svg>

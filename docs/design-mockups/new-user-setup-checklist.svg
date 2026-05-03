@@ -1,38 +1,25 @@
 <svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="390" height="844" fill="#0a0a0a"/>
+  <rect width="390" height="844" fill="#0B0B0B"/>
 
-  <text x="28" y="74" fill="#666666" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.2">STEP 2 OF 2</text>
-  <text x="28" y="116" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="700">Make Adlo useful</text>
-  <text x="28" y="144" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15">A little setup unlocks better pacing, reminders, and review help.</text>
+  <circle cx="171" cy="118" r="5" fill="#3A3A3A"/>
+  <circle cx="195" cy="118" r="5" fill="#F5F5F5"/>
+  <circle cx="219" cy="118" r="5" fill="#3A3A3A"/>
 
-  <rect x="28" y="182" width="334" height="92" rx="10" fill="#111111" stroke="#1a1a1a"/>
-  <text x="46" y="212" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">0 of 3 core steps done</text>
-  <rect x="46" y="230" width="298" height="6" rx="3" fill="#1e1e1e"/>
-  <rect x="46" y="230" width="54" height="6" rx="3" fill="#6366f1"/>
-  <text x="46" y="255" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">You can do these in any order, but this is the fastest path.</text>
+  <rect x="31" y="204" width="328" height="360" rx="8" fill="#121212" stroke="#1C1C1C"/>
 
-  <rect x="28" y="298" width="334" height="110" rx="10" fill="#f5f5f5"/>
-  <circle cx="52" cy="332" r="12" fill="#0a0a0a"/>
-  <text x="48" y="336" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="700">1</text>
-  <text x="76" y="332" fill="#0a0a0a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">Add your first expense</text>
-  <text x="76" y="355" fill="#333333" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Start with natural language, manual add, or a receipt scan.</text>
-  <rect x="76" y="370" width="124" height="24" rx="12" fill="#e8e8e8"/>
-  <text x="95" y="386" fill="#0a0a0a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="600">Best first action</text>
+  <text x="55" y="242" fill="#6F6F6F" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="1.1">STEP 2 OF 3</text>
+  <text x="55" y="284" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="700">What would help first?</text>
+  <text x="55" y="314" fill="#8E8E8E" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14">Pick the fastest first win.</text>
 
-  <rect x="28" y="424" width="334" height="96" rx="10" fill="#111111" stroke="#1a1a1a"/>
-  <circle cx="52" cy="458" r="12" fill="#1c1c1c"/>
-  <text x="48" y="462" fill="#d5d5d5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="700">2</text>
-  <text x="76" y="458" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">Set a monthly budget</text>
-  <text x="76" y="481" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">This gives Adlo something to compare your pace against.</text>
+  <rect x="55" y="352" width="280" height="72" rx="8" fill="#F5F5F5"/>
+  <text x="79" y="380" fill="#0B0B0B" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="700">Add my first expense</text>
+  <text x="79" y="402" fill="#444444" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Best for getting useful fast.</text>
 
-  <rect x="28" y="536" width="334" height="96" rx="10" fill="#111111" stroke="#1a1a1a"/>
-  <circle cx="52" cy="570" r="12" fill="#1c1c1c"/>
-  <text x="48" y="574" fill="#d5d5d5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="700">3</text>
-  <text x="76" y="570" fill="#f5f5f5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">Connect Gmail</text>
-  <text x="76" y="593" fill="#8a8a8a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Optional, but it makes receipts and reviews much easier.</text>
+  <rect x="55" y="438" width="280" height="72" rx="8" fill="#171717" stroke="#242424"/>
+  <text x="79" y="466" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="700">Set a monthly budget</text>
+  <text x="79" y="488" fill="#8E8E8E" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Give Adlo a pace to compare against.</text>
 
-  <rect x="28" y="682" width="334" height="56" rx="8" fill="#f5f5f5"/>
-  <text x="117" y="716" fill="#0a0a0a" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="700">Add first expense</text>
-
-  <text x="144" y="776" fill="#888888" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14">Finish later</text>
+  <rect x="55" y="524" width="280" height="72" rx="8" fill="#171717" stroke="#242424"/>
+  <text x="79" y="552" fill="#F5F5F5" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="700">Bring in emailed receipts</text>
+  <text x="79" y="574" fill="#8E8E8E" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">Start with imports instead of typing.</text>
 </svg>
