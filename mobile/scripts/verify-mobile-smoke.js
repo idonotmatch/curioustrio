@@ -31,7 +31,9 @@ const filesToCheck = [
   'services/confirmClientWork.js',
   'services/confirmNavigation.js',
   'services/currentUserCache.js',
+  'services/authBootRouting.js',
   'services/scenarioCheckPresentation.js',
+  'scripts/test-auth-boot-routing.js',
 ];
 
 for (const relativePath of filesToCheck) {

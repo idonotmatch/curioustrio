@@ -11,6 +11,7 @@ import { stashNavigationPayload } from '../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../services/insightLocalStore';
 import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
 import { loadCurrentUserCache, saveCurrentUserCache } from '../services/currentUserCache';
+const { defaultAuthedRoute, shouldRouteToOnboarding } = require('../services/authBootRouting');
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -51,15 +52,6 @@ const RECURRING_PUSH_INSIGHT_TYPES = new Set([
   'recurring_restock_window',
   'recurring_cost_pressure',
 ]);
-
-function shouldRouteToOnboarding(user) {
-  return !!user && user.onboarding_complete === false;
-}
-
-function defaultAuthedRoute(user, hasOnboardingRoute) {
-  if (hasOnboardingRoute && shouldRouteToOnboarding(user)) return '/onboarding';
-  return '/(tabs)/summary';
-}
 
 function AppNavigator() {
   const router = useRouter();
