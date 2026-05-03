@@ -451,6 +451,7 @@ export default function InsightDetailScreen() {
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -538,6 +539,13 @@ export default function InsightDetailScreen() {
   const purchaseHistory = purchaseHistoryRows(metadata);
   const hasSupportingDetail = merchantComparisons.length > 0 || purchaseHistory.length > 0 || !!evidenceMode;
   const hasBehindRead = technicalRows.length > 0 || !!categorySignal || !!consolidationNote || consolidationRows.length > 0;
+  const detailSections = [
+    supportRows.length > 0 ? 'At a glance' : null,
+    merchantComparisons.length > 0 ? 'Merchant comparison' : null,
+    purchaseHistory.length > 0 ? 'Recent purchases' : null,
+    evidenceMode ? 'Recent evidence' : null,
+    consolidationNote ? 'Combined signals' : null,
+  ].filter(Boolean);
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -614,8 +622,9 @@ export default function InsightDetailScreen() {
   }, [evidenceMode, metadata, insightType, preloadedEvidence]);
 
   async function submitFeedback(eventType) {
-    if (!insightId || !eventType || feedbackStatus === eventType) return;
+    if (!insightId || !eventType || feedbackStatus === eventType || feedbackSaving) return;
     try {
+      setFeedbackSaving(true);
       await api.post('/insights/events', {
         events: [{
           insight_id: `${insightId}`,
@@ -644,12 +653,15 @@ export default function InsightDetailScreen() {
       setFeedbackStatus(eventType);
     } catch {
       // Non-fatal
+    } finally {
+      setFeedbackSaving(false);
     }
   }
 
   async function submitNegativeFeedback() {
-    if (!insightId || !feedbackReason) return;
+    if (!insightId || !feedbackReason || feedbackSaving) return;
     try {
+      setFeedbackSaving(true);
       await api.post('/insights/events', {
         events: [{
           insight_id: `${insightId}`,
@@ -683,6 +695,8 @@ export default function InsightDetailScreen() {
       setShowFeedbackSheet(false);
     } catch {
       // Non-fatal
+    } finally {
+      setFeedbackSaving(false);
     }
   }
 
@@ -788,6 +802,15 @@ export default function InsightDetailScreen() {
                 ? 'This is the full supporting data, evidence, and signal context behind the card.'
                 : fullDetailIntroCopy(insightType, metadata)}
             </Text>
+            {!showTechnicalDetails && detailSections.length > 0 ? (
+              <View style={styles.sectionPreviewRow}>
+                {detailSections.map((label) => (
+                  <View key={label} style={styles.sectionPreviewChip}>
+                    <Text style={styles.sectionPreviewText}>{label}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
             {showTechnicalDetails && supportRows.length > 0 ? (
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>At a glance</Text>
@@ -925,12 +948,14 @@ export default function InsightDetailScreen() {
             <TouchableOpacity
               style={[styles.feedbackButton, feedbackStatus === 'helpful' && styles.feedbackButtonActive]}
               onPress={() => submitFeedback('helpful')}
+              disabled={feedbackSaving}
             >
               <Text style={[styles.feedbackButtonText, feedbackStatus === 'helpful' && styles.feedbackButtonTextActive]}>Helpful</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.feedbackButton, feedbackStatus === 'not_helpful' && styles.feedbackButtonActive]}
-              onPress={() => setShowFeedbackSheet(true)}
+              onPress={() => { if (!feedbackSaving) setShowFeedbackSheet(true); }}
+              disabled={feedbackSaving}
             >
               <Text style={[styles.feedbackButtonText, feedbackStatus === 'not_helpful' && styles.feedbackButtonTextActive]}>Not helpful</Text>
             </TouchableOpacity>
@@ -976,11 +1001,11 @@ export default function InsightDetailScreen() {
                 <Text style={styles.modalSecondaryText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalPrimaryButton, !feedbackReason && styles.modalPrimaryButtonDisabled]}
+                style={[styles.modalPrimaryButton, (!feedbackReason || feedbackSaving) && styles.modalPrimaryButtonDisabled]}
                 onPress={submitNegativeFeedback}
-                disabled={!feedbackReason}
+                disabled={!feedbackReason || feedbackSaving}
               >
-                <Text style={styles.modalPrimaryText}>Send feedback</Text>
+                <Text style={styles.modalPrimaryText}>{feedbackSaving ? 'Sending...' : 'Send feedback'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1102,6 +1127,16 @@ const styles = StyleSheet.create({
   technicalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   technicalHeaderText: { flex: 1, gap: 4 },
   technicalToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
+  sectionPreviewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  sectionPreviewChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a3038',
+    backgroundColor: '#15181c',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  sectionPreviewText: { color: '#c7d3df', fontSize: 12, fontWeight: '600' },
   metricList: { gap: 0 },
   supportBlock: { gap: 10 },
   supportBlockTitle: { color: '#e5e5e5', fontSize: 13, fontWeight: '700' },

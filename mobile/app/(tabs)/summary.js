@@ -364,6 +364,8 @@ export default function SummaryScreen() {
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit > 0 && hSpent > hLimit;
   const recent = (expenses || []).slice(0, 5);
+  const hasAnyLoggedExpenses = (expenses || []).length > 0 || (householdExpenses || []).length > 0;
+  const hasBudget = Number(limit || 0) > 0 || Number(hLimit || 0) > 0;
   const watchedImprovedCount = watchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
   const watchedWorsenedCount = watchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
 
@@ -381,6 +383,14 @@ export default function SummaryScreen() {
   function openQuickAddWelcome() {
     setShowWelcomeAddCard(false);
     setLauncherOpenSignal((current) => current + 1);
+  }
+
+  function openBudgetSetup() {
+    router.push('/budget-period');
+  }
+
+  function openGmailSetup() {
+    router.push('/gmail-import');
   }
 
   return (
@@ -489,12 +499,33 @@ export default function SummaryScreen() {
       {displayInsights.length === 0 && !insightsError && !showWelcomeAddCard ? (
         <View style={styles.insightEmptyCard}>
           <Text style={styles.insightEmptyEyebrow}>What matters now</Text>
-          <Text style={styles.insightEmptyTitle}>No insight cards are surfacing right now</Text>
+          <Text style={styles.insightEmptyTitle}>
+            {hasAnyLoggedExpenses ? 'Nothing strong enough is surfacing yet' : 'Give Adlo one more signal'}
+          </Text>
           <Text style={styles.insightEmptyBody}>
             {INTERNAL_TOOLS_ENABLED
               ? 'That can mean Adlo does not have any strong signals yet, or that current candidates are being filtered out. Open diagnostics to see which one it is.'
-              : 'That usually means Adlo does not have a strong enough signal yet. As more real spending patterns build up, this area will start to get more useful.'}
+              : hasAnyLoggedExpenses
+                ? 'That usually means the current patterns are still too quiet or too mixed to deserve a card. A little more activity will usually make this area sharper.'
+                : 'The fastest ways to make this area useful are to log an expense, set a budget, or connect Gmail so Adlo has something real to learn from.'}
           </Text>
+          {!INTERNAL_TOOLS_ENABLED ? (
+            <View style={styles.insightEmptyActions}>
+              <TouchableOpacity activeOpacity={0.88} style={styles.insightEmptyPrimaryButton} onPress={openQuickAddWelcome}>
+                <Text style={styles.insightEmptyPrimaryButtonText}>Open quick add</Text>
+              </TouchableOpacity>
+              <View style={styles.insightEmptySecondaryRow}>
+                {!hasBudget ? (
+                  <TouchableOpacity activeOpacity={0.88} style={styles.insightEmptySecondaryButton} onPress={openBudgetSetup}>
+                    <Text style={styles.insightEmptySecondaryText}>Set budget</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity activeOpacity={0.88} style={styles.insightEmptySecondaryButton} onPress={openGmailSetup}>
+                  <Text style={styles.insightEmptySecondaryText}>Connect Gmail</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
           {INTERNAL_TOOLS_ENABLED ? (
             <TouchableOpacity activeOpacity={0.88} onPress={() => router.push('/insight-diagnostics')}>
               <Text style={styles.insightEmptyAction}>Open insight diagnostics</Text>
@@ -658,6 +689,17 @@ const styles = StyleSheet.create({
   insightsErrorAction: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
+  insightsDots: { flexDirection: 'row', gap: 6, marginTop: 12, alignSelf: 'center' },
+  insightsDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: '#2e3640',
+  },
+  insightsDotActive: {
+    width: 18,
+    backgroundColor: '#d9e6f2',
+  },
   insightEmptyCard: {
     marginBottom: 28,
     backgroundColor: '#111214',
@@ -690,6 +732,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
+  },
+  insightEmptyActions: {
+    gap: 10,
+    marginTop: 8,
+  },
+  insightEmptyPrimaryButton: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightEmptyPrimaryButtonText: {
+    color: '#0a0a0a',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  insightEmptySecondaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  insightEmptySecondaryButton: {
+    minHeight: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a3038',
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#15181c',
+  },
+  insightEmptySecondaryText: {
+    color: '#d6e0ea',
+    fontSize: 13,
+    fontWeight: '700',
   },
   watchingCard: {
     marginTop: 12,

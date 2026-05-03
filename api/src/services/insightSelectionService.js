@@ -707,6 +707,33 @@ function orchestrationRoleMixAdjustment(insight, selected = []) {
   return score;
 }
 
+function orchestrationOpeningCardAdjustment(insight, candidates = [], selected = []) {
+  if (selected.length > 0) return 0;
+
+  const role = portfolioRole(insight);
+  const theme = narrativeTheme(insight);
+  const peers = candidates.filter((candidate) => candidate.id !== insight.id);
+  const themePeers = peers.filter((candidate) => narrativeTheme(candidate) === theme);
+  const hasThemeActionablePeer = themePeers.some((candidate) => {
+    const peerRole = portfolioRole(candidate);
+    return peerRole === 'act' || peerRole === 'plan';
+  });
+  const hasAnyActionablePeer = peers.some((candidate) => {
+    const peerRole = portfolioRole(candidate);
+    return peerRole === 'act' || peerRole === 'plan';
+  });
+
+  if (role === 'act') return 24;
+  if (role === 'plan') return 18;
+  if (role === 'setup') return 10;
+  if (role === 'explain') {
+    if (hasThemeActionablePeer) return -24;
+    if (hasAnyActionablePeer) return -12;
+    return -4;
+  }
+  return 0;
+}
+
 function orchestrationNarrativeRoleAdjustment(insight, candidates = [], selected = []) {
   const role = portfolioRole(insight);
   const clusterKey = narrativeClusterKey(insight);
@@ -759,6 +786,7 @@ function orchestrateInsightPortfolio(insights, feedbackSummary = new Map(), limi
       const insight = remaining[i];
       const score = insightRankScore(insight, feedbackSummary, preferenceSummary)
         + portfolioOutcomeAdjustment(insight, portfolioFeedback)
+        + orchestrationOpeningCardAdjustment(insight, remaining, selected)
         + orchestrationRoleMixAdjustment(insight, selected)
         + orchestrationNarrativeRoleAdjustment(insight, remaining, selected)
         - orchestrationPenalty(insight, selected);

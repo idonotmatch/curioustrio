@@ -484,6 +484,43 @@ describe('insightBuilder orchestration', () => {
     expect(selected[0].id).toBe('category-1');
   });
 
+  it('opens the rail with a more actionable card when an explanation and action compete in the same theme', () => {
+    const insights = [
+      buildInsight({
+        id: 'explain-first',
+        type: 'top_category_driver',
+        severity: 'high',
+        metadata: {
+          scope: 'personal',
+          month: '2026-04',
+          category_key: 'groceries',
+          maturity: 'mature',
+          confidence: 'comparative',
+          delta_amount: 92,
+          historical_period_count: 5,
+          category_trust_score: 0.91,
+        },
+      }),
+      buildInsight({
+        id: 'act-first',
+        type: 'projected_month_end_over_budget',
+        severity: 'high',
+        metadata: {
+          scope: 'personal',
+          month: '2026-04',
+          maturity: 'mature',
+          confidence: 'comparative',
+          projected_budget_delta: 118,
+          historical_period_count: 5,
+        },
+      }),
+    ];
+
+    const selected = orchestrateInsightPortfolio(insights, new Map(), 2);
+    expect(selected[0].id).toBe('act-first');
+    expect(selected[1].id).toBe('explain-first');
+  });
+
   it('gives personal insights a stronger hierarchy boost than household insights', () => {
     expect(scopeHierarchyAdjustment(buildInsight({
       metadata: { scope: 'personal', month: '2026-04' },

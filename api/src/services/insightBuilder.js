@@ -55,11 +55,11 @@ function severityForSignal(signal, deltaPercent) {
 function titleForSignal(signal, itemName) {
   switch (signal) {
     case 'price_spike':
-      return `${itemName} jumped in price`;
+      return `${itemName} came in above your usual price`;
     case 'better_than_usual':
       return `${itemName} came in below your usual price`;
     case 'cheaper_elsewhere':
-      return `${itemName} is cheaper at another merchant`;
+      return `${itemName} looks cheaper somewhere else`;
     default:
       return itemName;
   }
@@ -69,9 +69,9 @@ function bodyForSignal(signal, insight) {
   const pct = Math.abs(Number(insight.delta_percent || 0));
   switch (signal) {
     case 'price_spike':
-      return `${insight.latest_merchant} came in ${pct}% above your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'} for this item.`;
+      return `${insight.latest_merchant} came in about ${pct}% above your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'} for this item.`;
     case 'better_than_usual':
-      return `${insight.latest_merchant} came in ${pct}% below your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'} for this item.`;
+      return `${insight.latest_merchant} came in about ${pct}% below your usual ${insight.comparison_type === 'unit_price' ? 'unit price' : 'price'} for this item.`;
     case 'cheaper_elsewhere':
       return `${insight.cheaper_merchant} has recently been about ${pct}% cheaper than ${insight.latest_merchant} for this item.`;
     default:
@@ -140,7 +140,7 @@ function toBuySoonBetterPriceInsight(opportunity, scope = 'household') {
   const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = opportunity.item_name || 'A recurring item';
   const title = `${itemName} looks cheaper right now`;
-  const body = `${opportunity.merchant} is ${opportunity.discount_percent}% below your usual ${opportunity.comparison_type === 'unit_price' ? 'unit price' : 'price'}, and you may need this in ${Math.max(opportunity.days_until_due, 0)} days.`;
+  const body = `${opportunity.merchant} is about ${opportunity.discount_percent}% below your usual ${opportunity.comparison_type === 'unit_price' ? 'unit price' : 'price'}, and you may need this in ${Math.max(opportunity.days_until_due, 0)} days.`;
 
   return {
     id: `buy_soon_better_price:${opportunity.group_key}:${opportunity.merchant}:${`${opportunity.observed_at}`.slice(0, 10)}`,
@@ -254,7 +254,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         id: `item_staple_merchant_opportunity:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
         type: 'item_staple_merchant_opportunity',
         title: `${itemName} is becoming a regular buy`,
-        body: `${itemName} has shown up ${history.occurrence_count} times recently, and ${merchantVariance.cheapest.merchant} has been about ${merchantVariance.deltaPercent}% cheaper than ${merchantVariance.priciest.merchant}.`,
+        body: `${itemName} has shown up ${history.occurrence_count} times recently, and ${merchantVariance.cheapest.merchant} has been about ${merchantVariance.deltaPercent}% cheaper than ${merchantVariance.priciest.merchant} when you buy it.`,
         severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 || Number(history.occurrence_count || 0) >= 4 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
@@ -284,7 +284,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         id: `item_recent_price_jump:${scope}:${history.group_key}:${latestPurchase.date}`,
         type: 'item_recent_price_jump',
         title: `${itemName} came in above your usual price`,
-        body: `${latestPurchase.merchant || 'Your latest purchase'} was about ${latestDeltaPercent}% above your usual price for ${itemName}.`,
+        body: `${latestPurchase.merchant || 'Your latest purchase'} was about ${latestDeltaPercent}% above your usual price for ${itemName}, which may be worth sanity-checking before it becomes the new normal.`,
         severity: latestDeltaPercent >= 25 || latestDeltaAmount >= 5 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
@@ -311,7 +311,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         id: `item_repurchase_accelerating:${scope}:${history.group_key}:${latestPurchase.date}`,
         type: 'item_repurchase_accelerating',
         title: `${itemName} is showing up sooner than usual`,
-        body: `${itemName} came back after about ${latestGapDays} days, roughly ${Math.round(cadenceDeltaDays)} days sooner than your usual rhythm.`,
+        body: `${itemName} came back after about ${latestGapDays} days, roughly ${Math.round(cadenceDeltaDays)} days sooner than your usual rhythm, so this may be turning into a quicker-repeat item.`,
         severity: cadenceDeltaDays >= 7 || Number(history.occurrence_count || 0) >= 5 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
@@ -362,7 +362,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
           id: `item_merchant_variance:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
           type: 'item_merchant_variance',
           title: `${itemName} tends to cost less at ${merchantVariance.cheapest.merchant}`,
-          body: `${history.item_name || 'This item'} has recently run about ${merchantVariance.deltaPercent}% lower at ${merchantVariance.cheapest.merchant} than at ${merchantVariance.priciest.merchant}.`,
+          body: `${history.item_name || 'This item'} has recently run about ${merchantVariance.deltaPercent}% lower at ${merchantVariance.cheapest.merchant} than at ${merchantVariance.priciest.merchant}, which makes the merchant choice worth revisiting.`,
           severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 ? 'medium' : 'low',
           entity_type: 'item',
           entity_id: history.group_key,
@@ -482,7 +482,7 @@ function buildRestockWindowInsights({ projection, watchCandidates = [], scope = 
     type: 'recurring_restock_window',
     title: `${itemName} could fit this period`,
     body: scope === 'household'
-      ? `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`
+      ? `The household is projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`
       : `You are projected to finish about $${projectedHeadroomAmount.toFixed(0)} under budget personally, and ${itemName} may be due in ${Math.max(Number(candidate.days_until_due || 0), 0)} days.`,
     severity: projectedHeadroomAmount >= Number(candidate.median_amount || 0) * 2 ? 'medium' : 'low',
     entity_type: 'item',
@@ -530,7 +530,7 @@ function buildTrendInsights(trend, scope) {
     insights.push({
       id: `${type}:${scopeLabel}:${trend.month}`,
       type,
-      title: deltaPercent >= 0 ? 'You are ahead of your usual pace' : 'You are below your usual pace',
+      title: deltaPercent >= 0 ? 'This month is running ahead of your usual pace' : 'This month is running below your usual pace',
       body: deltaPercent >= 0
         ? `You are ${Math.abs(deltaPercent)}% ahead of your usual ${scopeLabel} pace for this point in the period, so this month is tightening faster than normal.`
         : `You are ${Math.abs(deltaPercent)}% below your usual ${scopeLabel} pace for this point in the period, which is leaving more room than normal so far.`,
@@ -562,7 +562,7 @@ function buildTrendInsights(trend, scope) {
     insights.push({
       id: `top_driver:${scopeLabel}:${trend.month}:${topDriver.category_key}`,
       type: 'top_category_driver',
-      title: `${topDriver.category_name} is the clearest driver right now`,
+      title: `${topDriver.category_name} is doing the most to move the month`,
       body: Number(topDriver.delta_amount) >= 0
         ? `${topDriver.category_name} is already running about $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} above its usual ${scopeLabel} pace, making it the biggest contributor to the shift this period.`
         : `${topDriver.category_name} is running about $${Math.abs(Number(topDriver.delta_amount)).toFixed(0)} below its usual ${scopeLabel} pace, which is creating some of the extra room this period.`,
@@ -600,7 +600,7 @@ function buildTrendInsights(trend, scope) {
     insights.push({
       id: `one_offs:${scopeLabel}:${trend.month}:${merchantNames.join('|') || 'variance'}`,
       type: 'one_offs_driving_variance',
-      title: 'A few unusual purchases are doing most of the damage',
+      title: 'A few unusual purchases are driving most of the pressure',
       body: merchantNames.length
         ? `${merchantNames.join(' and ')} are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period, so the pressure is less broad-based than it first looks.`
         : `A few unusual purchases are accounting for most of the extra ${scopeLabel} spend versus your usual pace so far this period, so the pressure is less broad-based than it first looks.`,
@@ -685,8 +685,8 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projected_over_budget:${scopeLabel}:${projection.month}`,
       type: 'projected_month_end_over_budget',
-      title: `You are on track to finish over budget`,
-      body: `At the current pace, your ${scopeLabel} spending is on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} above budget by month end.`,
+      title: `You are on track to finish above budget`,
+      body: `At the current pace, your ${scopeLabel} spending is on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} above budget by month end, unless the rest of the month eases off.`,
       severity: projectedBudgetDelta >= 125 ? 'high' : 'medium',
       entity_type: 'budget',
       entity_id: `${scopeLabel}:total`,
@@ -716,7 +716,7 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projected_under_budget:${scopeLabel}:${projection.month}`,
       type: 'projected_month_end_under_budget',
-      title: `You still have room left this period`,
+      title: `You still have room left this month`,
       body: `At the current pace, your ${scopeLabel} spending is on track to finish about $${Math.abs(projectedBudgetDelta).toFixed(0)} under budget by month end.`,
       severity: Math.abs(projectedBudgetDelta) >= 100 ? 'medium' : 'low',
       entity_type: 'budget',
@@ -749,7 +749,7 @@ function buildProjectionInsights(projection, scope) {
     insights.push({
       id: `projection_one_off:${scopeLabel}:${projection.month}:${topExpense.id || topExpense.merchant}`,
       type: 'one_off_expense_skewing_projection',
-      title: 'One unusual purchase is distorting the forecast',
+      title: 'One unusual purchase is making the forecast look heavier',
       body: `${topExpense.merchant} is contributing a meaningful share of this month’s projected overage, so your baseline spend is more normal than the all-in forecast suggests.`,
       severity: unusualSpendShare >= 0.55 ? 'high' : 'medium',
       entity_type: 'expense',
@@ -797,7 +797,7 @@ function buildProjectionInsights(projection, scope) {
       id: `projected_category_surge:${scopeLabel}:${projection.month}:${topCategoryProjection.category_key}`,
       type: 'projected_category_surge',
       title: `${topCategoryProjection.category_name} is likely to finish high`,
-      body: `${topCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(topCategoryProjection.delta_amount || 0)).toFixed(0)} above its usual level for this period.`,
+      body: `${topCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(topCategoryProjection.delta_amount || 0)).toFixed(0)} above its usual level for this period, making it a likely pressure point by month end.`,
       severity: Number(topCategoryProjection.delta_amount || 0) >= 60 ? 'high' : 'medium',
       entity_type: 'category',
       entity_id: topCategoryProjection.category_key,
@@ -854,7 +854,7 @@ function buildProjectionInsights(projection, scope) {
       id: `projected_category_under:${scopeLabel}:${projection.month}:${lowestCategoryProjection.category_key}`,
       type: 'projected_category_under_baseline',
       title: `${lowestCategoryProjection.category_name} still has room left`,
-      body: `${lowestCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(lowestCategoryProjection.delta_amount || 0)).toFixed(0)} below its usual level this period.`,
+      body: `${lowestCategoryProjection.category_name} is on track to finish about $${Math.abs(Number(lowestCategoryProjection.delta_amount || 0)).toFixed(0)} below its usual level this period, leaving more room than usual in that category.`,
       severity: Math.abs(Number(lowestCategoryProjection.delta_amount || 0)) >= 40 ? 'medium' : 'low',
       entity_type: 'category',
       entity_id: lowestCategoryProjection.category_key,
