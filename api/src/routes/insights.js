@@ -9,11 +9,17 @@ const { dispatchInsightPushesForUser } = require('../services/insightPushDispatc
 const { buildFeedbackDebugSummary } = require('../services/insightFeedbackSummary');
 const { inferOutcomeEventsForUser } = require('../services/insightOutcomeInference');
 const { attachInsightAction } = require('../services/insightAction');
+const { internalToolsEnabled } = require('../services/internalTools');
 
 router.use(authenticate);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);
+}
+
+function requireInternalTools(req, res, next) {
+  if (internalToolsEnabled()) return next();
+  return res.status(404).json({ error: 'Not found' });
 }
 
 function toExposureMetadata(insight, index, limit) {
@@ -99,7 +105,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/feedback-summary', async (req, res, next) => {
+router.get('/feedback-summary', requireInternalTools, async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -117,7 +123,7 @@ router.get('/feedback-summary', async (req, res, next) => {
   }
 });
 
-router.get('/debug', async (req, res, next) => {
+router.get('/debug', requireInternalTools, async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -132,7 +138,7 @@ router.get('/debug', async (req, res, next) => {
   }
 });
 
-router.get('/preferences', async (req, res, next) => {
+router.get('/preferences', requireInternalTools, async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -173,7 +179,7 @@ router.post('/events', async (req, res, next) => {
   }
 });
 
-router.post('/dispatch-push', async (req, res, next) => {
+router.post('/dispatch-push', requireInternalTools, async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });

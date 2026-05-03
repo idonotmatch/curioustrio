@@ -11,6 +11,7 @@ import { stashNavigationPayload } from '../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../services/insightLocalStore';
 import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
 import { loadCurrentUserCache, saveCurrentUserCache } from '../services/currentUserCache';
+import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 const { defaultAuthedRoute, shouldRouteToOnboarding } = require('../services/authBootRouting');
 
 Notifications.setNotificationHandler({
@@ -371,7 +372,9 @@ function AppNavigator() {
       <Stack.Screen name="accounts" options={{ title: 'Accounts', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="gmail-import" options={{ title: 'Gmail Import', headerBackTitle: 'Settings' }} />
-      <Stack.Screen name="insight-diagnostics" options={{ title: 'Insight Diagnostics', headerBackTitle: 'Settings' }} />
+      {INTERNAL_TOOLS_ENABLED ? (
+        <Stack.Screen name="insight-diagnostics" options={{ title: 'Insight Diagnostics', headerBackTitle: 'Settings' }} />
+      ) : null}
       <Stack.Screen name="review-queue" options={{ title: 'Pending actions', headerBackTitle: 'Activity' }} />
       <Stack.Screen name="payment-methods" options={{ title: 'Saved Card Labels', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Activity' }} />

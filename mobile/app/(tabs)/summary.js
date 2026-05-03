@@ -29,6 +29,7 @@ import {
 } from '../../services/summaryScreenHelpers';
 import { buildMockInsights } from '../../fixtures/mockInsights';
 import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
+import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 
 const MOCK_GMAIL_IMPORT_SUMMARY = buildMockGmailImportState().importSummary;
 
@@ -486,18 +487,20 @@ export default function SummaryScreen() {
       />
 
       {displayInsights.length === 0 && !insightsError && !showWelcomeAddCard ? (
-        <TouchableOpacity
-          style={styles.insightEmptyCard}
-          activeOpacity={0.88}
-          onPress={() => router.push('/insight-diagnostics')}
-        >
+        <View style={styles.insightEmptyCard}>
           <Text style={styles.insightEmptyEyebrow}>What matters now</Text>
           <Text style={styles.insightEmptyTitle}>No insight cards are surfacing right now</Text>
           <Text style={styles.insightEmptyBody}>
-            That can mean Adlo does not have any strong signals yet, or that current candidates are being filtered out. Open diagnostics to see which one it is.
+            {INTERNAL_TOOLS_ENABLED
+              ? 'That can mean Adlo does not have any strong signals yet, or that current candidates are being filtered out. Open diagnostics to see which one it is.'
+              : 'That usually means Adlo does not have a strong enough signal yet. As more real spending patterns build up, this area will start to get more useful.'}
           </Text>
-          <Text style={styles.insightEmptyAction}>Open insight diagnostics</Text>
-        </TouchableOpacity>
+          {INTERNAL_TOOLS_ENABLED ? (
+            <TouchableOpacity activeOpacity={0.88} onPress={() => router.push('/insight-diagnostics')}>
+              <Text style={styles.insightEmptyAction}>Open insight diagnostics</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       ) : null}
 
       {watchedPlans.length > 0 ? (

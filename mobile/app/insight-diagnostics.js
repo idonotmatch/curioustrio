@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,9 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '../services/api';
+import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 
 function reasonLabel(reason = '') {
   switch (`${reason}`.trim()) {
@@ -150,12 +151,20 @@ function DiagnosticsSection({ title, children }) {
 }
 
 export default function InsightDiagnosticsScreen() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [debug, setDebug] = useState(null);
 
+  useEffect(() => {
+    if (!INTERNAL_TOOLS_ENABLED) {
+      router.replace('/(tabs)/settings');
+    }
+  }, [router]);
+
   const loadDebug = useCallback(async ({ silent = false } = {}) => {
+    if (!INTERNAL_TOOLS_ENABLED) return;
     if (silent) setRefreshing(true);
     else setLoading(true);
     setError('');
@@ -172,8 +181,14 @@ export default function InsightDiagnosticsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    if (!INTERNAL_TOOLS_ENABLED) return undefined;
     loadDebug();
+    return undefined;
   }, [loadDebug]));
+
+  if (!INTERNAL_TOOLS_ENABLED) {
+    return null;
+  }
 
   const summary = summarizeDiagnostics(debug);
   const tone = toneStyles(summary.tone);

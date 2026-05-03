@@ -8,6 +8,7 @@ import { consumeNavigationPayload, stashNavigationPayload } from '../services/na
 import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insightEvidence';
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 import { openExpenseDetail } from '../services/openExpenseDetail';
+import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -505,12 +506,13 @@ export default function TrendDetailScreen() {
     const rows = navPayload?.preloadedCategoryExpenses || parseJsonParam(preloadCategoryExpensesParam, []);
     return Array.isArray(rows) ? rows : [];
   }, [navPayload, preloadCategoryExpensesParam]);
+  const allowMockTrend = INTERNAL_TOOLS_ENABLED && `${mock}` === '1';
   const fallbackTrend = useMemo(
     () => buildTrendFromInsightMetadata(insightMetadata, `${scope}`, `${month}`),
     [insightMetadata, scope, month]
   );
-  const [trend, setTrend] = useState(() => (`${mock}` === '1' ? buildMockTrend(scope, month) : fallbackTrend));
-  const [loading, setLoading] = useState(() => (`${mock}` === '1' ? false : !fallbackTrend));
+  const [trend, setTrend] = useState(() => (allowMockTrend ? buildMockTrend(scope, month) : fallbackTrend));
+  const [loading, setLoading] = useState(() => (allowMockTrend ? false : !fallbackTrend));
   const [error, setError] = useState('');
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
@@ -536,7 +538,7 @@ export default function TrendDetailScreen() {
         setLoading(false);
         return;
       }
-      if (`${mock}` === '1') {
+      if (allowMockTrend) {
         const mockTrend = buildMockTrend(scope, month);
         setTrend(mockTrend);
         setError('');
@@ -581,7 +583,7 @@ export default function TrendDetailScreen() {
 
     load();
     return () => { cancelled = true; };
-  }, [scope, month, mock, fallbackTrend]);
+  }, [scope, month, allowMockTrend, fallbackTrend]);
 
   const highlightedDriver = useMemo(
     () => trend?.pace?.top_drivers?.find((driver) => driver.category_key === categoryKey) || null,
@@ -660,7 +662,7 @@ export default function TrendDetailScreen() {
     };
   }, [unusualExpenses]);
   const recurringSpikeSignals = useMemo(() => {
-    if (`${mock}` === '1') {
+    if (allowMockTrend) {
       return [
         {
           group_key: 'mock-milk',
@@ -689,7 +691,7 @@ export default function TrendDetailScreen() {
     return Array.isArray(insightMetadata?.recurring_spike_signals)
       ? insightMetadata.recurring_spike_signals
       : [];
-  }, [insightMetadata, mock]);
+  }, [insightMetadata, allowMockTrend]);
 
   useEffect(() => {
     let cancelled = false;
@@ -700,7 +702,7 @@ export default function TrendDetailScreen() {
         setCategoryExpenses(preloadedCategoryExpenses);
         return;
       }
-      if (`${mock}` === '1') {
+      if (allowMockTrend) {
         setCategoryExpensesLoading(false);
         setCategoryExpenses(selectInsightEvidence(buildMockCategoryExpenses(categoryKey), 'category', categoryEvidenceMetadata, 8));
         return;
@@ -743,7 +745,7 @@ export default function TrendDetailScreen() {
 
     loadCategoryExpenses();
     return () => { cancelled = true; };
-  }, [categoryKey, month, mock, scope, supportsCategoryReview, preloadedCategoryExpenses, categoryEvidenceMetadata]);
+  }, [categoryKey, month, allowMockTrend, scope, supportsCategoryReview, preloadedCategoryExpenses, categoryEvidenceMetadata]);
   const categoryMerchantSummary = useMemo(() => {
     const totals = new Map();
     for (const expense of categoryExpenses) {

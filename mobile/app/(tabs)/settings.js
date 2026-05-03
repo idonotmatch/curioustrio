@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
+import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -174,16 +175,18 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>INSIGHTS</Text>
-        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/insight-diagnostics')}>
-          <View>
-            <Text style={styles.navRowText}>Insight diagnostics</Text>
-            <Text style={styles.navRowSub}>See whether Adlo has surfaced anything, or whether nothing is eligible right now</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color="#888" />
-        </TouchableOpacity>
-      </View>
+      {INTERNAL_TOOLS_ENABLED ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>INSIGHTS</Text>
+          <TouchableOpacity style={styles.navRow} onPress={() => router.push('/insight-diagnostics')}>
+            <View>
+              <Text style={styles.navRowText}>Insight diagnostics</Text>
+              <Text style={styles.navRowSub}>See whether Adlo has surfaced anything, or whether nothing is eligible right now</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#888" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* Categories */}
       <View style={styles.section}>
