@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -53,21 +53,24 @@ const RECURRING_PUSH_INSIGHT_TYPES = new Set([
 ]);
 
 function shouldRouteToOnboarding(user) {
-  return user?.onboarding_complete !== true;
+  return !!user && user.onboarding_complete === false;
 }
 
-function defaultAuthedRoute(user) {
-  return shouldRouteToOnboarding(user) ? '/onboarding' : '/(tabs)/summary';
+function defaultAuthedRoute(user, hasOnboardingRoute) {
+  if (hasOnboardingRoute && shouldRouteToOnboarding(user)) return '/onboarding';
+  return '/(tabs)/summary';
 }
 
 function AppNavigator() {
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
   const [bootstrapped, setBootstrapped] = useState(false);
   const resolvingSessionRef = useRef(false);
   const gmailSyncInFlightRef = useRef(false);
   const lastGmailAutoSyncAttemptRef = useRef(0);
   const lastHandledNotificationRef = useRef(null);
   const pendingNotificationResponseRef = useRef(null);
+  const hasOnboardingRoute = rootNavigationState?.routeNames?.includes('onboarding') === true;
 
   async function navigateFromNotificationResponse(response) {
     const identifier = response?.notification?.request?.identifier;
@@ -260,18 +263,17 @@ function AppNavigator() {
     }
 
     async function routeAuthenticatedSession(session) {
-      const isAnon = session.user.is_anonymous === true;
       const cachedUser = await loadCurrentUserCache();
       const safeCachedUser = cachedUser?.auth_user_id === session.user.id ? cachedUser : null;
 
       if (!bootstrapped) {
         const routeUser = safeCachedUser || await syncSessionInBackground(session);
-        router.replace(defaultAuthedRoute(routeUser));
+        router.replace(defaultAuthedRoute(routeUser, hasOnboardingRoute));
         setBootstrapped(true);
         if (safeCachedUser) {
           syncSessionInBackground(session);
         }
-      } else if (safeCachedUser && shouldRouteToOnboarding(safeCachedUser)) {
+      } else if (hasOnboardingRoute && safeCachedUser && shouldRouteToOnboarding(safeCachedUser)) {
         router.replace('/onboarding');
       }
       maybeAutoSyncGmail(session.access_token);
@@ -290,7 +292,7 @@ function AppNavigator() {
     });
 
     return () => subscription.unsubscribe();
-  }, [bootstrapped]);
+  }, [bootstrapped, hasOnboardingRoute]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (state) => {
