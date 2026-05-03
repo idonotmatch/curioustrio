@@ -297,52 +297,117 @@ async function detectDuplicateFlags(expense) {
   }
 }
 
-async function createConfirmedExpense({
+function shouldDeferPostConfirmSideEffects() {
+  const configured = `${process.env.CONFIRM_DEFER_SIDE_EFFECTS || ''}`.trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes'].includes(configured)) return true;
+  if (['0', 'false', 'off', 'no'].includes(configured)) return false;
+  return process.env.NODE_ENV !== 'test';
+}
+
+function queuePostConfirmSideEffects(task) {
+  setImmediate(() => {
+    Promise.resolve()
+      .then(task)
+      .catch((err) => {
+        console.error('Deferred confirm side effects failed (non-fatal):', err?.message || err);
+      });
+  });
+}
+
+async function applyDeferredExpenseEnrichment({ user, expense, originalPayload, resolvedPayload }) {
+  let nextExpense = expense;
+
+  if (shouldResolveDeferredCategory(originalPayload) && resolvedPayload.category_id) {
+    const updatedCategoryExpense = await Expense.applyDeferredCategory(expense.id, user.id, {
+      categoryId: resolvedPayload.category_id,
+      categorySource: resolvedPayload.category_source || null,
+      categoryConfidence: resolvedPayload.category_confidence ?? null,
+      categoryReasoning: resolvedPayload.category_reasoning || null,
+    });
+    if (updatedCategoryExpense) {
+      nextExpense = updatedCategoryExpense;
+    }
+  }
+
+  if (shouldResolveDeferredLocation(originalPayload) && resolvedPayload.mapkit_stable_id) {
+    const updatedLocationExpense = await Expense.applyDeferredLocation(expense.id, user.id, {
+      originalPlaceName: originalPayload.place_name || null,
+      originalAddress: originalPayload.address || null,
+      placeName: resolvedPayload.place_name || null,
+      address: resolvedPayload.address || null,
+      mapkitStableId: resolvedPayload.mapkit_stable_id || null,
+    });
+    if (updatedLocationExpense) {
+      nextExpense = updatedLocationExpense;
+    }
+  }
+
+  return nextExpense;
+}
+
+async function enrichPersistedItems({ expenseId, items, merchant }) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const resolvedItems = await Promise.all(
+    items.map((item) => enrichItemWithResolution(item, merchant))
+  );
+
+  await Promise.all(
+    resolvedItems.map((item, index) => {
+      const existing = items[index];
+      if (!existing?.id) return null;
+
+      const nextProductId = item?.product_id || null;
+      const nextConfidence = item?.product_match_confidence || null;
+      const nextReason = item?.product_match_reason || null;
+
+      if (
+        `${existing.product_id || ''}` === `${nextProductId || ''}`
+        && `${existing.product_match_confidence || ''}` === `${nextConfidence || ''}`
+        && `${existing.product_match_reason || ''}` === `${nextReason || ''}`
+      ) {
+        return null;
+      }
+
+      return ExpenseItem.updateResolution(existing.id, expenseId, {
+        productId: nextProductId,
+        productMatchConfidence: nextConfidence,
+        productMatchReason: nextReason,
+      });
+    })
+  );
+
+  return resolvedItems;
+}
+
+async function runPostConfirmSideEffects({
   user,
   payload,
+  expense,
+  items = [],
   originalParsedItems = [],
 }) {
   const resolvedPayload = await resolveDeferredConfirmPayload({ user, payload });
-  const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(payload.budget_exclusion_reason);
-  const expense = await Expense.create({
-    userId: user.id,
-    householdId: user?.household_id,
-    merchant: resolvedPayload.merchant,
-    description: resolvedPayload.description,
-    amount: resolvedPayload.amount,
-    date: resolvedPayload.date,
-    categoryId: resolvedPayload.category_id,
-    source: resolvedPayload.source,
-    status: 'confirmed',
-    notes: resolvedPayload.notes,
-    placeName: resolvedPayload.place_name,
-    address: resolvedPayload.address,
-    mapkitStableId: resolvedPayload.mapkit_stable_id,
-    linkedExpenseId: resolvedPayload.linked_expense_id,
-    paymentMethod: resolvedPayload.payment_method,
-    cardLast4: resolvedPayload.card_last4,
-    cardLabel: resolvedPayload.card_label,
-    isPrivate: resolvedPayload.is_private ?? false,
-    excludeFromBudget: resolvedPayload.exclude_from_budget ?? false,
-    budgetExclusionReason: resolvedPayload.exclude_from_budget ? normalizedBudgetExclusionReason : null,
-    categorySource: resolvedPayload.category_source || null,
-    categoryConfidence: resolvedPayload.category_confidence ?? null,
-    categoryReasoning: resolvedPayload.category_reasoning || null,
+  const enrichedExpense = await applyDeferredExpenseEnrichment({
+    user,
+    expense,
+    originalPayload: payload,
+    resolvedPayload,
   });
 
-  if (Array.isArray(resolvedPayload.items) && resolvedPayload.items.length > 0) {
-    const resolvedItems = await Promise.all(
-      resolvedPayload.items.map((item) => enrichItemWithResolution(item, resolvedPayload.merchant))
-    );
-    await ExpenseItem.createBulk(expense.id, resolvedItems);
-    if (resolvedPayload.source === 'camera') {
-      await captureReceiptLineCorrections({
-        householdId: user?.household_id,
-        merchant: resolvedPayload.merchant,
-        originalItems: originalParsedItems,
-        resolvedItems,
-      });
-    }
+  const resolvedItems = await enrichPersistedItems({
+    expenseId: expense.id,
+    items,
+    merchant: enrichedExpense.merchant || resolvedPayload.merchant,
+  });
+
+  if (resolvedPayload.source === 'camera' && resolvedItems.length > 0) {
+    await captureReceiptLineCorrections({
+      householdId: user?.household_id,
+      merchant: enrichedExpense.merchant || resolvedPayload.merchant,
+      originalItems: originalParsedItems,
+      resolvedItems,
+    });
   }
 
   await appendConfirmPaymentFeedback({
@@ -350,40 +415,110 @@ async function createConfirmedExpense({
     userId: user.id,
     source: resolvedPayload.source,
     parsedPaymentSnapshot: resolvedPayload.parsed_payment_snapshot,
-    paymentMethod: resolvedPayload.payment_method,
-    cardLabel: resolvedPayload.card_label,
-    cardLast4: resolvedPayload.card_last4,
-    merchant: resolvedPayload.merchant,
-    description: resolvedPayload.description,
-    amount: resolvedPayload.amount,
-    date: resolvedPayload.date,
-    placeName: resolvedPayload.place_name,
-    address: resolvedPayload.address,
-    mapkitStableId: resolvedPayload.mapkit_stable_id,
-    itemCount: Array.isArray(resolvedPayload.items) ? resolvedPayload.items.length : 0,
+    paymentMethod: enrichedExpense.payment_method || resolvedPayload.payment_method,
+    cardLabel: enrichedExpense.card_label || resolvedPayload.card_label,
+    cardLast4: enrichedExpense.card_last4 || resolvedPayload.card_last4,
+    merchant: enrichedExpense.merchant || resolvedPayload.merchant,
+    description: enrichedExpense.description || resolvedPayload.description,
+    amount: enrichedExpense.amount || resolvedPayload.amount,
+    date: enrichedExpense.date || resolvedPayload.date,
+    placeName: enrichedExpense.place_name || resolvedPayload.place_name,
+    address: enrichedExpense.address || resolvedPayload.address,
+    mapkitStableId: enrichedExpense.mapkit_stable_id || resolvedPayload.mapkit_stable_id,
+    itemCount: Array.isArray(items) ? items.length : 0,
     expenseId: expense.id,
   });
 
   await updateMerchantMemory({
-    categoryId: resolvedPayload.category_id,
+    categoryId: enrichedExpense.category_id || resolvedPayload.category_id,
     householdId: user?.household_id,
-    merchant: resolvedPayload.merchant,
+    merchant: enrichedExpense.merchant || resolvedPayload.merchant,
   });
 
   try {
-    await recordCategoryDecision({ user, expense, payload: resolvedPayload });
+    await recordCategoryDecision({
+      user,
+      expense: enrichedExpense,
+      payload: {
+        ...resolvedPayload,
+        category_id: enrichedExpense.category_id || resolvedPayload.category_id || null,
+        category_source: resolvedPayload.category_source || enrichedExpense.category_source || null,
+        category_confidence: resolvedPayload.category_confidence ?? enrichedExpense.category_confidence ?? null,
+        category_reasoning: resolvedPayload.category_reasoning || enrichedExpense.category_reasoning || null,
+      },
+    });
   } catch (categoryDecisionErr) {
     console.error('Category decision log failed (non-fatal):', categoryDecisionErr.message);
   }
 
-  const duplicateFlags = await detectDuplicateFlags(expense);
-  return { expense, duplicate_flags: duplicateFlags };
+  const duplicateFlags = await detectDuplicateFlags(enrichedExpense);
+  return { expense: enrichedExpense, duplicate_flags: duplicateFlags };
+}
+
+async function createConfirmedExpense({
+  user,
+  payload,
+  originalParsedItems = [],
+  deferPostConfirmSideEffects = shouldDeferPostConfirmSideEffects(),
+  queuePostConfirm = queuePostConfirmSideEffects,
+}) {
+  const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(payload.budget_exclusion_reason);
+  const expense = await Expense.create({
+    userId: user.id,
+    householdId: user?.household_id,
+    merchant: payload.merchant,
+    description: payload.description,
+    amount: payload.amount,
+    date: payload.date,
+    categoryId: payload.category_id,
+    source: payload.source,
+    status: 'confirmed',
+    notes: payload.notes,
+    placeName: payload.place_name,
+    address: payload.address,
+    mapkitStableId: payload.mapkit_stable_id,
+    linkedExpenseId: payload.linked_expense_id,
+    paymentMethod: payload.payment_method,
+    cardLast4: payload.card_last4,
+    cardLabel: payload.card_label,
+    isPrivate: payload.is_private ?? false,
+    excludeFromBudget: payload.exclude_from_budget ?? false,
+    budgetExclusionReason: payload.exclude_from_budget ? normalizedBudgetExclusionReason : null,
+    categorySource: payload.category_source || null,
+    categoryConfidence: payload.category_confidence ?? null,
+    categoryReasoning: payload.category_reasoning || null,
+  });
+
+  const createdItems = Array.isArray(payload.items) && payload.items.length > 0
+    ? await ExpenseItem.createBulk(expense.id, payload.items)
+    : [];
+
+  if (deferPostConfirmSideEffects) {
+    queuePostConfirm(() => runPostConfirmSideEffects({
+      user,
+      payload,
+      expense,
+      items: createdItems,
+      originalParsedItems,
+    }));
+    return { expense, duplicate_flags: [] };
+  }
+
+  return runPostConfirmSideEffects({
+    user,
+    payload,
+    expense,
+    items: createdItems,
+    originalParsedItems,
+  });
 }
 
 module.exports = {
   createConfirmedExpense,
   normalizeBudgetExclusionReason,
   resolveDeferredConfirmPayload,
+  runPostConfirmSideEffects,
+  queuePostConfirmSideEffects,
   updateMerchantMemory,
   validateConfirmExpensePayload,
 };

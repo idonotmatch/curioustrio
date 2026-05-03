@@ -5,8 +5,7 @@ import * as MediaLibrary from 'expo-media-library';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
-import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
-import { insertExpenseIntoCachedLists, patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
+import { queueConfirmedExpenseClientWork } from '../services/confirmClientWork';
 import { LocationPicker } from '../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCategories } from '../hooks/useCategories';
@@ -407,18 +406,6 @@ export default function ConfirmScreen() {
         return;
       }
 
-      if (isCameraSource && saveToRoll && parsed.image_uri) {
-        try {
-          const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status === 'granted') {
-            await MediaLibrary.saveToLibraryAsync(parsed.image_uri);
-          }
-        } catch (e) {
-          // non-fatal
-        }
-      }
-
-      const expenseMonth = (expense.date || toLocalDateString()).slice(0, 7);
       const result = await api.post('/expenses/confirm', {
         merchant: merchant.trim() || null,
         description: description.trim() || null,
@@ -471,31 +458,28 @@ export default function ConfirmScreen() {
               }))
           : undefined,
       });
-      if (result?.expense?.id) {
-        await saveExpenseSnapshot(result.expense);
-        await insertExpenseIntoCachedLists(result.expense);
-        await patchExpenseInCachedLists(result.expense);
-      }
-      if (parsed?.scenario_memory_id) {
-        try {
-          await api.post(`/trends/scenario-memory/${parsed.scenario_memory_id}/resolve`, {
-            action: 'bought',
-            expense_id: result?.expense?.id || null,
-          });
-        } catch {
-          // non-fatal
-        }
-      }
-      await Promise.all([
-        invalidateCache(`cache:expenses:${expenseMonth}`),
-        invalidateCache(`cache:budget:${expenseMonth}:personal`),
-        // Personal feeds are cache-first and keyed by budget period, which may
-        // differ from the expense's calendar month when the user uses a custom
-        // budget reset day. Clearing by prefix guarantees "Mine" refetches.
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
+      queueConfirmedExpenseClientWork({
+        expense: result?.expense || null,
+        extraWork: [
+          parsed?.scenario_memory_id
+            ? async () => {
+                await api.post(`/trends/scenario-memory/${parsed.scenario_memory_id}/resolve`, {
+                  action: 'bought',
+                  expense_id: result?.expense?.id || null,
+                });
+              }
+            : null,
+          isCameraSource && saveToRoll && parsed.image_uri
+            ? async () => {
+                const { status } = await MediaLibrary.requestPermissionsAsync();
+                if (status === 'granted') {
+                  await MediaLibrary.saveToLibraryAsync(parsed.image_uri);
+                }
+              }
+            : null,
+        ].filter(Boolean),
+      });
+
       if (isWatchedPlanFlow) {
         router.replace({
           pathname: '/watching-plans',

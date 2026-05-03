@@ -443,4 +443,96 @@ async function updateStatusByHousehold(id, householdId, status) {
   return result.rows[0] || null;
 }
 
-module.exports = { create, findByUser, updateStatus, updateReviewMetadata, findPotentialDuplicates, findTreatmentCandidates, findByMapkitStableId, findById, findByHousehold, update, updateStatusByHousehold };
+async function applyDeferredCategory(id, userId, {
+  categoryId,
+  categorySource = null,
+  categoryConfidence = null,
+  categoryReasoning = null,
+} = {}) {
+  if (!id || !userId || !categoryId) return null;
+
+  try {
+    const result = await db.query(
+      `UPDATE expenses
+       SET category_id = $3,
+           category_source = $4,
+           category_confidence = $5,
+           category_reasoning = $6
+       WHERE id = $1
+         AND user_id = $2
+         AND category_id IS NULL
+       RETURNING *`,
+      [
+        id,
+        userId,
+        categoryId,
+        categorySource,
+        categoryConfidence,
+        categoryReasoning ? JSON.stringify(categoryReasoning) : null,
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingCategoryProvenanceError(err)) throw err;
+    const fallback = await db.query(
+      `UPDATE expenses
+       SET category_id = $3
+       WHERE id = $1
+         AND user_id = $2
+         AND category_id IS NULL
+       RETURNING *`,
+      [id, userId, categoryId]
+    );
+    return fallback.rows[0] || null;
+  }
+}
+
+async function applyDeferredLocation(id, userId, {
+  originalPlaceName = null,
+  originalAddress = null,
+  placeName = null,
+  address = null,
+  mapkitStableId = null,
+} = {}) {
+  if (!id || !userId) return null;
+  if (placeName == null && address == null && mapkitStableId == null) return null;
+
+  const result = await db.query(
+    `UPDATE expenses
+     SET place_name = $5,
+         address = $6,
+         mapkit_stable_id = $7
+     WHERE id = $1
+       AND user_id = $2
+       AND mapkit_stable_id IS NULL
+       AND COALESCE(place_name, '') = COALESCE($3, '')
+       AND COALESCE(address, '') = COALESCE($4, '')
+     RETURNING *`,
+    [
+      id,
+      userId,
+      originalPlaceName,
+      originalAddress,
+      placeName,
+      address,
+      mapkitStableId,
+    ]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = {
+  create,
+  findByUser,
+  updateStatus,
+  updateReviewMetadata,
+  findPotentialDuplicates,
+  findTreatmentCandidates,
+  findByMapkitStableId,
+  findById,
+  findByHousehold,
+  update,
+  updateStatusByHousehold,
+  applyDeferredCategory,
+  applyDeferredLocation,
+};

@@ -133,4 +133,22 @@ async function replaceItems(expenseId, items) {
   }
 }
 
-module.exports = { createBulk, findByExpenseId, replaceItems };
+async function updateResolution(id, expenseId, {
+  productId = null,
+  productMatchConfidence = null,
+  productMatchReason = null,
+} = {}) {
+  const result = await db.query(
+    `UPDATE expense_items
+     SET product_id = $3,
+         product_match_confidence = $4,
+         product_match_reason = $5
+     WHERE id = $1
+       AND expense_id = $2
+     RETURNING *`,
+    [id, expenseId, productId, productMatchConfidence, productMatchReason]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { createBulk, findByExpenseId, replaceItems, updateResolution };

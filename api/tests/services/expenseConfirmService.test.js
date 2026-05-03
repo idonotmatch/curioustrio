@@ -29,9 +29,12 @@ const {
 describe('expenseConfirmService deferred enrichment', () => {
   beforeEach(() => {
     Expense.create.mockReset();
+    Expense.applyDeferredCategory.mockReset();
+    Expense.applyDeferredLocation.mockReset();
     Category.findByHousehold.mockReset();
     MerchantMapping.upsert.mockReset();
     ExpenseItem.createBulk.mockReset();
+    ExpenseItem.updateResolution.mockReset();
     IngestAttemptLog.findByIdForUser.mockReset();
     IngestAttemptLog.appendPaymentFeedback.mockReset();
     IngestAttemptLog.markConfirmed.mockReset();
@@ -44,18 +47,67 @@ describe('expenseConfirmService deferred enrichment', () => {
 
     Expense.create.mockImplementation(async (args) => ({
       id: 'expense-1',
+      user_id: 'user-1',
       household_id: args.householdId,
       merchant: args.merchant,
+      description: args.description || null,
       amount: args.amount,
       date: args.date,
       category_id: args.categoryId,
+      category_source: args.categorySource || null,
+      category_confidence: args.categoryConfidence ?? null,
+      category_reasoning: args.categoryReasoning || null,
+      payment_method: args.paymentMethod || 'unknown',
+      card_label: args.cardLabel || null,
+      card_last4: args.cardLast4 || null,
       place_name: args.placeName,
       address: args.address,
       mapkit_stable_id: args.mapkitStableId,
       status: 'confirmed',
     }));
+    Expense.applyDeferredCategory.mockImplementation(async (_id, _userId, args) => ({
+      id: 'expense-1',
+      user_id: 'user-1',
+      household_id: 'hh-1',
+      merchant: 'Coffee Bar',
+      description: 'coffee',
+      amount: 6.5,
+      date: '2026-05-02',
+      category_id: args.categoryId,
+      category_source: args.categorySource || null,
+      category_confidence: args.categoryConfidence ?? null,
+      category_reasoning: args.categoryReasoning || null,
+      place_name: null,
+      address: null,
+      mapkit_stable_id: null,
+      payment_method: 'unknown',
+      card_label: null,
+      card_last4: null,
+      status: 'confirmed',
+    }));
+    Expense.applyDeferredLocation.mockImplementation(async (_id, _userId, args) => ({
+      id: 'expense-1',
+      user_id: 'user-1',
+      household_id: 'hh-1',
+      merchant: 'Whole Foods',
+      description: 'groceries',
+      amount: 19.84,
+      date: '2026-04-27',
+      category_id: 'cat-1',
+      category_source: null,
+      category_confidence: null,
+      category_reasoning: null,
+      place_name: args.placeName || null,
+      address: args.address || null,
+      mapkit_stable_id: args.mapkitStableId || null,
+      payment_method: 'unknown',
+      card_label: null,
+      card_last4: null,
+      status: 'confirmed',
+    }));
     Category.findByHousehold.mockResolvedValue([{ id: 'cat-1', name: 'Dining Out' }]);
-    ExpenseItem.createBulk.mockResolvedValue(undefined);
+    ExpenseItem.createBulk.mockResolvedValue([]);
+    ExpenseItem.updateResolution.mockResolvedValue(undefined);
     MerchantMapping.upsert.mockResolvedValue(undefined);
     IngestAttemptLog.findByIdForUser.mockResolvedValue(null);
     IngestAttemptLog.appendPaymentFeedback.mockResolvedValue(undefined);
@@ -77,7 +129,7 @@ describe('expenseConfirmService deferred enrichment', () => {
     });
   });
 
-  it('resolves deferred category on confirm when the user did not choose one', async () => {
+  it('resolves deferred category when post-confirm side effects run', async () => {
     const payload = await resolveDeferredConfirmPayload({
       user: { id: 'user-1', household_id: 'hh-1' },
       payload: {
@@ -119,6 +171,7 @@ describe('expenseConfirmService deferred enrichment', () => {
         category_status: 'deferred',
         category_user_owned: true,
       },
+      deferPostConfirmSideEffects: false,
     });
 
     expect(assignCategory).not.toHaveBeenCalled();
@@ -128,7 +181,36 @@ describe('expenseConfirmService deferred enrichment', () => {
     expect(result.expense.category_id).toBeNull();
   });
 
-  it('resolves deferred location on confirm when the user did not touch location', async () => {
+  it('returns immediately and queues heavy work when deferred post-confirm mode is on', async () => {
+    const queuePostConfirm = jest.fn();
+    const result = await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Whole Foods',
+        description: 'groceries',
+        amount: 19.84,
+        date: '2026-04-27',
+        source: 'camera',
+        category_id: 'cat-1',
+        category_status: 'assigned',
+        category_user_owned: false,
+        place_name: 'Whole Foods',
+        address: '123 Main St',
+        mapkit_stable_id: null,
+        location_status: 'deferred',
+        location_user_owned: false,
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm,
+    });
+
+    expect(queuePostConfirm).toHaveBeenCalledTimes(1);
+    expect(searchPlace).not.toHaveBeenCalled();
+    expect(assignCategory).not.toHaveBeenCalled();
+    expect(result.duplicate_flags).toEqual([]);
+  });
+
+  it('resolves deferred location in the synchronous fallback path when the user did not touch location', async () => {
     await createConfirmedExpense({
       user: { id: 'user-1', household_id: 'hh-1' },
       payload: {
@@ -146,10 +228,16 @@ describe('expenseConfirmService deferred enrichment', () => {
         location_status: 'deferred',
         location_user_owned: false,
       },
+      deferPostConfirmSideEffects: false,
     });
 
     expect(searchPlace).toHaveBeenCalledWith('Whole Foods 123 Main St');
     expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({
+      placeName: 'Whole Foods',
+      address: '123 Main St',
+      mapkitStableId: null,
+    }));
+    expect(Expense.applyDeferredLocation).toHaveBeenCalledWith('expense-1', 'user-1', expect.objectContaining({
       placeName: 'Whole Foods Market',
       address: '123 Main St',
       mapkitStableId: 'place-1',
@@ -174,6 +262,7 @@ describe('expenseConfirmService deferred enrichment', () => {
         location_status: 'deferred',
         location_user_owned: true,
       },
+      deferPostConfirmSideEffects: false,
     });
 
     expect(searchPlace).not.toHaveBeenCalled();

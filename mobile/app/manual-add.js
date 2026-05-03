@@ -11,8 +11,7 @@ import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
 import { api } from '../services/api';
-import { insertExpenseIntoCachedLists, patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
-import { invalidateCacheByPrefix } from '../services/cache';
+import { queueConfirmedExpenseClientWork } from '../services/confirmClientWork';
 import { getCoords } from '../services/locationService';
 import {
   normalizeMerchant,
@@ -245,18 +244,7 @@ export default function ManualAddScreen() {
         budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
       });
 
-      if (result?.expense?.id) {
-        await saveExpenseSnapshot(result.expense);
-        await insertExpenseIntoCachedLists(result.expense);
-        await patchExpenseInCachedLists(result.expense);
-      }
-
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
-
+      queueConfirmedExpenseClientWork({ expense: result?.expense || null });
       router.back();
     } catch (error) {
       Alert.alert('Could not save expense', error?.message || 'Something went wrong while saving this expense.');
