@@ -8,7 +8,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { Stack, useRouter, useFocusEffect } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,6 +44,7 @@ const MOCK_GMAIL_IMPORT_STATE = buildMockGmailImportState();
 
 export default function GmailImportScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [gmailStatus, setGmailStatus] = useState(null);
   const [importLog, setImportLog] = useState([]);
   const [importSummary, setImportSummary] = useState(null);
@@ -304,6 +305,16 @@ export default function GmailImportScreen() {
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {params.welcome === 'connect' ? (
+          <View style={styles.welcomeCard}>
+            <Text style={styles.welcomeEyebrow}>Good first move</Text>
+            <Text style={styles.welcomeTitle}>Bring in receipts instead of retyping them.</Text>
+            <Text style={styles.welcomeBody}>
+              Gmail import works best once you trust the connection. You can always start manually and come back to this later.
+            </Text>
+          </View>
+        ) : null}
+
         <GmailImportOverview
           styles={styles}
           displayGmailStatus={displayGmailStatus}
@@ -384,6 +395,24 @@ export default function GmailImportScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 48 },
+  welcomeCard: {
+    marginBottom: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#121212',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#202020',
+  },
+  welcomeEyebrow: {
+    color: '#7b7b7b',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  welcomeTitle: { color: '#f5f5f5', fontSize: 21, fontWeight: '700', marginBottom: 8, lineHeight: 28 },
+  welcomeBody: { color: '#9a9a9a', fontSize: 14, lineHeight: 20 },
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#111', paddingBottom: 24 },
   sectionTitle: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

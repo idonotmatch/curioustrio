@@ -4,13 +4,13 @@ import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppState, Image, Platform, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
 import { stashNavigationPayload } from '../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../services/insightLocalStore';
 import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
+import { loadCurrentUserCache, saveCurrentUserCache } from '../services/currentUserCache';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -51,6 +51,14 @@ const RECURRING_PUSH_INSIGHT_TYPES = new Set([
   'recurring_restock_window',
   'recurring_cost_pressure',
 ]);
+
+function shouldRouteToOnboarding(user) {
+  return user?.onboarding_complete !== true;
+}
+
+function defaultAuthedRoute(user) {
+  return shouldRouteToOnboarding(user) ? '/onboarding' : '/(tabs)/summary';
+}
 
 function AppNavigator() {
   const router = useRouter();
@@ -156,25 +164,6 @@ function AppNavigator() {
     }
   }
 
-  async function cacheCurrentUser(user) {
-    if (!user) return;
-    try {
-      await AsyncStorage.setItem('cache:current-user', JSON.stringify({ data: user, ts: Date.now() }));
-    } catch {
-      // Non-fatal
-    }
-  }
-
-  async function loadCachedCurrentUser() {
-    try {
-      const raw = await AsyncStorage.getItem('cache:current-user');
-      if (!raw) return null;
-      return JSON.parse(raw)?.data || null;
-    } catch {
-      return null;
-    }
-  }
-
   async function maybeAutoSyncGmail(token) {
     if (!token || gmailSyncInFlightRef.current) return;
     const now = Date.now();
@@ -228,9 +217,7 @@ function AppNavigator() {
 
   // Auth state listener
   useEffect(() => {
-    async function syncSessionInBackground(session) {
-      if (resolvingSessionRef.current) return;
-      resolvingSessionRef.current = true;
+    async function syncSessionUser(session) {
       try {
         // Pass the token directly from the session object already in memory.
         // Do NOT rely on supabase.auth.getSession() here: immediately after
@@ -255,11 +242,18 @@ function AppNavigator() {
           }
         }
 
-        if (me) await cacheCurrentUser(me);
+        if (me) await saveCurrentUserCache(me);
+        return me;
+      } finally {
+        // no-op
+      }
+    }
 
-        if (!isAnon && me && !me.household_id) {
-          router.replace('/onboarding');
-        }
+    async function syncSessionInBackground(session) {
+      if (resolvingSessionRef.current) return null;
+      resolvingSessionRef.current = true;
+      try {
+        return await syncSessionUser(session);
       } finally {
         resolvingSessionRef.current = false;
       }
@@ -267,19 +261,19 @@ function AppNavigator() {
 
     async function routeAuthenticatedSession(session) {
       const isAnon = session.user.is_anonymous === true;
-      const cachedUser = await loadCachedCurrentUser();
+      const cachedUser = await loadCurrentUserCache();
       const safeCachedUser = cachedUser?.auth_user_id === session.user.id ? cachedUser : null;
 
       if (!bootstrapped) {
-        if (!isAnon && safeCachedUser && !safeCachedUser.household_id) {
-          router.replace('/onboarding');
-        } else {
-          router.replace('/(tabs)/summary');
-        }
+        const routeUser = safeCachedUser || await syncSessionInBackground(session);
+        router.replace(defaultAuthedRoute(routeUser));
         setBootstrapped(true);
+        if (safeCachedUser) {
+          syncSessionInBackground(session);
+        }
+      } else if (safeCachedUser && shouldRouteToOnboarding(safeCachedUser)) {
+        router.replace('/onboarding');
       }
-
-      syncSessionInBackground(session);
       maybeAutoSyncGmail(session.access_token);
     }
 
@@ -287,7 +281,7 @@ function AppNavigator() {
     // INITIAL_SESSION fires on app start with the restored session (or null if not logged in).
     // SIGNED_IN fires after a fresh login. Both need the same handling.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         router.replace('/login');

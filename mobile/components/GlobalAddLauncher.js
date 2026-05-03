@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { toLocalDateString } from '../services/date';
 import { pushConfirmDraft } from '../services/confirmNavigation';
 
-export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
+export function GlobalAddLauncher({ router, bottomOffset = 24, openSignal = 0 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -21,6 +21,11 @@ export function GlobalAddLauncher({ router, bottomOffset = 24 }) {
       hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!openSignal) return;
+    setOpen(true);
+  }, [openSignal]);
 
   function close() {
     setOpen(false);

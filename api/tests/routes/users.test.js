@@ -53,6 +53,8 @@ describe('POST /users/sync', () => {
     expect(res.body.auth_user_id).toBe(TEST_UUID);
     expect(res.body.name).toBe('Dang Nguyen');
     expect(res.body.email).toBe(TEST_EMAIL);
+    expect(res.body.onboarding_complete).toBe(false);
+    expect(res.body.setup_mode).toBeNull();
     expect(res.body.provider_uid).toBeUndefined();
   });
 
@@ -83,6 +85,22 @@ describe('POST /users/sync', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.auth_user_id).toBe(TEST_UUID);
+  });
+
+  it('updates email and name when provider_uid already exists and a trusted email arrives later', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Anonymous', null]
+    );
+
+    const res = await request(app)
+      .post('/users/sync')
+      .send({ name: 'Dang Nguyen', email: TEST_EMAIL });
+
+    expect(res.status).toBe(200);
+    expect(res.body.auth_user_id).toBe(TEST_UUID);
+    expect(res.body.name).toBe('Dang Nguyen');
+    expect(res.body.email).toBe(TEST_EMAIL);
   });
 
   it('creates new user when no email and no provider_uid match', async () => {
@@ -117,7 +135,8 @@ describe('GET /users/me', () => {
 
   it('returns the current user', async () => {
     await db.query(
-      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      `INSERT INTO users (provider_uid, name, email, setup_mode, onboarding_complete, first_run_primary_choice)
+       VALUES ($1, $2, $3, 'solo', true, 'add_expense')`,
       [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
     );
 
@@ -125,6 +144,9 @@ describe('GET /users/me', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.auth_user_id).toBe(TEST_UUID);
+    expect(res.body.setup_mode).toBe('solo');
+    expect(res.body.onboarding_complete).toBe(true);
+    expect(res.body.first_run_primary_choice).toBe('add_expense');
     expect(res.body.provider_uid).toBeUndefined();
   });
 
@@ -157,6 +179,26 @@ describe('PATCH /users/settings', () => {
     expect(res.body.push_recurring_enabled).toBe(false);
   });
 
+  it('updates onboarding state fields', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({
+        setup_mode: 'solo',
+        onboarding_complete: true,
+        first_run_primary_choice: 'set_budget',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.setup_mode).toBe('solo');
+    expect(res.body.onboarding_complete).toBe(true);
+    expect(res.body.first_run_primary_choice).toBe('set_budget');
+  });
+
   it('returns 400 for non-boolean push settings', async () => {
     await db.query(
       'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
@@ -169,6 +211,34 @@ describe('PATCH /users/settings', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/push_insights_enabled must be a boolean/i);
+  });
+
+  it('returns 400 for invalid setup_mode', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({ setup_mode: 'family' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/setup_mode/i);
+  });
+
+  it('returns 400 for invalid first_run_primary_choice', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({ first_run_primary_choice: 'invite_household' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/first_run_primary_choice/i);
   });
 });
 

@@ -1,7 +1,8 @@
 const db = require('../db');
 
 const COLS = `id, provider_uid, name, email, household_id, budget_start_day,
-  push_gmail_review_enabled, push_insights_enabled, push_recurring_enabled, created_at`;
+  push_gmail_review_enabled, push_insights_enabled, push_recurring_enabled,
+  setup_mode, onboarding_complete, first_run_primary_choice, created_at`;
 
 // Upsert by provider_uid.
 async function findOrCreateByProviderUid({ providerUid, name, email }) {
@@ -63,20 +64,29 @@ async function updateSettings(userId, {
   pushGmailReviewEnabled,
   pushInsightsEnabled,
   pushRecurringEnabled,
+  setupMode,
+  onboardingComplete,
+  firstRunPrimaryChoice,
 }) {
   const result = await db.query(
     `UPDATE users
      SET budget_start_day = COALESCE($1, budget_start_day),
          push_gmail_review_enabled = COALESCE($2, push_gmail_review_enabled),
          push_insights_enabled = COALESCE($3, push_insights_enabled),
-         push_recurring_enabled = COALESCE($4, push_recurring_enabled)
-     WHERE id = $5
+         push_recurring_enabled = COALESCE($4, push_recurring_enabled),
+         setup_mode = COALESCE($5, setup_mode),
+         onboarding_complete = COALESCE($6, onboarding_complete),
+         first_run_primary_choice = COALESCE($7, first_run_primary_choice)
+     WHERE id = $8
      RETURNING ${COLS}`,
     [
       budgetStartDay ?? null,
       pushGmailReviewEnabled ?? null,
       pushInsightsEnabled ?? null,
       pushRecurringEnabled ?? null,
+      setupMode ?? null,
+      onboardingComplete ?? null,
+      firstRunPrimaryChoice ?? null,
       userId,
     ]
   );

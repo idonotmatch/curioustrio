@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
@@ -15,6 +15,7 @@ import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrol
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { recurring, loading: recurringLoading, refresh: refreshRecurring } = useRecurring();
 
@@ -75,6 +76,15 @@ export default function SettingsScreen() {
 
   return (
     <DismissKeyboardScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
+      {params.welcome === 'budget' ? (
+        <View style={styles.welcomeCard}>
+          <Text style={styles.welcomeEyebrow}>Good first move</Text>
+          <Text style={styles.welcomeTitle}>Pick a monthly budget.</Text>
+          <Text style={styles.welcomeBody}>
+            This gives Adlo something concrete to pace against before you have much history.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Budget */}
       <View style={styles.section}>
@@ -194,6 +204,24 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 40 },
+  welcomeCard: {
+    marginBottom: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#121212',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#202020',
+  },
+  welcomeEyebrow: {
+    color: '#7b7b7b',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  welcomeTitle: { color: '#f5f5f5', fontSize: 21, fontWeight: '700', marginBottom: 8 },
+  welcomeBody: { color: '#9a9a9a', fontSize: 14, lineHeight: 20 },
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
   sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   subText: { color: '#666', fontSize: 13, marginBottom: 12 },

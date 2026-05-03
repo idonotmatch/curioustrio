@@ -67,7 +67,12 @@ export async function signInWithGoogle() {
   const idToken = userInfo.data?.idToken;
   if (!idToken) throw new Error('No ID token from Google');
 
-  const { data, error } = await supabase.auth.signInWithIdToken({
+  const { data: { session: existingSession } } = await supabase.auth.getSession();
+  const authMethod = existingSession?.user?.is_anonymous === true
+    ? supabase.auth.linkIdentity.bind(supabase.auth)
+    : supabase.auth.signInWithIdToken.bind(supabase.auth);
+
+  const { data, error } = await authMethod({
     provider: 'google',
     token: idToken,
   });
@@ -93,7 +98,12 @@ export async function signInWithApple() {
     throw new Error('Apple did not return a valid identity token. Please try again.');
   }
 
-  const { data, error } = await supabase.auth.signInWithIdToken({
+  const { data: { session: existingSession } } = await supabase.auth.getSession();
+  const authMethod = existingSession?.user?.is_anonymous === true
+    ? supabase.auth.linkIdentity.bind(supabase.auth)
+    : supabase.auth.signInWithIdToken.bind(supabase.auth);
+
+  const { data, error } = await authMethod({
     provider: 'apple',
     token: credential.identityToken,
     nonce: rawNonce,

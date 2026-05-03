@@ -3,15 +3,20 @@ const path = require('path');
 
 const projectRoot = path.join(__dirname, '..');
 const filesToCheck = [
+  'app/_layout.js',
   'app/accounts.js',
   'app/confirm.js',
   'app/expense/[id].js',
   'app/gmail-import.js',
   'app/insight-diagnostics.js',
+  'app/login.js',
   'app/insight-detail.js',
   'app/manual-add.js',
+  'app/onboarding.js',
   'app/scenario-check.js',
   'app/watching-plans.js',
+  'app/(tabs)/settings.js',
+  'app/(tabs)/summary.js',
   'components/GlobalAddLauncher.js',
   'components/NLInput.js',
   'components/GmailImportOverview.js',
@@ -25,6 +30,7 @@ const filesToCheck = [
   'services/manualAddSuggestions.js',
   'services/confirmClientWork.js',
   'services/confirmNavigation.js',
+  'services/currentUserCache.js',
   'services/scenarioCheckPresentation.js',
 ];
 

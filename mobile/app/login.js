@@ -37,7 +37,7 @@ export default function LoginScreen() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.replace('/(tabs)/summary');
+        router.replace(session.user?.is_anonymous === true ? '/onboarding' : '/(tabs)/summary');
         return;
       }
       const { error } = await supabase.auth.signInAnonymously();
@@ -54,12 +54,15 @@ export default function LoginScreen() {
     setLoadingGoogle(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      const upgradingAnonymous = session?.user?.is_anonymous === true;
+      if (session && !upgradingAnonymous) {
         router.replace('/(tabs)/summary');
         return;
       }
       await signInWithGoogle();
-      // _layout.js onAuthStateChange handles routing after sign-in
+      if (upgradingAnonymous) {
+        router.replace('/onboarding');
+      }
     } catch (e) {
       if (e.code === statusCodes.SIGN_IN_CANCELLED) return; // user dismissed
       Alert.alert('Sign in failed', e?.message || 'Please try again.');
@@ -72,12 +75,15 @@ export default function LoginScreen() {
     setLoadingApple(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      const upgradingAnonymous = session?.user?.is_anonymous === true;
+      if (session && !upgradingAnonymous) {
         router.replace('/(tabs)/summary');
         return;
       }
       await signInWithApple();
-      // _layout.js onAuthStateChange handles routing after sign-in
+      if (upgradingAnonymous) {
+        router.replace('/onboarding');
+      }
     } catch (e) {
       if (e.code === 'ERR_CANCELED') return; // user dismissed
       Alert.alert('Sign in failed', e?.message || 'Please try again.');

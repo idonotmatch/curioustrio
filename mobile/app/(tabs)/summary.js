@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +34,7 @@ const MOCK_GMAIL_IMPORT_SUMMARY = buildMockGmailImportState().importSummary;
 
 export default function SummaryScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { width: windowWidth } = useWindowDimensions();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -76,6 +77,8 @@ export default function SummaryScreen() {
   const loggedShownInsightIds = useRef(new Set());
   const insightNavigationResetRef = useRef(null);
   const [openingInsightId, setOpeningInsightId] = useState('');
+  const [showWelcomeAddCard, setShowWelcomeAddCard] = useState(params.welcome === 'add_expense');
+  const [launcherOpenSignal, setLauncherOpenSignal] = useState(0);
 
   const releaseInsightNavigationLock = useCallback(() => {
     if (insightNavigationResetRef.current) {
@@ -172,6 +175,12 @@ export default function SummaryScreen() {
       metadata: insightEventMetadata(insight),
     })));
   }, [displayInsights, insights.length, logEvents]);
+
+  useEffect(() => {
+    if (params.welcome === 'add_expense') {
+      setShowWelcomeAddCard(true);
+    }
+  }, [params.welcome]);
 
   function handleDismissInsight(insight) {
     if (__DEV__ && insights.length === 0) {
@@ -368,6 +377,11 @@ export default function SummaryScreen() {
     }
   }
 
+  function openQuickAddWelcome() {
+    setShowWelcomeAddCard(false);
+    setLauncherOpenSignal((current) => current + 1);
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
     <ScrollView
@@ -418,6 +432,24 @@ export default function SummaryScreen() {
         )}
       </View>
 
+      {showWelcomeAddCard ? (
+        <View style={styles.welcomeCard}>
+          <View style={styles.welcomeTopRow}>
+            <Text style={styles.welcomeEyebrow}>Start here</Text>
+            <TouchableOpacity onPress={() => setShowWelcomeAddCard(false)} hitSlop={8}>
+              <Ionicons name="close" size={16} color="#7f7f7f" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.welcomeTitle}>Log one thing you spent.</Text>
+          <Text style={styles.welcomeBody}>
+            That first expense is enough to make the rest of Adlo start feeling useful.
+          </Text>
+          <TouchableOpacity style={styles.welcomeButton} onPress={openQuickAddWelcome} activeOpacity={0.86}>
+            <Text style={styles.welcomeButtonText}>Open quick add</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* Household budget — shown for multi-member households */}
       {isMultiMember && (
         <View style={styles.householdCard}>
@@ -453,7 +485,7 @@ export default function SummaryScreen() {
         hint="Swipe for more"
       />
 
-      {displayInsights.length === 0 && !insightsError ? (
+      {displayInsights.length === 0 && !insightsError && !showWelcomeAddCard ? (
         <TouchableOpacity
           style={styles.insightEmptyCard}
           activeOpacity={0.88}
@@ -524,7 +556,7 @@ export default function SummaryScreen() {
       periodLabel={periodLabel}
       startDay={startDay}
     />
-    <GlobalAddLauncher router={router} bottomOffset={24} />
+    <GlobalAddLauncher router={router} bottomOffset={24} openSignal={launcherOpenSignal} />
     </SafeAreaView>
   );
 }
@@ -546,6 +578,53 @@ const styles = StyleSheet.create({
   barFill: { height: 2, borderRadius: 1 },
   barLabel: { fontSize: 13, color: '#888' },
   setBudgetLink: { fontSize: 14, color: '#999', marginTop: 8 },
+  welcomeCard: {
+    backgroundColor: '#121212',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#202020',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 22,
+  },
+  welcomeTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  welcomeEyebrow: {
+    color: '#7d7d7d',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  welcomeTitle: {
+    color: '#f5f5f5',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  welcomeBody: {
+    color: '#9b9b9b',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  welcomeButton: {
+    marginTop: 14,
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeButtonText: {
+    color: '#0a0a0a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   householdCard: { marginBottom: 24 },
   householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
