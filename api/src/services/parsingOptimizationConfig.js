@@ -55,7 +55,7 @@ module.exports = {
     return boolFlag('PARSING_CATEGORY_AI_FALLBACK_STRICT', true);
   },
   nlFastPathMode() {
-    return readMode('PARSING_NL_FAST_PATH_MODE', ['off', 'shadow', 'enabled'], 'shadow');
+    return readMode('PARSING_NL_FAST_PATH_MODE', ['off', 'shadow', 'enabled'], 'enabled');
   },
   receiptRetryPolicyMode() {
     return readMode('PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE', ['legacy', 'single'], 'single');

@@ -358,4 +358,36 @@ describe('parseExpense', () => {
     expect(result.diagnostics.fast_path_shadow_pattern).toBe('single_amount_terminal');
     expect(result.diagnostics.model_call_count).toBe(1);
   });
+
+  it('backs off to the model for ambiguous merchant-plus-description phrases', async () => {
+    process.env.PARSING_NL_FAST_PATH_MODE = 'enabled';
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockClear();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: JSON.stringify({
+          merchant: 'Chipotle',
+          description: 'lunch',
+          amount: 14.5,
+          date: '2026-03-20',
+          notes: null,
+          payment_method: null,
+          card_label: null,
+          items: null,
+        }),
+      }],
+    });
+
+    const result = await parseExpenseDetailed('lunch chipotle 14.50', '2026-03-20');
+
+    expect(result.parsed).toMatchObject({
+      merchant: 'Chipotle',
+      description: 'lunch',
+      amount: 14.5,
+    });
+    expect(result.diagnostics.parser_mode).toBe('direct');
+    expect(result.diagnostics.model_call_count).toBe(1);
+    expect(instance.messages.create).toHaveBeenCalledTimes(1);
+  });
 });

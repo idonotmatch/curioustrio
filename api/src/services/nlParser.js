@@ -280,7 +280,11 @@ function looksMerchantLike(label = '') {
     'utilities',
     'subscription',
   ];
+  const tokens = normalized.split(' ').filter(Boolean);
   if (generic.includes(normalized)) return false;
+  if (tokens.length > 2) return false;
+  if (tokens.length > 1 && tokens.some((token) => generic.includes(token))) return false;
+  if (/\b(and|for|from|with|at)\b/.test(normalized)) return false;
   return /^[a-z0-9'&.\- ]+$/.test(normalized);
 }
 
@@ -340,6 +344,8 @@ function parseDeterministicExpense(input, todayDate) {
 
   const merchant = looksMerchantLike(label) ? merchantizeLabel(label) : null;
   const description = merchant ? null : label;
+  const labelTokenCount = normalizeComparableText(label).split(' ').filter(Boolean).length;
+  if (!merchant && labelTokenCount > 1) return null;
 
   const parsed = cleanParsedExpense({
     merchant,

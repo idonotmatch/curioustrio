@@ -2,7 +2,7 @@ const Category = require('../models/category');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
 const { parseExpenseDetailed } = require('./nlParser');
 const { parseReceiptDetailed } = require('./receiptParser');
-const { assignCategory } = require('./categoryAssigner');
+const { assignCategory, shouldDeferInitialCategoryAssignment } = require('./categoryAssigner');
 const { searchPlace } = require('./mapkitService');
 const { buildReceiptParsingContext } = require('./receiptContextService');
 const {
@@ -82,6 +82,27 @@ function compareReceiptOutcomes(firstOutcome, finalOutcome) {
 }
 
 async function assignParsedCategory(user, parsed) {
+  if (shouldDeferInitialCategoryAssignment({
+    merchant: parsed?.merchant,
+    description: parsed?.description,
+  })) {
+    return {
+      categories: [],
+      assignment: {
+        category_id: null,
+        source: 'deferred',
+        confidence: 0,
+        reasoning: {
+          strategy: 'deferred_initial_assignment',
+          label: 'Category deferred',
+          detail: 'The expense did not provide a strong enough merchant or description signal for an initial category assignment.',
+          fallback_skipped_reason: 'insufficient_specificity',
+        },
+      },
+      matchedCategory: null,
+    };
+  }
+
   const categories = await Category.findByHousehold(user?.household_id);
   const assignment = await assignCategory({
     merchant: parsed.merchant,

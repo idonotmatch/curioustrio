@@ -10,7 +10,7 @@ const Category = require('../../src/models/category');
 const IngestAttemptLog = require('../../src/models/ingestAttemptLog');
 const { parseExpenseDetailed } = require('../../src/services/nlParser');
 const { parseReceiptDetailed } = require('../../src/services/receiptParser');
-const { assignCategory } = require('../../src/services/categoryAssigner');
+const { assignCategory, shouldDeferInitialCategoryAssignment } = require('../../src/services/categoryAssigner');
 const { searchPlace } = require('../../src/services/mapkitService');
 const { buildReceiptParsingContext } = require('../../src/services/receiptContextService');
 const {
@@ -28,11 +28,13 @@ describe('expenseIngestService', () => {
     parseExpenseDetailed.mockReset();
     parseReceiptDetailed.mockReset();
     assignCategory.mockReset();
+    shouldDeferInitialCategoryAssignment.mockReset();
     searchPlace.mockReset();
     buildReceiptParsingContext.mockReset();
 
     Category.findByHousehold.mockResolvedValue([{ id: 'cat-1', name: 'Groceries' }]);
     IngestAttemptLog.create.mockResolvedValue({ id: 'attempt-1' });
+    shouldDeferInitialCategoryAssignment.mockReturnValue(false);
     assignCategory.mockResolvedValue({
       category_id: 'cat-1',
       source: 'heuristic',
@@ -80,6 +82,42 @@ describe('expenseIngestService', () => {
       category_id: 'cat-1',
     });
     expect(payload.metadata.category_ai_fallback_used).toBe(false);
+  });
+
+  it('defers initial category assignment for low-signal description-only input', async () => {
+    shouldDeferInitialCategoryAssignment.mockReturnValue(true);
+    parseExpenseDetailed.mockResolvedValue({
+      parsed: {
+        merchant: null,
+        description: 'coffee',
+        amount: 5,
+        date: '2026-05-02',
+        notes: null,
+        payment_method: null,
+        card_label: null,
+        items: null,
+        parse_status: 'complete',
+        review_fields: [],
+      },
+      diagnostics: {
+        parser_mode: 'deterministic_fast_path',
+        model_call_count: 0,
+      },
+    });
+
+    const result = await parseExpenseInput({
+      userPromise: Promise.resolve({ id: 'user-1', household_id: 'hh-1' }),
+      input: 'coffee 5',
+      todayDate: '2026-05-02',
+    });
+
+    expect(Category.findByHousehold).not.toHaveBeenCalled();
+    expect(assignCategory).not.toHaveBeenCalled();
+    expect(result.body.category_id).toBeNull();
+    expect(result.body.category_source).toBe('deferred');
+    const payload = IngestAttemptLog.create.mock.calls[0][0];
+    expect(payload.metadata.category_ai_fallback_skipped).toBe(true);
+    expect(payload.metadata.category_fallback_reason).toBe('insufficient_specificity');
   });
 
   it('does not block scan response on place lookup when async enrichment is enabled', async () => {

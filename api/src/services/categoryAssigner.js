@@ -72,6 +72,14 @@ function looksGenericDescription(description = '') {
   ].includes(normalized);
 }
 
+function shouldDeferInitialCategoryAssignment({ merchant, description } = {}) {
+  const normalizedMerchant = normalizeComparableText(merchant);
+  if (normalizedMerchant) return false;
+  const specificDescription = isDescriptionSpecificEnough(description);
+  const genericDescription = looksGenericDescription(description);
+  return !specificDescription || genericDescription;
+}
+
 function findCategoryByName(categories, categoryName) {
   const normalizedName = normalizeCategoryName(categoryName);
   return categories.find((category) => normalizeCategoryName(category.name) === normalizedName) || null;
@@ -317,13 +325,9 @@ async function assignCategory({ merchant, description, householdId, categories, 
 
   if (heuristic) return heuristic;
 
-  const specificDescription = isDescriptionSpecificEnough(description);
-  const genericDescription = looksGenericDescription(description);
-  const normalizedMerchant = normalizeComparableText(merchant);
   const shouldSkipAiFallback = strictCategoryFallbackEnabled() && (
     categories.length === 0
-    || (!normalizedMerchant && !specificDescription)
-    || (!normalizedMerchant && genericDescription)
+    || shouldDeferInitialCategoryAssignment({ merchant, description })
   );
 
   if (shouldSkipAiFallback) {
@@ -434,4 +438,4 @@ async function explainAssignedCategory({ householdId, merchant, description, cat
   };
 }
 
-module.exports = { assignCategory, explainAssignedCategory };
+module.exports = { assignCategory, explainAssignedCategory, shouldDeferInitialCategoryAssignment };
