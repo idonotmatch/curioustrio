@@ -115,12 +115,18 @@ async function assignParsedCategory(user, parsed) {
 }
 
 function buildCategoryResponseFields(assignment, matchedCategory) {
+  const categoryStatus = assignment?.source === 'deferred'
+    ? 'deferred'
+    : assignment?.category_id
+      ? 'assigned'
+      : 'skipped';
   return {
     category_id: assignment.category_id,
     category_name: matchedCategory?.name || null,
     category_source: assignment.source,
     category_confidence: assignment.confidence,
     category_reasoning: assignment.reasoning || null,
+    category_status: categoryStatus,
   };
 }
 
@@ -182,6 +188,7 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
       total_parse_duration_ms: totalDurationMs,
       category_id: assignment.category_id,
       category_source: assignment.source,
+      category_status: assignment.source === 'deferred' ? 'deferred' : (assignment.category_id ? 'assigned' : 'skipped'),
       category_confidence: assignment.confidence,
       category_ai_fallback_used: assignment.source === 'claude',
       category_ai_fallback_skipped: assignment.source === 'deferred',
@@ -465,6 +472,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       retry_strategy: retryStrategy,
       category_id: assignment.category_id,
       category_source: assignment.source,
+      category_status: assignment.source === 'deferred' ? 'deferred' : (assignment.category_id ? 'assigned' : 'skipped'),
       category_confidence: assignment.confidence,
       category_ai_fallback_used: assignment.source === 'claude',
       category_ai_fallback_skipped: assignment.source === 'deferred',

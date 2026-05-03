@@ -116,6 +116,26 @@ describe('assignCategory', () => {
     expect(mockCreate().mock.calls.length).toBe(callsBefore);
   });
 
+  it('can force the AI fallback for deferred descriptions when confirm-time enrichment asks for it', async () => {
+    process.env.PARSING_CATEGORY_AI_FALLBACK_STRICT = 'true';
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
+    MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
+
+    const result = await assignCategory({
+      merchant: null,
+      description: 'coffee',
+      householdId: 'hh-1',
+      categories: [
+        ...mockCategories,
+        { id: 'cat-dining-id', name: 'Dining Out' },
+      ],
+      allowDeferredFallback: true,
+    });
+
+    expect(result.source).toBe('claude');
+    expect(mockCreate()).toHaveBeenCalledTimes(1);
+  });
+
   it('uses local category heuristics before the Claude fallback', async () => {
     CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
     MerchantMapping.findByMerchant.mockResolvedValueOnce(null);

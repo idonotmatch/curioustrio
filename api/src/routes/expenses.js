@@ -233,6 +233,7 @@ router.post('/confirm', async (req, res, next) => {
       place_name, address,
       mapkit_stable_id, linked_expense_id,
       suggested_category_id, category_source, category_confidence, category_reasoning,
+      category_status, location_status, category_user_owned, location_user_owned,
       payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
       ingest_attempt_id, parsed_payment_snapshot,
     } = req.body;
@@ -268,6 +269,10 @@ router.post('/confirm', async (req, res, next) => {
         category_source,
         category_confidence,
         category_reasoning,
+        category_status,
+        location_status,
+        category_user_owned,
+        location_user_owned,
         payment_method,
         card_last4,
         card_label,

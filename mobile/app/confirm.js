@@ -74,6 +74,8 @@ export default function ConfirmScreen() {
   const [selectedSavedCardKey, setSelectedSavedCardKey] = useState(null);
   const [savedCardMatchNote, setSavedCardMatchNote] = useState(null);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [categoryUserOwned, setCategoryUserOwned] = useState(false);
+  const [locationUserOwned, setLocationUserOwned] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [catSearch, setCatSearch] = useState('');
   const [catCreating, setCatCreating] = useState(false);
@@ -110,6 +112,8 @@ export default function ConfirmScreen() {
     setSelectedSavedCardKey(null);
     setSavedCardMatchNote(null);
     setIsPrivate(Boolean(parsed?.is_private));
+    setCategoryUserOwned(false);
+    setLocationUserOwned(false);
     setShowCategoryPicker(false);
     setCatSearch('');
     setCatCreating(false);
@@ -207,16 +211,6 @@ export default function ConfirmScreen() {
   }, [savedCards, paymentMethod, cardLast4, cardLabel]);
 
   useEffect(() => {
-    if (parsedHasLocation) {
-      setLocationData({
-        place_name: parsed.place_name || merchant || '',
-        address: parsed.address || null,
-        mapkit_stable_id: parsed.mapkit_stable_id || null,
-      });
-    }
-  }, [parsedHasLocation, parsed?.address, parsed?.mapkit_stable_id, parsed?.place_name, merchant]);
-
-  useEffect(() => {
     if (!excludeFromBudget) {
       setBudgetExclusionReason(null);
     } else if (!budgetExclusionReason) {
@@ -252,6 +246,7 @@ export default function ConfirmScreen() {
         }
         const result = await api.get(`/places/search?${params.toString()}`);
         if (result?.result) {
+          setLocationUserOwned(false);
           setLocationData(result.result);
         }
       } catch {
@@ -342,6 +337,7 @@ export default function ConfirmScreen() {
   }
 
   function selectCategory(cat) {
+    setCategoryUserOwned(true);
     setExpense(prev => ({ ...prev, category_id: cat?.id || null, category_name: cat?.name || null }));
     setCatSearch('');
     setCatSuggestion(null);
@@ -390,6 +386,7 @@ export default function ConfirmScreen() {
         description: description.trim() || null,
         preferred_parent_id: catSuggestion?.parent_id || null,
       });
+      setCategoryUserOwned(true);
       setExpense(prev => ({ ...prev, category_id: newCat.id, category_name: newCat.name }));
       setCatSearch('');
       setCatSuggestion(null);
@@ -432,6 +429,10 @@ export default function ConfirmScreen() {
         category_source: parsed?.category_source || null,
         category_confidence: parsed?.category_confidence ?? null,
         category_reasoning: parsed?.category_reasoning || null,
+        category_status: parsed?.category_status || (expense.category_id ? 'assigned' : null),
+        location_status: parsed?.location_status || null,
+        category_user_owned: categoryUserOwned,
+        location_user_owned: locationUserOwned,
         source: isRefund ? 'refund' : (parsed?.source || 'manual'),
         notes: expense.notes,
         place_name: locationData?.place_name,
@@ -698,7 +699,14 @@ export default function ConfirmScreen() {
         </View>
       )}
 
-      <LocationPicker onLocation={setLocationData} locationData={locationData} merchant={merchant} />
+      <LocationPicker
+        onLocation={(nextLocation) => {
+          setLocationData(nextLocation);
+          setLocationUserOwned(true);
+        }}
+        locationData={locationData}
+        merchant={merchant}
+      />
 
       {isManualScratchFlow && items.length === 0 ? (
         <TouchableOpacity style={styles.addItemsPrompt} onPress={handleAddItem}>

@@ -81,6 +81,7 @@ describe('expenseIngestService', () => {
       amount: 34,
       category_id: 'cat-1',
     });
+    expect(payload.metadata.category_status).toBe('assigned');
     expect(payload.metadata.category_ai_fallback_used).toBe(false);
   });
 
@@ -115,6 +116,7 @@ describe('expenseIngestService', () => {
     expect(assignCategory).not.toHaveBeenCalled();
     expect(result.body.category_id).toBeNull();
     expect(result.body.category_source).toBe('deferred');
+    expect(result.body.category_status).toBe('deferred');
     const payload = IngestAttemptLog.create.mock.calls[0][0];
     expect(payload.metadata.category_ai_fallback_skipped).toBe(true);
     expect(payload.metadata.category_fallback_reason).toBe('insufficient_specificity');
@@ -153,6 +155,7 @@ describe('expenseIngestService', () => {
     expect(result.body).toMatchObject({
       place_name: 'Whole Foods',
       address: '123 Main St',
+      category_status: 'assigned',
       location_status: 'deferred',
     });
     const payload = IngestAttemptLog.create.mock.calls[0][0];

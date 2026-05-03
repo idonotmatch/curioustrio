@@ -263,7 +263,14 @@ async function gatherAssignmentSignals({ householdId, merchant, description }) {
   };
 }
 
-async function assignCategory({ merchant, description, householdId, categories, placeType }) {
+async function assignCategory({
+  merchant,
+  description,
+  householdId,
+  categories,
+  placeType,
+  allowDeferredFallback = false,
+}) {
   const { merchantMapping, learnedDecision } = await gatherAssignmentSignals({
     householdId,
     merchant,
@@ -325,10 +332,23 @@ async function assignCategory({ merchant, description, householdId, categories, 
 
   if (heuristic) return heuristic;
 
-  const shouldSkipAiFallback = strictCategoryFallbackEnabled() && (
-    categories.length === 0
-    || shouldDeferInitialCategoryAssignment({ merchant, description })
-  );
+  if (categories.length === 0) {
+    return {
+      category_id: null,
+      source: 'deferred',
+      confidence: 0,
+      reasoning: {
+        strategy: 'fallback_gate',
+        label: 'AI fallback skipped',
+        detail: 'No categories were available, so the AI fallback was skipped.',
+        fallback_skipped_reason: 'no_categories',
+      },
+    };
+  }
+
+  const shouldSkipAiFallback = strictCategoryFallbackEnabled()
+    && !allowDeferredFallback
+    && shouldDeferInitialCategoryAssignment({ merchant, description });
 
   if (shouldSkipAiFallback) {
     return {
@@ -338,10 +358,8 @@ async function assignCategory({ merchant, description, householdId, categories, 
       reasoning: {
         strategy: 'fallback_gate',
         label: 'AI fallback skipped',
-        detail: categories.length === 0
-          ? 'No categories were available, so the AI fallback was skipped.'
-          : 'The expense did not include enough specific merchant or description detail to justify an AI category fallback.',
-        fallback_skipped_reason: categories.length === 0 ? 'no_categories' : 'insufficient_specificity',
+        detail: 'The expense did not include enough specific merchant or description detail to justify an AI category fallback.',
+        fallback_skipped_reason: 'insufficient_specificity',
       },
     };
   }
@@ -350,11 +368,6 @@ async function assignCategory({ merchant, description, householdId, categories, 
   //    like "lunch 14" (merchant=null, description="lunch") still get matched.
   const categoryList = categories.map(c => `${c.id}: ${c.name}`).join('\n');
   const expenseLine = [merchant, description].filter(Boolean).join(' — ') || 'unknown';
-
-  if (categories.length === 0) {
-    console.warn('[categoryAssigner] No categories available — skipping Claude call');
-    return { category_id: null, source: 'claude', confidence: 0 };
-  }
 
   try {
     const text = await complete({
