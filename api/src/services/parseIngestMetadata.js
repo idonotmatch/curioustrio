@@ -3,6 +3,7 @@ const {
   verboseSuccessSampleRate,
   correctionLearningMode,
 } = require('./parsingOptimizationConfig');
+const { persistSuccessParsedSnapshotSampleRate } = require('./storageMinimizationConfig');
 
 function estimateJsonSize(value) {
   try {
@@ -36,6 +37,10 @@ function shouldKeepVerboseSuccessMetadata() {
   return Math.random() < verboseSuccessSampleRate();
 }
 
+function shouldKeepParsedSnapshotForSuccess() {
+  return Math.random() < persistSuccessParsedSnapshotSampleRate();
+}
+
 function stripVerboseFields(metadata = {}) {
   const cloned = { ...(metadata || {}) };
   delete cloned.raw_text_preview;
@@ -52,12 +57,15 @@ function finalizeIngestMetadata({
   parsed = null,
   source = null,
 }) {
+  const shouldKeepParsedSnapshot = status !== 'parsed' || shouldKeepParsedSnapshotForSuccess();
   const baseMetadata = {
     ...(metadata || {}),
-    parsed_snapshot: parsed ? buildParsedSnapshot(parsed) : null,
-    metadata_schema_version: 2,
+    metadata_schema_version: 3,
     correction_learning_mode: correctionLearningMode(),
   };
+  if (parsed && shouldKeepParsedSnapshot) {
+    baseMetadata.parsed_snapshot = buildParsedSnapshot(parsed);
+  }
 
   const verboseSuccessMetadata = status === 'parsed' && shouldKeepVerboseSuccessMetadata();
   const finalized = (

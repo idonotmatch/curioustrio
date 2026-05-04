@@ -29,9 +29,10 @@ async function attachGmailReviewHint(expense, userId) {
   }
 
   let senderQuality = { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
-  if (log?.from_address) {
+  const senderIdentity = log?.from_address || log?.sender_domain || null;
+  if (senderIdentity) {
     try {
-      senderQuality = await getSenderImportQuality(userId, log.from_address, log.subject || '');
+      senderQuality = await getSenderImportQuality(userId, senderIdentity, log.subject || '');
     } catch (err) {
       console.error('[expenseReviewContext] gmail hint quality fallback:', err?.message || err);
       senderQuality = {
@@ -76,7 +77,7 @@ async function attachGmailReviewHint(expense, userId) {
   return {
     ...expense,
     email_subject: decodeEmailField(log.subject),
-    email_from_address: log.from_address || null,
+    email_from_address: log.from_address || log.sender_domain || null,
     email_snippet: decodeEmailField(log.snippet),
     gmail_review_hint: {
       ...buildEmailReviewHint(expense, {

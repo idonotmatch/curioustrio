@@ -13,6 +13,8 @@ const REQUIRED_COLUMNS = [
   ['email_import_log', 'from_address'],
   ['email_import_log', 'skip_reason'],
   ['email_import_log', 'snippet'],
+  ['email_import_log', 'sender_domain'],
+  ['email_import_log', 'subject_pattern'],
   ['oauth_tokens', 'last_synced_at'],
   ['oauth_tokens', 'last_sync_attempted_at'],
   ['oauth_tokens', 'last_sync_error_at'],

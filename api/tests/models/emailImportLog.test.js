@@ -2,6 +2,7 @@ const db = require('../../src/db');
 const EmailImportLog = require('../../src/models/emailImportLog');
 
 let testUserId;
+const originalEnv = process.env;
 
 beforeAll(async () => {
   await db.query(
@@ -25,6 +26,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  process.env = originalEnv;
   await db.query(
     `DELETE FROM email_import_feedback
      WHERE expense_id IN (SELECT id FROM expenses WHERE user_id = $1)`,
@@ -33,6 +35,10 @@ afterAll(async () => {
   await db.query(`DELETE FROM email_import_log WHERE user_id = $1`, [testUserId]);
   await db.query(`DELETE FROM expenses WHERE user_id = $1`, [testUserId]);
   await db.query(`DELETE FROM users WHERE provider_uid = 'test-auth0-email-log'`);
+});
+
+beforeEach(() => {
+  process.env = { ...originalEnv, GMAIL_MINIMAL_LOG_MODE: 'false' };
 });
 
 describe('EmailImportLog.create', () => {
@@ -100,6 +106,27 @@ describe('EmailImportLog.create', () => {
 
     expect(result).toBeNull();
   });
+
+  it('stores only durable fingerprints for skipped rows in minimal mode', async () => {
+    process.env.GMAIL_MINIMAL_LOG_MODE = 'true';
+    const log = await EmailImportLog.create({
+      userId: testUserId,
+      messageId: 'msg-001-minimal-fingerprint',
+      expenseId: null,
+      status: 'skipped',
+      subject: 'ORDER: placed on April 10',
+      fromAddress: 'Amazon Orders <orders@amazon.com>',
+      snippet: 'Order total: $29.99',
+      skipReason: 'classifier_uncertain',
+    });
+
+    expect(log).toBeDefined();
+    expect(log.subject).toBeNull();
+    expect(log.from_address).toBeNull();
+    expect(log.snippet).toBeNull();
+    expect(log.sender_domain).toBe('amazon.com');
+    expect(log.subject_pattern).toBe('amazon_order');
+  });
 });
 
 describe('EmailImportLog.findByMessageId', () => {
@@ -150,6 +177,7 @@ describe('EmailImportLog.findByMessageId', () => {
 
 describe('EmailImportLog.recordReviewFeedback', () => {
   it('records review actions and changed fields for imported expenses', async () => {
+    process.env.GMAIL_MINIMAL_LOG_MODE = 'true';
     const expenseResult = await db.query(
       `INSERT INTO expenses (user_id, merchant, amount, date, status, source, notes, review_required, review_source)
        VALUES ($1, 'Review Merchant', 18.5, '2026-03-21', 'pending', 'email', 'Imported from Gmail — needs review', TRUE, 'gmail')
@@ -162,6 +190,9 @@ describe('EmailImportLog.recordReviewFeedback', () => {
       messageId: 'msg-review-feedback',
       expenseId: expenseResult.rows[0].id,
       status: 'imported',
+      subject: 'Whole Foods receipt',
+      fromAddress: 'receipts@wholefoods.com',
+      snippet: 'Total $18.50',
     });
 
     const updated = await EmailImportLog.recordReviewFeedback(expenseResult.rows[0].id, {
@@ -174,6 +205,11 @@ describe('EmailImportLog.recordReviewFeedback', () => {
     expect(updated.review_edit_count).toBe(1);
     expect(updated.review_changed_fields).toEqual(expect.arrayContaining(['merchant', 'amount']));
     expect(updated.reviewed_at).toBeDefined();
+
+    const found = await EmailImportLog.findByExpenseId(expenseResult.rows[0].id);
+    expect(found.subject).toBeNull();
+    expect(found.from_address).toBeNull();
+    expect(found.snippet).toBeNull();
   });
 });
 

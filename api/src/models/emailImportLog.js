@@ -1,4 +1,9 @@
 const db = require('../db');
+const { extractSenderDomain, extractSubjectPattern } = require('../services/gmailImportFingerprint');
+const {
+  gmailMinimalLogModeEnabled,
+  emailImportRetentionDays,
+} = require('../services/storageMinimizationConfig');
 const { decodeHtmlEntities } = require('../utils/htmlEntities');
 
 function isMissingFeedbackTableError(err) {
@@ -15,6 +20,10 @@ function isMissingSnippetError(err) {
 
 function isMissingItemStructureError(err) {
   return err?.code === '42703' && /(structured_item_block_level|deterministic_item_count)/i.test(`${err?.message || ''}`);
+}
+
+function isMissingMinimalLedgerError(err) {
+  return err?.code === '42703' && /(sender_domain|subject_pattern)/i.test(`${err?.message || ''}`);
 }
 
 function sanitizeSnippet(snippet) {
@@ -34,6 +43,57 @@ function sanitizeSubject(subject) {
   return value || null;
 }
 
+function shouldPersistRawMessageContext({ status = 'imported', expenseId = null } = {}) {
+  if (!gmailMinimalLogModeEnabled()) return true;
+  return status === 'imported' && Boolean(expenseId);
+}
+
+function buildStoredMessageContext({
+  status = 'imported',
+  expenseId = null,
+  subject,
+  fromAddress,
+  snippet,
+} = {}) {
+  const safeSubject = sanitizeSubject(subject);
+  const safeSnippet = sanitizeSnippet(snippet);
+  const senderDomain = extractSenderDomain(fromAddress || '');
+  const subjectPattern = extractSubjectPattern(safeSubject || '', fromAddress || '');
+  const keepRaw = shouldPersistRawMessageContext({ status, expenseId });
+
+  return {
+    safeSubject: keepRaw ? safeSubject : null,
+    safeSnippet: keepRaw ? safeSnippet : null,
+    storedFromAddress: keepRaw ? (fromAddress || null) : null,
+    senderDomain,
+    subjectPattern,
+  };
+}
+
+async function scrubResolvedMessageContext(expenseId) {
+  if (!expenseId || !gmailMinimalLogModeEnabled()) return null;
+  try {
+    await db.query(
+      `UPDATE email_import_log
+       SET subject = NULL,
+           from_address = NULL,
+           snippet = NULL
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+  } catch (err) {
+    if (!isMissingSnippetError(err)) throw err;
+    await db.query(
+      `UPDATE email_import_log
+       SET subject = NULL,
+           from_address = NULL
+       WHERE expense_id = $1`,
+      [expenseId]
+    );
+  }
+  return true;
+}
+
 async function create({
   userId,
   messageId,
@@ -46,30 +106,37 @@ async function create({
   structuredItemBlockLevel = null,
   deterministicItemCount = null,
 }) {
-  const safeSnippet = sanitizeSnippet(snippet);
+  const {
+    safeSubject,
+    safeSnippet,
+    storedFromAddress,
+    senderDomain,
+    subjectPattern,
+  } = buildStoredMessageContext({ status, expenseId, subject, fromAddress, snippet });
   try {
     const result = await db.query(
       `INSERT INTO email_import_log (
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
-         structured_item_block_level, deterministic_item_count
+         structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
       [
-        userId, messageId, expenseId, status, sanitizeSubject(subject), fromAddress || null, skipReason || null, safeSnippet,
+        userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null, safeSnippet,
         structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
+        senderDomain, subjectPattern,
       ]
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
-      [userId, messageId, expenseId, status, sanitizeSubject(subject), fromAddress || null, skipReason || null]
+      [userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null]
     );
     return fallback.rows[0] || null;
   }
@@ -79,6 +146,8 @@ async function findByExpenseId(expenseId) {
   try {
     const result = await db.query(
       `SELECT l.*,
+              l.sender_domain,
+              l.subject_pattern,
               l.structured_item_block_level,
               l.deterministic_item_count,
               f.reviewed_at,
@@ -94,9 +163,11 @@ async function findByExpenseId(expenseId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.*,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
               NULL::text AS snippet,
               NULL::text AS structured_item_block_level,
               NULL::int AS deterministic_item_count,
@@ -147,9 +218,11 @@ async function recordReviewFeedback(expenseId, { action = null, changedFields = 
       [expenseId, action, JSON.stringify(cleanFields), incrementEditCount]
     );
 
+    await scrubResolvedMessageContext(expenseId);
     return result.rows[0] || null;
   } catch (err) {
     if (!isMissingFeedbackTableError(err)) throw err;
+    await scrubResolvedMessageContext(expenseId);
     return {
       expense_id: expenseId,
       review_action: action,
@@ -163,7 +236,7 @@ async function recordReviewFeedback(expenseId, { action = null, changedFields = 
 async function findByMessageId(userId, messageId) {
   try {
     const result = await db.query(
-      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at, l.snippet,
+      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.sender_domain, l.subject_pattern, l.skip_reason, l.imported_at, l.snippet,
               l.structured_item_block_level, l.deterministic_item_count,
               f.reviewed_at, f.review_action, f.review_changed_fields, f.review_edit_count,
               e.status AS expense_status,
@@ -179,9 +252,12 @@ async function findByMessageId(userId, messageId) {
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
-      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+      `SELECT l.id, l.user_id, l.message_id, l.expense_id, l.status, l.subject, l.from_address,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
+              l.skip_reason, l.imported_at,
               NULL::text AS snippet,
               NULL::text AS structured_item_block_level,
               NULL::int AS deterministic_item_count,
@@ -207,7 +283,7 @@ async function listByUser(userId, limit = 100) {
   try {
     const result = await db.query(
       `SELECT l.id,
-              l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              l.expense_id, l.status, l.subject, l.from_address, l.sender_domain, l.subject_pattern, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
               l.structured_item_block_level,
               l.deterministic_item_count,
@@ -228,10 +304,13 @@ async function listByUser(userId, limit = 100) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id,
-              l.expense_id, l.status, l.subject, l.from_address, l.skip_reason, l.imported_at,
+              l.expense_id, l.status, l.subject, l.from_address,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
+              l.skip_reason, l.imported_at,
               NULL::text AS snippet,
               NULL::text AS structured_item_block_level,
               NULL::int AS deterministic_item_count,
@@ -307,16 +386,33 @@ async function findByIdForUser(id, userId) {
 
 async function listFailedByUser(userId, limit = 25) {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
-  const result = await db.query(
-    `SELECT id, user_id, message_id, expense_id, status, subject, from_address, skip_reason, imported_at
-     FROM email_import_log
-     WHERE user_id = $1
-       AND status = 'failed'
-     ORDER BY imported_at DESC
-     LIMIT $2`,
-    [userId, safeLimit]
-  );
-  return result.rows;
+  try {
+    const result = await db.query(
+      `SELECT id, user_id, message_id, expense_id, status, subject, from_address, sender_domain, subject_pattern, skip_reason, imported_at
+       FROM email_import_log
+       WHERE user_id = $1
+         AND status = 'failed'
+       ORDER BY imported_at DESC
+       LIMIT $2`,
+      [userId, safeLimit]
+    );
+    return result.rows;
+  } catch (err) {
+    if (!isMissingMinimalLedgerError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT id, user_id, message_id, expense_id, status, subject, from_address,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
+              skip_reason, imported_at
+       FROM email_import_log
+       WHERE user_id = $1
+         AND status = 'failed'
+       ORDER BY imported_at DESC
+       LIMIT $2`,
+      [userId, safeLimit]
+    );
+    return fallback.rows;
+  }
 }
 
 async function upsertResult({
@@ -331,15 +427,20 @@ async function upsertResult({
   structuredItemBlockLevel = null,
   deterministicItemCount = null,
 }) {
-  const safeSnippet = sanitizeSnippet(snippet);
-  const safeSubject = sanitizeSubject(subject);
+  const {
+    safeSubject,
+    safeSnippet,
+    storedFromAddress,
+    senderDomain,
+    subjectPattern,
+  } = buildStoredMessageContext({ status, expenseId, subject, fromAddress, snippet });
   try {
     const result = await db.query(
       `INSERT INTO email_import_log (
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
-         structured_item_block_level, deterministic_item_count
+         structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (user_id, message_id) DO UPDATE SET
          expense_id = EXCLUDED.expense_id,
          status = EXCLUDED.status,
@@ -349,16 +450,19 @@ async function upsertResult({
          snippet = EXCLUDED.snippet,
          structured_item_block_level = EXCLUDED.structured_item_block_level,
          deterministic_item_count = EXCLUDED.deterministic_item_count,
+         sender_domain = EXCLUDED.sender_domain,
+         subject_pattern = EXCLUDED.subject_pattern,
          imported_at = NOW()
        RETURNING *`,
       [
-        userId, messageId, expenseId, status, safeSubject, fromAddress || null, skipReason || null, safeSnippet,
+        userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null, safeSnippet,
         structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
+        senderDomain, subjectPattern,
       ]
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -370,7 +474,7 @@ async function upsertResult({
          skip_reason = EXCLUDED.skip_reason,
          imported_at = NOW()
        RETURNING *`,
-      [userId, messageId, expenseId, status, safeSubject, fromAddress || null, skipReason || null]
+      [userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null]
     );
     return fallback.rows[0] || null;
   }
@@ -577,6 +681,8 @@ async function listQualitySignalsByUser(userId, days = 30) {
       `SELECT l.message_id,
               l.subject,
               l.from_address,
+              l.sender_domain,
+              l.subject_pattern,
               l.imported_at,
               l.status,
               l.structured_item_block_level,
@@ -595,11 +701,13 @@ async function listQualitySignalsByUser(userId, days = 30) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.message_id,
               l.subject,
               l.from_address,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
               l.imported_at,
               l.status,
               NULL::text AS structured_item_block_level,
@@ -621,16 +729,30 @@ async function listQualitySignalsByUser(userId, days = 30) {
 
 async function listDecisionFeedbackByUser(userId, days = 30) {
   const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
-  const result = await db.query(
-    `SELECT from_address, status, user_feedback
-     FROM email_import_log
-     WHERE user_id = $1
-       AND imported_at >= NOW() - ($2::text || ' days')::interval
-       AND user_feedback IS NOT NULL
-     ORDER BY imported_at DESC`,
-    [userId, safeDays]
-  );
-  return result.rows;
+  try {
+    const result = await db.query(
+      `SELECT from_address, sender_domain, status, user_feedback
+       FROM email_import_log
+       WHERE user_id = $1
+         AND imported_at >= NOW() - ($2::text || ' days')::interval
+         AND user_feedback IS NOT NULL
+       ORDER BY imported_at DESC`,
+      [userId, safeDays]
+    );
+    return result.rows;
+  } catch (err) {
+    if (!isMissingMinimalLedgerError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT from_address, NULL::text AS sender_domain, status, user_feedback
+       FROM email_import_log
+       WHERE user_id = $1
+         AND imported_at >= NOW() - ($2::text || ' days')::interval
+         AND user_feedback IS NOT NULL
+       ORDER BY imported_at DESC`,
+      [userId, safeDays]
+    );
+    return fallback.rows;
+  }
 }
 
 async function listTemplateSignalsByUser(userId, days = 30) {
@@ -639,6 +761,8 @@ async function listTemplateSignalsByUser(userId, days = 30) {
     const result = await db.query(
       `SELECT l.subject,
               l.from_address,
+              l.sender_domain,
+              l.subject_pattern,
               l.status,
               l.skip_reason,
               l.imported_at,
@@ -656,10 +780,12 @@ async function listTemplateSignalsByUser(userId, days = 30) {
     );
     return result.rows;
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.subject,
               l.from_address,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
               l.status,
               l.skip_reason,
               l.imported_at,
@@ -678,6 +804,65 @@ async function listTemplateSignalsByUser(userId, days = 30) {
   }
 }
 
+async function pruneOldRows(retentionDays = emailImportRetentionDays()) {
+  const safeDays = Math.max(7, Math.min(Number(retentionDays) || emailImportRetentionDays(), 365));
+  try {
+    const feedbackDelete = await db.query(
+      `WITH stale AS (
+         SELECT l.expense_id
+         FROM email_import_log l
+         LEFT JOIN expenses e ON e.id = l.expense_id
+         WHERE l.imported_at < NOW() - ($1::text || ' days')::interval
+           AND NOT (
+             e.status = 'pending'
+             AND COALESCE(e.review_source, '') = 'gmail'
+           )
+           AND l.expense_id IS NOT NULL
+       )
+       DELETE FROM email_import_feedback f
+       USING stale
+       WHERE f.expense_id = stale.expense_id`,
+      [safeDays]
+    );
+    const result = await db.query(
+      `DELETE FROM email_import_log l
+       WHERE l.imported_at < NOW() - ($1::text || ' days')::interval
+         AND NOT EXISTS (
+           SELECT 1
+           FROM expenses e
+           WHERE e.id = l.expense_id
+             AND e.status = 'pending'
+             AND COALESCE(e.review_source, '') = 'gmail'
+         )`,
+      [safeDays]
+    );
+    return {
+      feedback_deleted: Number(feedbackDelete.rowCount || 0),
+      logs_deleted: Number(result.rowCount || 0),
+      retention_days: safeDays,
+    };
+  } catch (err) {
+    if (!isMissingFeedbackTableError(err)) throw err;
+    const result = await db.query(
+      `DELETE FROM email_import_log l
+       WHERE l.imported_at < NOW() - ($1::text || ' days')::interval
+         AND NOT EXISTS (
+           SELECT 1
+           FROM expenses e
+           WHERE e.id = l.expense_id
+             AND e.status = 'pending'
+             AND COALESCE(e.review_source, '') = 'gmail'
+         )`,
+      [safeDays]
+    );
+    return {
+      feedback_deleted: 0,
+      logs_deleted: Number(result.rowCount || 0),
+      retention_days: safeDays,
+    };
+  }
+}
+
 module.exports = {
   create,
   findByExpenseId,
@@ -691,6 +876,7 @@ module.exports = {
   listQualitySignalsByUser,
   listDecisionFeedbackByUser,
   listTemplateSignalsByUser,
+  pruneOldRows,
   sanitizeSnippet,
   upsertResult,
 };

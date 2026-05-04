@@ -10,11 +10,17 @@ const {
   asyncPlaceEnrichmentEnabled,
 } = require('./parsingOptimizationConfig');
 const { finalizeIngestMetadata } = require('./parseIngestMetadata');
+const { persistSuccessInputPreviewEnabled } = require('./storageMinimizationConfig');
 
 function truncateInputPreview(input, max = 180) {
   const text = `${input || ''}`.trim();
   if (!text) return null;
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function buildInputPreviewForStatus(input, status) {
+  if (status === 'parsed' && !persistSuccessInputPreviewEnabled()) return null;
+  return truncateInputPreview(input);
 }
 
 function buildIngestFailure(source, failureReason) {
@@ -172,7 +178,7 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
     userId: user?.id || null,
     source: 'nl',
     status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
-    inputPreview: truncateInputPreview(input),
+    inputPreview: buildInputPreviewForStatus(input, parsed.parse_status === 'partial' ? 'partial' : 'parsed'),
     parseStatus: parsed.parse_status,
     reviewFields: parsed.review_fields,
     metadata: finalizeIngestMetadata({
@@ -447,6 +453,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     userId: user?.id || null,
     source: 'receipt',
     status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
+    inputPreview: parsed.parse_status === 'partial' ? 'receipt_scan_partial' : null,
     parseStatus: parsed.parse_status,
     reviewFields: parsed.review_fields,
     metadata: finalizeIngestMetadata({

@@ -1,55 +1,13 @@
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
+const { extractSenderDomain, extractSubjectPattern } = require('./gmailImportFingerprint');
 
-function extractSenderDomain(fromAddress = '') {
-  const match = `${fromAddress || ''}`.toLowerCase().match(/@([a-z0-9.-]+\.[a-z]{2,})/i);
-  return match?.[1] || 'unknown';
+function rowSenderDomain(row = {}) {
+  return row.sender_domain || extractSenderDomain(row.from_address);
 }
 
-function extractSubjectPattern(subject = '', fromAddress = '') {
-  const senderDomain = extractSenderDomain(fromAddress);
-  const trimmed = `${subject || ''}`.trim();
-  const normalized = trimmed.replace(/\s+/g, ' ');
-  const lower = normalized.toLowerCase();
-
-  if (senderDomain === 'amazon.com') {
-    if (/^ORDER:\s*/i.test(normalized)) return 'amazon_order';
-    if (/\b(refund|return|returned|refund processed)\b/i.test(normalized)) return 'amazon_refund';
-    if (/\b(shipped|shipping|arriving|delivered|out for delivery|has shipped|on the way)\b/i.test(normalized)) {
-      return 'amazon_shipping';
-    }
-    if (/\b(deal|promotion|recommended|save on|subscribe & save)\b/i.test(normalized)) {
-      return 'amazon_marketing';
-    }
-  }
-
-  const genericPatterns = [
-    ['generic_order', /^order:\s*/i],
-    ['generic_receipt', /\b(receipt|your receipt|order receipt|purchase receipt)\b/i],
-    ['generic_refund', /\b(refund|return processed|refund processed|returned)\b/i],
-    ['generic_shipping', /\b(shipped|shipping update|arriving|delivered|out for delivery|has shipped|on the way|ready for pickup)\b/i],
-    ['generic_payment', /\b(payment sent|payment received|receipt for your payment|paid to|you paid)\b/i],
-    ['generic_invoice', /\b(invoice|bill available|statement ready)\b/i],
-    ['generic_subscription', /\b(subscription|renewal|membership renewal|plan renewal)\b/i],
-    ['generic_trip', /\b(trip receipt|ride receipt|your trip|your ride|thanks for riding|stay receipt|booking confirmation|reservation confirmed)\b/i],
-    ['generic_marketing', /\b(deal|promotion|recommended|save on|weekly deals|sale|special offer)\b/i],
-  ];
-  for (const [key, pattern] of genericPatterns) {
-    if (pattern.test(normalized)) return key;
-  }
-
-  const leadingToken = normalized.match(/^([A-Za-z][A-Za-z0-9 '&/-]{1,30}:)/);
-  if (leadingToken) return leadingToken[1].toLowerCase();
-
-  const tokenized = lower
-    .replace(/\b\d{1,4}[/-]\d{1,4}([/-]\d{2,4})?\b/g, ' * ')
-    .replace(/\b\d+\b/g, ' * ')
-    .replace(/\b[a-f0-9]{8,}\b/gi, ' * ')
-    .replace(/\b(order|invoice|receipt|payment|refund|return|trip|booking|reservation)\s+#?[a-z0-9-]+\b/gi, '$1 *')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return tokenized.slice(0, 64) || 'unknown_subject';
+function rowSubjectPattern(row = {}) {
+  return row.subject_pattern || extractSubjectPattern(row.subject, row.from_address);
 }
 
 function toRate(numerator, denominator) {
@@ -198,8 +156,8 @@ function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
   const senderDomain = extractSenderDomain(fromAddress);
   const subjectPattern = extractSubjectPattern(subject, fromAddress);
   const templateRows = rows.filter((row) =>
-    extractSenderDomain(row.from_address) === senderDomain
-    && extractSubjectPattern(row.subject, row.from_address) === subjectPattern
+    rowSenderDomain(row) === senderDomain
+    && rowSubjectPattern(row) === subjectPattern
   );
 
   const imported = templateRows.length;
@@ -342,8 +300,8 @@ function buildTemplateSummary(rows = [], limit = 8) {
   const grouped = new Map();
 
   for (const row of rows) {
-    const senderDomain = extractSenderDomain(row.from_address);
-    const subjectPattern = extractSubjectPattern(row.subject, row.from_address);
+    const senderDomain = rowSenderDomain(row);
+    const subjectPattern = rowSubjectPattern(row);
     const key = `${senderDomain}::${subjectPattern}`;
     const current = grouped.get(key) || {
       sender_domain: senderDomain,
@@ -507,7 +465,7 @@ function buildSenderSummary(rows, limit = 5) {
   const grouped = new Map();
 
   for (const row of rows) {
-    const senderDomain = extractSenderDomain(row.from_address);
+    const senderDomain = rowSenderDomain(row);
     const current = grouped.get(senderDomain) || {
       sender_domain: senderDomain,
       imported: 0,
@@ -607,7 +565,7 @@ function buildSenderSummary(rows, limit = 5) {
         top_dismiss_reasons,
         review_paths,
         review_path_reliability,
-        item_reliability: summarizeItemReliability(rows.filter((row) => extractSenderDomain(row.from_address) === entry.sender_domain)),
+        item_reliability: summarizeItemReliability(rows.filter((row) => rowSenderDomain(row) === entry.sender_domain)),
       };
     })
     .sort((a, b) =>
@@ -691,7 +649,7 @@ async function getGmailImportQualitySummary(userId, days = 30, senderLimit = 5) 
   const preferenceMap = new Map(senderPreferences.map((pref) => [pref.sender_domain, pref]));
   const feedbackBySender = new Map();
   for (const row of feedbackRows) {
-    const senderDomain = extractSenderDomain(row.from_address);
+    const senderDomain = rowSenderDomain(row);
     const current = feedbackBySender.get(senderDomain) || { should_have_imported: 0, didnt_need_review: 0, needed_more_review: 0 };
     if (row.user_feedback === 'should_have_imported') current.should_have_imported += 1;
     if (row.user_feedback === 'didnt_need_review') current.didnt_need_review += 1;
@@ -750,9 +708,9 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
     EmailImportLog.listQualitySignalsByUser(userId, safeDays),
     EmailImportLog.listDecisionFeedbackByUser(userId, safeDays),
   ]);
-  const senderRows = rows.filter((row) => extractSenderDomain(row.from_address) === senderDomain);
+  const senderRows = rows.filter((row) => rowSenderDomain(row) === senderDomain);
   const senderFeedbackSummary = summarizeSenderFeedback(
-    feedbackRows.filter((row) => extractSenderDomain(row.from_address) === senderDomain)
+    feedbackRows.filter((row) => rowSenderDomain(row) === senderDomain)
   );
   const reviewedSenderRows = senderRows.filter((row) => row.review_action || Number(row.review_edit_count || 0) > 0);
   const metrics = summarizeSenderRows(reviewedSenderRows, senderFeedbackSummary);

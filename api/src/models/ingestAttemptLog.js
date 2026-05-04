@@ -1,4 +1,9 @@
 const db = require('../db');
+const {
+  ingestFailureRetentionDays,
+  ingestSuccessRetentionDays,
+  persistPaymentCorrectionTelemetryEnabled,
+} = require('../services/storageMinimizationConfig');
 
 function isMissingTableError(err) {
   return err?.code === '42P01' && `${err?.message || ''}`.includes('ingest_attempt_log');
@@ -66,6 +71,7 @@ async function appendPaymentFeedback(attemptId, userId, {
   finalCardLast4 = null,
 } = {}) {
   if (!attemptId || !userId) return null;
+  if (!persistPaymentCorrectionTelemetryEnabled()) return null;
   const changedFields = [];
   if (`${originalPaymentMethod || ''}` !== `${finalPaymentMethod || ''}`) changedFields.push('payment_method');
   if (`${originalCardLabel || ''}` !== `${finalCardLabel || ''}`) changedFields.push('card_label');
@@ -107,7 +113,7 @@ async function markConfirmed(attemptId, userId, { expenseId = null, correctionFe
       confirm_status: 'confirmed',
       confirmed_expense_id: expenseId,
       confirmed_at: new Date().toISOString(),
-      ...(correctionFeedback || {}),
+      ...(persistPaymentCorrectionTelemetryEnabled() ? (correctionFeedback || {}) : {}),
     };
     const result = await db.query(
       `UPDATE ingest_attempt_log
@@ -272,4 +278,37 @@ async function summarizeByUser(userId, { source = null, days = 30 } = {}) {
   }
 }
 
-module.exports = { create, findByIdForUser, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser };
+async function pruneOldRows({
+  successDays = ingestSuccessRetentionDays(),
+  failureDays = ingestFailureRetentionDays(),
+} = {}) {
+  const safeSuccessDays = Math.max(1, Math.min(Number(successDays) || ingestSuccessRetentionDays(), 180));
+  const safeFailureDays = Math.max(7, Math.min(Number(failureDays) || ingestFailureRetentionDays(), 365));
+  try {
+    const result = await db.query(
+      `DELETE FROM ingest_attempt_log
+       WHERE (
+         status = 'parsed'
+         AND created_at < NOW() - ($1::text || ' days')::interval
+       ) OR (
+         status IN ('partial', 'failed')
+         AND created_at < NOW() - ($2::text || ' days')::interval
+       )`,
+      [safeSuccessDays, safeFailureDays]
+    );
+    return {
+      deleted: Number(result.rowCount || 0),
+      success_retention_days: safeSuccessDays,
+      failure_retention_days: safeFailureDays,
+    };
+  } catch (err) {
+    if (!isMissingTableError(err)) throw err;
+    return {
+      deleted: 0,
+      success_retention_days: safeSuccessDays,
+      failure_retention_days: safeFailureDays,
+    };
+  }
+}
+
+module.exports = { create, findByIdForUser, appendPaymentFeedback, markConfirmed, markConfirmFailed, summarizeByUser, pruneOldRows };

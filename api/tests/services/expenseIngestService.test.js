@@ -48,6 +48,7 @@ describe('expenseIngestService', () => {
   });
 
   it('records compact success metadata for parsed NL input', async () => {
+    process.env.INGEST_SUCCESS_PARSED_SNAPSHOT_SAMPLE_RATE = '1';
     parseExpenseDetailed.mockResolvedValue({
       parsed: {
         merchant: 'Amazon',

@@ -6,6 +6,7 @@ const OAuthToken = require('../models/oauthToken');
 const PushToken = require('../models/pushToken');
 const { importForUser } = require('../services/gmailImporter');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
+const { runDataRetention } = require('../services/dataRetentionService');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -86,6 +87,14 @@ router.post('/insights-push', cronAuth, async (req, res, next) => {
 
     console.log(`[cron/insights-push] done — users=${usersProcessed} sent=${notificationsSent}`);
     res.json({ users_processed: usersProcessed, notifications_sent: notificationsSent });
+  } catch (err) { next(err); }
+});
+
+router.post('/data-retention', cronAuth, async (req, res, next) => {
+  try {
+    const result = await runDataRetention();
+    console.log('[cron/data-retention] done', result);
+    res.json(result);
   } catch (err) { next(err); }
 });
 

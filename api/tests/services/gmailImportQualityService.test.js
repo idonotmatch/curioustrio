@@ -204,6 +204,26 @@ describe('gmailImportQualityService', () => {
     });
   });
 
+  it('uses stored sender-domain fingerprints when raw from-address fields were scrubbed', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
+      { sender_domain: 'amazon.com', subject_pattern: 'amazon_order', from_address: null, subject: null, review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { sender_domain: 'amazon.com', subject_pattern: 'amazon_order', from_address: null, subject: null, review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+      { sender_domain: 'amazon.com', subject_pattern: 'amazon_order', from_address: null, subject: null, review_action: 'approved', review_edit_count: 0, review_changed_fields: ['review_path_quick_check'] },
+    ]);
+    EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([
+      { sender_domain: 'amazon.com', from_address: null, user_feedback: 'didnt_need_review' },
+    ]);
+
+    await expect(getSenderImportQuality('user-1', 'amazon.com', 'ORDER: Fresh')).resolves.toMatchObject({
+      sender_domain: 'amazon.com',
+      level: 'trusted',
+      metrics: expect.objectContaining({ imported: 3 }),
+      template_quality: expect.objectContaining({
+        subject_pattern: 'amazon_order',
+      }),
+    });
+  });
+
   it('captures item reliability separately from top-level sender quality', async () => {
     EmailImportLog.listQualitySignalsByUser.mockResolvedValue([
       { from_address: 'orders@shop.com', review_action: 'approved', review_edit_count: 0, review_changed_fields: [], structured_item_block_level: null, deterministic_item_count: 0 },
