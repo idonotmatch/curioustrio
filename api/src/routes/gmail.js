@@ -76,7 +76,7 @@ router.get('/auth', authenticate, async (req, res, next) => {
   try {
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
-    const url = await getAuthUrl(user.id);
+    const url = await getAuthUrl(user.id, { loginHint: user.email || null });
     res.json({ url });
   } catch (err) { next(err); }
 });

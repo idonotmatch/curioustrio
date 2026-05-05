@@ -9,8 +9,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { invalidateCache } from '../services/cache';
@@ -36,6 +34,7 @@ import {
   syncErrorMessage,
 } from '../services/gmailImportPresentation';
 import { buildMockGmailImportState, buildMockPendingExpenses } from '../fixtures/mockGmailImport';
+const { startGmailConnectFlow } = require('../services/gmailAuthFlow');
 
 const SUMMARY_WINDOW_DAYS = 90;
 const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
@@ -157,13 +156,9 @@ export default function GmailImportScreen() {
 
   async function connectGmail() {
     try {
-      const data = await api.get('/gmail/auth');
-      if (data?.url) {
-        const redirectUrl = Linking.createURL('/gmail-import');
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-        if (result.type === 'success' || result.type === 'opened') {
-          await Promise.all([loadGmailStatus(), loadImportSummary(), loadPendingQueue()]);
-        }
+      const { completed } = await startGmailConnectFlow();
+      if (completed) {
+        await Promise.all([loadGmailStatus(), loadImportSummary(), loadPendingQueue()]);
       }
     } catch (e) {
       Alert.alert('Gmail', e?.message || 'Could not start Gmail connection');

@@ -13,6 +13,12 @@ import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { invalidateCache } from '../services/cache';
 import { saveCurrentUserCache } from '../services/currentUserCache';
+const { startGmailConnectFlow } = require('../services/gmailAuthFlow');
+const {
+  getAuthProvider,
+  getOnboardingProgress,
+  shouldOfferGoogleGmailConnect,
+} = require('../services/onboardingFlow');
 
 function QuestionShell({ step, totalSteps, eyebrow, title, body, children, onBack }) {
   return (
@@ -65,18 +71,54 @@ export default function OnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [authProvider, setAuthProvider] = useState(null);
+  const [gmailConnected, setGmailConnected] = useState(false);
+
+  const offerGoogleGmailStep = shouldOfferGoogleGmailConnect({
+    isAnonymous,
+    authProvider,
+    gmailConnected,
+  });
+  const progress = getOnboardingProgress({
+    step,
+    setupMode,
+    shouldOfferGmailStep: offerGoogleGmailStep,
+  });
+
+  async function refreshGmailStatus() {
+    try {
+      const status = await api.get('/gmail/status');
+      const connected = status?.connected === true;
+      setGmailConnected(connected);
+      return connected;
+    } catch {
+      setGmailConnected(false);
+      return false;
+    }
+  }
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!active) return;
-      setIsAnonymous(session?.user?.is_anonymous === true);
-      setCheckingSession(false);
-    }).catch(() => {
-      if (!active) return;
-      setIsAnonymous(false);
-      setCheckingSession(false);
-    });
+    async function loadSessionState() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!active) return;
+        const nextIsAnonymous = session?.user?.is_anonymous === true;
+        setIsAnonymous(nextIsAnonymous);
+        setAuthProvider(getAuthProvider(session?.user));
+        if (!nextIsAnonymous) {
+          await refreshGmailStatus();
+        }
+      } catch {
+        if (!active) return;
+        setIsAnonymous(false);
+        setAuthProvider(null);
+        setGmailConnected(false);
+      } finally {
+        if (active) setCheckingSession(false);
+      }
+    }
+    loadSessionState();
     return () => {
       active = false;
     };
@@ -95,7 +137,7 @@ export default function OnboardingScreen() {
         body: 'Give Adlo a pace to measure against.',
       },
     ];
-    if (!isAnonymous) {
+    if (!isAnonymous && authProvider !== 'google' && !gmailConnected) {
       base.push({
         key: 'connect_gmail',
         title: 'Bring in emailed receipts',
@@ -103,7 +145,7 @@ export default function OnboardingScreen() {
       });
     }
     return base;
-  }, [isAnonymous]);
+  }, [authProvider, gmailConnected, isAnonymous]);
 
   function routeAfterOnboarding(primaryChoice) {
     if (primaryChoice === 'set_budget') {
@@ -131,7 +173,7 @@ export default function OnboardingScreen() {
       setStep('join');
       return;
     }
-    setStep('firstAction');
+    setStep(offerGoogleGmailStep ? 'gmail' : 'firstAction');
   }
 
   function handleBack() {
@@ -139,7 +181,31 @@ export default function OnboardingScreen() {
       setStep('path');
       return;
     }
-    if (step === 'firstAction' && setupMode === 'solo') {
+    if (step === 'gmail') {
+      if (setupMode === 'create_household') {
+        setStep('name');
+        return;
+      }
+      if (setupMode === 'join_household') {
+        setStep('join');
+        return;
+      }
+      setStep('path');
+      return;
+    }
+    if (step === 'firstAction') {
+      if (offerGoogleGmailStep) {
+        setStep('gmail');
+        return;
+      }
+      if (setupMode === 'create_household') {
+        setStep('name');
+        return;
+      }
+      if (setupMode === 'join_household') {
+        setStep('join');
+        return;
+      }
       setStep('path');
     }
   }
@@ -150,7 +216,7 @@ export default function OnboardingScreen() {
     try {
       await api.post('/households', { name: householdName.trim() });
       await invalidateCache('cache:household');
-      setStep('firstAction');
+      setStep(offerGoogleGmailStep ? 'gmail' : 'firstAction');
     } catch (e) {
       Alert.alert('Could not create shared setup', e?.message || 'Please try again.');
     } finally {
@@ -164,9 +230,27 @@ export default function OnboardingScreen() {
     try {
       await api.post(`/households/invites/${inviteToken.trim()}/accept`, {});
       await invalidateCache('cache:household');
-      setStep('firstAction');
+      setStep(offerGoogleGmailStep ? 'gmail' : 'firstAction');
     } catch (e) {
       Alert.alert('Could not join shared setup', e?.message || 'Check the invite code and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConnectGmail() {
+    setLoading(true);
+    try {
+      const { completed } = await startGmailConnectFlow();
+      if (!completed) return;
+      const connected = await refreshGmailStatus();
+      if (!connected) {
+        Alert.alert('Gmail connection incomplete', 'We could not confirm the Gmail connection yet. You can try again or skip for now.');
+        return;
+      }
+      setStep('firstAction');
+    } catch (e) {
+      Alert.alert('Could not connect Gmail', e?.message || 'Please try again.');
     } finally {
       setLoading(false);
     }
@@ -200,8 +284,8 @@ export default function OnboardingScreen() {
   if (step === 'account') {
     return (
       <QuestionShell
-        step={1}
-        totalSteps={3}
+        step={progress.step}
+        totalSteps={progress.totalSteps}
         eyebrow="Shared setup"
         title="You'll need an account for this part."
         body="Keep tracking on this device if you want, then upgrade when you're ready to share expenses with someone else."
@@ -230,8 +314,8 @@ export default function OnboardingScreen() {
   if (step === 'name') {
     return (
       <QuestionShell
-        step={2}
-        totalSteps={3}
+        step={progress.step}
+        totalSteps={progress.totalSteps}
         eyebrow="Shared setup"
         title="What should we call it?"
         body="This can be your household, partner setup, or any shared spending space."
@@ -262,8 +346,8 @@ export default function OnboardingScreen() {
   if (step === 'join') {
     return (
       <QuestionShell
-        step={2}
-        totalSteps={3}
+        step={progress.step}
+        totalSteps={progress.totalSteps}
         eyebrow="Shared setup"
         title="Enter the invite code"
         body="Paste the code you were sent. If the invite was tied to an email, accept it with that same address."
@@ -292,15 +376,42 @@ export default function OnboardingScreen() {
     );
   }
 
+  if (step === 'gmail') {
+    return (
+      <QuestionShell
+        step={progress.step}
+        totalSteps={progress.totalSteps}
+        eyebrow="Use this Google account"
+        title="Want Adlo to pull in your receipts too?"
+        body="If you connect Gmail now, Adlo can start catching receipts and confirmations from this same Google account without making you retype them."
+        onBack={handleBack}
+      >
+        <ChoiceButton
+          title={loading ? 'Connecting Gmail...' : 'Connect Gmail'}
+          body="Best if you want receipts to start showing up automatically."
+          tone="primary"
+          disabled={loading}
+          onPress={handleConnectGmail}
+        />
+        <ChoiceButton
+          title="Maybe later"
+          body="You can still add expenses manually and connect Gmail from Settings anytime."
+          disabled={loading}
+          onPress={() => setStep('firstAction')}
+        />
+      </QuestionShell>
+    );
+  }
+
   if (step === 'firstAction') {
     return (
       <QuestionShell
-        step={3}
-        totalSteps={3}
+        step={progress.step}
+        totalSteps={progress.totalSteps}
         eyebrow="First useful thing"
         title="What would help first?"
         body="Pick the easiest way to get Adlo something real to work with."
-        onBack={setupMode === 'solo' ? handleBack : null}
+        onBack={handleBack}
       >
         {firstActionChoices.map((choice) => (
           <ChoiceButton
@@ -318,8 +429,8 @@ export default function OnboardingScreen() {
 
   return (
     <QuestionShell
-      step={1}
-      totalSteps={3}
+      step={progress.step}
+      totalSteps={progress.totalSteps}
       eyebrow="Welcome"
       title="How are you starting?"
       body="We’ll keep this quick."

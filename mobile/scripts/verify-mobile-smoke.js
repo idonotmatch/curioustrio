@@ -34,9 +34,11 @@ const filesToCheck = [
   'services/confirmNavigation.js',
   'services/apiConfig.js',
   'services/currentUserCache.js',
+  'services/gmailAuthFlow.js',
   'services/itemEditing.js',
   'services/internalTools.js',
   'services/internalToolsConfig.js',
+  'services/onboardingFlow.js',
   'services/pushRegistration.js',
   'services/storageSanitizers.js',
   'services/authBootRouting.js',
@@ -45,6 +47,7 @@ const filesToCheck = [
   'scripts/test-api-config.js',
   'scripts/test-storage-sanitizers.js',
   'scripts/test-internal-tools-config.js',
+  'scripts/test-onboarding-flow.js',
 ];
 
 for (const relativePath of filesToCheck) {

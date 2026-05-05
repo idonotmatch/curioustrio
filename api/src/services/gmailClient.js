@@ -46,18 +46,23 @@ function createOAuth2Client() {
   );
 }
 
-async function getAuthUrl(userId) {
+async function getAuthUrl(userId, { loginHint = null } = {}) {
   const stateToken = crypto.randomUUID();
   await db.query(
     `INSERT INTO gmail_oauth_states (token, user_id) VALUES ($1, $2)`, [stateToken, userId]
   );
   const client = createOAuth2Client();
-  return client.generateAuthUrl({
+  const authParams = {
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/gmail.readonly'],
     prompt: 'consent',
+    include_granted_scopes: true,
     state: stateToken,
-  });
+  };
+  if (loginHint) {
+    authParams.login_hint = loginHint;
+  }
+  return client.generateAuthUrl(authParams);
 }
 
 async function exchangeCode(code) {
