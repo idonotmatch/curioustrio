@@ -28,6 +28,12 @@ function parseNumeric(value) {
   return match ? Number(match[1]) : null;
 }
 
+function parsePurchaseQuantity(quantity) {
+  const numeric = parseNumeric(quantity);
+  if (numeric == null || numeric <= 0) return null;
+  return numeric;
+}
+
 function normalizeSizeValue(rawValue, rawUnit) {
   const numeric = parseNumeric(rawValue);
   const unit = normalizeUnit(rawUnit || rawValue);
@@ -52,12 +58,18 @@ function deriveNormalizedQuantity({ normalizedSizeValue, normalizedSizeUnit, nor
   return 1;
 }
 
-function deriveNormalizedTotalSize({ normalizedSizeValue, normalizedSizeUnit, normalizedQuantity }) {
+function deriveNormalizedTotalSize({
+  normalizedSizeValue,
+  normalizedSizeUnit,
+  normalizedQuantity,
+  purchaseQuantity,
+}) {
   if (normalizedSizeValue == null || !normalizedSizeUnit || normalizedQuantity == null) {
     return { normalizedTotalSizeValue: null, normalizedTotalSizeUnit: null };
   }
+  const multiplier = purchaseQuantity != null && purchaseQuantity > 0 ? purchaseQuantity : 1;
   return {
-    normalizedTotalSizeValue: Number((normalizedSizeValue * normalizedQuantity).toFixed(3)),
+    normalizedTotalSizeValue: Number((normalizedSizeValue * normalizedQuantity * multiplier).toFixed(3)),
     normalizedTotalSizeUnit: normalizedSizeUnit,
   };
 }
@@ -117,6 +129,7 @@ function normalizeItemMetadata(item = {}) {
   const normalizedBrand = normalizeText(item.brand);
   const { normalizedSizeValue, normalizedSizeUnit } = normalizeSizeValue(item.product_size, item.unit);
   const normalizedPackSize = parsePackSize(item.pack_size);
+  const purchaseQuantity = parsePurchaseQuantity(item.quantity);
   const normalizedQuantity = deriveNormalizedQuantity({
     normalizedSizeValue,
     normalizedSizeUnit,
@@ -126,6 +139,7 @@ function normalizeItemMetadata(item = {}) {
     normalizedSizeValue,
     normalizedSizeUnit,
     normalizedQuantity,
+    purchaseQuantity,
   });
   const estimatedUnitPrice = deriveEstimatedUnitPrice(item.amount, normalizedTotalSizeValue);
   const comparableKey = buildComparableKey({

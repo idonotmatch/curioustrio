@@ -12,6 +12,11 @@ import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
 import { clearNavigationPayload, getNavigationPayload } from '../services/navigationPayloadStore';
+import {
+  createEditableExpenseItem,
+  normalizeExpenseItemPayload,
+  updateEditableExpenseItem,
+} from '../services/itemEditing';
 
 function parseConfirmData(value) {
   try {
@@ -84,11 +89,7 @@ export default function ConfirmScreen() {
   const autoLocationAttemptRef = useRef('');
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
-      ? parsed.items.map(it => ({
-          ...it,
-          description: it.description || '',
-          amount: it.amount != null ? String(it.amount) : '',
-        }))
+      ? parsed.items.map((it) => createEditableExpenseItem(it))
       : []
   );
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
@@ -121,11 +122,7 @@ export default function ConfirmScreen() {
     setShowDatePicker(false);
     setItems(
       Array.isArray(parsed?.items) && parsed.items.length > 0
-        ? parsed.items.map((it) => ({
-            ...it,
-            description: it.description || '',
-            amount: it.amount != null ? String(it.amount) : '',
-          }))
+        ? parsed.items.map((it) => createEditableExpenseItem(it))
         : []
     );
     setLocationData(
@@ -266,10 +263,23 @@ export default function ConfirmScreen() {
   );
 
   function handleItemChange(index, field, value) {
-    setItems(prev => prev.map((it, i) => i === index ? { ...it, [field]: value } : it));
+    setItems(prev => prev.map((it, i) => (
+      i === index ? updateEditableExpenseItem(it, field, value) : it
+    )));
   }
   function handleAddItem() {
-    setItems(prev => [...prev, { description: '', amount: '', upc: null, sku: null, brand: null, product_size: null, pack_size: null, unit: null }]);
+    setItems(prev => [...prev, createEditableExpenseItem({
+      description: '',
+      amount: '',
+      quantity: '',
+      unit_price: '',
+      upc: null,
+      sku: null,
+      brand: null,
+      product_size: null,
+      pack_size: null,
+      unit: null,
+    })]);
   }
   function handleRemoveItem(index) {
     setItems(prev => prev.filter((_, i) => i !== index));
@@ -441,21 +451,14 @@ export default function ConfirmScreen() {
           ? parsed.items.map((it) => ({
               description: it?.description || '',
               amount: it?.amount ?? null,
+              quantity: it?.quantity ?? null,
+              unit_price: it?.unit_price ?? null,
             }))
           : undefined,
         items: items.length > 0
           ? items
               .filter(it => it.description.trim())
-              .map(it => ({
-                description: it.description.trim(),
-                amount: it.amount ? parseFloat(it.amount) : null,
-                upc: it.upc || null,
-                sku: it.sku || null,
-                brand: it.brand || null,
-                product_size: it.product_size || null,
-                pack_size: it.pack_size || null,
-                unit: it.unit || null,
-              }))
+              .map((it) => normalizeExpenseItemPayload(it))
           : undefined,
       });
       queueConfirmedExpenseClientWork({
@@ -706,25 +709,54 @@ export default function ConfirmScreen() {
           <Text style={styles.sectionLabel}>ITEMS</Text>
           {reviewNote('items', 'Line items may be incomplete or approximate.')}
           {items.map((item, i) => (
-            <View key={i} style={styles.itemRow}>
-              <TextInput
-                style={styles.itemDescInput}
-                placeholder="Description"
-                placeholderTextColor="#444"
-                value={item.description}
-                onChangeText={v => handleItemChange(i, 'description', v)}
-              />
-              <TextInput
-                style={styles.itemAmountInput}
-                placeholder="0.00"
-                placeholderTextColor="#444"
-                value={item.amount}
-                onChangeText={v => handleItemChange(i, 'amount', v)}
-                keyboardType="decimal-pad"
-              />
-              <TouchableOpacity onPress={() => handleRemoveItem(i)} style={styles.removeItemBtn}>
-                <Text style={styles.removeItemText}>×</Text>
-              </TouchableOpacity>
+            <View key={i} style={styles.itemCard}>
+              <View style={styles.itemRow}>
+                <TextInput
+                  style={styles.itemDescInput}
+                  placeholder="Description"
+                  placeholderTextColor="#444"
+                  value={item.description}
+                  onChangeText={v => handleItemChange(i, 'description', v)}
+                />
+                <TouchableOpacity onPress={() => handleRemoveItem(i)} style={styles.removeItemBtn}>
+                  <Text style={styles.removeItemText}>×</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.itemMetricsRow}>
+                <View style={styles.itemMetricField}>
+                  <Text style={styles.itemMetricLabel}>Qty</Text>
+                  <TextInput
+                    style={styles.itemMetricInput}
+                    placeholder="1"
+                    placeholderTextColor="#444"
+                    value={item.quantity}
+                    onChangeText={v => handleItemChange(i, 'quantity', v)}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                <View style={styles.itemMetricField}>
+                  <Text style={styles.itemMetricLabel}>Each</Text>
+                  <TextInput
+                    style={styles.itemMetricInput}
+                    placeholder="0.00"
+                    placeholderTextColor="#444"
+                    value={item.unit_price}
+                    onChangeText={v => handleItemChange(i, 'unit_price', v)}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                <View style={styles.itemMetricFieldWide}>
+                  <Text style={styles.itemMetricLabel}>Total</Text>
+                  <TextInput
+                    style={styles.itemMetricInput}
+                    placeholder="0.00"
+                    placeholderTextColor="#444"
+                    value={item.amount}
+                    onChangeText={v => handleItemChange(i, 'amount', v)}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
             </View>
           ))}
           <TouchableOpacity onPress={handleAddItem} style={styles.addItemRow}>
@@ -1046,9 +1078,22 @@ const styles = StyleSheet.create({
   cardInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
 
   itemsSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
-  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  itemCard: {
+    backgroundColor: '#151515',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+    padding: 10,
+    marginBottom: 8,
+    gap: 8,
+  },
+  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemDescInput: { flex: 1, backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
-  itemAmountInput: { width: 72, backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
+  itemMetricsRow: { flexDirection: 'row', gap: 8 },
+  itemMetricField: { flex: 1, minWidth: 0 },
+  itemMetricFieldWide: { flex: 1.3, minWidth: 0 },
+  itemMetricLabel: { color: '#7f7f7f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
+  itemMetricInput: { backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
   removeItemBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   removeItemText: { color: '#999', fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingVertical: 6 },

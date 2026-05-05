@@ -289,14 +289,48 @@ $41.98`;
       expect.objectContaining({
         description: 'DAK - Plum Marmalade Espresso',
         amount: 19.99,
+        quantity: 1,
+        unit_price: 19.99,
         brand: 'DAK Coffee Roasters',
         sku: 'COF-DA-0323',
       }),
       expect.objectContaining({
         description: 'DAK - House of Plum Espresso',
         amount: 21.99,
+        quantity: 1,
+        unit_price: 21.99,
         brand: 'DAK Coffee Roasters',
         sku: 'COF-DA-0397',
+      }),
+    ]);
+  });
+
+  it('captures quantity and each price from item-card grocery email blocks', () => {
+    const emailBody = `Items Purchased: 2
+365 by Whole Foods Market Organic Lasagne, 16 OZ
+Qty: 3 @ $1.79 each
+$5.37
+
+OLIPOP Crisp Apple Prebiotic Soda, 12 FZ
+Qty: 1 @ $2.59 each
+$2.59
+
+Total
+$7.96`;
+
+    const items = extractFallbackItemsFromEmailBody(emailBody);
+    expect(items).toEqual([
+      expect.objectContaining({
+        description: '365 by Whole Foods Market Organic Lasagne, 16 OZ',
+        amount: 5.37,
+        quantity: 3,
+        unit_price: 1.79,
+      }),
+      expect.objectContaining({
+        description: 'OLIPOP Crisp Apple Prebiotic Soda, 12 FZ',
+        amount: 2.59,
+        quantity: 1,
+        unit_price: 2.59,
       }),
     ]);
   });
@@ -556,10 +590,30 @@ $1.61 promotions applied
 View All Items`;
 
     expect(extractFallbackItemsFromEmailBody(emailBody)).toEqual([
-      expect.objectContaining({ description: '365 by Whole Foods Market Organic Lasagne, 16 OZ', amount: 5.37, pack_size: '3' }),
-      expect.objectContaining({ description: 'OLIPOP Crisp Apple Prebiotic Soda, 12 FZ', amount: 2.59 }),
-      expect.objectContaining({ description: '365 by Whole Foods Market Organic Feta Crumbles, 4 OZ', amount: 4.99 }),
-      expect.objectContaining({ description: 'VAN LEEUWEN Earl Grey Ice Cream, 14 FZ', amount: 6.38 }),
+      expect.objectContaining({
+        description: '365 by Whole Foods Market Organic Lasagne, 16 OZ',
+        amount: 5.37,
+        quantity: 3,
+        unit_price: 1.79,
+      }),
+      expect.objectContaining({
+        description: 'OLIPOP Crisp Apple Prebiotic Soda, 12 FZ',
+        amount: 2.59,
+        quantity: 1,
+        unit_price: 2.59,
+      }),
+      expect.objectContaining({
+        description: '365 by Whole Foods Market Organic Feta Crumbles, 4 OZ',
+        amount: 4.99,
+        quantity: 1,
+        unit_price: 4.99,
+      }),
+      expect.objectContaining({
+        description: 'VAN LEEUWEN Earl Grey Ice Cream, 14 FZ',
+        amount: 6.38,
+        quantity: 1,
+        unit_price: 7.99,
+      }),
     ]);
   });
 

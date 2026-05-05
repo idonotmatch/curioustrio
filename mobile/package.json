@@ -9,7 +9,7 @@
     "web": "expo start --web",
     "test": "npm run test:smoke && npm run test:logic",
     "test:smoke": "node scripts/verify-mobile-smoke.js",
-    "test:logic": "node scripts/test-auth-boot-routing.js && node scripts/test-api-config.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js"
+    "test:logic": "node scripts/test-auth-boot-routing.js && node scripts/test-api-config.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "^55.0.9",

@@ -83,10 +83,14 @@ function collectChangedFields(originalExpense, patch = {}) {
 
 function normalizeReviewItem(item = {}, index = 0) {
   const amount = item.amount == null || item.amount === '' ? null : Number(item.amount);
+  const quantity = item.quantity == null || item.quantity === '' ? null : Number(item.quantity);
+  const unitPrice = item.unit_price == null || item.unit_price === '' ? null : Number(item.unit_price);
   return {
     description: `${item.description || ''}`.trim(),
     normalized_description: `${item.description || ''}`.trim().toLowerCase(),
     amount,
+    quantity,
+    unit_price: unitPrice,
     item_type: item.item_type || classifyExpenseItemType(item.description),
     sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
   };
@@ -113,14 +117,20 @@ function collectItemReviewSignals(originalItems = [], nextItems = []) {
   const compareLength = Math.min(original.length, next.length);
   let descriptionChanged = false;
   let amountChanged = false;
+  let quantityChanged = false;
+  let unitPriceChanged = false;
   let typeChanged = false;
   for (let i = 0; i < compareLength; i += 1) {
     if (original[i].normalized_description !== next[i].normalized_description) descriptionChanged = true;
     if (`${original[i].amount ?? ''}` !== `${next[i].amount ?? ''}`) amountChanged = true;
+    if (`${original[i].quantity ?? ''}` !== `${next[i].quantity ?? ''}`) quantityChanged = true;
+    if (`${original[i].unit_price ?? ''}` !== `${next[i].unit_price ?? ''}`) unitPriceChanged = true;
     if (original[i].item_type !== next[i].item_type) typeChanged = true;
   }
   if (descriptionChanged) signals.push('items_description');
   if (amountChanged) signals.push('items_amount');
+  if (quantityChanged) signals.push('items_quantity');
+  if (unitPriceChanged) signals.push('items_unit_price');
   if (typeChanged) signals.push('items_type');
 
   const originalCounts = new Map();

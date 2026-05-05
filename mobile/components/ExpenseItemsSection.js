@@ -1,5 +1,6 @@
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { createEditableExpenseItem, updateEditableExpenseItem } from '../services/itemEditing';
 
 export function ExpenseItemsSection({
   styles,
@@ -38,37 +39,75 @@ export function ExpenseItemsSection({
           {editing && canEdit ? (
             <>
               {itemsEdits.map((item, index) => (
-                <View key={index} style={styles.itemEditRow}>
-                  <TextInput
-                    style={styles.itemEditDesc}
-                    value={item.description}
-                    onChangeText={(value) => setItemsEdits((current) => current.map((entry, entryIndex) => (
-                      entryIndex === index ? { ...entry, description: value } : entry
-                    )))}
-                    placeholder="Description"
-                    placeholderTextColor="#444"
-                  />
-                  <TextInput
-                    style={styles.itemEditAmount}
-                    value={item.amount}
-                    onChangeText={(value) => setItemsEdits((current) => current.map((entry, entryIndex) => (
-                      entryIndex === index ? { ...entry, amount: value } : entry
-                    )))}
-                    placeholder="0.00"
-                    placeholderTextColor="#444"
-                    keyboardType="decimal-pad"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setItemsEdits((current) => current.filter((_, entryIndex) => entryIndex !== index))}
-                    style={styles.itemRemoveBtn}
-                  >
-                    <Text style={styles.itemRemoveText}>×</Text>
-                  </TouchableOpacity>
+                <View key={index} style={styles.itemEditCard}>
+                  <View style={styles.itemEditRow}>
+                    <TextInput
+                      style={styles.itemEditDesc}
+                      value={item.description}
+                      onChangeText={(value) => setItemsEdits((current) => current.map((entry, entryIndex) => (
+                        entryIndex === index ? updateEditableExpenseItem(entry, 'description', value) : entry
+                      )))}
+                      placeholder="Description"
+                      placeholderTextColor="#444"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setItemsEdits((current) => current.filter((_, entryIndex) => entryIndex !== index))}
+                      style={styles.itemRemoveBtn}
+                    >
+                      <Text style={styles.itemRemoveText}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.itemEditMetricsRow}>
+                    <View style={styles.itemEditMetricField}>
+                      <Text style={styles.itemEditMetricLabel}>Qty</Text>
+                      <TextInput
+                        style={styles.itemEditMetricInput}
+                        value={item.quantity}
+                        onChangeText={(value) => setItemsEdits((current) => current.map((entry, entryIndex) => (
+                          entryIndex === index ? updateEditableExpenseItem(entry, 'quantity', value) : entry
+                        )))}
+                        placeholder="1"
+                        placeholderTextColor="#444"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                    <View style={styles.itemEditMetricField}>
+                      <Text style={styles.itemEditMetricLabel}>Each</Text>
+                      <TextInput
+                        style={styles.itemEditMetricInput}
+                        value={item.unit_price}
+                        onChangeText={(value) => setItemsEdits((current) => current.map((entry, entryIndex) => (
+                          entryIndex === index ? updateEditableExpenseItem(entry, 'unit_price', value) : entry
+                        )))}
+                        placeholder="0.00"
+                        placeholderTextColor="#444"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                    <View style={styles.itemEditMetricFieldWide}>
+                      <Text style={styles.itemEditMetricLabel}>Total</Text>
+                      <TextInput
+                        style={styles.itemEditMetricInput}
+                        value={item.amount}
+                        onChangeText={(value) => setItemsEdits((current) => current.map((entry, entryIndex) => (
+                          entryIndex === index ? updateEditableExpenseItem(entry, 'amount', value) : entry
+                        )))}
+                        placeholder="0.00"
+                        placeholderTextColor="#444"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  </View>
                 </View>
               ))}
 
               <TouchableOpacity
-                onPress={() => setItemsEdits((current) => [...current, { description: '', amount: '' }])}
+                onPress={() => setItemsEdits((current) => [...current, createEditableExpenseItem({
+                  description: '',
+                  amount: '',
+                  quantity: '',
+                  unit_price: '',
+                })])}
                 style={styles.addItemRow}
               >
                 <Text style={styles.addItemText}>+ Add item</Text>

@@ -57,6 +57,22 @@ describe('itemNormalizer', () => {
     expect(normalized.estimated_unit_price).toBeCloseTo(1.031, 4);
   });
 
+  it('uses purchase quantity to scale total size while keeping product identity stable', () => {
+    const normalized = normalizeItemMetadata({
+      description: 'Organic Lasagne',
+      amount: 5.37,
+      quantity: 3,
+      product_size: '16',
+      unit: 'oz',
+    });
+
+    expect(normalized.normalized_quantity).toBe(1);
+    expect(normalized.normalized_total_size_value).toBe(48);
+    expect(normalized.normalized_total_size_unit).toBe('oz');
+    expect(normalized.estimated_unit_price).toBeCloseTo(0.1119, 4);
+    expect(normalized.comparable_key).toBe('organic lasagne|size:16oz');
+  });
+
   it('keeps single-item products comparable even without package metadata', () => {
     const normalized = normalizeItemMetadata({
       description: 'Organic Bananas',

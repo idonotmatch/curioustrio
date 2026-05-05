@@ -54,6 +54,7 @@ const MIGRATION_PLAN = [
   '058_expense_category_provenance.sql',
   '059_user_onboarding_state.sql',
   '060_email_import_minimal_ledger.sql',
+  '061_expense_item_quantity_and_unit_price.sql',
 ];
 
 module.exports = {

@@ -28,6 +28,8 @@ const REQUIRED_COLUMNS = [
   ['expense_items', 'comparable_key'],
   ['expense_items', 'product_match_confidence'],
   ['expense_items', 'estimated_unit_price'],
+  ['expense_items', 'quantity'],
+  ['expense_items', 'unit_price'],
   ['expense_items', 'normalized_total_size_value'],
   ['expense_items', 'normalized_total_size_unit'],
   ['expense_items', 'item_type'],

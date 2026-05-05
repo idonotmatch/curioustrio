@@ -210,6 +210,36 @@ describe('expenseConfirmService deferred enrichment', () => {
     expect(result.duplicate_flags).toEqual([]);
   });
 
+  it('passes quantity and unit price through when confirming itemized expenses', async () => {
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Whole Foods',
+        description: 'groceries',
+        amount: 19.84,
+        date: '2026-04-27',
+        source: 'manual',
+        items: [{
+          description: 'Organic Lasagne',
+          amount: 5.37,
+          quantity: 3,
+          unit_price: 1.79,
+        }],
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm: jest.fn(),
+    });
+
+    expect(ExpenseItem.createBulk).toHaveBeenCalledWith('expense-1', [
+      expect.objectContaining({
+        description: 'Organic Lasagne',
+        amount: 5.37,
+        quantity: 3,
+        unit_price: 1.79,
+      }),
+    ]);
+  });
+
   it('resolves deferred location in the synchronous fallback path when the user did not touch location', async () => {
     await createConfirmedExpense({
       user: { id: 'user-1', household_id: 'hh-1' },

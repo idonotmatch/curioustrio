@@ -60,6 +60,8 @@ describe('ExpenseItem.createBulk', () => {
     const rows = await ExpenseItem.createBulk(expenseId, [{
       description: 'Sparkling Water',
       amount: 5.99,
+      quantity: 2,
+      unit_price: 2.995,
       upc: '123456789012',
       sku: 'SW-12',
       brand: 'Water Co',
@@ -70,6 +72,8 @@ describe('ExpenseItem.createBulk', () => {
     expect(rows[0].upc).toBe('123456789012');
     expect(rows[0].sku).toBe('SW-12');
     expect(rows[0].brand).toBe('Water Co');
+    expect(Number(rows[0].quantity)).toBe(2);
+    expect(Number(rows[0].unit_price)).toBeCloseTo(2.995, 3);
     expect(rows[0].product_size).toBe('12');
     expect(rows[0].pack_size).toBe('8');
     expect(rows[0].unit).toBe('oz');
@@ -79,9 +83,9 @@ describe('ExpenseItem.createBulk', () => {
     expect(rows[0].normalized_size_unit).toBe('oz');
     expect(Number(rows[0].normalized_pack_size)).toBe(8);
     expect(Number(rows[0].normalized_quantity)).toBe(8);
-    expect(Number(rows[0].normalized_total_size_value)).toBe(96);
+    expect(Number(rows[0].normalized_total_size_value)).toBe(192);
     expect(rows[0].normalized_total_size_unit).toBe('oz');
-    expect(Number(rows[0].estimated_unit_price)).toBeCloseTo(0.0624, 4);
+    expect(Number(rows[0].estimated_unit_price)).toBeCloseTo(0.0312, 4);
     expect(rows[0].comparable_key).toBe('sparkling water|brand:water co|size:12oz|pack:8');
   });
 

@@ -34,6 +34,7 @@ const filesToCheck = [
   'services/confirmNavigation.js',
   'services/apiConfig.js',
   'services/currentUserCache.js',
+  'services/itemEditing.js',
   'services/internalTools.js',
   'services/internalToolsConfig.js',
   'services/pushRegistration.js',

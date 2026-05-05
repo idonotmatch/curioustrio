@@ -269,7 +269,7 @@ describe('POST /expenses/confirm', () => {
         date: '2026-03-20',
         source: 'manual',
         items: [
-          { description: 'Widget A', amount: 10.00, sku: 'WIDGET-A', brand: 'Widgets Inc', product_size: '12', unit: 'oz' },
+          { description: 'Widget A', amount: 10.00, quantity: 2, unit_price: 5.00, sku: 'WIDGET-A', brand: 'Widgets Inc', product_size: '12', unit: 'oz' },
           { description: 'Widget B', amount: 20.00, upc: '123456789012' },
         ],
       });
@@ -288,6 +288,8 @@ describe('POST /expenses/confirm', () => {
     const widgetA = getRes.body.items.find(i => i.description === 'Widget A');
     expect(widgetA.sku).toBe('WIDGET-A');
     expect(widgetA.brand).toBe('Widgets Inc');
+    expect(Number(widgetA.quantity)).toBe(2);
+    expect(Number(widgetA.unit_price)).toBe(5);
     expect(widgetA.product_size).toBe('12');
     expect(widgetA.unit).toBe('oz');
   });
@@ -1053,7 +1055,7 @@ describe('PATCH /expenses/:id', () => {
       .patch(`/expenses/${expenseId}`)
       .send({
         items: [
-          { description: 'NewItem1', amount: 20.00 },
+          { description: 'NewItem1', amount: 20.00, quantity: 4, unit_price: 5.00 },
           { description: 'NewItem2', amount: 30.00 },
         ],
       });
@@ -1074,6 +1076,9 @@ describe('PATCH /expenses/:id', () => {
     expect(descriptions).toContain('NewItem1');
     expect(descriptions).toContain('NewItem2');
     expect(descriptions).not.toContain('OldItem');
+    const newItem1 = getRes.body.items.find((item) => item.description === 'NewItem1');
+    expect(Number(newItem1.quantity)).toBe(4);
+    expect(Number(newItem1.unit_price)).toBe(5);
   });
 
   it('returns 400 when an item has an empty description', async () => {

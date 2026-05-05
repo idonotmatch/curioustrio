@@ -22,6 +22,13 @@ function formatCurrency(value) {
   return `$${Number(value).toFixed(2)}`;
 }
 
+function formatQuantity(value) {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  const numeric = Number(value);
+  if (Math.abs(numeric - Math.round(numeric)) < 0.0001) return `${Math.round(numeric)}`;
+  return numeric.toFixed(3).replace(/\.?0+$/, '');
+}
+
 function formatShortDate(value) {
   if (!value) return null;
   const date = new Date(`${`${value}`.slice(0, 10)}T12:00:00`);
@@ -175,7 +182,19 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
 }
 
 function formatItemStructuredMeta(item = {}) {
-  const bits = [item.brand, item.product_size || item.pack_size].filter(Boolean);
+  const bits = [];
+  const quantity = Number(item.quantity);
+  const showQuantity = Number.isFinite(quantity) && quantity > 1;
+  if (showQuantity) {
+    bits.push(`Qty ${formatQuantity(quantity)}`);
+  }
+  const lineAmount = item.amount == null || Number.isNaN(Number(item.amount)) ? null : Number(item.amount);
+  const unitPrice = item.unit_price == null || Number.isNaN(Number(item.unit_price)) ? null : Number(item.unit_price);
+  if (unitPrice != null && (showQuantity || lineAmount == null || Math.abs(lineAmount - unitPrice) > 0.009)) {
+    bits.push(`${formatCurrency(item.unit_price)} each`);
+  }
+  if (item.brand) bits.push(item.brand);
+  if (item.product_size || item.pack_size) bits.push(item.product_size || item.pack_size);
   return bits.length ? bits.join(' • ') : null;
 }
 

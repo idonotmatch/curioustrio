@@ -26,7 +26,7 @@ Return ONLY a JSON object with:
 - payment_method (string or null): one of "cash", "credit", "debit", or null if not visible. Infer "visa", "mastercard", "amex", "credit" as credit; "debit" as debit.
 - card_label (string or null): card brand or nickname shown in the email when visible (for example "Visa", "Chase Sapphire", "Amex Gold"). null if not visible.
 - card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
-- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. For fee/tax/shipping lines set upc/sku/brand/product_size/pack_size/unit to null. Set items to null if the email does not list individual items.
+- items (array or null): individual line items from the email, each as { "description": string, "amount": number or null, "quantity": number or null, "unit_price": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. For fee/tax/shipping lines set quantity/unit_price/upc/sku/brand/product_size/pack_size/unit to null. Set items to null if the email does not list individual items.
 
 Do NOT treat itinerary, reservation, guest, policy, loyalty-credit, support, or informational lines as items. Examples that should usually NOT become items: check-in/check-out times, guest names, cancellation policy text, "dollars used", "for more information", website links, confirmation headlines, or marketing upgrade offers unless they are clearly billed as purchased line items in an itemized block.
 
@@ -135,6 +135,12 @@ function parseUnitPriceQuantityLine(line = '') {
     quantity: Number(match[1]),
     unitPrice: Number(match[2]),
   };
+}
+
+function parseSimpleQuantityLine(line = '') {
+  const match = `${line || ''}`.match(/^x\s*(\d+(?:\.\d+)?)$/i);
+  if (!match) return null;
+  return Number(match[1]);
 }
 
 function isLikelyProductAnchor(line = '') {
@@ -527,11 +533,13 @@ function extractItemsPurchasedSectionItems(lines = []) {
     items.push({
       description,
       amount: finalAmount,
+      quantity: qtyData.quantity,
+      unit_price: qtyData.unitPrice,
       upc: null,
       sku: null,
       brand: null,
       product_size: null,
-      pack_size: qtyData.quantity > 1 ? String(qtyData.quantity) : null,
+      pack_size: null,
       unit: null,
     });
 
@@ -605,16 +613,21 @@ function extractFallbackItemsFromEmailBody(emailBody = '', familyOverride = null
 
     const sku = block.find((entry) => isSkuLikeLine(entry)) || null;
     const quantityLine = block.find((entry) => isQuantityLine(entry)) || null;
-    const packSizeMatch = quantityLine ? quantityLine.match(/x\s*(\d+)/i) : null;
+    const quantity = quantityLine ? parseSimpleQuantityLine(quantityLine) : null;
+    const unitPrice = quantity != null && quantity > 0
+      ? Number((price / quantity).toFixed(2))
+      : null;
 
     items.push({
       description,
       amount: price,
+      quantity,
+      unit_price: unitPrice,
       upc: null,
       sku,
       brand,
       product_size: null,
-      pack_size: packSizeMatch?.[1] || null,
+      pack_size: null,
       unit: null,
     });
 

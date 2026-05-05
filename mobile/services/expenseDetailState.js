@@ -3,6 +3,10 @@ import {
   loadExpenseItemsSnapshot,
   mergeExpenseData,
 } from './expenseLocalStore';
+import {
+  createEditableExpenseItem,
+  normalizeExpenseItemPayload,
+} from './itemEditing';
 
 export const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
 
@@ -60,9 +64,7 @@ export function applyExpenseToState(record, setters) {
       : null
   );
   setters.setItemsEdits((record.items || []).map((it) => ({
-    ...it,
-    description: it.description,
-    amount: it.amount != null ? String(it.amount) : '',
+    ...createEditableExpenseItem(it),
   })));
 }
 
@@ -121,15 +123,6 @@ export function buildExpensePatchPayload({
     mapkit_stable_id: locationData?.mapkit_stable_id || null,
     items: itemsEdits
       .filter((it) => it.description.trim())
-      .map((it) => ({
-        description: it.description.trim(),
-        amount: it.amount ? parseFloat(it.amount) : null,
-        upc: it.upc || null,
-        sku: it.sku || null,
-        brand: it.brand || null,
-        product_size: it.product_size || null,
-        pack_size: it.pack_size || null,
-        unit: it.unit || null,
-      })),
+      .map((it) => normalizeExpenseItemPayload(it)),
   };
 }
