@@ -29,6 +29,7 @@ export default function ReviewQueueScreen() {
   const [dismissingId, setDismissingId] = useState(null);
   const reviewModeCounts = summarizeReviewModes(displayExpenses);
   const totalActions = displayExpenses.length;
+  const hasSecondarySummary = reviewModeCounts.quickCheck > 0 || reviewModeCounts.itemsFirst > 0;
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
   useEffect(() => {
@@ -127,12 +128,8 @@ export default function ReviewQueueScreen() {
               </Text>
               <Text style={styles.subtitle}>Things that need your attention before they settle into the app.</Text>
 
-              {totalActions > 0 ? (
+              {totalActions > 0 && hasSecondarySummary ? (
                 <View style={styles.summaryRow}>
-                  <View style={styles.summaryPill}>
-                    <Text style={styles.summaryPillValue}>{totalActions}</Text>
-                    <Text style={styles.summaryPillLabel}>waiting now</Text>
-                  </View>
                   {reviewModeCounts.quickCheck > 0 ? (
                     <View style={styles.summaryPill}>
                       <Text style={styles.summaryPillValue}>{reviewModeCounts.quickCheck}</Text>
