@@ -1,5 +1,9 @@
 import Constants from 'expo-constants';
 import { supabase } from '../lib/supabase';
+const {
+  buildCandidateBaseUrls,
+  missingApiBaseUrlMessage,
+} = require('./apiConfig');
 
 // Use 127.0.0.1 (not localhost) as the local fallback to force IPv4.
 // `localhost` can resolve to an IPv6 address (::1 or a public 2600:... on some
@@ -9,31 +13,22 @@ const LOCAL_BASE_URLS = ['http://127.0.0.1:3001', 'http://127.0.0.1:3002'];
 let activeBaseUrl = EXPLICIT_BASE_URL;
 
 function deriveExpoHostBaseUrls() {
-  const candidates = [
+  return [
     Constants.expoConfig?.hostUri,
     Constants.expoGoConfig?.developer?.tool,
     Constants.manifest2?.extra?.expoGo?.developer?.tool,
     Constants.manifest?.debuggerHost,
   ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    const raw = `${candidate || ''}`.trim();
-    const host = raw.split('://').pop()?.split('/')[0]?.split(':')[0];
-    if (!host || host === '127.0.0.1' || host === 'localhost') continue;
-    return [`http://${host}:3001`, `http://${host}:3002`];
-  }
-
-  return [];
 }
 
 function candidateBaseUrls() {
-  if (EXPLICIT_BASE_URL) return [EXPLICIT_BASE_URL];
-  const derivedBaseUrls = deriveExpoHostBaseUrls();
-  const allLocalBaseUrls = [...derivedBaseUrls, ...LOCAL_BASE_URLS].filter((url, index, arr) => arr.indexOf(url) === index);
-  if (activeBaseUrl && allLocalBaseUrls.includes(activeBaseUrl)) {
-    return [activeBaseUrl, ...allLocalBaseUrls.filter((url) => url !== activeBaseUrl)];
-  }
-  return allLocalBaseUrls;
+  return buildCandidateBaseUrls({
+    explicitBaseUrl: EXPLICIT_BASE_URL,
+    allowLocalFallback: __DEV__,
+    expoHostCandidates: deriveExpoHostBaseUrls(),
+    localBaseUrls: LOCAL_BASE_URLS,
+    activeBaseUrl,
+  });
 }
 
 async function getToken() {
@@ -48,6 +43,16 @@ async function request(path, options = {}, tokenOverride) {
   // so supabase.auth.getSession() can return null and produce a spurious 401.
   const token = tokenOverride !== undefined ? tokenOverride : await getToken();
   let lastNetworkError = null;
+
+  const configMessage = missingApiBaseUrlMessage({
+    allowLocalFallback: __DEV__,
+    explicitBaseUrl: EXPLICIT_BASE_URL,
+  });
+  if (configMessage) {
+    const configError = new Error(configMessage);
+    configError.code = 'network_error';
+    throw configError;
+  }
 
   for (const baseUrl of candidateBaseUrls()) {
     try {
@@ -85,7 +90,10 @@ async function request(path, options = {}, tokenOverride) {
   }
 
   const targets = candidateBaseUrls().join(' or ');
-  const enriched = new Error(`Could not reach the API at ${targets}. Make sure the local server is running.`);
+  const message = __DEV__
+    ? `Could not reach the API at ${targets}. Make sure the local server is running.`
+    : `Could not reach the API at ${targets}. Please check the app's API configuration.`;
+  const enriched = new Error(message);
   enriched.code = 'network_error';
   enriched.cause = lastNetworkError;
   throw enriched;

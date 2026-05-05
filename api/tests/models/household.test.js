@@ -1,5 +1,6 @@
 process.env.EMAIL_HASH_SECRET = 'test-secret-32chars-padded-xxxxx';
 const { hashEmail } = require('../../src/services/emailHmac');
+const { hashInviteToken } = require('../../src/services/inviteToken');
 const db = require('../../src/db');
 const Household = require('../../src/models/household');
 const HouseholdInvite = require('../../src/models/householdInvite');
@@ -111,11 +112,12 @@ describe('Household.findMembers', () => {
 describe('HouseholdInvite.create', () => {
   it('creates and returns an invite row', async () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
+    const rawToken = 'test-token-create-001';
     const invite = await HouseholdInvite.create({
       householdId: testHouseholdId,
       invitedEmail: hashEmail('invited@hh-test.com'),
       invitedBy: testUserId,
-      token: 'test-token-create-001',
+      token: rawToken,
       expiresAt,
     });
 
@@ -124,7 +126,8 @@ describe('HouseholdInvite.create', () => {
     expect(invite.household_id).toBe(testHouseholdId);
     expect(invite.invited_email_hash).toBe(hashEmail('invited@hh-test.com'));
     expect(invite.invited_by).toBe(testUserId);
-    expect(invite.token).toBe('test-token-create-001');
+    expect(invite.token).toBe(hashInviteToken(rawToken));
+    expect(invite.token).not.toBe(rawToken);
     expect(invite.status).toBe('pending');
     expect(invite.expires_at).toBeDefined();
   });
@@ -133,18 +136,19 @@ describe('HouseholdInvite.create', () => {
 describe('HouseholdInvite.findByToken', () => {
   it('finds an invite by token', async () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const rawToken = 'test-token-find-002';
     await HouseholdInvite.create({
       householdId: testHouseholdId,
       invitedEmail: hashEmail('findtoken@hh-test.com'),
       invitedBy: testUserId,
-      token: 'test-token-find-002',
+      token: rawToken,
       expiresAt,
     });
 
-    const found = await HouseholdInvite.findByToken('test-token-find-002');
+    const found = await HouseholdInvite.findByToken(rawToken);
 
     expect(found).toBeDefined();
-    expect(found.token).toBe('test-token-find-002');
+    expect(found.token).toBe(hashInviteToken(rawToken));
     expect(found.invited_email_hash).toBe(hashEmail('findtoken@hh-test.com'));
     expect(found.status).toBe('pending');
   });
@@ -159,30 +163,32 @@ describe('HouseholdInvite.findByToken', () => {
 describe('HouseholdInvite.accept', () => {
   it('updates the invite status to accepted', async () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const rawToken = 'test-token-accept-003';
     await HouseholdInvite.create({
       householdId: testHouseholdId,
       invitedEmail: hashEmail('accept@hh-test.com'),
       invitedBy: testUserId,
-      token: 'test-token-accept-003',
+      token: rawToken,
       expiresAt,
     });
 
-    const updated = await HouseholdInvite.accept('test-token-accept-003');
+    const updated = await HouseholdInvite.accept(rawToken);
 
     expect(updated).toBeDefined();
     expect(updated.status).toBe('accepted');
-    expect(updated.token).toBe('test-token-accept-003');
+    expect(updated.token).toBe(hashInviteToken(rawToken));
   });
 });
 
 describe('HouseholdInvite.expireOld', () => {
   it('marks expired pending invites as expired and returns count', async () => {
     const pastDate = new Date(Date.now() - 1000); // 1 second in the past
+    const rawToken = 'test-token-expire-004';
     await HouseholdInvite.create({
       householdId: testHouseholdId,
       invitedEmail: hashEmail('expire@hh-test.com'),
       invitedBy: testUserId,
-      token: 'test-token-expire-004',
+      token: rawToken,
       expiresAt: pastDate,
     });
 
@@ -191,7 +197,7 @@ describe('HouseholdInvite.expireOld', () => {
     expect(typeof count).toBe('number');
     expect(count).toBeGreaterThanOrEqual(1);
 
-    const invite = await HouseholdInvite.findByToken('test-token-expire-004');
+    const invite = await HouseholdInvite.findByToken(rawToken);
     expect(invite.status).toBe('expired');
   });
 });

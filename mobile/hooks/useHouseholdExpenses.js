@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
+const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
 
 export function useHouseholdExpenses(month, startDayOverride, { enabled = true } = {}) {
   const [expenses, setExpenses] = useState([]);
@@ -30,6 +31,7 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
         saveExpenseSnapshots(data);
       },
       (err) => { setError(err.message); setLoading(false); },
+      { serialize: sanitizeExpenseCollection },
     );
   }, [enabled, month, startDayOverride]);
 

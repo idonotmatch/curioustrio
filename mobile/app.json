@@ -18,6 +18,10 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Adlo only uses your camera when you choose to scan a receipt.",
+        "NSPhotoLibraryUsageDescription": "Adlo only accesses your photos when you choose a receipt image to import.",
+        "NSPhotoLibraryAddUsageDescription": "Adlo only saves a copy of a receipt photo when you ask it to keep one.",
+        "NSLocationWhenInUseUsageDescription": "Adlo only uses your location when you choose it to help match the right place for an expense.",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": ["com.googleusercontent.apps.336238140966-9bdj3hpgi874t7073h8vkielsl4soola"]

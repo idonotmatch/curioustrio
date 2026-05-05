@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
+const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
 
 // Personal expenses can be mutated from multiple devices for the same account.
 // Serve cache immediately, but always revalidate so "Mine" stays in sync across
@@ -27,6 +28,7 @@ export function useExpenses(month, startDayOverride) {
         saveExpenseSnapshots(data);
       },
       (err) => { setError(err.message); setLoading(false); },
+      { serialize: sanitizeExpenseCollection },
     );
   }, [month, startDayOverride]);
 

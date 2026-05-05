@@ -32,11 +32,18 @@ const filesToCheck = [
   'services/manualAddSuggestions.js',
   'services/confirmClientWork.js',
   'services/confirmNavigation.js',
+  'services/apiConfig.js',
   'services/currentUserCache.js',
   'services/internalTools.js',
+  'services/internalToolsConfig.js',
+  'services/pushRegistration.js',
+  'services/storageSanitizers.js',
   'services/authBootRouting.js',
   'services/scenarioCheckPresentation.js',
   'scripts/test-auth-boot-routing.js',
+  'scripts/test-api-config.js',
+  'scripts/test-storage-sanitizers.js',
+  'scripts/test-internal-tools-config.js',
 ];
 
 for (const relativePath of filesToCheck) {

@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.js",
     "test": "jest --config jest.unit.config.js --passWithNoTests --runInBand",
     "test:unit": "jest --config jest.unit.config.js --passWithNoTests --runInBand",
-    "test:launch": "jest --config jest.unit.config.js --passWithNoTests --runInBand tests/services/emailParser.test.js tests/services/gmailImporter.test.js tests/services/accountDeletionService.test.js tests/services/gmailClient.test.js",
+    "test:launch": "jest --config jest.unit.config.js --passWithNoTests --runInBand tests/services/emailParser.test.js tests/services/gmailImporter.test.js tests/services/accountDeletionService.test.js tests/services/gmailClient.test.js tests/services/categoryAssigner.test.js tests/services/expenseIngestService.test.js tests/services/expenseConfirmService.test.js tests/services/internalTools.test.js tests/services/inviteToken.test.js tests/startup/validateEnv.test.js",
     "test:integration": "jest --config jest.integration.config.js --passWithNoTests --runInBand",
     "test:routes": "jest --config jest.routes.config.js --passWithNoTests --runInBand",
     "test:models": "jest --config jest.models.config.js --passWithNoTests --runInBand",

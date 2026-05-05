@@ -4,13 +4,16 @@ import {
   Text,
   Switch,
   StyleSheet,
+  TouchableOpacity,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { api } from '../services/api';
-import { invalidateCache } from '../services/cache';
+import { ensurePushRegistration } from '../services/pushRegistration';
+import { saveCurrentUserCache } from '../services/currentUserCache';
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
@@ -20,6 +23,7 @@ export default function NotificationsScreen() {
   const [pushRecurringEnabled, setPushRecurringEnabled] = useState(true);
   const [pushSavingKey, setPushSavingKey] = useState('');
   const [pushMessage, setPushMessage] = useState('');
+  const [devicePushEnabled, setDevicePushEnabled] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -32,6 +36,40 @@ export default function NotificationsScreen() {
     user?.push_recurring_enabled,
   ]);
 
+  useEffect(() => {
+    let active = true;
+    Notifications.getPermissionsAsync()
+      .then(({ status }) => {
+        if (active) setDevicePushEnabled(status === 'granted');
+      })
+      .catch(() => {
+        if (active) setDevicePushEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleEnableDeviceNotifications() {
+    setPushSavingKey('device_notifications');
+    setPushMessage('');
+    try {
+      const permission = await ensurePushRegistration();
+      if (!permission.granted) {
+        setDevicePushEnabled(false);
+        setPushMessage('Notifications stay off until you allow them on your device.');
+        return;
+      }
+      setDevicePushEnabled(true);
+      setPushMessage('Notifications are enabled on this device.');
+    } catch (e) {
+      setDevicePushEnabled(false);
+      setPushMessage(e.message || 'Could not enable notifications on this device');
+    } finally {
+      setPushSavingKey('');
+    }
+  }
+
   async function savePushSetting(field, value, setter) {
     const previous = field === 'push_gmail_review_enabled'
       ? pushGmailReviewEnabled
@@ -42,8 +80,17 @@ export default function NotificationsScreen() {
     setPushSavingKey(field);
     setPushMessage('');
     try {
-      await api.patch('/users/settings', { [field]: value });
-      await invalidateCache('cache:current-user');
+      if (value) {
+        const permission = await ensurePushRegistration();
+        if (!permission.granted) {
+          setter(previous);
+          setPushMessage('Notifications stay off until you allow them on your device.');
+          return;
+        }
+      }
+      const updatedUser = await api.patch('/users/settings', { [field]: value });
+      await saveCurrentUserCache(updatedUser);
+      setPushMessage(value ? 'Saved.' : '');
     } catch (e) {
       setter(previous);
       setPushMessage(e.message || 'Could not update notification preferences');
@@ -61,7 +108,26 @@ export default function NotificationsScreen() {
       >
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
-          <Text style={styles.sectionIntro}>Choose which nudges are worth interrupting you for.</Text>
+          <Text style={styles.sectionIntro}>Choose which nudges are worth interrupting you for. Adlo only asks for device notification permission when you turn one of these on.</Text>
+
+          {devicePushEnabled === false ? (
+            <View style={styles.permissionCard}>
+              <View style={styles.permissionCopy}>
+                <Text style={styles.permissionTitle}>Device notifications are still off.</Text>
+                <Text style={styles.permissionBody}>Turn them on here when you want Gmail review, insight, or recurring nudges to reach this phone.</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.permissionButton, pushSavingKey === 'device_notifications' && styles.buttonDisabled]}
+                onPress={handleEnableDeviceNotifications}
+                disabled={pushSavingKey === 'device_notifications'}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.permissionButtonText}>
+                  {pushSavingKey === 'device_notifications' ? 'Enabling...' : 'Enable on device'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.toggleRow}>
             <View style={styles.toggleCopy}>
@@ -118,6 +184,26 @@ const styles = StyleSheet.create({
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
   sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   sectionIntro: { color: '#666', fontSize: 13, marginBottom: 12 },
+  permissionCard: {
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    backgroundColor: '#111',
+    gap: 12,
+  },
+  permissionCopy: { gap: 4 },
+  permissionTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '700' },
+  permissionBody: { color: '#8c8c8c', fontSize: 13, lineHeight: 18 },
+  permissionButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  permissionButtonText: { color: '#0a0a0a', fontSize: 13, fontWeight: '700' },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',

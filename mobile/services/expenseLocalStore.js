@@ -1,5 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const {
+  sanitizeExpenseCollection,
+  sanitizeExpenseItems,
+  sanitizeExpenseSnapshot,
+} = require('./storageSanitizers');
+
 const DETAIL_PREFIX = 'cache:expense-detail:';
 const ITEM_PREFIX = 'cache:expense-items:';
 
@@ -9,36 +15,6 @@ function hasOwn(obj, key) {
 
 function isPresent(value) {
   return value !== undefined && value !== null;
-}
-
-function mergePreferPresent(existingValue, incomingValue) {
-  return isPresent(incomingValue) ? incomingValue : existingValue;
-}
-
-function mergeGmailReviewHint(existingHint = null, incomingHint = null) {
-  if (!existingHint && !incomingHint) return null;
-  if (!incomingHint || typeof incomingHint !== 'object') return existingHint || null;
-  if (!existingHint || typeof existingHint !== 'object') return incomingHint;
-
-  const merged = {
-    ...existingHint,
-    ...incomingHint,
-  };
-
-  for (const key of Object.keys(existingHint)) {
-    if (isPresent(incomingHint[key])) continue;
-    merged[key] = existingHint[key];
-  }
-
-  const arrayKeys = ['review_checklist', 'likely_changed_fields', 'item_top_signals'];
-  for (const key of arrayKeys) {
-    if (Array.isArray(incomingHint?.[key]) && incomingHint[key].length > 0) continue;
-    if (Array.isArray(existingHint?.[key]) && existingHint[key].length > 0) {
-      merged[key] = existingHint[key];
-    }
-  }
-
-  return merged;
 }
 
 function mergeExpenseData(existing = {}, incoming = {}) {
@@ -71,20 +47,8 @@ function mergeExpenseData(existing = {}, incoming = {}) {
     merged.item_count = incoming.items.length;
   }
 
-  if (existing.gmail_review_hint || incoming.gmail_review_hint) {
-    merged.gmail_review_hint = mergeGmailReviewHint(existing.gmail_review_hint, incoming.gmail_review_hint);
-  }
-
   if (!hasOwn(incoming, 'duplicate_flags') && Array.isArray(existing.duplicate_flags)) {
     merged.duplicate_flags = existing.duplicate_flags;
-  }
-
-  merged.email_subject = mergePreferPresent(existing.email_subject, incoming.email_subject);
-  merged.email_from_address = mergePreferPresent(existing.email_from_address, incoming.email_from_address);
-  merged.email_snippet = mergePreferPresent(existing.email_snippet, incoming.email_snippet);
-
-  if ((!Array.isArray(incoming.item_review_context) || incoming.item_review_context.length === 0) && Array.isArray(existing.item_review_context) && existing.item_review_context.length > 0) {
-    merged.item_review_context = existing.item_review_context;
   }
 
   if (!isPresent(incoming.category_reasoning) && isPresent(existing.category_reasoning)) {
@@ -92,6 +56,14 @@ function mergeExpenseData(existing = {}, incoming = {}) {
   }
 
   return merged;
+}
+
+function isSamePayload(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
 }
 
 export function expenseDetailKey(id) {
@@ -105,9 +77,10 @@ export function expenseItemsKey(id) {
 export async function saveExpenseItemsSnapshot(id, items) {
   if (!id || !Array.isArray(items)) return;
   try {
+    const sanitizedItems = sanitizeExpenseItems(items);
     await AsyncStorage.setItem(
       expenseItemsKey(id),
-      JSON.stringify({ data: items, ts: Date.now() })
+      JSON.stringify({ data: sanitizedItems, ts: Date.now() })
     );
   } catch {
     // non-fatal
@@ -115,10 +88,11 @@ export async function saveExpenseItemsSnapshot(id, items) {
 }
 
 export async function saveExpenseSnapshot(expense) {
-  if (!expense?.id) return;
+  const sanitizedExpense = sanitizeExpenseSnapshot(expense);
+  if (!sanitizedExpense?.id) return;
   try {
-    const existing = await loadExpenseSnapshot(expense.id);
-    const nextExpense = mergeExpenseData(existing || {}, expense);
+    const existing = await loadExpenseSnapshot(sanitizedExpense.id);
+    const nextExpense = mergeExpenseData(existing || {}, sanitizedExpense);
     if (Array.isArray(nextExpense.items)) {
       await saveExpenseItemsSnapshot(nextExpense.id, nextExpense.items);
     }
@@ -134,7 +108,7 @@ export async function saveExpenseSnapshot(expense) {
 export async function saveExpenseSnapshots(expenses) {
   if (!Array.isArray(expenses) || !expenses.length) return;
   try {
-    const validExpenses = expenses.filter((expense) => expense?.id);
+    const validExpenses = sanitizeExpenseCollection(expenses);
     if (!validExpenses.length) return;
 
     const keys = validExpenses.map((expense) => expenseDetailKey(expense.id));
@@ -145,7 +119,7 @@ export async function saveExpenseSnapshots(expenses) {
       const raw = existingByKey.get(expenseDetailKey(expense.id));
       if (raw) {
         try {
-          existing = JSON.parse(raw)?.data || null;
+          existing = sanitizeExpenseSnapshot(JSON.parse(raw)?.data || null);
         } catch {
           existing = null;
         }
@@ -177,7 +151,14 @@ export async function loadExpenseSnapshot(id) {
     const raw = await AsyncStorage.getItem(expenseDetailKey(id));
     if (!raw) return null;
     const { data } = JSON.parse(raw);
-    return data?.id === id ? data : null;
+    const sanitized = sanitizeExpenseSnapshot(data);
+    if (sanitized?.id === id) {
+      if (!isSamePayload(sanitized, data)) {
+        AsyncStorage.setItem(expenseDetailKey(id), JSON.stringify({ data: sanitized, ts: Date.now() })).catch(() => {});
+      }
+      return sanitized;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -190,11 +171,14 @@ export async function loadExpenseItemsSnapshot(id, { maxAgeMs = null, includeMet
     const raw = await AsyncStorage.getItem(expenseItemsKey(id));
     if (raw) {
       const parsed = JSON.parse(raw);
-      const items = Array.isArray(parsed?.data) ? parsed.data : null;
+      const items = Array.isArray(parsed?.data) ? sanitizeExpenseItems(parsed.data) : null;
       const ts = Number(parsed?.ts) || null;
       const ageMs = ts ? Math.max(0, Date.now() - ts) : null;
       const isFresh = maxAgeMs == null ? !!items : ageMs != null && ageMs <= maxAgeMs;
       if (items) {
+        if (!isSamePayload(items, parsed?.data || null)) {
+          AsyncStorage.setItem(expenseItemsKey(id), JSON.stringify({ data: items, ts: Date.now() })).catch(() => {});
+        }
         return includeMeta ? { items, isFresh, ts, ageMs } : items;
       }
     }
@@ -223,7 +207,7 @@ export async function findExpenseSnapshotInCaches(id) {
       if (!raw) continue;
       const { data } = JSON.parse(raw);
       if (!Array.isArray(data)) continue;
-      const found = data.find((item) => item?.id === id);
+      const found = sanitizeExpenseCollection(data).find((item) => item?.id === id);
       if (found) {
         saveExpenseSnapshot(found);
         return found;
@@ -242,7 +226,7 @@ export async function findExpenseSnapshotInCaches(id) {
         if (!raw) continue;
         const { data } = JSON.parse(raw);
         if (!Array.isArray(data)) continue;
-        const found = data.find((item) => item?.id === id);
+        const found = sanitizeExpenseCollection(data).find((item) => item?.id === id);
         if (found) {
           saveExpenseSnapshot(found);
           return found;
@@ -314,7 +298,8 @@ function cacheAllowsExpense(key, expense) {
 }
 
 export async function patchExpenseInCachedLists(expense) {
-  if (!expense?.id) return;
+  const sanitizedExpense = sanitizeExpenseSnapshot(expense);
+  if (!sanitizedExpense?.id) return;
   try {
     const keys = await listCacheKeys();
     if (!keys.length) return;
@@ -326,13 +311,13 @@ export async function patchExpenseInCachedLists(expense) {
       if (!raw) continue;
       try {
         const parsed = JSON.parse(raw);
-        const data = Array.isArray(parsed?.data) ? parsed.data : null;
+        const data = Array.isArray(parsed?.data) ? sanitizeExpenseCollection(parsed.data) : null;
         if (!data) continue;
         let touched = false;
         const nextData = data.map((item) => {
-          if (item?.id !== expense.id) return item;
+          if (item?.id !== sanitizedExpense.id) return item;
           touched = true;
-          return mergeExpenseData(item || {}, expense);
+          return mergeExpenseData(item || {}, sanitizedExpense);
         });
         if (touched) {
           updates.push([key, JSON.stringify({ ...parsed, data: nextData, ts: Date.now() })]);
@@ -363,7 +348,7 @@ export async function removeExpenseFromCachedLists(id) {
       if (!raw) continue;
       try {
         const parsed = JSON.parse(raw);
-        const data = Array.isArray(parsed?.data) ? parsed.data : null;
+        const data = Array.isArray(parsed?.data) ? sanitizeExpenseCollection(parsed.data) : null;
         if (!data) continue;
         const nextData = data.filter((item) => item?.id !== id);
         if (nextData.length !== data.length) {
@@ -383,7 +368,8 @@ export async function removeExpenseFromCachedLists(id) {
 }
 
 export async function insertExpenseIntoCachedLists(expense) {
-  if (!expense?.id) return;
+  const sanitizedExpense = sanitizeExpenseSnapshot(expense);
+  if (!sanitizedExpense?.id) return;
   try {
     const keys = await listCacheKeys();
     if (!keys.length) return;
@@ -392,19 +378,19 @@ export async function insertExpenseIntoCachedLists(expense) {
     const updates = [];
 
     for (const [key, raw] of entries) {
-      if (!raw || !cacheAllowsExpense(key, expense)) continue;
+      if (!raw || !cacheAllowsExpense(key, sanitizedExpense)) continue;
       try {
         const parsed = JSON.parse(raw);
-        const data = Array.isArray(parsed?.data) ? parsed.data : null;
+        const data = Array.isArray(parsed?.data) ? sanitizeExpenseCollection(parsed.data) : null;
         if (!data) continue;
-        const existingIndex = data.findIndex((item) => item?.id === expense.id);
+        const existingIndex = data.findIndex((item) => item?.id === sanitizedExpense.id);
         let nextData = data;
 
         if (existingIndex >= 0) {
           nextData = [...data];
-          nextData[existingIndex] = mergeExpenseData(nextData[existingIndex] || {}, expense);
+          nextData[existingIndex] = mergeExpenseData(nextData[existingIndex] || {}, sanitizedExpense);
         } else {
-          nextData = [expense, ...data];
+          nextData = [sanitizedExpense, ...data];
         }
 
         updates.push([key, JSON.stringify({ ...parsed, data: nextData, ts: Date.now() })]);

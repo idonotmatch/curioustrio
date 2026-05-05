@@ -514,8 +514,6 @@ async function processMessageImport(user, msgId, {
   } catch (e) {
     const failureReason = summarizeImportFailure(e);
     console.error('[gmail import] message failed', {
-      user_id: user.id,
-      message_id: msgId,
       reason: failureReason,
     });
     increment(outcomes.failed_reasons, failureReason);
@@ -567,7 +565,6 @@ async function importForUser(user) {
       }
     } catch (e) {
       console.error('[gmail import] push notification failed', {
-        user_id: user.id,
         reason: summarizeImportFailure(e),
       });
     }

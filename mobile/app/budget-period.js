@@ -7,6 +7,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser';
 import { useHousehold } from '../hooks/useHousehold';
 import { useMonth, currentPeriod } from '../contexts/MonthContext';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
+import { saveCurrentUserCache } from '../services/currentUserCache';
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -52,10 +53,10 @@ export default function BudgetPeriodScreen() {
     const day = periodType === 'calendar' ? 1 : customDay;
     setPeriodSaving(true);
     try {
-      await api.patch('/users/settings', { budget_start_day: day });
+      const updatedUser = await api.patch('/users/settings', { budget_start_day: day });
       setStartDay(day);
       setSelectedMonth(currentPeriod(day));
-      await invalidateCache('cache:current-user');
+      await saveCurrentUserCache(updatedUser);
       await invalidateCacheByPrefix('cache:budget:');
       await invalidateCacheByPrefix('cache:expenses:');
     } catch {

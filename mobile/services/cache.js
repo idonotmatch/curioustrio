@@ -1,5 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+function normalizeCacheData(data, serialize) {
+  try {
+    return typeof serialize === 'function' ? serialize(data) : data;
+  } catch {
+    return data;
+  }
+}
+
 /**
  * Stale-while-revalidate: serve cache immediately, always background-fetch.
  * Use for data that can be updated by other parties (household members, server-side sync).
@@ -9,15 +17,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * 3. Calls onData again with fresh data and writes it back to cache.
  * 4. Calls onError if the network fetch fails and no cache was served.
  */
-export async function loadWithCache(key, fetcher, onData, onError) {
+export async function loadWithCache(key, fetcher, onData, onError, { serialize } = {}) {
   let served = false;
 
   try {
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
       const { data } = JSON.parse(raw);
-      onData(data);
+      const normalized = normalizeCacheData(data, serialize);
+      onData(normalized);
       served = true;
+      if (normalized !== data) {
+        AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+      }
     }
   } catch {
     // cache read failure is non-fatal
@@ -26,7 +38,8 @@ export async function loadWithCache(key, fetcher, onData, onError) {
   try {
     const fresh = await fetcher();
     onData(fresh);
-    AsyncStorage.setItem(key, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+    const normalized = normalizeCacheData(fresh, serialize);
+    AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
   } catch (err) {
     if (!served && onError) onError(err);
   }
@@ -41,12 +54,16 @@ export async function loadWithCache(key, fetcher, onData, onError) {
  * 2. If no cache (first load or after invalidation), fetches, caches, then calls onData.
  * 3. Calls onError if fetch fails and no cache was served.
  */
-export async function loadCacheOnly(key, fetcher, onData, onError) {
+export async function loadCacheOnly(key, fetcher, onData, onError, { serialize } = {}) {
   try {
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
       const { data } = JSON.parse(raw);
-      onData(data);
+      const normalized = normalizeCacheData(data, serialize);
+      onData(normalized);
+      if (normalized !== data) {
+        AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+      }
       return; // cache hit — skip network entirely
     }
   } catch {
@@ -56,7 +73,8 @@ export async function loadCacheOnly(key, fetcher, onData, onError) {
   try {
     const fresh = await fetcher();
     onData(fresh);
-    AsyncStorage.setItem(key, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+    const normalized = normalizeCacheData(fresh, serialize);
+    AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
   } catch (err) {
     if (onError) onError(err);
   }
@@ -69,18 +87,23 @@ export async function loadCacheOnly(key, fetcher, onData, onError) {
  * 3. If fetch fails, fall back to cached data if present.
  * 4. Only call onError if both network and cache miss/fail.
  */
-export async function loadFreshWithCacheFallback(key, fetcher, onData, onError) {
+export async function loadFreshWithCacheFallback(key, fetcher, onData, onError, { serialize } = {}) {
   try {
     const fresh = await fetcher();
     onData(fresh);
-    AsyncStorage.setItem(key, JSON.stringify({ data: fresh, ts: Date.now() })).catch(() => {});
+    const normalized = normalizeCacheData(fresh, serialize);
+    AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
     return;
   } catch (networkErr) {
     try {
       const raw = await AsyncStorage.getItem(key);
       if (raw) {
         const { data } = JSON.parse(raw);
-        onData(data);
+        const normalized = normalizeCacheData(data, serialize);
+        onData(normalized);
+        if (normalized !== data) {
+          AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+        }
         return;
       }
     } catch {

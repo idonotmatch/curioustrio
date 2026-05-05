@@ -1,17 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import { loadWithCache } from '../services/cache';
+import { loadCurrentUserCache, saveCurrentUserCache } from '../services/currentUserCache';
 
 export function useCurrentUser() {
   const [user, setUser] = useState(null);
 
-  useEffect(() => {
-    loadWithCache(
-      'cache:current-user',
-      () => api.get('/users/me'),
-      (me) => setUser(me || null),
-    );
+  const refresh = useCallback(async () => {
+    try {
+      const me = await api.get('/users/me');
+      setUser(me || null);
+      await saveCurrentUserCache(me);
+      return me || null;
+    } catch (err) {
+      throw err;
+    }
   }, []);
 
-  return { user, userId: user?.id || null };
+  useEffect(() => {
+    let active = true;
+
+    loadCurrentUserCache()
+      .then((cachedUser) => {
+        if (active && cachedUser) setUser(cachedUser);
+      })
+      .catch(() => {});
+
+    api.get('/users/me')
+      .then(async (me) => {
+        if (!active) return;
+        setUser(me || null);
+        await saveCurrentUserCache(me);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return { user, userId: user?.id || null, refresh };
 }

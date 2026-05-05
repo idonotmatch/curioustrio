@@ -1,8 +1,7 @@
 import { Stack, useRootNavigationState, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
-import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState, Image, Platform, StyleSheet, View } from 'react-native';
+import { AppState, Image, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -179,37 +178,6 @@ function AppNavigator() {
       gmailSyncInFlightRef.current = false;
     }
   }
-
-  // Push notification + location permission registration (independent of auth)
-  useEffect(() => {
-    if (!bootstrapped) return;
-    async function requestPermissions() {
-      try {
-        const { status: existing } = await Notifications.getPermissionsAsync();
-        let finalStatus = existing;
-        if (existing !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-        if (finalStatus === 'granted') {
-          const tokenData = await Notifications.getExpoPushTokenAsync();
-          const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-          await api.post('/push/register', { token: tokenData.data, platform });
-        }
-      } catch {
-        // Non-fatal
-      }
-      try {
-        const { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          await Location.requestForegroundPermissionsAsync();
-        }
-      } catch {
-        // Non-fatal
-      }
-    }
-    requestPermissions();
-  }, [bootstrapped]);
 
   // Auth state listener
   useEffect(() => {

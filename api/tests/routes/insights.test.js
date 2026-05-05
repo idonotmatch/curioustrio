@@ -15,6 +15,9 @@ jest.mock('../../src/middleware/auth', () => ({
   },
 }));
 
+const originalInternalToolsFlag = process.env.INTERNAL_TOOLS_ENABLED;
+process.env.INTERNAL_TOOLS_ENABLED = '1';
+
 let householdId;
 let userId;
 let householdUserId;
@@ -155,6 +158,8 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  if (originalInternalToolsFlag === undefined) delete process.env.INTERNAL_TOOLS_ENABLED;
+  else process.env.INTERNAL_TOOLS_ENABLED = originalInternalToolsFlag;
   await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [userId]);
   await db.query(`DELETE FROM push_tokens WHERE user_id = $1`, [householdUserId]);
   await db.query(`DELETE FROM insight_notifications WHERE user_id = $1`, [userId]);

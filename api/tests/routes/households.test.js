@@ -1,5 +1,6 @@
 process.env.EMAIL_HASH_SECRET = 'test-secret-32chars-padded-xxxxx';
 const { hashEmail } = require('../../src/services/emailHmac');
+const { hashInviteToken } = require('../../src/services/inviteToken');
 const request = require('supertest');
 const app = require('../../src/index');
 const db = require('../../src/db');
@@ -134,6 +135,13 @@ describe('POST /households/invites', () => {
     expect(res.status).toBe(201);
     expect(res.body.token).toBeDefined();
     expect(res.body.expires_at).toBeDefined();
+
+    const storedInvite = await db.query(
+      `SELECT token FROM household_invites WHERE invited_email_hash = $1 ORDER BY created_at DESC LIMIT 1`,
+      [hashEmail('invitee@test.com')]
+    );
+    expect(storedInvite.rows[0].token).toBe(hashInviteToken(res.body.token));
+    expect(storedInvite.rows[0].token).not.toBe(res.body.token);
   });
 
   it('returns 403 if user is not in a household', async () => {
@@ -277,6 +285,39 @@ describe('POST /households/invites/:token/accept', () => {
 
     expect(acceptRes.status).toBe(200);
     expect(acceptRes.body.household_id).toBe(householdId);
+  });
+
+  it('accepts a legacy plaintext token row while older invites age out', async () => {
+    await request(app)
+      .post('/households')
+      .send({ name: 'Test Household Legacy Invite' });
+
+    const ownerRow = await db.query(
+      `SELECT id, household_id FROM users WHERE provider_uid = $1`,
+      [TEST_PROVIDER_UID]
+    );
+    const owner = ownerRow.rows[0];
+    const token = `legacy-token-${Date.now()}`;
+    const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    await db.query(
+      `INSERT INTO household_invites (household_id, invited_email_hash, invited_by, token, expires_at, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      [owner.household_id, hashEmail('joiner@test.com'), owner.id, token, futureDate]
+    );
+
+    await User.findOrCreateByProviderUid({
+      providerUid: TEST_PROVIDER_UID_JOINER,
+      name: 'Joiner',
+      email: 'joiner@test.com',
+    });
+    mockUserId = TEST_PROVIDER_UID_JOINER;
+
+    const res = await request(app)
+      .post(`/households/invites/${token}/accept`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.household_id).toBe(owner.household_id);
   });
 });
 

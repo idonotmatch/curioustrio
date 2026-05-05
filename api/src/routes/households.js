@@ -138,10 +138,11 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
         'UPDATE users SET household_id = $1 WHERE id = $2',
         [invite.household_id, user.id]
       );
-      await client.query(
-        "UPDATE household_invites SET status = $1 WHERE token = $2 AND status = 'pending'",
-        ['accepted', req.params.token]
-      );
+      const acceptedInvite = await HouseholdInvite.accept(req.params.token, client);
+      if (!acceptedInvite) {
+        await client.query('ROLLBACK');
+        return res.status(410).json({ error: 'Invite already used or expired' });
+      }
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');

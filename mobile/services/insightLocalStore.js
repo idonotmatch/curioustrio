@@ -1,26 +1,27 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const { sanitizeInsightSnapshot } = require('./storageSanitizers');
+
 function keyForInsight(insightId) {
   return `cache:insight-detail:${insightId}`;
 }
 
+function isSamePayload(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
 export async function saveInsightDetailSnapshot(insight = {}, extras = {}) {
-  const insightId = insight?.id;
+  const sanitizedInsight = sanitizeInsightSnapshot(insight);
+  const insightId = sanitizedInsight?.id;
   if (!insightId) return;
   const payload = {
-    insight: {
-      id: insight.id,
-      type: insight.type || '',
-      title: insight.title || '',
-      body: insight.body || '',
-      severity: insight.severity || 'low',
-      entity_type: insight.entity_type || '',
-      entity_id: insight.entity_id || '',
-      metadata: insight.metadata || {},
-      action: insight.action || null,
-    },
+    insight: sanitizedInsight,
     extras: {
-      preloadEvidence: Array.isArray(extras?.preloadEvidence) ? extras.preloadEvidence : [],
+      preloadEvidence: [],
     },
     saved_at: Date.now(),
   };
@@ -37,7 +38,20 @@ export async function loadInsightDetailSnapshot(insightId) {
     const raw = await AsyncStorage.getItem(keyForInsight(insightId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    const sanitized = parsed && typeof parsed === 'object'
+      ? {
+        insight: sanitizeInsightSnapshot(parsed.insight || {}),
+        extras: { preloadEvidence: [] },
+        saved_at: Number(parsed.saved_at || 0) || Date.now(),
+      }
+      : null;
+    if (sanitized?.insight?.id === insightId) {
+      if (!isSamePayload(sanitized, parsed)) {
+        AsyncStorage.setItem(keyForInsight(insightId), JSON.stringify(sanitized)).catch(() => {});
+      }
+      return sanitized;
+    }
+    return null;
   } catch {
     return null;
   }
