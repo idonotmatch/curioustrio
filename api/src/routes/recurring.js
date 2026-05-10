@@ -14,6 +14,7 @@ const {
   detectRecurringWatchCandidates,
 } = require('../services/recurringDetector');
 const { findObservationOpportunities } = require('../services/priceObservationService');
+const { emitRecurringFreshnessEvent } = require('../services/freshnessEvents');
 
 router.use(authenticate);
 
@@ -145,6 +146,7 @@ router.post('/preferences', async (req, res, next) => {
       expectedFrequencyDays,
       notes,
     });
+    await emitRecurringFreshnessEvent(user, 'recurring_preference_saved', { expense_id: expense.id });
 
     res.status(201).json(preference);
   } catch (err) { next(err); }
@@ -156,6 +158,7 @@ router.delete('/preferences/:id', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const removed = await RecurringPreference.remove(req.params.id, user.id);
     if (!removed) return res.status(404).json({ error: 'Not found' });
+    await emitRecurringFreshnessEvent(user, 'recurring_preference_deleted', { preference_id: req.params.id });
     res.status(204).send();
   } catch (err) { next(err); }
 });
@@ -178,6 +181,7 @@ router.post('/', async (req, res, next) => {
       frequency,
       nextExpectedDate: next_expected_date,
     });
+    await emitRecurringFreshnessEvent(user, 'recurring_created', { recurring_id: recurring.id });
     res.status(201).json(recurring);
   } catch (err) { next(err); }
 });
@@ -195,6 +199,7 @@ router.delete('/:id', async (req, res, next) => {
     }
     const removed = await RecurringExpense.remove(req.params.id, user.household_id);
     if (!removed) return res.status(404).json({ error: 'Not found' });
+    await emitRecurringFreshnessEvent(user, 'recurring_deleted', { recurring_id: req.params.id });
     res.json(removed);
   } catch (err) { next(err); }
 });

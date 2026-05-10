@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 
 const CONFIDENCE_LABEL = {
   exact: 'Exact',
@@ -30,7 +31,7 @@ export function DuplicateAlert({ flags, onDismiss }) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#7c5c00',
+    backgroundColor: colors.warningMuted,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
@@ -42,19 +43,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   message: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
   },
   badge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: colors.onDarkOverlay,
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   badgeText: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'capitalize',
@@ -62,13 +63,13 @@ const styles = StyleSheet.create({
   dismissButton: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
+    borderColor: colors.onDarkOverlayStrong,
     borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   dismissText: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 12,
     fontWeight: '500',
   },

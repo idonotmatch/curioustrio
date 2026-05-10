@@ -19,6 +19,7 @@ import {
   selectSuggestedLocationCandidate,
   shouldSuggestLocationFromMerchant,
 } from '../services/manualAddSuggestions';
+import { colors, radius } from '../theme/tokens';
 
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
@@ -79,6 +80,13 @@ export default function ManualAddScreen() {
     return categories.filter((category) => `${category.name || ''}`.toLowerCase().includes(query));
   }, [categories, categoryQuery]);
   const canSave = Number(amount) > 0 && merchant.trim().length > 0 && !saving;
+  const saveHint = !Number(amount) || Number(amount) <= 0
+    ? 'Add an amount to save this expense.'
+    : !merchant.trim()
+      ? 'Add a merchant or short description to save.'
+      : excludeFromBudget && !budgetExclusionReason
+        ? 'Choose why this should be tracked without counting toward budget.'
+        : '';
 
   useEffect(() => {
     const placeName = `${locationData?.place_name || ''}`.trim();
@@ -272,7 +280,7 @@ export default function ManualAddScreen() {
               accessibilityRole="button"
               accessibilityLabel="Close manual add"
             >
-              <Ionicons name="close" size={18} color="#f5f5f5" />
+              <Ionicons name="close" size={18} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -323,7 +331,7 @@ export default function ManualAddScreen() {
                 value={amount}
                 onChangeText={(value) => setAmount(moneyInput(value))}
                 placeholder="62.05"
-                placeholderTextColor="#555"
+                placeholderTextColor={colors.textDisabled}
                 keyboardType="decimal-pad"
               />
             </View>
@@ -338,7 +346,7 @@ export default function ManualAddScreen() {
                   setMerchant(value);
                 }}
                 placeholder="Amazon, lunch, hair clips..."
-                placeholderTextColor="#555"
+                placeholderTextColor={colors.textDisabled}
                 autoCorrect={false}
               />
             </View>
@@ -349,7 +357,7 @@ export default function ManualAddScreen() {
                 <Text style={styles.selectorButtonText} numberOfLines={1}>
                   {selectedCategory?.name || 'Choose a category'}
                 </Text>
-                <Ionicons name="chevron-forward" size={15} color="#8f8f8f" />
+                <Ionicons name="chevron-forward" size={15} color={colors.textSubtle} />
               </TouchableOpacity>
               {!categoryId && suggestedCategory?.value ? (
                 <SmartSuggestionCard
@@ -382,7 +390,7 @@ export default function ManualAddScreen() {
               <Text style={styles.expandTitle}>More detail</Text>
               <Text style={styles.expandBody}>Payment, privacy, track-only, notes, and location.</Text>
             </View>
-            <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#9a9a9a" />
+            <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSubtle} />
           </TouchableOpacity>
 
           {advancedOpen ? (
@@ -416,7 +424,7 @@ export default function ManualAddScreen() {
                       value={cardLabel}
                       onChangeText={setCardLabel}
                       placeholder="Chase Sapphire"
-                      placeholderTextColor="#555"
+                      placeholderTextColor={colors.textDisabled}
                     />
                   </View>
                   <View style={[styles.fieldBlock, styles.rowField]}>
@@ -426,7 +434,7 @@ export default function ManualAddScreen() {
                       value={cardLast4}
                       onChangeText={(value) => setCardLast4(value.replace(/\D/g, '').slice(0, 4))}
                       placeholder="4242"
-                      placeholderTextColor="#555"
+                      placeholderTextColor={colors.textDisabled}
                       keyboardType="number-pad"
                     />
                   </View>
@@ -480,7 +488,7 @@ export default function ManualAddScreen() {
                   value={notes}
                   onChangeText={setNotes}
                   placeholder="Add context if it helps later"
-                  placeholderTextColor="#555"
+                  placeholderTextColor={colors.textDisabled}
                   multiline
                 />
               </View>
@@ -488,6 +496,7 @@ export default function ManualAddScreen() {
           ) : null}
 
           <View style={styles.footer}>
+            {saveHint ? <Text style={styles.saveHint}>{saveHint}</Text> : null}
             <TouchableOpacity
               style={[styles.saveButton, !canSave && styles.saveButtonDisabled]}
               onPress={handleSave}
@@ -495,7 +504,7 @@ export default function ManualAddScreen() {
               activeOpacity={0.85}
             >
               {saving ? (
-                <ActivityIndicator color="#000" size="small" />
+                <ActivityIndicator color={colors.textInverse} size="small" />
               ) : (
                 <Text style={styles.saveButtonText}>Save expense</Text>
               )}
@@ -519,7 +528,7 @@ export default function ManualAddScreen() {
                 <Text style={styles.categoryModalTitle}>Pick the closest fit</Text>
               </View>
               <TouchableOpacity style={styles.categoryModalClose} onPress={closeCategoryPicker}>
-                <Ionicons name="close" size={18} color="#f5f5f5" />
+                <Ionicons name="close" size={18} color={colors.text} />
               </TouchableOpacity>
             </View>
 
@@ -528,7 +537,7 @@ export default function ManualAddScreen() {
               value={categoryQuery}
               onChangeText={setCategoryQuery}
               placeholder="Search categories"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.textDisabled}
               autoCorrect={false}
               autoCapitalize="none"
             />
@@ -572,7 +581,7 @@ export default function ManualAddScreen() {
                 </Text>
                 {categoriesLoading ? (
                   <View style={styles.categoryLoadingRow}>
-                    <ActivityIndicator color="#f5f5f5" size="small" />
+                    <ActivityIndicator color={colors.text} size="small" />
                     <Text style={styles.categoryLoadingText}>Loading categories...</Text>
                   </View>
                 ) : filteredCategories.length ? (
@@ -586,7 +595,7 @@ export default function ManualAddScreen() {
                           onPress={() => selectCategory(category.id)}
                         >
                           <Text style={styles.categoryListText}>{category.name}</Text>
-                          {active ? <Ionicons name="checkmark" size={18} color="#f5f5f5" /> : null}
+                          {active ? <Ionicons name="checkmark" size={18} color={colors.text} /> : null}
                         </TouchableOpacity>
                       );
                     })}
@@ -604,7 +613,7 @@ export default function ManualAddScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  safeArea: { flex: 1, backgroundColor: colors.overlaySoft },
   screenBackdrop: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -616,9 +625,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   sheet: {
-    backgroundColor: '#0d0d0e',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
     borderRadius: 24,
     maxHeight: '82%',
     minHeight: 420,
@@ -629,34 +638,34 @@ const styles = StyleSheet.create({
     width: 42,
     height: 5,
     borderRadius: 999,
-    backgroundColor: '#2f2f31',
+    backgroundColor: colors.border,
     marginBottom: 14,
   },
   heroRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   hero: { flex: 1, gap: 4 },
-  eyebrow: { fontSize: 11, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1 },
-  title: { fontSize: 28, color: '#f5f5f5', fontWeight: '700', lineHeight: 32 },
-  subtitle: { fontSize: 13, color: '#9c9c9c', lineHeight: 19, maxWidth: 320 },
+  eyebrow: { fontSize: 11, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1 },
+  title: { fontSize: 28, color: colors.text, fontWeight: '700', lineHeight: 32 },
+  subtitle: { fontSize: 13, color: colors.textMuted, lineHeight: 19, maxWidth: 320 },
   closeButton: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#171717',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
   },
   card: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1c1c1c',
-    borderRadius: 14,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.lg,
     padding: 14,
     gap: 14,
   },
-  sectionTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.1 },
+  sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.1 },
   compactDateRow: {
     minHeight: 36,
     flexDirection: 'row',
@@ -665,33 +674,33 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 2,
   },
-  compactDateLabel: { color: '#7f7f7f', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
+  compactDateLabel: { color: colors.textSubtle, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
   compactDateValue: { alignItems: 'flex-end', justifyContent: 'center' },
-  compactDateText: { color: '#d7d7d7', fontSize: 14, fontWeight: '500' },
+  compactDateText: { color: colors.textMuted, fontSize: 14, fontWeight: '500' },
   fieldBlock: { gap: 6 },
-  fieldLabel: { fontSize: 12, color: '#999', fontWeight: '600' },
-  locationSuggestionStatus: { color: '#7d7d7d', fontSize: 12, lineHeight: 16, marginTop: 2 },
+  fieldLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  locationSuggestionStatus: { color: colors.textSubtle, fontSize: 12, lineHeight: 16, marginTop: 2 },
   primaryInput: {
-    backgroundColor: '#181818',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#282828',
-    borderRadius: 10,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     minHeight: 54,
     paddingVertical: 13,
-    color: '#fff',
+    color: colors.text,
     fontSize: 18,
     fontWeight: '600',
     letterSpacing: 0,
   },
   textInput: {
-    backgroundColor: '#181818',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#282828',
-    borderRadius: 10,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    color: '#fff',
+    color: colors.text,
     fontSize: 15,
   },
   notesInput: { minHeight: 88, textAlignVertical: 'top' },
@@ -701,12 +710,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingVertical: 0,
   },
-  dateButtonText: { color: '#d7d7d7', fontSize: 14, fontWeight: '500' },
+  dateButtonText: { color: colors.textMuted, fontSize: 14, fontWeight: '500' },
   selectorButton: {
-    backgroundColor: '#181818',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#282828',
-    borderRadius: 10,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     minHeight: 54,
     paddingVertical: 13,
@@ -715,27 +724,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  selectorButtonText: { color: '#f5f5f5', fontSize: 15, flex: 1 },
+  selectorButtonText: { color: colors.text, fontSize: 15, flex: 1 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#181818',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
     paddingHorizontal: 12,
     paddingVertical: 9,
     maxWidth: '100%',
   },
   categoryChipActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
-  categoryChipText: { color: '#cfcfcf', fontSize: 13, fontWeight: '600' },
-  categoryChipTextActive: { color: '#000' },
+  categoryChipText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  categoryChipTextActive: { color: colors.textInverse },
   expandToggle: {
-    backgroundColor: '#101113',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1b1d20',
+    borderColor: colors.borderSubtle,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 14,
@@ -745,23 +754,23 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   expandCopy: { flex: 1, gap: 4 },
-  expandTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
-  expandBody: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
+  expandTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  expandBody: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   segmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   segmentChip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#181818',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
   segmentChipActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
-  segmentChipText: { color: '#cfcfcf', fontSize: 13, fontWeight: '600' },
-  segmentChipTextActive: { color: '#000' },
+  segmentChipText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  segmentChipTextActive: { color: colors.textInverse },
   toggleBlock: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -769,21 +778,22 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   toggleCopy: { flex: 1, gap: 3 },
-  toggleTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
-  toggleBody: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
-  footer: { paddingTop: 4 },
+  toggleTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  toggleBody: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  footer: { paddingTop: 4, gap: 8 },
+  saveHint: { color: colors.textSubtle, fontSize: 12, lineHeight: 17, textAlign: 'center' },
   saveButton: {
     minHeight: 48,
     borderRadius: 12,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   saveButtonDisabled: { opacity: 0.45 },
-  saveButtonText: { color: '#000', fontSize: 15, fontWeight: '700' },
+  saveButtonText: { color: colors.textInverse, fontSize: 15, fontWeight: '700' },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: colors.overlay,
   },
   categoryModalShell: {
     flex: 1,
@@ -791,11 +801,11 @@ const styles = StyleSheet.create({
   },
   categoryModal: {
     maxHeight: '84%',
-    backgroundColor: '#0f0f10',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 18,
@@ -808,54 +818,54 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   categoryModalHeaderCopy: { flex: 1, gap: 4 },
-  categoryModalEyebrow: { color: '#8a8a8a', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
-  categoryModalTitle: { color: '#f5f5f5', fontSize: 22, fontWeight: '700' },
+  categoryModalEyebrow: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
+  categoryModalTitle: { color: colors.text, fontSize: 22, fontWeight: '700' },
   categoryModalClose: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#171717',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   categorySearchInput: {
-    backgroundColor: '#181818',
+    backgroundColor: colors.surfacePressed,
     borderWidth: 1,
-    borderColor: '#282828',
+    borderColor: colors.borderStrong,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    color: '#fff',
+    color: colors.text,
     fontSize: 15,
   },
   categoryModalScroll: { flexGrow: 0 },
   categoryModalContent: { paddingBottom: 8, gap: 18 },
   categorySection: { gap: 10 },
-  categorySectionTitle: { color: '#a0a0a0', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 },
+  categorySectionTitle: { color: colors.textMuted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 },
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   categoryOptionCard: {
     minWidth: '47%',
     flexGrow: 1,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#171717',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceRaised,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   categoryOptionCardActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
-  categoryOptionCardText: { color: '#d4d4d4', fontSize: 14, fontWeight: '600', lineHeight: 19 },
-  categoryOptionCardTextActive: { color: '#000' },
+  categoryOptionCardText: { color: colors.textMuted, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  categoryOptionCardTextActive: { color: colors.textInverse },
   categoryList: {
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#202020',
-    backgroundColor: '#151515',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     overflow: 'hidden',
   },
   categoryListRow: {
@@ -863,14 +873,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#202020',
+    borderBottomColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  categoryListText: { color: '#f1f1f1', fontSize: 15, flex: 1 },
-  categoryEmptyText: { color: '#8f8f8f', fontSize: 13, lineHeight: 18 },
+  categoryListText: { color: colors.text, fontSize: 15, flex: 1 },
+  categoryEmptyText: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
   categoryLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  categoryLoadingText: { color: '#bcbcbc', fontSize: 13 },
+  categoryLoadingText: { color: colors.textMuted, fontSize: 13 },
 });

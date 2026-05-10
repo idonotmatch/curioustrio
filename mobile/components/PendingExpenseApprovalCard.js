@@ -1,5 +1,6 @@
 import { Platform, ScrollView, TextInput, View, Text, TouchableOpacity } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { colors } from '../theme/tokens';
 
 function EditableSummaryFields({
   styles,
@@ -29,7 +30,7 @@ function EditableSummaryFields({
             onChangeText={setAmount}
             keyboardType="decimal-pad"
             placeholder="0.00"
-            placeholderTextColor="#555"
+            placeholderTextColor={colors.textDisabled}
           />
         </View>
       </View>
@@ -41,7 +42,7 @@ function EditableSummaryFields({
           value={merchant}
           onChangeText={setMerchant}
           placeholder="Merchant"
-          placeholderTextColor="#555"
+          placeholderTextColor={colors.textDisabled}
         />
       </View>
 

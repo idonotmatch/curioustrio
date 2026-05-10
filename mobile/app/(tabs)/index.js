@@ -1,7 +1,7 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
@@ -10,8 +10,8 @@ import { useBudget } from '../../hooks/useBudget';
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
-import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
+import { colors } from '../../theme/tokens';
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest' },
   { key: 'amount', label: 'Amount' },
@@ -105,7 +105,7 @@ function BudgetBar({ spent, budget, label, periodText }) {
             <Ionicons
               name={expanded ? 'chevron-up' : 'chevron-down'}
               size={11}
-              color="#555"
+              color={colors.textDisabled}
               style={{ marginLeft: 4, marginTop: 1 }}
             />
           )}
@@ -114,7 +114,7 @@ function BudgetBar({ spent, budget, label, periodText }) {
       </TouchableOpacity>
       {pct !== null && (
         <View style={styles.barTrack}>
-          <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: over ? '#ef4444' : '#4ade80' }]} />
+          <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: over ? colors.danger : colors.success }]} />
         </View>
       )}
       {hasLimit && (
@@ -180,8 +180,6 @@ export default function FeedScreen() {
   const { budget: personalBudget, error: personalBudgetError, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, error: householdBudgetError, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { categories } = useCategories();
-  const router = useRouter();
-
   useEffect(() => {
     setSelectedMonth(currentPeriod(transactionStartDay));
   }, [transactionStartDay]);
@@ -247,7 +245,7 @@ export default function FeedScreen() {
         </View>
       ) : <View />}
         <TouchableOpacity style={styles.sortChip} onPress={() => setShowSortPicker(true)}>
-          <Ionicons name="swap-vertical-outline" size={13} color="#888" />
+          <Ionicons name="swap-vertical-outline" size={13} color={colors.textSubtle} />
           <Text style={styles.sortChipText}>Sort: {currentSortLabel}</Text>
         </TouchableOpacity>
       </View>
@@ -256,7 +254,7 @@ export default function FeedScreen() {
         data={listData}
         keyExtractor={(item, i) => item.id || `expense-${i}`}
         renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
         contentContainerStyle={styles.list}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -272,8 +270,6 @@ export default function FeedScreen() {
           !loading && <Text style={styles.empty}>No expenses yet. Tap + to get started.</Text>
         }
       />
-
-      <GlobalAddLauncher router={router} bottomOffset={24} />
 
       <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
         <View style={styles.monthPickerOverlay}>
@@ -326,7 +322,7 @@ export default function FeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
 
   controlsRow: {
     flexDirection: 'row',
@@ -338,10 +334,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   toggleRow: { flexDirection: 'row', gap: 8 },
-  toggleChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#111', borderWidth: 1, borderColor: '#222' },
-  toggleChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  toggleText: { fontSize: 14, color: '#999', fontWeight: '500' },
-  toggleTextActive: { color: '#000' },
+  toggleChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  toggleChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  toggleText: { fontSize: 14, color: colors.textSubtle, fontWeight: '500' },
+  toggleTextActive: { color: colors.textInverse },
   sortChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,51 +345,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: colors.border,
   },
-  sortChipText: { fontSize: 13, color: '#999', fontWeight: '500' },
+  sortChipText: { fontSize: 13, color: colors.textSubtle, fontWeight: '500' },
 
-  spendHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: '#111' },
+  spendHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.surface },
   globalHeader: { marginBottom: 10 },
   budgetSection: { marginBottom: 12 },
   budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
   budgetLabelRow: { flexDirection: 'row', alignItems: 'center' },
-  budgetLabel: { fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
-  budgetPeriod: { fontSize: 11, color: '#555' },
-  budgetAmount: { fontSize: 22, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.5 },
+  budgetLabel: { fontSize: 12, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 0.5 },
+  budgetPeriod: { fontSize: 11, color: colors.textDisabled },
+  budgetAmount: { fontSize: 22, color: colors.text, fontWeight: '600', letterSpacing: -0.5 },
   byParentList: { marginTop: 8, gap: 6 },
   byParentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  byParentName: { fontSize: 13, color: '#888', flex: 1, marginRight: 8 },
+  byParentName: { fontSize: 13, color: colors.textSubtle, flex: 1, marginRight: 8 },
   byParentRight: { flexDirection: 'row', alignItems: 'baseline' },
-  byParentSpent: { fontSize: 13, color: '#ccc', fontWeight: '500' },
-  byParentLimit: { fontSize: 11, color: '#555' },
-  barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 4 },
+  byParentSpent: { fontSize: 13, color: colors.textMuted, fontWeight: '500' },
+  byParentLimit: { fontSize: 11, color: colors.textDisabled },
+  barTrack: { height: 2, backgroundColor: colors.textInverse, borderRadius: 1, marginBottom: 4 },
   barFill: { height: 2, borderRadius: 1 },
-  spendSub: { fontSize: 12, color: '#666' },
+  spendSub: { fontSize: 12, color: colors.textDisabled },
 
-  list: { padding: 16 },
-  empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
+  list: { padding: 16, paddingBottom: 88 },
+  empty: { color: colors.textSubtle, textAlign: 'center', marginTop: 40, fontSize: 15 },
   feedErrorState: {
     marginHorizontal: 16,
     marginBottom: 14,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#3a1f1f',
-    backgroundColor: '#181111',
+    borderColor: colors.dangerMuted,
+    backgroundColor: colors.dangerMuted,
     borderRadius: 8,
   },
-  feedErrorTitle: { fontSize: 14, color: '#f5f5f5', fontWeight: '600', marginBottom: 4 },
-  feedErrorBody: { fontSize: 12, color: '#fca5a5', lineHeight: 18 },
-  monthPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  monthPickerSheet: { backgroundColor: '#111', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
-  monthPickerTitle: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
-  monthOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  feedErrorTitle: { fontSize: 14, color: colors.text, fontWeight: '600', marginBottom: 4 },
+  feedErrorBody: { fontSize: 12, color: colors.danger, lineHeight: 18 },
+  monthPickerOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  monthPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
+  monthPickerTitle: { fontSize: 13, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+  monthOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   monthOptionActive: {},
-  monthOptionText: { fontSize: 16, color: '#999' },
-  monthOptionTextActive: { color: '#f5f5f5', fontWeight: '600' },
+  monthOptionText: { fontSize: 16, color: colors.textSubtle },
+  monthOptionTextActive: { color: colors.text, fontWeight: '600' },
   monthPickerClose: { paddingVertical: 16, alignItems: 'center', marginTop: 8 },
-  monthPickerCloseText: { color: '#888', fontSize: 15 },
+  monthPickerCloseText: { color: colors.textSubtle, fontSize: 15 },
 });

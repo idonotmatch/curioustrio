@@ -1,4 +1,5 @@
 import { View, Text, Modal, TextInput, TouchableOpacity } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function RecurringExpenseModal({
   styles,
@@ -33,7 +34,7 @@ export function RecurringExpenseModal({
             value={recurringFrequencyDays}
             onChangeText={(value) => setRecurringFrequencyDays(value.replace(/\D/g, '').slice(0, 3))}
             placeholder="e.g. 14"
-            placeholderTextColor="#555"
+            placeholderTextColor={colors.textDisabled}
             keyboardType="number-pad"
           />
           <Text style={styles.modalHelp}>Days between purchases. Leave blank if you are not sure yet.</Text>
@@ -44,7 +45,7 @@ export function RecurringExpenseModal({
             value={recurringNotes}
             onChangeText={setRecurringNotes}
             placeholder="Optional note"
-            placeholderTextColor="#555"
+            placeholderTextColor={colors.textDisabled}
             multiline
           />
 

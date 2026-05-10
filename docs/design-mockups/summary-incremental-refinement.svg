@@ -1,0 +1,61 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="390" height="844" fill="#0B0D10"/>
+
+  <text x="26" y="64" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="31" font-weight="700">Summary</text>
+  <text x="284" y="64" fill="#8D99A4" font-family="Helvetica, Arial, sans-serif" font-size="15">Apr 2026</text>
+
+  <text x="26" y="102" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700">You’re on track this month.</text>
+  <text x="26" y="124" fill="#98A3AC" font-family="Helvetica, Arial, sans-serif" font-size="14">Groceries are steady so far, and nothing urgent needs review.</text>
+
+  <rect x="22" y="146" width="346" height="120" rx="22" fill="#11161B" stroke="#1A232C"/>
+  <text x="40" y="174" fill="#7F8A93" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.1">PERSONAL</text>
+  <text x="40" y="214" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700">$1,284</text>
+  <text x="40" y="236" fill="#A7B1B8" font-family="Helvetica, Arial, sans-serif" font-size="14">of $2,000 budget</text>
+  <rect x="40" y="246" width="130" height="10" rx="5" fill="#21303B"/>
+  <rect x="40" y="246" width="84" height="10" rx="5" fill="#8EE0B6"/>
+
+  <line x1="196" y1="166" x2="196" y2="246" stroke="#1E2933"/>
+
+  <text x="214" y="174" fill="#7F8A93" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.1">HOUSEHOLD</text>
+  <text x="214" y="214" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700">$2,913</text>
+  <text x="214" y="236" fill="#A7B1B8" font-family="Helvetica, Arial, sans-serif" font-size="14">of $3,400 budget</text>
+  <rect x="214" y="246" width="130" height="10" rx="5" fill="#21303B"/>
+  <rect x="214" y="246" width="111" height="10" rx="5" fill="#91C6FF"/>
+
+  <text x="22" y="300" fill="#7F8A93" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.1">INSIGHTS</text>
+  <rect x="22" y="314" width="320" height="118" rx="22" fill="#12171C" stroke="#1A232C"/>
+  <rect x="40" y="332" width="68" height="24" rx="12" fill="#1F4F73"/>
+  <text x="58" y="348" fill="#DCEEFF" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700">Household</text>
+  <text x="40" y="382" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="21" font-weight="700">Diapers may be due soon</text>
+  <text x="40" y="405" fill="#B5BEC6" font-family="Helvetica, Arial, sans-serif" font-size="14">You usually buy them every 18 days, and the next purchase looks close.</text>
+  <text x="40" y="425" fill="#8EA6B7" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700">Tap for details</text>
+  <circle cx="356" cy="373" r="5" fill="#3A454E"/>
+  <circle cx="356" cy="392" r="5" fill="#3A454E"/>
+  <circle cx="356" cy="411" r="5" fill="#3A454E"/>
+  <rect x="348" y="444" width="20" height="6" rx="3" fill="#F4F6F8"/>
+  <rect x="324" y="444" width="20" height="6" rx="3" fill="#39444D"/>
+  <rect x="300" y="444" width="20" height="6" rx="3" fill="#39444D"/>
+
+  <text x="22" y="474" fill="#7F8A93" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.1">RECENT</text>
+  <rect x="22" y="488" width="346" height="170" rx="22" fill="#10151A" stroke="#1A232C"/>
+
+  <text x="40" y="522" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700">Trader Joe’s</text>
+  <text x="307" y="522" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700">$84.50</text>
+  <text x="40" y="542" fill="#84919A" font-family="Helvetica, Arial, sans-serif" font-size="13">Today · groceries</text>
+  <line x1="40" y1="556.5" x2="350" y2="556.5" stroke="#182028"/>
+
+  <text x="40" y="587" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700">Philz Coffee</text>
+  <text x="318" y="587" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700">$6.75</text>
+  <text x="40" y="607" fill="#84919A" font-family="Helvetica, Arial, sans-serif" font-size="13">Yesterday · dining</text>
+  <line x1="40" y1="621.5" x2="350" y2="621.5" stroke="#182028"/>
+
+  <text x="40" y="652" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700">Target</text>
+  <text x="313" y="652" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700">$39.29</text>
+  <text x="40" y="672" fill="#84919A" font-family="Helvetica, Arial, sans-serif" font-size="13">2 days ago · baby</text>
+
+  <text x="22" y="692" fill="#7F8A93" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.1">QUEUE &amp; IMPORTS</text>
+  <rect x="22" y="706" width="346" height="96" rx="22" fill="#0F1418" stroke="#1A232C"/>
+  <text x="40" y="739" fill="#F4F6F8" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700">2 expenses pending review</text>
+  <text x="280" y="739" fill="#90C0FF" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700">Review</text>
+  <text x="40" y="762" fill="#8C98A2" font-family="Helvetica, Arial, sans-serif" font-size="13">Gmail synced 14 minutes ago · 5 imports this week</text>
+</svg>

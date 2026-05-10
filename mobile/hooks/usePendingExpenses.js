@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 import { buildMockPendingExpenses } from '../fixtures/mockGmailImport';
 const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
 
@@ -71,6 +73,7 @@ export function usePendingExpenses() {
   }, [isUsingMockData]);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.pendingExpenses, refresh);
 
   return { expenses, loading, error, refresh, isUsingMockData, resolveMockExpense };
 }

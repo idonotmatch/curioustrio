@@ -80,18 +80,24 @@ async function applyMigrations(databaseUrl) {
 async function main() {
   const databaseUrl = new URL(rawDatabaseUrl);
   const databaseName = databaseUrl.pathname.replace(/^\//, '') || 'expense_tracker_test';
-  const adminPool = new Pool({
-    connectionString: buildAdminUrl(rawDatabaseUrl),
-    ssl: sslConfigFromEnv(),
-  });
+  const skipRecreate = ['1', 'true', 'yes'].includes(`${process.env.SKIP_TEST_DB_RECREATE || ''}`.trim().toLowerCase());
 
-  try {
-    process.stdout.write(`[test-db] waiting for postgres at ${databaseUrl.host}\n`);
-    await waitForDatabase(adminPool);
-    process.stdout.write(`[test-db] recreating ${databaseName}\n`);
-    await recreateDatabase(adminPool, databaseName);
-  } finally {
-    await adminPool.end();
+  if (!skipRecreate) {
+    const adminPool = new Pool({
+      connectionString: buildAdminUrl(rawDatabaseUrl),
+      ssl: sslConfigFromEnv(),
+    });
+
+    try {
+      process.stdout.write(`[test-db] waiting for postgres at ${databaseUrl.host}\n`);
+      await waitForDatabase(adminPool);
+      process.stdout.write(`[test-db] recreating ${databaseName}\n`);
+      await recreateDatabase(adminPool, databaseName);
+    } finally {
+      await adminPool.end();
+    }
+  } else {
+    process.stdout.write(`[test-db] skipping recreate for ${databaseName}; applying migrations only\n`);
   }
 
   await applyMigrations(rawDatabaseUrl);

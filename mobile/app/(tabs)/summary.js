@@ -10,18 +10,19 @@ import { useBudget } from '../../hooks/useBudget';
 import { useHousehold } from '../../hooks/useHousehold';
 import { usePendingExpenses } from '../../hooks/usePendingExpenses';
 import { useInsights } from '../../hooks/useInsights';
+import { useFreshnessRefresh } from '../../hooks/useFreshnessRefresh';
 import { api } from '../../services/api';
+import { FRESHNESS_DOMAINS } from '../../services/freshnessRegistry';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
-import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
 import { SummaryInsightsRail } from '../../components/SummaryInsightsRail';
 import { SummaryMonthPicker } from '../../components/SummaryMonthPicker';
-import { SummaryRecentActivity } from '../../components/SummaryRecentActivity';
+import { SummaryForecastMovement } from '../../components/SummaryForecastMovement';
+import { requestGlobalAddLauncher } from '../../services/globalAddLauncherBus';
 import { stashNavigationPayload } from '../../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../../services/insightLocalStore';
+import { loadSummarySnapshot, saveSummarySnapshot } from '../../services/summarySnapshot';
 import {
   getPastMonths,
-  formatDate,
-  formatRelativeTime,
   insightEventMetadata,
   buildRecurringItemPreload,
   buildPreloadedCategoryExpenses,
@@ -30,6 +31,7 @@ import {
 import { buildMockInsights } from '../../fixtures/mockInsights';
 import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
 import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
+import { colors } from '../../theme/tokens';
 
 const MOCK_GMAIL_IMPORT_SUMMARY = buildMockGmailImportState().importSummary;
 
@@ -41,36 +43,59 @@ export default function SummaryScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { household, memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
-  const { expenses, refresh: refreshExpenses } = useExpenses(selectedMonth);
-  const { expenses: householdExpenses, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, null, { enabled: isMultiMember });
-  const { budget: personalBudget, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
-  const { budget: householdBudget, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { enabled: isMultiMember });
-  const { expenses: pendingExpenses, refresh: refreshPending } = usePendingExpenses();
+  const { expenses, loading: expensesLoading, refresh: refreshExpenses } = useExpenses(selectedMonth);
+  const { expenses: householdExpenses, loading: householdExpensesLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, null, { enabled: isMultiMember });
+  const { budget: personalBudget, loading: personalBudgetLoading, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
+  const { budget: householdBudget, loading: householdBudgetLoading, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { enabled: isMultiMember });
+  const { expenses: pendingExpenses, loading: pendingExpensesLoading, refresh: refreshPending } = usePendingExpenses();
   const {
     insights,
+    loading: insightsLoading,
     error: insightsError,
     refresh: refreshInsights,
     markSeen,
     dismiss: dismissInsight,
     logEvents,
-  } = useInsights(5);
+  } = useInsights(5, { freezeFirstPaint: true });
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [allowMockInsights, setAllowMockInsights] = useState(__DEV__);
   const [gmailImportSummary, setGmailImportSummary] = useState(null);
   const [watchedPlans, setWatchedPlans] = useState([]);
+  const [forecastMovement, setForecastMovement] = useState(null);
+  const [gmailImportSummaryLoading, setGmailImportSummaryLoading] = useState(false);
+  const [watchedPlansLoading, setWatchedPlansLoading] = useState(false);
+  const [forecastMovementLoading, setForecastMovementLoading] = useState(false);
+  const [summarySnapshot, setSummarySnapshot] = useState(null);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
-  const watchedHouseholdCount = watchedPlans.filter((plan) => plan.scope === 'household').length;
-  const watchedPersonalCount = watchedPlans.filter((plan) => plan.scope !== 'household').length;
-  const watchedPreferenceNote = watchedPlans.find((plan) => plan?.timing_preference_note)?.timing_preference_note || '';
-  const displayInsights = allowMockInsights && insights.length === 0
+  const hasSnapshot = !!summarySnapshot;
+  const usingSnapshotBudget = hasSnapshot && !personalBudget;
+  const usingSnapshotExpenses = hasSnapshot && expensesLoading && (expenses || []).length === 0;
+  const usingSnapshotHouseholdExpenses = hasSnapshot && householdExpensesLoading && (householdExpenses || []).length === 0;
+  const usingSnapshotPending = hasSnapshot && pendingExpensesLoading && (pendingExpenses || []).length === 0;
+  const usingSnapshotWatchedPlans = hasSnapshot && watchedPlansLoading && watchedPlans.length === 0;
+  const usingSnapshotGmail = hasSnapshot && gmailImportSummaryLoading && !gmailImportSummary;
+  const usingSnapshotForecastMovement = hasSnapshot && forecastMovementLoading && !forecastMovement;
+  const displayPersonalBudget = personalBudget || summarySnapshot?.personal_budget || null;
+  const displayHouseholdBudget = householdBudget || summarySnapshot?.household_budget || null;
+  const displayExpensesForSummary = usingSnapshotExpenses ? (summarySnapshot?.expenses || []) : (expenses || []);
+  const displayHouseholdExpensesForSummary = usingSnapshotHouseholdExpenses ? (summarySnapshot?.household_expenses || []) : (householdExpenses || []);
+  const displayPendingExpensesForSummary = usingSnapshotPending ? (summarySnapshot?.pending_expenses || []) : (pendingExpenses || []);
+  const displayWatchedPlans = usingSnapshotWatchedPlans ? (summarySnapshot?.watched_plans || []) : watchedPlans;
+  const displayForecastMovement = forecastMovement || summarySnapshot?.forecast_movement || null;
+  const watchedHouseholdCount = displayWatchedPlans.filter((plan) => plan.scope === 'household').length;
+  const watchedPersonalCount = displayWatchedPlans.filter((plan) => plan.scope !== 'household').length;
+  const watchedPreferenceNote = displayWatchedPlans.find((plan) => plan?.timing_preference_note)?.timing_preference_note || '';
+  const displayInsights = allowMockInsights && !insightsLoading && insights.length === 0
     ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
     : insights;
-  const displayGmailImportSummary = gmailImportSummary || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
-  const gmailRefreshTimestamp = displayGmailImportSummary?.last_synced_at
-    || displayGmailImportSummary?.last_sync_attempted_at
-    || displayGmailImportSummary?.last_imported_at
-    || null;
-  const gmailRefreshVerb = displayGmailImportSummary?.last_synced_at ? 'synced' : 'checked';
+  const displayGmailImportSummary = gmailImportSummary || (usingSnapshotGmail ? summarySnapshot?.gmail_import_summary : null) || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
+  const isUsingSummarySnapshot = usingSnapshotBudget
+    || usingSnapshotExpenses
+    || usingSnapshotHouseholdExpenses
+    || usingSnapshotPending
+    || usingSnapshotWatchedPlans
+    || usingSnapshotGmail
+    || usingSnapshotForecastMovement;
   const hasMultipleInsights = displayInsights.length > 1;
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
@@ -79,7 +104,6 @@ export default function SummaryScreen() {
   const insightNavigationResetRef = useRef(null);
   const [openingInsightId, setOpeningInsightId] = useState('');
   const [showWelcomeAddCard, setShowWelcomeAddCard] = useState(params.welcome === 'add_expense');
-  const [launcherOpenSignal, setLauncherOpenSignal] = useState(0);
 
   const releaseInsightNavigationLock = useCallback(() => {
     if (insightNavigationResetRef.current) {
@@ -99,22 +123,45 @@ export default function SummaryScreen() {
   }, []);
 
   const loadGmailImportSummary = useCallback(async () => {
+    setGmailImportSummaryLoading(true);
     try {
       const data = await api.get('/gmail/import-summary?days=30');
       setGmailImportSummary(data);
     } catch {
       setGmailImportSummary(null);
+    } finally {
+      setGmailImportSummaryLoading(false);
     }
   }, []);
 
   const loadWatchedPlans = useCallback(async () => {
+    setWatchedPlansLoading(true);
     try {
       const data = await api.get('/trends/scenario-memory/watching?limit=5');
       setWatchedPlans(Array.isArray(data?.items) ? data.items : []);
     } catch {
       setWatchedPlans([]);
+    } finally {
+      setWatchedPlansLoading(false);
     }
   }, []);
+
+  const loadForecastMovement = useCallback(async () => {
+    setForecastMovementLoading(true);
+    try {
+      const scope = isMultiMember ? 'household' : 'personal';
+      const data = await api.get(`/insights/movement-summary?scope=${scope}&period=${currentMonthStr}`);
+      setForecastMovement(data || null);
+    } catch {
+      setForecastMovement(null);
+    } finally {
+      setForecastMovementLoading(false);
+    }
+  }, [currentMonthStr, isMultiMember]);
+
+  useFreshnessRefresh(FRESHNESS_DOMAINS.gmailImport, loadGmailImportSummary, { delayMs: 700 });
+  useFreshnessRefresh(FRESHNESS_DOMAINS.watchedPlans, loadWatchedPlans, { delayMs: 700 });
+  useFreshnessRefresh(FRESHNESS_DOMAINS.forecastMovement, loadForecastMovement, { delayMs: 900 });
 
   useFocusEffect(useCallback(() => {
     releaseInsightNavigationLock();
@@ -125,6 +172,7 @@ export default function SummaryScreen() {
     refreshPending();
     loadGmailImportSummary();
     loadWatchedPlans();
+    loadForecastMovement();
     refreshInsights();
   }, [
     refreshExpenses,
@@ -134,10 +182,57 @@ export default function SummaryScreen() {
     refreshPending,
     loadGmailImportSummary,
     loadWatchedPlans,
+    loadForecastMovement,
     refreshInsights,
     isMultiMember,
     releaseInsightNavigationLock,
   ]));
+
+  useEffect(() => {
+    let active = true;
+    setSummarySnapshot(null);
+    loadSummarySnapshot(currentMonthStr, startDay).then((snapshot) => {
+      if (active) setSummarySnapshot(snapshot);
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentMonthStr, startDay]);
+
+  useEffect(() => {
+    const hasLiveData = personalBudget
+      || householdBudget
+      || (expenses || []).length > 0
+      || (householdExpenses || []).length > 0
+      || (pendingExpenses || []).length > 0
+      || gmailImportSummary
+      || watchedPlans.length > 0
+      || forecastMovement;
+    if (!hasLiveData) return;
+    saveSummarySnapshot(currentMonthStr, startDay, {
+      personalBudget,
+      householdBudget,
+      expenses,
+      householdExpenses,
+      pendingExpenses,
+      gmailImportSummary,
+      watchedPlans,
+      forecastMovement,
+    }).then((snapshot) => {
+      if (snapshot) setSummarySnapshot(snapshot);
+    });
+  }, [
+    currentMonthStr,
+    startDay,
+    personalBudget,
+    householdBudget,
+    expenses,
+    householdExpenses,
+    pendingExpenses,
+    gmailImportSummary,
+    watchedPlans,
+    forecastMovement,
+  ]);
 
   useEffect(() => () => {
     if (insightNavigationResetRef.current) {
@@ -353,36 +448,24 @@ export default function SummaryScreen() {
     });
   }
 
-  const spent = Number(personalBudget?.total?.spent || 0);
-  const householdSpent = Number(householdBudget?.total?.spent || 0);
-  const limit = personalBudget?.total?.limit ?? 0;
+  const spent = Number(displayPersonalBudget?.total?.spent || 0);
+  const householdSpent = Number(displayHouseholdBudget?.total?.spent || 0);
+  const limit = displayPersonalBudget?.total?.limit ?? 0;
   const pct = limit ? Math.min(spent / limit, 1) : 0;
   const over = limit > 0 && spent > limit;
 
-  const hLimit = householdBudget?.total?.limit ?? 0;
+  const hLimit = displayHouseholdBudget?.total?.limit ?? 0;
   const hSpent = householdSpent;
   const hPct = hLimit ? Math.min(hSpent / hLimit, 1) : 0;
   const hOver = hLimit > 0 && hSpent > hLimit;
-  const recent = (expenses || []).slice(0, 5);
-  const hasAnyLoggedExpenses = (expenses || []).length > 0 || (householdExpenses || []).length > 0;
+  const hasAnyLoggedExpenses = (displayExpensesForSummary || []).length > 0 || (displayHouseholdExpensesForSummary || []).length > 0;
   const hasBudget = Number(limit || 0) > 0 || Number(hLimit || 0) > 0;
-  const watchedImprovedCount = watchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
-  const watchedWorsenedCount = watchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
-
-  async function deleteExpense(id) {
-    try {
-      await api.delete(`/expenses/${id}`);
-      refreshExpenses();
-      refreshPersonalBudget();
-      refreshHouseholdBudget();
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Could not delete expense');
-    }
-  }
+  const watchedImprovedCount = displayWatchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
+  const watchedWorsenedCount = displayWatchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
 
   function openQuickAddWelcome() {
     setShowWelcomeAddCard(false);
-    setLauncherOpenSignal((current) => current + 1);
+    requestGlobalAddLauncher();
   }
 
   function openBudgetSetup() {
@@ -392,6 +475,42 @@ export default function SummaryScreen() {
   function openGmailSetup() {
     router.push('/gmail-import');
   }
+
+  function handleMovementCTA(cta = {}) {
+    if (cta.target === 'actions') {
+      router.push('/(tabs)/pending');
+      return;
+    }
+    if (cta.target === 'gmail') {
+      router.push('/gmail-import');
+      return;
+    }
+    if (cta.target === 'settings') {
+      router.push('/(tabs)/settings');
+      return;
+    }
+    if (cta.target === 'add') {
+      openQuickAddWelcome();
+      return;
+    }
+    if (displayInsights[0]) {
+      handlePressInsight(displayInsights[0]);
+      return;
+    }
+    router.push('/(tabs)');
+  }
+
+  function formatSnapshotTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  const snapshotTime = formatSnapshotTime(summarySnapshot?.saved_at);
+  const summaryFreshnessLabel = isUsingSummarySnapshot
+    ? `${gmailImportSummaryLoading || watchedPlansLoading || expensesLoading || pendingExpensesLoading || personalBudgetLoading || (isMultiMember && (householdBudgetLoading || householdExpensesLoading)) ? 'Using saved summary while refreshing' : 'Showing saved summary'}${snapshotTime ? ` from ${snapshotTime}` : ''}`
+    : '';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -426,7 +545,7 @@ export default function SummaryScreen() {
         {limit > 0 && (
           <>
             <View style={styles.barTrack}>
-              <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: over ? '#ef4444' : '#4ade80' }]} />
+              <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: over ? colors.danger : colors.success }]} />
             </View>
             <Text style={styles.barLabel}>
               {over
@@ -437,8 +556,9 @@ export default function SummaryScreen() {
         )}
 
         {!limit && (
-          <TouchableOpacity onPress={() => router.push('/(tabs)/settings')}>
-            <Text style={styles.setBudgetLink}>Set a monthly budget →</Text>
+          <TouchableOpacity style={styles.setBudgetLinkRow} onPress={() => router.push('/(tabs)/settings')} activeOpacity={0.82}>
+            <Text style={styles.setBudgetLink}>Set a monthly budget</Text>
+            <Ionicons name="arrow-forward" size={14} color={colors.textMuted} />
           </TouchableOpacity>
         )}
       </View>
@@ -448,7 +568,7 @@ export default function SummaryScreen() {
           <View style={styles.welcomeTopRow}>
             <Text style={styles.welcomeEyebrow}>Start here</Text>
             <TouchableOpacity onPress={() => setShowWelcomeAddCard(false)} hitSlop={8}>
-              <Ionicons name="close" size={16} color="#7f7f7f" />
+              <Ionicons name="close" size={16} color={colors.textSubtle} />
             </TouchableOpacity>
           </View>
           <Text style={styles.welcomeTitle}>Log one thing you spent.</Text>
@@ -475,16 +595,25 @@ export default function SummaryScreen() {
           </View>
           {hLimit > 0 && (
             <View style={styles.hBarTrack}>
-              <View style={[styles.hBarFill, { width: `${hPct * 100}%`, backgroundColor: hOver ? '#ef4444' : '#4ade80' }]} />
+              <View style={[styles.hBarFill, { width: `${hPct * 100}%`, backgroundColor: hOver ? colors.danger : colors.success }]} />
             </View>
           )}
           {hOver && <Text style={styles.hOverLabel}>${(hSpent - hLimit).toFixed(0)} over</Text>}
         </View>
       )}
 
+      <SummaryForecastMovement
+        styles={styles}
+        movement={displayForecastMovement}
+        loading={forecastMovementLoading && !displayForecastMovement}
+        freshnessLabel={summaryFreshnessLabel}
+        onPressCTA={handleMovementCTA}
+      />
+
       <SummaryInsightsRail
         styles={styles}
         displayInsights={displayInsights}
+        loading={insightsLoading}
         insightsError={insightsError}
         refreshInsights={refreshInsights}
         hasMultipleInsights={hasMultipleInsights}
@@ -527,14 +656,14 @@ export default function SummaryScreen() {
             </View>
           ) : null}
           {INTERNAL_TOOLS_ENABLED ? (
-            <TouchableOpacity activeOpacity={0.88} onPress={() => router.push('/insight-diagnostics')}>
-              <Text style={styles.insightEmptyAction}>Open insight diagnostics</Text>
+            <TouchableOpacity activeOpacity={0.88} onPress={() => router.push('/diagnostics')}>
+              <Text style={styles.insightEmptyAction}>Open diagnostics</Text>
             </TouchableOpacity>
           ) : null}
         </View>
       ) : null}
 
-      {watchedPlans.length > 0 ? (
+      {displayWatchedPlans.length > 0 ? (
         <TouchableOpacity
           style={styles.watchingCard}
           activeOpacity={0.88}
@@ -543,7 +672,7 @@ export default function SummaryScreen() {
           <View style={styles.watchingText}>
             <Text style={styles.watchingTitle}>Watching</Text>
             <Text style={styles.watchingMeta}>
-              {watchedPlans.length} active {watchedPlans.length === 1 ? 'plan' : 'plans'}
+              {displayWatchedPlans.length} active {displayWatchedPlans.length === 1 ? 'plan' : 'plans'}
             </Text>
             <Text style={styles.watchingBody}>
               {watchedImprovedCount > 0 || watchedWorsenedCount > 0
@@ -562,19 +691,6 @@ export default function SummaryScreen() {
           </View>
         </TouchableOpacity>
       ) : null}
-
-      <SummaryRecentActivity
-        styles={styles}
-        recent={recent}
-        pendingExpensesCount={pendingExpenses.length}
-        gmailRefreshTimestamp={gmailRefreshTimestamp}
-        gmailRefreshVerb={gmailRefreshVerb}
-        formatRelativeTime={formatRelativeTime}
-        formatDate={formatDate}
-        onPressSeeAll={() => router.navigate('/')}
-        onPressExpense={(expenseId) => router.push(`/expense/${expenseId}`)}
-        onDeleteExpense={deleteExpense}
-      />
     </ScrollView>
 
     <SummaryMonthPicker
@@ -590,33 +706,33 @@ export default function SummaryScreen() {
       periodLabel={periodLabel}
       startDay={startDay}
     />
-    <GlobalAddLauncher router={router} bottomOffset={24} openSignal={launcherOpenSignal} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 18 },
   globalHeader: { marginBottom: 12 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
-  spendLabel: { fontSize: 13, color: '#888', marginBottom: 2 },
-  spendAmount: { fontSize: 48, color: '#f5f5f5', fontWeight: '600', letterSpacing: -2 },
-  spendOver: { color: '#ef4444' },
+  spendLabel: { fontSize: 13, color: colors.textSubtle, marginBottom: 2 },
+  spendAmount: { fontSize: 48, color: colors.text, fontWeight: '600', letterSpacing: -2 },
+  spendOver: { color: colors.danger },
   spendRight: { alignItems: 'flex-end' },
-  budgetAmount: { fontSize: 22, color: '#999', fontWeight: '500', letterSpacing: -0.5 },
-  barTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1, marginBottom: 8 },
+  budgetAmount: { fontSize: 22, color: colors.textSubtle, fontWeight: '500', letterSpacing: -0.5 },
+  barTrack: { height: 2, backgroundColor: colors.textInverse, borderRadius: 1, marginBottom: 8 },
   barFill: { height: 2, borderRadius: 1 },
-  barLabel: { fontSize: 13, color: '#888' },
-  setBudgetLink: { fontSize: 14, color: '#999', marginTop: 8 },
+  barLabel: { fontSize: 13, color: colors.textSubtle },
+  setBudgetLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, alignSelf: 'flex-start' },
+  setBudgetLink: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
   welcomeCard: {
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
     paddingHorizontal: 16,
     paddingVertical: 16,
     marginBottom: 22,
@@ -628,19 +744,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   welcomeEyebrow: {
-    color: '#7d7d7d',
+    color: colors.textSubtle,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   welcomeTitle: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 22,
     fontWeight: '700',
     marginBottom: 8,
   },
   welcomeBody: {
-    color: '#9b9b9b',
+    color: colors.textSubtle,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -650,43 +766,43 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 14,
     borderRadius: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   welcomeButtonText: {
-    color: '#0a0a0a',
+    color: colors.textInverse,
     fontSize: 14,
     fontWeight: '700',
   },
 
   householdCard: { marginBottom: 24 },
   householdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  householdLabel: { fontSize: 12, color: '#555', textTransform: 'uppercase', letterSpacing: 0.5 },
+  householdLabel: { fontSize: 12, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 0.5 },
   householdNumbers: { flexDirection: 'row', alignItems: 'baseline' },
-  householdSpent: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
-  householdOver: { color: '#ef4444' },
-  householdLimit: { fontSize: 13, color: '#666' },
-  hBarTrack: { height: 2, backgroundColor: '#1f1f1f', borderRadius: 1 },
+  householdSpent: { fontSize: 16, color: colors.text, fontWeight: '600', letterSpacing: -0.3 },
+  householdOver: { color: colors.danger },
+  householdLimit: { fontSize: 13, color: colors.textDisabled },
+  hBarTrack: { height: 2, backgroundColor: colors.textInverse, borderRadius: 1 },
   hBarFill: { height: 2, borderRadius: 1 },
-  hOverLabel: { fontSize: 12, color: '#ef4444', marginTop: 4 },
+  hOverLabel: { fontSize: 12, color: colors.danger, marginTop: 4 },
 
   insightsSection: { marginBottom: 32 },
   insightsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  insightsHint: { fontSize: 12, color: '#666' },
+  insightsHint: { fontSize: 12, color: colors.textDisabled },
   insightsErrorCard: {
-    backgroundColor: '#141414',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
     marginBottom: 12,
     gap: 4,
   },
-  insightsErrorTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
-  insightsErrorBody: { color: '#a3a3a3', fontSize: 13, lineHeight: 18 },
-  insightsErrorAction: { color: '#d4d4d4', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  insightsErrorTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  insightsErrorBody: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  insightsErrorAction: { color: colors.textMuted, fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
   insightsDots: { flexDirection: 'row', gap: 6, marginTop: 12, alignSelf: 'center' },
@@ -694,41 +810,59 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 999,
-    backgroundColor: '#2e3640',
+    backgroundColor: colors.borderStrong,
   },
   insightsDotActive: {
     width: 18,
-    backgroundColor: '#d9e6f2',
+    backgroundColor: colors.accent,
   },
+  insightSkeletonCard: {
+    minHeight: 184,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 17,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  insightSkeletonMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
+  insightSkeletonChip: { width: 86, height: 24, borderRadius: 999, backgroundColor: colors.surfaceRaised },
+  insightSkeletonChipShort: { width: 58, height: 24, borderRadius: 999, backgroundColor: colors.surfaceRaised },
+  insightSkeletonTitle: { width: '76%', height: 18, borderRadius: 5, backgroundColor: colors.surfaceRaised },
+  insightSkeletonTitleShort: { width: '58%', height: 18, borderRadius: 5, backgroundColor: colors.surfaceRaised },
+  insightSkeletonBody: { width: '88%', height: 12, borderRadius: 5, backgroundColor: colors.surfaceMuted, marginTop: 8 },
+  insightSkeletonBodyShort: { width: '64%', height: 12, borderRadius: 5, backgroundColor: colors.surfaceMuted },
+  insightSkeletonFooter: { width: '38%', height: 14, borderRadius: 5, backgroundColor: colors.surfaceRaised, marginTop: 'auto' },
   insightEmptyCard: {
     marginBottom: 28,
-    backgroundColor: '#111214',
-    borderColor: '#20252b',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 14,
     padding: 16,
     gap: 6,
   },
   insightEmptyEyebrow: {
-    color: '#8894a1',
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.9,
     textTransform: 'uppercase',
   },
   insightEmptyTitle: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 17,
     lineHeight: 23,
     fontWeight: '700',
   },
   insightEmptyBody: {
-    color: '#acb7c3',
+    color: colors.text,
     fontSize: 14,
     lineHeight: 20,
   },
   insightEmptyAction: {
-    color: '#e5eef8',
+    color: colors.info,
     fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
@@ -742,12 +876,12 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: 8,
     paddingHorizontal: 14,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   insightEmptyPrimaryButtonText: {
-    color: '#0a0a0a',
+    color: colors.textInverse,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -760,23 +894,23 @@ const styles = StyleSheet.create({
     minHeight: 38,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a3038',
+    borderColor: colors.infoMuted,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#15181c',
+    backgroundColor: colors.surfaceMuted,
   },
   insightEmptySecondaryText: {
-    color: '#d6e0ea',
+    color: colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   watchingCard: {
     marginTop: 12,
     marginBottom: 28,
-    backgroundColor: '#0f1114',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a2027',
+    borderColor: colors.infoMuted,
     borderRadius: 14,
     padding: 14,
     flexDirection: 'row',
@@ -785,27 +919,27 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   watchingText: { flex: 1, gap: 4 },
-  watchingTitle: { color: '#dde8f2', fontSize: 16, fontWeight: '700' },
-  watchingMeta: { color: '#8fa0b2', fontSize: 13 },
-  watchingBody: { color: '#afc0d5', fontSize: 14, lineHeight: 19, marginTop: 4 },
-  watchingNote: { color: '#9cc3de', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  watchingTitle: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
+  watchingMeta: { color: colors.textSubtle, fontSize: 13 },
+  watchingBody: { color: colors.text, fontSize: 14, lineHeight: 19, marginTop: 4 },
+  watchingNote: { color: colors.info, fontSize: 12, lineHeight: 17, marginTop: 4 },
   watchingCTA: {
-    backgroundColor: '#171b20',
+    backgroundColor: colors.surfacePressed,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  watchingCTAText: { color: '#dde8f2', fontSize: 13, fontWeight: '700' },
-  sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
-  sectionLabelCompact: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
+  watchingCTAText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  sectionLabel: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  sectionLabelCompact: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 8 },
   entryModeToggle: {
     flexDirection: 'row',
     alignSelf: 'flex-start',
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     padding: 2,
     marginBottom: 10,
   },
@@ -815,34 +949,34 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   entryModeChipActive: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.accent,
   },
   entryModeChipText: {
     fontSize: 13,
-    color: '#9b9b9b',
+    color: colors.textSubtle,
     fontWeight: '700',
   },
   entryModeChipTextActive: {
-    color: '#000',
+    color: colors.textInverse,
   },
-  entryModeMeta: { fontSize: 13, color: '#718295', marginBottom: 12, lineHeight: 18 },
+  entryModeMeta: { fontSize: 13, color: colors.textSubtle, marginBottom: 12, lineHeight: 18 },
   input: {
-    flex: 1, backgroundColor: '#111', borderRadius: 10,
+    flex: 1, backgroundColor: colors.surface, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 13,
-    color: '#f5f5f5', fontSize: 15,
-    borderWidth: 1, borderColor: '#1f1f1f',
+    color: colors.text, fontSize: 15,
+    borderWidth: 1, borderColor: colors.textInverse,
   },
   addBtn: {
-    backgroundColor: '#f5f5f5', borderRadius: 10,
+    backgroundColor: colors.accent, borderRadius: 10,
     width: 46, justifyContent: 'center', alignItems: 'center',
   },
   scanLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  scanLinkText: { fontSize: 14, color: '#888' },
+  scanLinkText: { fontSize: 14, color: colors.textSubtle },
   quickEntryProcessing: {
     marginTop: 10,
-    backgroundColor: '#161616',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -850,39 +984,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  quickEntryProcessingText: { color: '#cfcfcf', fontSize: 12, flex: 1, lineHeight: 17 },
+  quickEntryProcessingText: { color: colors.textMuted, fontSize: 12, flex: 1, lineHeight: 17 },
   entryModeSpacer: { height: 24, marginTop: 10 },
 
-  recent: {},
-  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  recentHeading: { flex: 1, gap: 4, paddingRight: 12 },
-  recentMeta: { fontSize: 12, color: '#666' },
-  emptyText: { color: '#555', fontSize: 14, paddingVertical: 12 },
-  seeAll: { fontSize: 14, color: '#999', minWidth: 72, textAlign: 'right', paddingRight: 12 },
-  recentRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 12, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111',
-    backgroundColor: '#0a0a0a',
+  movementSection: { marginTop: 2, marginBottom: 24 },
+  movementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  movementSource: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.7 },
+  movementCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  recentMerchant: { flex: 1, fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
-  recentDate: { fontSize: 13, color: '#888', marginRight: 16 },
-  recentAmount: { fontSize: 15, color: '#f5f5f5', fontWeight: '600', minWidth: 60, textAlign: 'right' },
-  recentRefund: { color: '#4ade80' },
-
-  deleteAction: {
-    backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center',
-    width: 80, borderBottomWidth: 1, borderBottomColor: '#111',
-    flexDirection: 'column', gap: 2,
+  movementIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
-  deleteActionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  movementSkeletonIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceRaised },
+  movementSkeletonTitle: { width: '58%', height: 14, borderRadius: 5, backgroundColor: colors.surfaceRaised },
+  movementSkeletonBody: { width: '88%', height: 11, borderRadius: 5, backgroundColor: colors.surfaceMuted, marginTop: 4 },
+  movementSkeletonBodyShort: { width: '52%', height: 11, borderRadius: 5, backgroundColor: colors.surfaceMuted },
+  movementToneNeutral: { backgroundColor: colors.neutralWash, borderColor: colors.neutralWashBorder },
+  movementToneInfo: { backgroundColor: colors.infoMuted, borderColor: colors.infoBorder },
+  movementToneWarning: { backgroundColor: colors.warningMuted, borderColor: colors.warningBorder },
+  movementTonePositive: { backgroundColor: colors.successMuted, borderColor: colors.successBorder },
+  movementCopy: { flex: 1, minWidth: 0, gap: 3 },
+  movementTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  movementBody: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
+  movementMetric: { color: colors.textMuted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  movementFreshness: { color: colors.textDisabled, fontSize: 11, marginTop: 4 },
+  movementCTA: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 3,
+    maxWidth: 96,
+  },
+  movementCTAText: { color: colors.textMuted, fontSize: 12, fontWeight: '800', textAlign: 'right' },
 
-  monthPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  monthPickerSheet: { backgroundColor: '#111', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
-  monthPickerTitle: { fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
-  monthOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  monthPickerOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  monthPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
+  monthPickerTitle: { fontSize: 13, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+  monthOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   monthOptionActive: {},
-  monthOptionText: { fontSize: 16, color: '#999' },
-  monthOptionTextActive: { color: '#f5f5f5', fontWeight: '600' },
+  monthOptionText: { fontSize: 16, color: colors.textSubtle },
+  monthOptionTextActive: { color: colors.text, fontWeight: '600' },
   monthPickerClose: { paddingVertical: 16, alignItems: 'center', marginTop: 8 },
-  monthPickerCloseText: { color: '#888', fontSize: 15 },
+  monthPickerCloseText: { color: colors.textSubtle, fontSize: 15 },
 });

@@ -94,6 +94,7 @@ afterAll(async () => {
   )`, [householdId]);
   await db.query(`DELETE FROM expenses WHERE household_id = $1`, [householdId]);
   await db.query(`UPDATE users SET household_id = NULL WHERE provider_uid = 'auth0|test-user-123'`);
+  await db.query(`DELETE FROM users WHERE provider_uid IN ('auth0|private-household-member', 'auth0|private-detail-member')`);
   await db.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
   await db.query(`DELETE FROM households WHERE id = $1`, [householdId]);
 });
@@ -396,6 +397,51 @@ describe('GET /expenses', () => {
     const res = await request(app).get('/expenses');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('GET /expenses/household privacy boundaries', () => {
+  it('excludes another household member private expense from household lists', async () => {
+    const otherUser = await db.query(
+      `INSERT INTO users (provider_uid, name, email, household_id)
+       VALUES ('auth0|private-household-member', 'Private Member', 'private-member@test.com', $1)
+       ON CONFLICT (provider_uid) DO UPDATE SET household_id = EXCLUDED.household_id
+       RETURNING id`,
+      [householdId]
+    );
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, is_private)
+       VALUES
+         ($1, $2, 'Visible Shared Merchant', 11.00, '2026-03-18', 'manual', 'confirmed', FALSE),
+         ($3, $2, 'Hidden Private Merchant', 22.00, '2026-03-18', 'manual', 'confirmed', TRUE)`,
+      [userId, householdId, otherUser.rows[0].id]
+    );
+
+    const res = await request(app).get('/expenses/household?month=2026-03');
+
+    expect(res.status).toBe(200);
+    expect(res.body.some((expense) => expense.merchant === 'Visible Shared Merchant')).toBe(true);
+    expect(res.body.some((expense) => expense.merchant === 'Hidden Private Merchant')).toBe(false);
+  });
+
+  it('returns 404 when opening another household member private expense directly', async () => {
+    const otherUser = await db.query(
+      `INSERT INTO users (provider_uid, name, email, household_id)
+       VALUES ('auth0|private-detail-member', 'Private Detail Member', 'private-detail@test.com', $1)
+       ON CONFLICT (provider_uid) DO UPDATE SET household_id = EXCLUDED.household_id
+       RETURNING id`,
+      [householdId]
+    );
+    const privateExpense = await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, is_private)
+       VALUES ($1, $2, 'Direct Private Merchant', 33.00, '2026-03-18', 'manual', 'confirmed', TRUE)
+       RETURNING id`,
+      [otherUser.rows[0].id, householdId]
+    );
+
+    const res = await request(app).get(`/expenses/${privateExpense.rows[0].id}`);
+
+    expect(res.status).toBe(404);
   });
 });
 

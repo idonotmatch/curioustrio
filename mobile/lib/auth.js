@@ -80,6 +80,42 @@ export async function signInWithGoogle() {
   return data.session;
 }
 
+export async function signInWithEmail({ email, password }) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) throw error;
+  return data.session;
+}
+
+export async function signUpWithEmail({ email, password }) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  });
+  if (error) throw error;
+  return {
+    session: data.session || null,
+    needsEmailConfirmation: !data.session,
+  };
+}
+
+export async function requestPasswordReset({ email, redirectTo }) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+  if (error) throw error;
+}
+
+export async function updatePassword({ password }) {
+  const { data, error } = await supabase.auth.updateUser({
+    password,
+  });
+  if (error) throw error;
+  return data.user || null;
+}
+
 export async function signInWithApple() {
   // Supabase requires a nonce for Apple Sign In. The raw nonce is passed to
   // Supabase; Apple receives the SHA256-hashed version and embeds it in the

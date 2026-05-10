@@ -23,6 +23,14 @@ function run() {
   );
 
   assert.strictEqual(
+    getAuthProvider({
+      app_metadata: { provider: 'email' },
+    }),
+    'email',
+    'email/password users should preserve their provider label'
+  );
+
+  assert.strictEqual(
     shouldOfferGoogleGmailConnect({
       isAnonymous: false,
       authProvider: 'google',

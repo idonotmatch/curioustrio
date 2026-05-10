@@ -6,6 +6,7 @@ const {
   enrichmentCacheEnabled,
   enrichmentCacheTtlMs,
 } = require('./parsingOptimizationConfig');
+const { captureException } = require('./observability');
 
 const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
 
@@ -144,6 +145,14 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
         useLocationBias,
         includePoiFilter,
         body_present: !!responseText,
+      });
+      captureException(new MapkitSearchUnavailableError('Apple Maps HTTP error'), {
+        area: 'mapkit_search',
+        status: res.status,
+        query_present: !!normalizedQuery,
+        query_length: normalizedQuery.length,
+        useLocationBias,
+        includePoiFilter,
       });
       return [];
     }

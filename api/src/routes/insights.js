@@ -9,6 +9,8 @@ const { dispatchInsightPushesForUser } = require('../services/insightPushDispatc
 const { buildFeedbackDebugSummary } = require('../services/insightFeedbackSummary');
 const { inferOutcomeEventsForUser } = require('../services/insightOutcomeInference');
 const { attachInsightAction } = require('../services/insightAction');
+const { attachInsightForecasts } = require('../services/insightForecastService');
+const { buildForecastMovementSummary } = require('../services/forecastMovementService');
 const { internalToolsEnabled } = require('../services/internalTools');
 
 router.use(authenticate);
@@ -88,7 +90,10 @@ async function recordInsightExposures(userId, insights, limit) {
 
 async function findInsightByIdForUser(user, insightId) {
   if (!user?.id || !insightId) return null;
-  const insights = (await buildInsightsForUser({ user, limit: 50 })).map(attachInsightAction);
+  const insights = await attachInsightForecasts(
+    user.id,
+    (await buildInsightsForUser({ user, limit: 50 })).map(attachInsightAction)
+  );
   return insights.find((insight) => `${insight.id}` === `${insightId}`) || null;
 }
 
@@ -97,7 +102,10 @@ router.get('/', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
-    const insights = (await buildInsightsForUser({ user, limit })).map(attachInsightAction);
+    const insights = await attachInsightForecasts(
+      user.id,
+      (await buildInsightsForUser({ user, limit })).map(attachInsightAction)
+    );
     await recordInsightExposures(user.id, insights, limit);
     res.json(insights);
   } catch (err) {
@@ -144,6 +152,19 @@ router.get('/preferences', requireInternalTools, async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(25, Math.min(Number(req.query.limit) || 500, 1000));
     const summary = await buildInsightPreferencesForUser({ user, limit });
+    res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/movement-summary', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const scope = `${req.query.scope || 'personal'}` === 'household' ? 'household' : 'personal';
+    const period = /^\d{4}-\d{2}$/.test(`${req.query.period || ''}`) ? `${req.query.period}` : null;
+    const summary = await buildForecastMovementSummary({ user, scope, period });
     res.json(summary);
   } catch (err) {
     next(err);

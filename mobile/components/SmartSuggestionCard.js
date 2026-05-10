@@ -1,4 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function SmartSuggestionCard({
   eyebrow,
@@ -33,30 +34,30 @@ const styles = StyleSheet.create({
     marginTop: 2,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#262626',
-    backgroundColor: '#151515',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     padding: 12,
     gap: 10,
   },
   copy: { gap: 3 },
-  eyebrow: { color: '#8a8a8a', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.9 },
-  title: { color: '#f4f4f4', fontSize: 14, fontWeight: '600' },
-  body: { color: '#8f8f8f', fontSize: 12, lineHeight: 17 },
+  eyebrow: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.9 },
+  title: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  body: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
   actions: { flexDirection: 'row', gap: 8 },
   dismiss: {
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#101010',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
   },
-  dismissText: { color: '#bebebe', fontSize: 12, fontWeight: '600' },
+  dismissText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
   accept: {
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
   },
-  acceptText: { color: '#000', fontSize: 12, fontWeight: '700' },
+  acceptText: { color: colors.textInverse, fontSize: 12, fontWeight: '700' },
 });

@@ -1,5 +1,5 @@
-import { invalidateCacheByPrefix } from './cache';
 import { insertExpenseIntoCachedLists, patchExpenseInCachedLists, saveExpenseSnapshot } from './expenseLocalStore';
+import { invalidateExpenseMutationCaches } from './expenseMutationEffects';
 
 export function queueConfirmedExpenseClientWork({
   expense = null,
@@ -14,9 +14,7 @@ export function queueConfirmedExpenseClientWork({
       }
 
       await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
+        invalidateExpenseMutationCaches(),
         ...extraWork.map((work) =>
           Promise.resolve()
             .then(() => work?.())

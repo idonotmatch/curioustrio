@@ -5,6 +5,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useMonth, currentPeriod, periodLabel } from '../contexts/MonthContext';
 import { useHousehold } from '../hooks/useHousehold';
 import { api } from '../services/api';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import {
@@ -15,6 +16,7 @@ import {
   recentPlanDecisionSummary,
   recentPlanResolutionSummary,
 } from '../services/planningPresentation';
+import { colors } from '../theme/tokens';
 import {
   confidenceCopy,
   formatAmountInput,
@@ -247,6 +249,7 @@ export default function ScenarioCheckScreen() {
       const data = await api.post(`/trends/scenario-memory/${scenarioMemory.id}/watch`, {
         enabled,
       });
+      markFreshnessStale([FRESHNESS_DOMAINS.watchedPlans], { reason: 'watched_plan_updated' });
       setScenarioMemory(data?.scenario_memory || scenarioMemory);
       loadRecentPlans();
     } catch (err) {
@@ -267,6 +270,7 @@ export default function ScenarioCheckScreen() {
       setResolutionLoading(action);
       setError('');
       const data = await api.post(endpoint, payload);
+      markFreshnessStale([FRESHNESS_DOMAINS.watchedPlans], { reason: 'watched_plan_resolved' });
       setScenarioMemory(data?.scenario_memory || scenarioMemory);
       loadRecentPlans();
     } catch (err) {
@@ -332,7 +336,7 @@ export default function ScenarioCheckScreen() {
       <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
         {isAutoRunning ? (
           <View style={styles.loadingHero}>
-            <ActivityIndicator color="#f5f5f5" />
+            <ActivityIndicator color={colors.text} />
             <Text style={styles.loadingTitle}>Checking your plan...</Text>
             <Text style={styles.heroCopy}>Adlo is comparing it against your current spending outlook.</Text>
           </View>
@@ -452,7 +456,7 @@ export default function ScenarioCheckScreen() {
                         disabled={loading || option.is_selected}
                       >
                         {loading && !option.is_selected ? (
-                          <ActivityIndicator color="#000" size="small" />
+                          <ActivityIndicator color={colors.textInverse} size="small" />
                         ) : (
                           <Text
                             style={[
@@ -561,7 +565,7 @@ export default function ScenarioCheckScreen() {
                 disabled={watchLoading || !scenarioMemory?.id}
               >
                 {watchLoading ? (
-                  <ActivityIndicator color={scenarioMemory?.watch_enabled ? '#f5f5f5' : '#000'} size="small" />
+                  <ActivityIndicator color={scenarioMemory?.watch_enabled ? colors.text : colors.textInverse} size="small" />
                 ) : (
                   <Text style={[styles.watchButtonText, scenarioMemory?.watch_enabled && styles.watchButtonTextActive]}>
                     {scenarioMemory?.watch_enabled ? 'Stop watching' : 'Watch this plan'}
@@ -638,7 +642,7 @@ export default function ScenarioCheckScreen() {
                   value={amount}
                   onChangeText={(value) => setAmount(formatAmountInput(value))}
                   placeholder="180"
-                  placeholderTextColor="#6f6f6f"
+                  placeholderTextColor={colors.textDisabled}
                   keyboardType="decimal-pad"
                   style={styles.amountPillInput}
                 />
@@ -648,7 +652,7 @@ export default function ScenarioCheckScreen() {
                   value={label}
                   onChangeText={setLabel}
                   placeholder="running shoes"
-                  placeholderTextColor="#6f6f6f"
+                  placeholderTextColor={colors.textDisabled}
                   style={styles.inlineInput}
                 />
               </View>
@@ -705,7 +709,7 @@ export default function ScenarioCheckScreen() {
                 disabled={!canSubmit}
               >
                 {loading ? (
-                  <ActivityIndicator color="#000" size="small" />
+                  <ActivityIndicator color={colors.textInverse} size="small" />
                 ) : (
                   <Text style={styles.primaryButtonText}>{scenario ? 'Update' : 'Run it'}</Text>
                 )}
@@ -773,17 +777,17 @@ export default function ScenarioCheckScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48, gap: 18 },
   loadingHero: { minHeight: 220, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingTitle: { fontSize: 20, color: '#f5f5f5', fontWeight: '600' },
+  loadingTitle: { fontSize: 20, color: colors.text, fontWeight: '600' },
   hero: { gap: 8 },
   heroRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   scopeChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#161616',
-    color: '#d4d4d4',
+    backgroundColor: colors.surfaceRaised,
+    color: colors.textMuted,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
@@ -791,77 +795,77 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  heroTitle: { fontSize: 30, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
-  resultTitle: { fontSize: 28, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.6, lineHeight: 34 },
-  heroCopy: { fontSize: 15, color: '#b5b5b5', lineHeight: 22 },
+  heroTitle: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: -0.8 },
+  resultTitle: { fontSize: 28, color: colors.text, fontWeight: '600', letterSpacing: -0.6, lineHeight: 34 },
+  heroCopy: { fontSize: 15, color: colors.textMuted, lineHeight: 22 },
   seedCard: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#1f2630',
-    backgroundColor: '#0f1318',
+    borderColor: colors.infoMuted,
+    backgroundColor: colors.infoMuted,
     borderRadius: 14,
     padding: 14,
     gap: 8,
   },
-  seedEyebrow: { fontSize: 11, color: '#8ca7bf', textTransform: 'uppercase', letterSpacing: 1.1 },
-  seedTitle: { fontSize: 17, color: '#eef5ff', fontWeight: '600', lineHeight: 22 },
-  seedBody: { fontSize: 14, color: '#c3d1df', lineHeight: 20 },
-  seedMeta: { fontSize: 12, color: '#8ea2b7', lineHeight: 17 },
+  seedEyebrow: { fontSize: 11, color: colors.info, textTransform: 'uppercase', letterSpacing: 1.1 },
+  seedTitle: { fontSize: 17, color: colors.text, fontWeight: '600', lineHeight: 22 },
+  seedBody: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  seedMeta: { fontSize: 12, color: colors.text, lineHeight: 17 },
   starterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
   starterChip: {
     borderWidth: 1,
-    borderColor: '#304253',
-    backgroundColor: '#151d25',
+    borderColor: colors.info,
+    backgroundColor: colors.infoMuted,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  starterChipText: { color: '#eef5ff', fontSize: 13, fontWeight: '600' },
-  scopeContextCopy: { fontSize: 13, color: '#8ca7bf', lineHeight: 18 },
+  starterChipText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  scopeContextCopy: { fontSize: 13, color: colors.info, lineHeight: 18 },
   recommendationLeadCard: {
-    backgroundColor: '#101417',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#1b2a33',
+    borderColor: colors.infoMuted,
     borderRadius: 14,
     padding: 14,
     gap: 12,
   },
   recommendationLeadTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   recommendationLeadText: { flex: 1, gap: 6 },
-  recommendationLeadEyebrow: { fontSize: 11, color: '#8ca7bf', textTransform: 'uppercase', letterSpacing: 1.1 },
-  recommendationLeadTitle: { fontSize: 20, color: '#eef5ff', fontWeight: '700', lineHeight: 25 },
-  recommendationLeadBody: { fontSize: 14, color: '#c3d1df', lineHeight: 20 },
-  recommendationLeadMeta: { fontSize: 12, color: '#8ea2b7', lineHeight: 17 },
-  recommendationLeadAmount: { fontSize: 24, color: '#eef5ff', fontWeight: '700', letterSpacing: -0.6 },
+  recommendationLeadEyebrow: { fontSize: 11, color: colors.info, textTransform: 'uppercase', letterSpacing: 1.1 },
+  recommendationLeadTitle: { fontSize: 20, color: colors.text, fontWeight: '700', lineHeight: 25 },
+  recommendationLeadBody: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  recommendationLeadMeta: { fontSize: 12, color: colors.text, lineHeight: 17 },
+  recommendationLeadAmount: { fontSize: 24, color: colors.text, fontWeight: '700', letterSpacing: -0.6 },
   card: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.borderSubtle,
     borderRadius: 14,
     padding: 14,
     gap: 12,
   },
-  cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
+  cardTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.2 },
   composerHeader: { gap: 4 },
-  composerMeta: { color: '#777', fontSize: 12, lineHeight: 16 },
-  preferenceNote: { color: '#9cc3de', fontSize: 12, lineHeight: 17 },
+  composerMeta: { color: colors.textDisabled, fontSize: 12, lineHeight: 16 },
+  preferenceNote: { color: colors.info, fontSize: 12, lineHeight: 17 },
   composerRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   amountPill: {
     minWidth: 94,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#151515',
-    borderColor: '#262626',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
-  amountPillDollar: { color: '#7c7c7c', fontSize: 17, fontWeight: '600' },
+  amountPillDollar: { color: colors.textSubtle, fontSize: 17, fontWeight: '600' },
   amountPillInput: {
     flex: 1,
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 19,
     fontWeight: '600',
     letterSpacing: -0.3,
@@ -869,14 +873,14 @@ const styles = StyleSheet.create({
   },
   inlineInputWrap: {
     flex: 1,
-    backgroundColor: '#151515',
-    borderColor: '#262626',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
-  inlineInput: { color: '#f5f5f5', fontSize: 15, padding: 0 },
+  inlineInput: { color: colors.text, fontSize: 15, padding: 0 },
   composerFooter: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -887,20 +891,20 @@ const styles = StyleSheet.create({
   considerationsList: { gap: 0 },
   optionsList: { gap: 10 },
   optionCard: {
-    backgroundColor: '#151515',
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 12,
     gap: 10,
   },
   optionCardSelected: {
-    borderColor: '#40607a',
-    backgroundColor: '#141a1f',
+    borderColor: colors.info,
+    backgroundColor: colors.infoMuted,
   },
   optionCardRecommended: {
-    borderColor: '#2c3e2a',
-    backgroundColor: '#131914',
+    borderColor: colors.successMuted,
+    backgroundColor: colors.successMuted,
   },
   optionTopRow: {
     flexDirection: 'row',
@@ -909,16 +913,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   optionTitleWrap: { flex: 1, gap: 2 },
-  optionTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
-  optionStatus: { color: '#8ca7bf', fontSize: 12 },
-  optionMetric: { color: '#dfefff', fontSize: 13, fontWeight: '600', textAlign: 'right' },
-  optionHeadline: { color: '#f3f3f3', fontSize: 14, fontWeight: '600', lineHeight: 20 },
-  optionReason: { color: '#a5a5a5', fontSize: 13, lineHeight: 18 },
-  optionTradeoff: { color: '#8ca7bf', fontSize: 12, lineHeight: 17 },
+  optionTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  optionStatus: { color: colors.info, fontSize: 12 },
+  optionMetric: { color: colors.text, fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  optionHeadline: { color: colors.text, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  optionReason: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  optionTradeoff: { color: colors.info, fontSize: 12, lineHeight: 17 },
   optionButton: {
     alignSelf: 'flex-start',
     minWidth: 138,
-    backgroundColor: '#d9e9f8',
+    backgroundColor: colors.text,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -926,34 +930,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   optionButtonSelected: {
-    backgroundColor: '#202a31',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#32414e',
+    borderColor: colors.info,
   },
-  optionButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
-  optionButtonTextSelected: { color: '#dfefff' },
+  optionButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '700' },
+  optionButtonTextSelected: { color: colors.text },
   considerationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
   considerationText: { flex: 1, gap: 3 },
-  considerationLabel: { color: '#f1f1f1', fontSize: 14, fontWeight: '600' },
-  considerationCopy: { color: '#9a9a9a', fontSize: 13, lineHeight: 18 },
-  considerationValue: { color: '#dfefff', fontSize: 13, fontWeight: '600', textAlign: 'right', maxWidth: 118 },
+  considerationLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  considerationCopy: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
+  considerationValue: { color: colors.text, fontSize: 13, fontWeight: '600', textAlign: 'right', maxWidth: 118 },
   secondaryLinkButton: {
     alignSelf: 'flex-start',
     marginTop: 2,
     paddingVertical: 4,
   },
-  secondaryLinkText: { color: '#b6cce0', fontSize: 13, fontWeight: '600' },
+  secondaryLinkText: { color: colors.text, fontSize: 13, fontWeight: '600' },
   toggleRow: { flexDirection: 'row', gap: 10, flex: 1 },
   toggleChip: {
-    backgroundColor: '#171717',
-    borderColor: '#2a2a2a',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderStrong,
     borderWidth: 1,
     borderRadius: 999,
     alignItems: 'center',
@@ -963,47 +967,47 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   toggleChipActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.text,
+    borderColor: colors.text,
   },
-  toggleChipText: { color: '#d4d4d4', fontSize: 13, fontWeight: '600' },
-  toggleChipTextActive: { color: '#000' },
+  toggleChipText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  toggleChipTextActive: { color: colors.textInverse },
   timingRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   timingChip: {
-    backgroundColor: '#141414',
-    borderColor: '#242424',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   timingChipActive: {
-    backgroundColor: '#e8eef7',
-    borderColor: '#e8eef7',
+    backgroundColor: colors.text,
+    borderColor: colors.text,
   },
-  timingChipText: { color: '#c9d1da', fontSize: 12, fontWeight: '600' },
-  timingChipTextActive: { color: '#000', fontSize: 12, fontWeight: '700' },
+  timingChipText: { color: colors.text, fontSize: 12, fontWeight: '600' },
+  timingChipTextActive: { color: colors.textInverse, fontSize: 12, fontWeight: '700' },
   periodBadge: {
-    backgroundColor: '#101b24',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#1a2f40',
+    borderColor: colors.infoMuted,
     borderRadius: 12,
     padding: 14,
     gap: 4,
   },
-  periodBadgeTitle: { color: '#dfefff', fontSize: 16, fontWeight: '600' },
-  periodBadgeCopy: { color: '#8ca7bf', fontSize: 13, lineHeight: 18 },
+  periodBadgeTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  periodBadgeCopy: { color: colors.info, fontSize: 13, lineHeight: 18 },
   periodMiniBadge: {
-    backgroundColor: '#101b24',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#1a2f40',
+    borderColor: colors.infoMuted,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  periodMiniBadgeText: { color: '#dfefff', fontSize: 12, fontWeight: '600' },
+  periodMiniBadgeText: { color: colors.text, fontSize: 12, fontWeight: '600' },
   primaryButton: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1012,8 +1016,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   primaryButtonDisabled: { opacity: 0.45 },
-  primaryButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
-  errorText: { color: '#fca5a5', fontSize: 13, lineHeight: 18 },
+  primaryButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '700' },
+  errorText: { color: colors.danger, fontSize: 13, lineHeight: 18 },
   statusChip: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
@@ -1021,23 +1025,23 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   statusChipText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
-  bodyRow: { fontSize: 14, color: '#d4d4d4', lineHeight: 21 },
+  bodyRow: { fontSize: 14, color: colors.textMuted, lineHeight: 21 },
   caveatsBlock: { gap: 4, marginTop: 2 },
-  caveatRow: { fontSize: 13, color: '#9ca3af', lineHeight: 18 },
+  caveatRow: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
   horizonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
   horizonText: { flex: 1 },
-  horizonLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
-  horizonMeta: { fontSize: 12, color: '#888', marginTop: 2 },
+  horizonLabel: { fontSize: 15, color: colors.text, fontWeight: '500' },
+  horizonMeta: { fontSize: 12, color: colors.textSubtle, marginTop: 2 },
   horizonRight: { alignItems: 'flex-end', gap: 4 },
-  horizonStatus: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 },
-  horizonAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
+  horizonStatus: { fontSize: 11, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
+  horizonAmount: { fontSize: 14, color: colors.text, fontWeight: '600' },
   intentRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1049,29 +1053,29 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   followUpMeta: {
-    color: '#9ca3af',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
   },
   intentChip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2b2b2b',
-    backgroundColor: '#181818',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfacePressed,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   intentChipActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.text,
+    borderColor: colors.text,
   },
   intentChipText: {
-    color: '#d7d7d7',
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: '600',
   },
   intentChipTextActive: {
-    color: '#000',
+    color: colors.textInverse,
   },
   recentPlanRow: {
     flexDirection: 'row',
@@ -1079,46 +1083,46 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
   recentPlanRowActive: {
-    backgroundColor: '#151515',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 10,
     paddingHorizontal: 10,
   },
   recentPlanText: { flex: 1 },
   recentPlanRight: { alignItems: 'flex-end', gap: 5 },
-  recentPlanLabel: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
-  recentPlanMeta: { fontSize: 12, color: '#888', marginTop: 2 },
-  recentPlanChange: { fontSize: 12, color: '#b8c8ff', marginTop: 4, fontWeight: '500' },
-  recentPlanWhy: { fontSize: 12, color: '#8f99ac', marginTop: 2, lineHeight: 16 },
-  recentPlanStatus: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 },
-  recentPlanAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
+  recentPlanLabel: { fontSize: 15, color: colors.text, fontWeight: '500' },
+  recentPlanMeta: { fontSize: 12, color: colors.textSubtle, marginTop: 2 },
+  recentPlanChange: { fontSize: 12, color: colors.info, marginTop: 4, fontWeight: '500' },
+  recentPlanWhy: { fontSize: 12, color: colors.text, marginTop: 2, lineHeight: 16 },
+  recentPlanStatus: { fontSize: 11, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
+  recentPlanAmount: { fontSize: 14, color: colors.text, fontWeight: '600' },
   candidateRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
   candidateText: { flex: 1 },
-  candidateName: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
-  candidateMeta: { fontSize: 12, color: '#888', marginTop: 2 },
-  candidateAmount: { fontSize: 14, color: '#e5e5e5', fontWeight: '600' },
+  candidateName: { fontSize: 15, color: colors.text, fontWeight: '500' },
+  candidateMeta: { fontSize: 12, color: colors.textSubtle, marginTop: 2 },
+  candidateAmount: { fontSize: 14, color: colors.text, fontWeight: '600' },
   watchCard: {
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: colors.borderStrong,
     borderRadius: 14,
     padding: 14,
     gap: 10,
-    backgroundColor: '#0f1216',
+    backgroundColor: colors.infoMuted,
   },
-  watchTitle: { color: '#dfe7ef', fontSize: 15, fontWeight: '600' },
-  watchMeta: { color: '#8fa0b2', fontSize: 13, lineHeight: 18 },
+  watchTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  watchMeta: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
   watchButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -1127,10 +1131,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   watchButtonActive: {
-    backgroundColor: '#1f2c39',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#31485d',
+    borderColor: colors.info,
   },
-  watchButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
-  watchButtonTextActive: { color: '#f5f5f5' },
+  watchButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '700' },
+  watchButtonTextActive: { color: colors.text },
 });

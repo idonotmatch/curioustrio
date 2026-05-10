@@ -9,6 +9,7 @@ const GmailSenderPreference = require('../models/gmailSenderPreference');
 const { getAuthUrl, exchangeCode, disconnectGmailConnection } = require('../services/gmailClient');
 const { importForUser, retryFailedImportLog, retryFailedImportsForUser } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
+const { getGmailImportHealth } = require('../services/gmailImportHealthService');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 function gmailAppReturnUrl() {
@@ -193,6 +194,20 @@ router.get('/import-summary', authenticate, async (req, res, next) => {
       last_sync_source: token?.last_sync_source || null,
       last_sync_status: token?.last_sync_status || null,
     });
+  } catch (err) { next(err); }
+});
+
+// GET /gmail/import-health - internal diagnostic view for Gmail import coverage and failures
+router.get('/import-health', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const health = await getGmailImportHealth(user, {
+      days: req.query.days,
+      limit: req.query.limit,
+      inboxQuery: req.query.inbox_query,
+    });
+    res.json(health);
   } catch (err) { next(err); }
 });
 

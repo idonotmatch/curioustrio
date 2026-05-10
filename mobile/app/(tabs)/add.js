@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -9,6 +9,9 @@ import { api } from '../../services/api';
 import { useEffect, useRef, useState } from 'react';
 import { toLocalDateString } from '../../services/date';
 import { pushConfirmDraft } from '../../services/confirmNavigation';
+import { ActionRow, SecondaryButton } from '../../components/ui/Buttons';
+import { LoadingState } from '../../components/ui/States';
+import { colors, radius, spacing, typography } from '../../theme/tokens';
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
@@ -130,50 +133,60 @@ export default function AddScreen() {
       </Text>
       <NLInput onSubmit={handleSubmit} loading={loading} />
       {processingMessage ? (
-        <View style={styles.processingBanner}>
-          <ActivityIndicator color="#fff" />
-          <Text style={styles.processingText}>{processingMessage}</Text>
-        </View>
+        <LoadingState compact label={processingMessage} style={styles.processingBanner} />
       ) : null}
       <View style={styles.scanRow}>
-        <TouchableOpacity style={styles.scanBtn} onPress={startManualEntry} disabled={scanLoading || loading}>
-          <Text style={styles.scanText}>✍️  manual add</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.scanBtn} onPress={() => handleScan(false)} disabled={scanLoading}>
-          <Text style={styles.scanText}>{scanLoading ? 'scanning...' : '📷  scan receipt'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.galleryBtn} onPress={() => handleScan(true)} disabled={scanLoading}>
-          <Text style={styles.galleryText}>from camera roll</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.manualBtn} onPress={() => router.push('/scenario-check')} disabled={scanLoading || loading}>
-          <Text style={styles.manualText}>check a purchase</Text>
-        </TouchableOpacity>
+        <ActionRow
+          icon="create-outline"
+          title="Manual add"
+          body="Use the structured form when you want exact fields."
+          onPress={startManualEntry}
+          disabled={scanLoading || loading}
+        />
+        <ActionRow
+          icon="camera-outline"
+          title={scanLoading ? 'Scanning receipt' : 'Scan receipt'}
+          body="Use the camera to pull merchant, amount, and date from a receipt."
+          onPress={() => handleScan(false)}
+          disabled={scanLoading}
+        />
+        <View style={styles.secondaryRow}>
+          <SecondaryButton
+            title="Camera roll"
+            icon="images-outline"
+            onPress={() => handleScan(true)}
+            disabled={scanLoading}
+            style={styles.secondaryButton}
+          />
+          <SecondaryButton
+            title="Check purchase"
+            icon="sparkles-outline"
+            onPress={() => router.push('/scenario-check')}
+            disabled={scanLoading || loading}
+            style={styles.secondaryButton}
+          />
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a', paddingHorizontal: 20, paddingBottom: 20 },
-  hint: { color: '#555', fontSize: 12, marginBottom: 16, lineHeight: 18 },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
+  hint: { color: colors.textSubtle, fontSize: 12, marginBottom: spacing.lg, lineHeight: 18 },
   processingBanner: {
-    marginTop: 16,
-    backgroundColor: '#161616',
+    marginTop: spacing.lg,
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#262626',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.md,
   },
-  processingText: { color: '#d4d4d4', fontSize: 13, flex: 1, lineHeight: 18 },
-  scanRow: { marginTop: 24, gap: 10 },
-  scanBtn: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },
-  scanText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  galleryBtn: { alignItems: 'center', padding: 8 },
-  galleryText: { color: '#555', fontSize: 12 },
-  manualBtn: { alignItems: 'center', padding: 8 },
-  manualText: { color: '#8a8a8a', fontSize: 12, fontWeight: '600' },
+  scanRow: { marginTop: 24, gap: spacing.md },
+  secondaryRow: { flexDirection: 'row', gap: spacing.md },
+  secondaryButton: { flex: 1, paddingHorizontal: spacing.md },
 });

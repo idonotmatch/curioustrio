@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function ActionNotice({ message }) {
   if (!message) return null;
@@ -23,15 +24,15 @@ const styles = StyleSheet.create({
   },
   notice: {
     maxWidth: 320,
-    backgroundColor: '#141920',
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2b3442',
+    borderColor: colors.infoMuted,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   text: {
-    color: '#dbe7f7',
+    color: colors.text,
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',

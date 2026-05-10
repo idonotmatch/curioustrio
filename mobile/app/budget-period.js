@@ -8,6 +8,8 @@ import { useHousehold } from '../hooks/useHousehold';
 import { useMonth, currentPeriod } from '../contexts/MonthContext';
 import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
 import { saveCurrentUserCache } from '../services/currentUserCache';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
+import { colors } from '../theme/tokens';
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -59,6 +61,12 @@ export default function BudgetPeriodScreen() {
       await saveCurrentUserCache(updatedUser);
       await invalidateCacheByPrefix('cache:budget:');
       await invalidateCacheByPrefix('cache:expenses:');
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.budget,
+        FRESHNESS_DOMAINS.expenses,
+        FRESHNESS_DOMAINS.insights,
+        FRESHNESS_DOMAINS.forecastMovement,
+      ], { reason: 'budget_period_changed' });
     } catch {
       // silent
     } finally {
@@ -74,6 +82,13 @@ export default function BudgetPeriodScreen() {
       await invalidateCache('cache:household');
       await invalidateCacheByPrefix('cache:budget:');
       await invalidateCacheByPrefix('cache:household-expenses:');
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.budget,
+        FRESHNESS_DOMAINS.householdExpenses,
+        FRESHNESS_DOMAINS.insights,
+        FRESHNESS_DOMAINS.forecastMovement,
+      ], { reason: 'household_budget_period_changed' });
       refreshHousehold();
     } catch {
       // silent
@@ -116,7 +131,7 @@ export default function BudgetPeriodScreen() {
           {periodType === 'custom' ? (
             <TouchableOpacity onPress={() => setShowDayPicker(s => !s)} style={styles.dayChip}>
               <Text style={styles.dayChipText}>{ordinal(customDay)}</Text>
-              <Ionicons name={showDayPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#888" />
+              <Ionicons name={showDayPicker ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textSubtle} />
             </TouchableOpacity>
           ) : (
             <Text style={styles.optionSub}>pick a day</Text>
@@ -169,7 +184,7 @@ export default function BudgetPeriodScreen() {
             {householdPeriodType === 'custom' ? (
               <TouchableOpacity onPress={() => setShowHouseholdDayPicker(s => !s)} style={styles.dayChip}>
                 <Text style={styles.dayChipText}>{ordinal(householdCustomDay)}</Text>
-                <Ionicons name={showHouseholdDayPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#888" />
+                <Ionicons name={showHouseholdDayPicker ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textSubtle} />
               </TouchableOpacity>
             ) : (
               <Text style={styles.optionSub}>pick a day</Text>
@@ -202,24 +217,24 @@ export default function BudgetPeriodScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
-  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
-  sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  subText: { color: '#666', fontSize: 13, marginBottom: 12 },
-  optionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: '#111' },
-  radio: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: '#444' },
-  radioActive: { borderColor: '#f5f5f5', backgroundColor: '#f5f5f5' },
-  optionLabel: { fontSize: 15, color: '#f5f5f5', flex: 1 },
-  optionSub: { fontSize: 13, color: '#555' },
-  dayChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1a1a1a', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  dayChipText: { fontSize: 13, color: '#f5f5f5', fontWeight: '500' },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 24 },
+  sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  subText: { color: colors.textDisabled, fontSize: 13, marginBottom: 12 },
+  optionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  radio: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: colors.textDisabled },
+  radioActive: { borderColor: colors.text, backgroundColor: colors.text },
+  optionLabel: { fontSize: 15, color: colors.text, flex: 1 },
+  optionSub: { fontSize: 13, color: colors.textDisabled },
+  dayChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.borderSubtle, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  dayChipText: { fontSize: 13, color: colors.text, fontWeight: '500' },
   dayPickerRow: { marginTop: 8 },
-  dayOption: { width: 36, height: 36, borderRadius: 8, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#222' },
-  dayOptionActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  dayOptionText: { fontSize: 13, color: '#888' },
-  dayOptionTextActive: { color: '#000', fontWeight: '600' },
-  button: { backgroundColor: '#fff', borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
+  dayOption: { width: 36, height: 36, borderRadius: 8, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  dayOptionActive: { backgroundColor: colors.text, borderColor: colors.text },
+  dayOptionText: { fontSize: 13, color: colors.textSubtle },
+  dayOptionTextActive: { color: colors.textInverse, fontWeight: '600' },
+  button: { backgroundColor: colors.text, borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#0a0a0a', fontWeight: '600', fontSize: 15 },
+  buttonText: { color: colors.background, fontWeight: '600', fontSize: 15 },
 });

@@ -2,6 +2,8 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'rea
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
+import { colors } from '../theme/tokens';
 
 export default function JoinScreen() {
   const { token } = useLocalSearchParams();
@@ -19,6 +21,13 @@ export default function JoinScreen() {
     setStatus('joining');
     try {
       await api.post(`/households/invites/${t}/accept`, {});
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.householdExpenses,
+        FRESHNESS_DOMAINS.budget,
+        FRESHNESS_DOMAINS.insights,
+        FRESHNESS_DOMAINS.forecastMovement,
+      ], { reason: 'household_joined' });
       setStatus('success');
       setTimeout(() => router.replace('/(tabs)'), 1500);
     } catch (e) {
@@ -33,7 +42,7 @@ export default function JoinScreen() {
       <View style={styles.container}>
         {status === 'joining' && (
           <>
-            <ActivityIndicator color="#fff" size="large" />
+            <ActivityIndicator color={colors.text} size="large" />
             <Text style={styles.message}>Joining household…</Text>
           </>
         )}
@@ -62,9 +71,9 @@ export default function JoinScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  message: { color: '#f5f5f5', fontSize: 16, marginTop: 16, textAlign: 'center' },
-  errorText: { color: '#ef4444', fontSize: 15, textAlign: 'center', marginBottom: 24 },
-  btn: { backgroundColor: '#1a1a1a', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: '#2a2a2a' },
-  btnText: { color: '#f5f5f5', fontSize: 14, fontWeight: '500' },
+  container: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  message: { color: colors.text, fontSize: 16, marginTop: 16, textAlign: 'center' },
+  errorText: { color: colors.danger, fontSize: 15, textAlign: 'center', marginBottom: 24 },
+  btn: { backgroundColor: colors.borderSubtle, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: colors.borderStrong },
+  btnText: { color: colors.text, fontSize: 14, fontWeight: '500' },
 });

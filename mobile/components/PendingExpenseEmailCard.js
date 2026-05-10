@@ -1,4 +1,5 @@
 import { View, Text } from 'react-native';
+import { StatusChip } from './ui/StatusChip';
 
 export function PendingExpenseEmailCard({
   styles,
@@ -13,10 +14,11 @@ export function PendingExpenseEmailCard({
   const reviewReason = automationRecommendation?.reason || reviewFocusSummary.body;
   return (
     <View style={styles.reviewProvenanceCard}>
-      <Text style={styles.reviewSectionEyebrow}>From email</Text>
-      <Text style={styles.reviewProvenanceTitle}>
-        {subjectLine || expenseMerchant || 'Gmail import awaiting review'}
-      </Text>
+      <View style={styles.reviewProvenanceHeader}>
+        <Text style={styles.reviewSectionEyebrow}>From email</Text>
+        <StatusChip label={primaryReviewPath} tone={primaryReviewPath?.toLowerCase?.().includes('quick') ? 'success' : 'warning'} />
+      </View>
+      <Text style={styles.reviewProvenanceTitle}>{subjectLine || expenseMerchant || 'Gmail import awaiting review'}</Text>
       {importMetaBits.length ? <Text style={styles.reviewProvenanceMeta}>{importMetaBits.join('  ·  ')}</Text> : null}
       {reviewReason ? (
         <View style={styles.reviewReasonBlock}>
@@ -24,9 +26,6 @@ export function PendingExpenseEmailCard({
           <Text style={styles.reviewReasonBody} numberOfLines={2}>{reviewReason}</Text>
         </View>
       ) : null}
-      <View style={styles.reviewPathRow}>
-        <Text style={styles.reviewProvenanceHint}>{primaryReviewPath}</Text>
-      </View>
       {emailSnippet ? (
         <View style={styles.reviewSnippetBlock}>
           <Text style={styles.reviewSnippetLabel}>Email preview</Text>

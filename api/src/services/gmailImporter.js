@@ -24,8 +24,11 @@ const { resolveProductMatch } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
 const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
+const { requestProjectionRefresh } = require('./projectionRefreshService');
+const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { getItemHistoryByGroupKey } = require('./itemHistoryService');
 const { pushNotificationsEnabled } = require('./pushPreferences');
+const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -510,6 +513,25 @@ async function processMessageImport(user, msgId, {
       outcomes.imported_full_review++;
     }
     outcomes.imported_pending_review++;
+    requestProjectionRefresh({
+      user,
+      reason: 'gmail_expense_imported',
+      expense,
+      metadata: {
+        source: 'gmail_import',
+        message_id: msgId,
+        review_mode: reviewMode || null,
+      },
+    });
+    await emitExpenseFreshnessEvent(user, expense, {
+      eventType: 'gmail_expense_imported',
+      includePending: true,
+      includeGmail: true,
+      metadata: {
+        source: 'gmail_import',
+        review_mode: reviewMode || null,
+      },
+    });
     return { imported: 1, skipped: 0, failed: 0, expense };
   } catch (e) {
     const failureReason = summarizeImportFailure(e);
@@ -549,17 +571,19 @@ async function importForUser(user) {
   if (imported > 0) {
     try {
       const notification = buildGmailImportPushPayload(imported, outcomes);
-      const shouldSend = notification.data?.review_count > 0
-        ? pushNotificationsEnabled(user, 'push_gmail_review_enabled')
-        : pushNotificationsEnabled(user, 'push_gmail_review_enabled');
-      if (shouldSend) {
+      const eligibility = shouldSendGmailReviewPush({
+        imported,
+        pendingReview: notification.data?.review_count || 0,
+        preferenceEnabled: pushNotificationsEnabled(user, 'push_gmail_review_enabled'),
+      });
+      if (eligibility.send) {
         const tokens = await PushToken.findByUser(user.id);
         if (tokens.length > 0) {
           await sendNotifications(tokens.map(t => ({
             to: t.token,
             title: notification.title,
             body: notification.body,
-            data: notification.data,
+            data: safePushData(notification.data),
           })));
         }
       }

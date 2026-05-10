@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function GlobalPeriodHeader({ periodText, householdName, onPress, style }) {
   const content = (
@@ -30,7 +31,7 @@ const styles = StyleSheet.create({
   },
   periodText: {
     fontSize: 14,
-    color: '#9a9a9a',
+    color: colors.textSubtle,
     letterSpacing: 0.3,
     fontWeight: '600',
   },
@@ -38,7 +39,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
     fontSize: 14,
-    color: '#777',
+    color: colors.textDisabled,
     letterSpacing: 0.2,
     fontWeight: '600',
   },

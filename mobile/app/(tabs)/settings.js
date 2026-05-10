@@ -13,6 +13,8 @@ import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
 import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrollView';
 import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../../services/freshnessRegistry';
+import { colors } from '../../theme/tokens';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -26,6 +28,15 @@ export default function SettingsScreen() {
   const [budgetMsg, setBudgetMsg] = useState('');
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
+  const [gmailStatus, setGmailStatus] = useState(null);
+  const budgetDirty = currentBudget?.limit == null
+    ? Boolean(`${budgetLimit}`.trim())
+    : Number(budgetLimit) !== Number(currentBudget.limit);
+  const healthItems = [
+    gmailStatus?.connected ? 'Gmail connected' : 'Gmail needs setup',
+    pendingSuggestionsCount > 0 ? `${pendingSuggestionsCount} category suggestion${pendingSuggestionsCount === 1 ? '' : 's'}` : 'Categories clear',
+    recurringLoading ? 'Checking recurring' : recurring.length > 0 ? `${recurring.length} recurring expense${recurring.length === 1 ? '' : 's'}` : 'No recurring flags',
+  ];
 
   const loadBudget = useCallback(async () => {
     try {
@@ -43,6 +54,9 @@ export default function SettingsScreen() {
     api.get('/categories')
       .then(d => setPendingSuggestionsCount(d.pending_suggestions_count || 0))
       .catch(() => {});
+    api.get('/gmail/status')
+      .then(d => setGmailStatus(d || null))
+      .catch(() => setGmailStatus({ connected: false }));
   }, []);
 
   async function saveBudget() {
@@ -56,6 +70,11 @@ export default function SettingsScreen() {
     setBudgetMsg('');
     try {
       await api.put('/budgets/total', { monthly_limit: val });
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.budget,
+        FRESHNESS_DOMAINS.insights,
+        FRESHNESS_DOMAINS.forecastMovement,
+      ], { reason: 'budget_changed' });
       setBudgetMsg('Saved!');
       setBudgetMsgIsError(false);
       loadBudget();
@@ -71,6 +90,10 @@ export default function SettingsScreen() {
   async function removeRecurring(id) {
     try {
       await api.delete(`/recurring/${id}`);
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.recurring,
+        FRESHNESS_DOMAINS.insights,
+      ], { reason: 'recurring_deleted' });
       refreshRecurring();
     } catch { /* ignore */ }
   }
@@ -87,6 +110,23 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
+      <View style={styles.screenHeader}>
+        <Text style={styles.eyebrow}>Settings</Text>
+        <Text style={styles.screenTitle}>Control panel</Text>
+        <Text style={styles.screenSubtitle}>Budget, import, and notification settings that keep Adlo current.</Text>
+        <View style={styles.healthStrip}>
+          {healthItems.map((item) => (
+            <View key={item} style={styles.healthPill}>
+              <View style={[
+                styles.healthDot,
+                item.includes('needs') || item.includes('suggestion') ? styles.healthDotAttention : null,
+              ]} />
+              <Text style={styles.healthText} numberOfLines={1}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
       {/* Budget */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>BUDGET</Text>
@@ -102,16 +142,16 @@ export default function SettingsScreen() {
                 value={budgetLimit}
                 onChangeText={setBudgetLimit}
                 placeholder="2000"
-                placeholderTextColor="#555"
+                placeholderTextColor={colors.textDisabled}
                 keyboardType="numeric"
               />
             </View>
             <TouchableOpacity
-              style={[styles.inlineSaveButton, budgetSaving && styles.buttonDisabled]}
+              style={[styles.inlineSaveButton, (!budgetDirty || budgetSaving) && styles.buttonDisabled]}
               onPress={saveBudget}
-              disabled={budgetSaving}
+              disabled={!budgetDirty || budgetSaving}
             >
-              <Text style={styles.inlineSaveText}>{budgetSaving ? '...' : 'Save'}</Text>
+              <Text style={styles.inlineSaveText}>{budgetSaving ? 'Saving' : budgetDirty ? 'Save' : 'Saved'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -123,7 +163,7 @@ export default function SettingsScreen() {
             <Text style={styles.navRowText}>Budget period</Text>
             <Text style={styles.navRowSub}>Manage your personal and household reset dates</Text>
           </View>
-          <Ionicons name="chevron-forward" size={16} color="#888" />
+          <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
         </TouchableOpacity>
       </View>
 
@@ -151,16 +191,44 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>ACCOUNTS</Text>
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/accounts')}>
-          <Text style={styles.navRowText}>Manage accounts</Text>
-          <Ionicons name="chevron-forward" size={16} color="#888" />
+          <View>
+            <Text style={styles.navRowText}>Manage accounts</Text>
+            <Text style={styles.navRowSub}>Household and account access</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/gmail-import')}>
-          <Text style={styles.navRowText}>Manage Gmail import</Text>
-          <Ionicons name="chevron-forward" size={16} color="#888" />
+          <View>
+            <Text style={styles.navRowText}>Manage Gmail import</Text>
+            <Text style={styles.navRowSub}>
+              {gmailStatus?.connected
+                ? gmailStatus.last_sync_status === 'failed'
+                  ? 'Connected, last sync needs attention'
+                  : 'Connected and ready to sync receipts'
+                : 'Connect Gmail to import receipt emails'}
+            </Text>
+          </View>
+          <View style={styles.navRowRight}>
+            <View style={[
+              styles.statusBadge,
+              gmailStatus?.connected ? styles.statusBadgeGood : styles.statusBadgeAttention,
+            ]}>
+              <Text style={[
+                styles.statusBadgeText,
+                gmailStatus?.connected ? styles.statusBadgeTextGood : styles.statusBadgeTextAttention,
+              ]}>
+                {gmailStatus?.connected ? 'On' : 'Setup'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
+          </View>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/payment-methods')}>
-          <Text style={styles.navRowText}>Saved card labels</Text>
-          <Ionicons name="chevron-forward" size={16} color="#888" />
+          <View>
+            <Text style={styles.navRowText}>Saved card labels</Text>
+            <Text style={styles.navRowSub}>Name cards for cleaner review context</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
         </TouchableOpacity>
       </View>
 
@@ -171,19 +239,19 @@ export default function SettingsScreen() {
             <Text style={styles.navRowText}>Manage notifications</Text>
             <Text style={styles.navRowSub}>Choose which nudges are worth interrupting you for</Text>
           </View>
-          <Ionicons name="chevron-forward" size={16} color="#888" />
+          <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
         </TouchableOpacity>
       </View>
 
       {INTERNAL_TOOLS_ENABLED ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>INSIGHTS</Text>
-          <TouchableOpacity style={styles.navRow} onPress={() => router.push('/insight-diagnostics')}>
+          <Text style={styles.sectionTitle}>INTERNAL TOOLS</Text>
+          <TouchableOpacity style={styles.navRow} onPress={() => router.push('/diagnostics')}>
             <View>
-              <Text style={styles.navRowText}>Insight diagnostics</Text>
-              <Text style={styles.navRowSub}>See whether Adlo has surfaced anything, or whether nothing is eligible right now</Text>
+              <Text style={styles.navRowText}>Diagnostics</Text>
+              <Text style={styles.navRowSub}>Check imports, insight surfacing, sync health, and recent failures</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#888" />
+            <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
           </TouchableOpacity>
         </View>
       ) : null}
@@ -192,10 +260,21 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>CATEGORIES</Text>
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/categories')}>
-          <Text style={styles.navRowText}>Edit category details</Text>
+          <View>
+            <Text style={styles.navRowText}>Edit category details</Text>
+            <Text style={styles.navRowSub}>
+              {pendingSuggestionsCount > 0
+                ? `${pendingSuggestionsCount} suggestion${pendingSuggestionsCount === 1 ? '' : 's'} waiting`
+                : 'Names and hierarchy are up to date'}
+            </Text>
+          </View>
           <View style={styles.navRowRight}>
-            {pendingSuggestionsCount > 0 && <View style={styles.badge} />}
-            <Ionicons name="chevron-forward" size={16} color="#888" />
+            {pendingSuggestionsCount > 0 ? (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{pendingSuggestionsCount}</Text>
+              </View>
+            ) : null}
+            <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
           </View>
         </TouchableOpacity>
       </View>
@@ -205,49 +284,75 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
+  screenHeader: { marginBottom: 28 },
+  eyebrow: { color: colors.textSubtle, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  screenTitle: { color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.5, marginBottom: 8 },
+  screenSubtitle: { color: colors.textSubtle, fontSize: 14, lineHeight: 20, marginBottom: 14 },
+  healthStrip: { gap: 8 },
+  healthPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  healthDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  healthDotAttention: { backgroundColor: colors.warning },
+  healthText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
   welcomeCard: {
     marginBottom: 22,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
   },
   welcomeEyebrow: {
-    color: '#7b7b7b',
+    color: colors.textSubtle,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
   },
-  welcomeTitle: { color: '#f5f5f5', fontSize: 21, fontWeight: '700', marginBottom: 8 },
-  welcomeBody: { color: '#9a9a9a', fontSize: 14, lineHeight: 20 },
-  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
-  sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  subText: { color: '#666', fontSize: 13, marginBottom: 12 },
-  budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  welcomeTitle: { color: colors.text, fontSize: 21, fontWeight: '700', marginBottom: 8 },
+  welcomeBody: { color: colors.textSubtle, fontSize: 14, lineHeight: 20 },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 24 },
+  sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  subText: { color: colors.textDisabled, fontSize: 13, marginBottom: 12 },
+  budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   budgetRowLeft: { flex: 1, paddingRight: 4 },
   budgetRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  budgetInputShell: { width: 124, flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', borderWidth: 1, borderColor: '#222', borderRadius: 10, paddingHorizontal: 12, minHeight: 42 },
-  budgetPrefix: { color: '#666', fontSize: 16, marginRight: 4 },
-  budgetInput: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', paddingVertical: 8 },
-  inlineSaveButton: { minHeight: 42, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center' },
-  inlineSaveText: { color: '#0a0a0a', fontSize: 14, fontWeight: '600' },
+  budgetInputShell: { width: 124, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, minHeight: 42 },
+  budgetPrefix: { color: colors.textDisabled, fontSize: 16, marginRight: 4 },
+  budgetInput: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', paddingVertical: 8 },
+  inlineSaveButton: { minHeight: 42, minWidth: 58, paddingHorizontal: 14, borderRadius: 10, backgroundColor: colors.text, alignItems: 'center', justifyContent: 'center' },
+  inlineSaveText: { color: colors.background, fontSize: 14, fontWeight: '600' },
   buttonDisabled: { opacity: 0.5 },
-  msgText: { color: '#bbb', fontSize: 13, marginTop: 10 },
-  msgError: { color: '#ef4444', fontSize: 13, marginTop: 10 },
+  msgText: { color: colors.textMuted, fontSize: 13, marginTop: 10 },
+  msgError: { color: colors.danger, fontSize: 13, marginTop: 10 },
 
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   rowInfo: { flex: 1, marginRight: 12 },
-  rowTitle: { color: '#fff', fontSize: 15, fontWeight: '500' },
-  rowSub: { color: '#999', fontSize: 14, marginTop: 2 },
-  removeText: { color: '#e44', fontSize: 14 },
+  rowTitle: { color: colors.text, fontSize: 15, fontWeight: '500' },
+  rowSub: { color: colors.textSubtle, fontSize: 14, marginTop: 2 },
+  removeText: { color: colors.danger, fontSize: 14 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
-  navRowText: { color: '#f5f5f5', fontSize: 15 },
-  navRowSub: { color: '#666', fontSize: 13, marginTop: 2 },
+  navRowText: { color: colors.text, fontSize: 15 },
+  navRowSub: { color: colors.textDisabled, fontSize: 13, marginTop: 2 },
   navRowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  badge: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ef4444' },
+  statusBadge: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+  statusBadgeGood: { backgroundColor: colors.successMuted, borderColor: colors.successBorder },
+  statusBadgeAttention: { backgroundColor: colors.warningMuted, borderColor: colors.warningBorder },
+  statusBadgeText: { fontSize: 11, fontWeight: '700' },
+  statusBadgeTextGood: { color: colors.success },
+  statusBadgeTextAttention: { color: colors.warning },
+  countBadge: { minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 10, backgroundColor: colors.warningMuted, borderWidth: 1, borderColor: colors.warningBorder, alignItems: 'center', justifyContent: 'center' },
+  countBadgeText: { color: colors.warning, fontSize: 11, fontWeight: '700' },
 });

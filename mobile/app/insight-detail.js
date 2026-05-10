@@ -18,6 +18,9 @@ import { consumeNavigationPayload, stashNavigationPayload } from '../services/na
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { planningActionSummary } from '../services/planningPresentation';
 import { loadInsightDetailSnapshot, saveInsightDetailSnapshot } from '../services/insightLocalStore';
+import { colors } from '../theme/tokens';
+import { InsightTrendVisual } from '../components/InsightTrendVisual';
+const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -276,79 +279,24 @@ function nextStepCopy(descriptor, primaryAction) {
   };
 }
 
-function contextCopy(type, metadata = {}) {
-  const family = insightFamily(type, metadata);
-  if (family === 'budget') {
-    return 'This read compares the pace of this month to your budget and to the shape of your usual spending so far.';
-  }
-  if (family === 'category') {
-    return 'This read is looking at which category is doing the most to pull the month away from its usual path.';
-  }
-  if (family === 'merchant') {
-    return 'This read is looking for a merchant pattern that is showing up often enough to matter, even if the month is still young.';
-  }
-  if (family === 'one_off') {
-    return 'This read is trying to separate unusual purchases from the steadier month-to-month pattern.';
-  }
-  if (family === 'recurring') {
-    return 'This read is built from repurchase timing, recent prices, and merchant differences across the same item or recurring pattern.';
-  }
-  if (family === 'setup') {
-    return 'This read is about how usable your current data is, and what would make the next cards more specific.';
-  }
-  if (`${type}`.startsWith('early_')) {
-    return 'This is an early read. It is meant to be useful before there is enough history for a mature trend.';
-  }
-  if (`${type}`.startsWith('developing_')) {
-    return 'This is a developing read from short-term activity. It should get more tailored as the pattern either repeats or fades.';
-  }
-  return 'This card is based on the current insight signal and your recent activity.';
+function routePathname(route) {
+  if (!route) return '';
+  if (typeof route === 'string') return route;
+  return `${route.pathname || ''}`;
 }
 
-function strengthCopy(insightType, metadata = {}, stage = null, technicalSummary = '') {
-  const family = insightFamily(insightType, metadata);
-  if (family === 'budget') {
-    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Budget reads tend to strengthen as the month fills in and the spending shape settles.`;
-  }
-  if (family === 'category') {
-    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Category reads depend a lot on how clean the underlying categorization is.`;
-  }
-  if (family === 'merchant') {
-    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Merchant reads usually get clearer when the same behavior repeats a few more times.`;
-  }
-  if (family === 'one_off') {
-    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} One-off reads are strongest when the unusual purchase clearly stands apart from your normal month.`;
-  }
-  if (family === 'recurring') {
-    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} Recurring reads get stronger when the same timing or price pattern shows up more than once.`;
-  }
-  if (family === 'setup') {
-    return `${stage?.detail || 'Current read quality'}${technicalSummary ? `. ${technicalSummary}.` : '.'} These are meant to guide the setup of better future reads rather than deliver a final answer today.`;
-  }
-  return technicalSummary || stage?.detail || 'This is the current read strength behind the card.';
+function routeParams(route) {
+  if (!route || typeof route === 'string') return {};
+  return route.params || {};
 }
 
-function fullDetailIntroCopy(insightType, metadata = {}) {
-  const family = insightFamily(insightType, metadata);
-  if (family === 'budget') {
-    return 'Open this if you want the spending trail and supporting data behind the budget read.';
-  }
-  if (family === 'category') {
-    return 'Open this if you want to see the category activity and supporting purchases behind the shift.';
-  }
-  if (family === 'merchant') {
-    return 'Open this if you want the merchant trail and the activity that made the pattern stand out.';
-  }
-  if (family === 'one_off') {
-    return 'Open this if you want to see the purchase trail that is making the month look unusually high or low.';
-  }
-  if (family === 'recurring') {
-    return 'Open this if you want the item history, merchant comparisons, and timing details behind the recurring read.';
-  }
-  if (family === 'setup') {
-    return 'Open this if you want the underlying data quality and the context shaping the setup suggestion.';
-  }
-  return 'Open this if you want the supporting data and the fuller trail behind the insight.';
+function isCurrentInsightDetailAction(action, insightId, insightType) {
+  if (!action?.route) return false;
+  const pathname = routePathname(action.route);
+  if (pathname !== '/insight-detail') return false;
+  const params = routeParams(action.route);
+  return `${params.insight_id || ''}` === `${insightId || ''}`
+    || `${params.insight_type || ''}` === `${insightType || ''}`;
 }
 
 function consolidatedCopy(metadata = {}) {
@@ -416,6 +364,51 @@ function purchaseHistoryRows(metadata = {}) {
       normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
       normalized_total_size_unit: row.normalized_total_size_unit || null,
     }));
+}
+
+function evidenceProofRows({ metadata = {}, supportRows = [], merchantComparisons = [], purchaseHistory = [], evidenceMode = null, consolidationRows = [] }) {
+  const rows = [];
+  const addRow = (label, value) => {
+    if (!label || !value || rows.some((row) => row.label === label && row.value === value)) return;
+    rows.push({ label, value });
+  };
+
+  const largest = metadata.largest_expense || null;
+  if (largest?.merchant && largest?.amount != null) {
+    addRow('Largest driver', `${largest.merchant} ${formatCurrency(largest.amount)}`);
+  }
+  if (merchantComparisons.length > 0) {
+    const topMerchant = merchantComparisons[0];
+    addRow('Repeat pattern', `${topMerchant.merchant}${topMerchant.occurrence_count ? `, ${topMerchant.occurrence_count}x` : ''}`);
+  }
+  if (purchaseHistory.length > 0) {
+    addRow('Purchase trail', `${purchaseHistory.length} recent purchase${purchaseHistory.length === 1 ? '' : 's'}`);
+  }
+  if (metadata.category_name && metadata.current_spend_to_date != null) {
+    addRow('Category spend', `${metadata.category_name} ${formatCurrency(metadata.current_spend_to_date)}`);
+  }
+  if (metadata.expense_count != null) {
+    addRow('Activity used', `${metadata.expense_count} expense${Number(metadata.expense_count) === 1 ? '' : 's'}`);
+  }
+  if (metadata.previous_spend != null) {
+    addRow('Usual baseline', formatCurrency(metadata.previous_spend));
+  }
+  if (consolidationRows.length > 0) {
+    addRow('Combined signals', `${consolidationRows.length} folded signal${consolidationRows.length === 1 ? '' : 's'}`);
+  }
+  if (evidenceMode && !rows.length) {
+    addRow('Evidence type', evidenceTitle(evidenceMode, metadata));
+  }
+
+  supportRows.slice(0, 2).forEach((row) => addRow(row.label, row.value));
+  return rows.slice(0, 3);
+}
+
+function evidenceSectionSummary(sections = []) {
+  if (!sections.length) return null;
+  const visible = sections.slice(0, 2).join(' + ');
+  const hiddenCount = sections.length - 2;
+  return hiddenCount > 0 ? `${visible} + ${hiddenCount} more` : visible;
 }
 
 function parseJsonParam(value, fallback = null) {
@@ -509,7 +502,7 @@ export default function InsightDetailScreen() {
   }), [insightId, remoteInsight, insightType, title, body, severity, entityType, entityId, metadata, actionPayload]);
 
   const primaryAction = useMemo(() => {
-    if (insight?.action) return insight.action;
+    if (insight?.action && !isCurrentInsightDetailAction(insight.action, insightId, insightType)) return insight.action;
     return getPrimaryActionForInsight({
       insightType: `${insightType}`,
       scope: metadata.scope || 'personal',
@@ -518,7 +511,7 @@ export default function InsightDetailScreen() {
       metadata,
       trend: null,
     });
-  }, [insight?.action, insightType, metadata]);
+  }, [insight?.action, insightId, insightType, metadata]);
   const descriptor = getInsightActionDescriptor(insight);
   const scopeLabel = getInsightScopeLabel(insight);
   const stage = getInsightStageDescriptor(insight);
@@ -531,21 +524,34 @@ export default function InsightDetailScreen() {
   const evidenceMode = evidenceModeForInsight(insightType, metadata);
   const changed = whatChangedCopy(metadata, body);
   const whyItMatters = whyItMattersCopy(insightType, metadata);
+  const trendVisual = getInsightTrendVisual(insight);
   const nextStep = nextStepCopy(descriptor, primaryAction);
   const planningNextStep = `${insightType}` === 'usage_ready_to_plan'
     ? planningActionSummary(metadata)
     : null;
+  const hasPrimaryAction = Boolean(primaryAction?.route && nextStep.cta);
+  const hasNextMove = Boolean(planningNextStep || hasPrimaryAction);
   const merchantComparisons = merchantComparisonRows(metadata);
   const purchaseHistory = purchaseHistoryRows(metadata);
   const hasSupportingDetail = merchantComparisons.length > 0 || purchaseHistory.length > 0 || !!evidenceMode;
   const hasBehindRead = technicalRows.length > 0 || !!categorySignal || !!consolidationNote || consolidationRows.length > 0;
+  const showAtAGlanceEvidence = supportRows.length > 0 && !hasSupportingDetail && !consolidationNote;
   const detailSections = [
-    supportRows.length > 0 ? 'At a glance' : null,
     merchantComparisons.length > 0 ? 'Merchant comparison' : null,
     purchaseHistory.length > 0 ? 'Recent purchases' : null,
     evidenceMode ? 'Recent evidence' : null,
+    showAtAGlanceEvidence ? 'At a glance' : null,
     consolidationNote ? 'Combined signals' : null,
   ].filter(Boolean);
+  const proofRows = evidenceProofRows({
+    metadata,
+    supportRows,
+    merchantComparisons,
+    purchaseHistory,
+    evidenceMode,
+    consolidationRows,
+  });
+  const evidenceSummary = evidenceSectionSummary(detailSections);
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -701,7 +707,7 @@ export default function InsightDetailScreen() {
   }
 
   function openPrimaryAction() {
-    if (insight?.action?.route) {
+    if (insight?.action?.route && !isCurrentInsightDetailAction(insight.action, insightId, insightType)) {
       router.push(insight.action.route);
       return;
     }
@@ -740,40 +746,35 @@ export default function InsightDetailScreen() {
           {changed.facts ? <Text style={styles.heroFacts}>{changed.facts}</Text> : null}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>Why this matters</Text>
-          <Text style={styles.cardTitle}>Why this matters</Text>
-          <Text style={styles.cardCopy}>{whyItMatters}</Text>
-          <Text style={styles.cardSupportTitle}>What this is picking up</Text>
-          <Text style={styles.cardCopy}>{contextCopy(insightType, metadata)}</Text>
+        {trendVisual ? <InsightTrendVisual visual={trendVisual} /> : null}
+
+        {hasNextMove ? (
+          <View style={styles.actionPanel}>
+            <Text style={styles.cardEyebrow}>Next move</Text>
+            <Text style={styles.actionTitle}>{planningNextStep?.title || nextStep.title}</Text>
+            <Text style={styles.actionCopy}>{planningNextStep?.body || nextStep.body || descriptor.reason}</Text>
+            {hasPrimaryAction ? (
+              <TouchableOpacity style={styles.primaryButton} onPress={openPrimaryAction}>
+                <Text style={styles.primaryButtonText}>{nextStep.cta}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.sectionBlock}>
+          <Text style={styles.cardEyebrow}>Why now</Text>
+          <Text style={styles.sectionCopy}>{whyItMatters}</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>What to do</Text>
-          <Text style={styles.cardTitle}>{planningNextStep?.title || nextStep.title}</Text>
-          <Text style={styles.cardCopy}>{planningNextStep?.body || nextStep.body || descriptor.reason}</Text>
-          {primaryAction?.route && nextStep.cta ? (
-            <>
-              <Text style={styles.cardSupportTitle}>Suggested move</Text>
-              <Text style={styles.cardCopy}>{nextStep.cta}</Text>
-            </>
-          ) : null}
-          {primaryAction?.route && nextStep.cta ? (
-            <TouchableOpacity style={styles.primaryButton} onPress={openPrimaryAction}>
-              <Text style={styles.primaryButtonText}>{nextStep.cta}</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>How strong the read is</Text>
+        <View style={styles.strengthBlock}>
+          <Text style={styles.cardEyebrow}>Read quality</Text>
           <Text style={styles.cardTitle}>{stage.label}</Text>
-          <Text style={styles.cardCopy}>
-            {strengthCopy(insightType, metadata, stage, technicalSummary)}
-          </Text>
+          {stage.detail || technicalSummary ? (
+            <Text style={styles.cardCopy}>{stage.detail || technicalSummary}</Text>
+          ) : null}
           {technicalRows.length > 0 ? (
             <View style={styles.metricList}>
-              {technicalRows.slice(0, 4).map((row) => (
+              {technicalRows.slice(0, 3).map((row) => (
                 <View key={row.label} style={styles.metricRow}>
                   <Text style={styles.metricLabel}>{row.label}</Text>
                   <Text style={styles.metricValue}>{row.value}</Text>
@@ -792,26 +793,26 @@ export default function InsightDetailScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.technicalHeaderText}>
-                <Text style={styles.cardEyebrow}>Supporting detail</Text>
-                <Text style={styles.cardTitle}>Open the full detail</Text>
+                <Text style={styles.cardEyebrow}>Evidence check</Text>
+                <Text style={styles.cardTitle}>Can I trust this?</Text>
               </View>
-              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Hide' : 'Show'}</Text>
+              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Collapse' : 'Inspect'}</Text>
             </TouchableOpacity>
-            <Text style={styles.cardCopy}>
-              {showTechnicalDetails
-                ? 'This is the full supporting data, evidence, and signal context behind the card.'
-                : fullDetailIntroCopy(insightType, metadata)}
-            </Text>
-            {!showTechnicalDetails && detailSections.length > 0 ? (
-              <View style={styles.sectionPreviewRow}>
-                {detailSections.map((label) => (
-                  <View key={label} style={styles.sectionPreviewChip}>
-                    <Text style={styles.sectionPreviewText}>{label}</Text>
+            {proofRows.length > 0 ? (
+              <View style={showTechnicalDetails ? styles.evidenceProofListExpanded : styles.evidenceProofList}>
+                {showTechnicalDetails ? <Text style={styles.supportBlockTitle}>Strongest proof</Text> : null}
+                {proofRows.map((row) => (
+                  <View key={`${row.label}:${row.value}`} style={styles.evidenceProofRow}>
+                    <Text style={styles.evidenceProofLabel}>{row.label}</Text>
+                    <Text style={styles.evidenceProofValue}>{row.value}</Text>
                   </View>
                 ))}
               </View>
             ) : null}
-            {showTechnicalDetails && supportRows.length > 0 ? (
+            {!showTechnicalDetails && evidenceSummary ? (
+              <Text style={styles.evidenceSummaryText}>{evidenceSummary}</Text>
+            ) : null}
+            {showTechnicalDetails && showAtAGlanceEvidence ? (
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>At a glance</Text>
                 <View style={styles.metricList}>
@@ -829,7 +830,7 @@ export default function InsightDetailScreen() {
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>Merchant comparison</Text>
                 <View style={styles.metricList}>
-                  {merchantComparisons.map((row) => {
+                  {merchantComparisons.slice(0, 4).map((row) => {
                     const comparisonValue = row.median_unit_price != null
                       ? `${formatCurrency(row.median_unit_price)} / ${metadata.normalized_total_size_unit || 'unit'}`
                       : formatCurrency(row.median_amount);
@@ -855,7 +856,7 @@ export default function InsightDetailScreen() {
               <View style={styles.supportBlock}>
                 <Text style={styles.supportBlockTitle}>Recent purchases</Text>
                 <View style={styles.expenseList}>
-                  {purchaseHistory.slice().reverse().map((purchase) => {
+                  {purchaseHistory.slice().reverse().slice(0, 4).map((purchase) => {
                     const unitDetail = purchase.estimated_unit_price != null
                       ? `${formatCurrency(purchase.estimated_unit_price)} / ${purchase.normalized_total_size_unit || 'unit'}`
                       : null;
@@ -887,12 +888,12 @@ export default function InsightDetailScreen() {
                 <Text style={styles.supportBlockTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
                 {evidenceLoading ? (
                   <View style={styles.loadingRow}>
-                    <ActivityIndicator color="#d4d4d4" size="small" />
+                    <ActivityIndicator color={colors.textMuted} size="small" />
                     <Text style={styles.loadingText}>Loading recent activity...</Text>
                   </View>
                 ) : evidenceRows.length > 0 ? (
                   <View style={styles.expenseList}>
-                    {evidenceRows.map((expense, index) => (
+                    {evidenceRows.slice(0, 4).map((expense, index) => (
                       <TouchableOpacity
                         key={expense.id || `${expense.merchant || 'expense'}:${index}`}
                         style={styles.expenseRow}
@@ -940,10 +941,12 @@ export default function InsightDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>Feedback</Text>
-          <Text style={styles.cardTitle}>Was this useful?</Text>
-          <Text style={styles.cardCopy}>Your feedback helps Adlo learn whether early signals are useful now or should wait until they are more specific.</Text>
+        <View style={styles.feedbackBlock}>
+          <View style={styles.feedbackCopy}>
+            <Text style={styles.cardEyebrow}>Feedback</Text>
+            <Text style={styles.feedbackTitle}>Was this useful?</Text>
+            <Text style={styles.feedbackBody}>This helps tune future insight timing.</Text>
+          </View>
           <View style={styles.feedbackRow}>
             <TouchableOpacity
               style={[styles.feedbackButton, feedbackStatus === 'helpful' && styles.feedbackButtonActive]}
@@ -993,7 +996,7 @@ export default function InsightDetailScreen() {
               onChangeText={setFeedbackNote}
               style={styles.noteInput}
               placeholder="Optional note"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.textDisabled}
               multiline
             />
             <View style={styles.modalActions}>
@@ -1016,23 +1019,20 @@ export default function InsightDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingBottom: 36, gap: 16 },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 20, paddingBottom: 36, gap: 22 },
   hero: {
-    backgroundColor: '#141414',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#262626',
-    padding: 18,
-    gap: 12,
+    paddingTop: 6,
+    paddingBottom: 8,
+    gap: 13,
   },
   chipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   scopeChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#e5f7ed',
-    color: '#14532d',
-    borderRadius: 8,
+    backgroundColor: colors.accentMuted,
+    color: colors.info,
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,
@@ -1041,8 +1041,8 @@ const styles = StyleSheet.create({
   },
   tierChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#fef3c7',
-    color: '#78350f',
+    backgroundColor: colors.text,
+    color: colors.warning,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1052,8 +1052,8 @@ const styles = StyleSheet.create({
   },
   combinedChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#dbeafe',
-    color: '#1e3a8a',
+    backgroundColor: colors.text,
+    color: colors.info,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1061,51 +1061,74 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     overflow: 'hidden',
   },
-  heroTitle: { color: '#f5f5f5', fontSize: 24, fontWeight: '800', lineHeight: 30 },
-  heroCopy: { color: '#d4d4d4', fontSize: 15, lineHeight: 22 },
-  heroFacts: { color: '#f5f5f5', fontSize: 13, lineHeight: 18, fontWeight: '700' },
-  heroContext: { color: '#9d9d9d', fontSize: 13, lineHeight: 19 },
+  heroTitle: { color: colors.text, fontSize: 28, fontWeight: '800', lineHeight: 34 },
+  heroCopy: { color: colors.textMuted, fontSize: 15, lineHeight: 22 },
+  heroFacts: { color: colors.text, fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  heroContext: { color: colors.textSubtle, fontSize: 13, lineHeight: 19 },
   contextBanner: {
-    backgroundColor: '#101412',
+    backgroundColor: colors.surface,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1f2c26',
+    borderColor: colors.successMuted,
     padding: 14,
     gap: 10,
   },
-  contextBannerTitle: { color: '#def7e8', fontSize: 14, fontWeight: '700' },
-  contextBannerCopy: { color: '#b8d8c4', fontSize: 13, lineHeight: 19 },
+  contextBannerTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  contextBannerCopy: { color: colors.text, fontSize: 13, lineHeight: 19 },
   card: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#242424',
+    borderColor: colors.border,
     padding: 16,
     gap: 12,
   },
-  cardEyebrow: { color: '#8a8a8a', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  cardTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '700' },
-  cardSupportTitle: { color: '#e5e5e5', fontSize: 12, fontWeight: '700', marginTop: 2 },
-  cardCopy: { color: '#b8b8b8', fontSize: 13, lineHeight: 19 },
+  cardEyebrow: { color: colors.textSubtle, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  cardTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  cardSupportTitle: { color: colors.text, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  cardCopy: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
+  actionPanel: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.infoBorder,
+    padding: 16,
+    gap: 12,
+  },
+  actionTitle: { color: colors.text, fontSize: 18, lineHeight: 23, fontWeight: '800' },
+  actionCopy: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
+  sectionBlock: {
+    gap: 10,
+    paddingTop: 2,
+    paddingBottom: 2,
+  },
+  sectionCopy: { color: colors.textMuted, fontSize: 14, lineHeight: 21 },
+  strengthBlock: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingVertical: 16,
+    gap: 12,
+  },
   foldedList: { gap: 8 },
   foldedRow: {
     borderTopWidth: 1,
-    borderTopColor: '#242424',
+    borderTopColor: colors.border,
     paddingTop: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
   },
   foldedText: { flex: 1 },
-  foldedScope: { color: '#f5f5f5', fontSize: 13, fontWeight: '700' },
-  foldedType: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
-  foldedMeta: { color: '#b8b8b8', fontSize: 12, textAlign: 'right', flexShrink: 0 },
+  foldedScope: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  foldedType: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
+  foldedMeta: { color: colors.textMuted, fontSize: 12, textAlign: 'right', flexShrink: 0 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  loadingText: { color: '#b8b8b8', fontSize: 13 },
+  loadingText: { color: colors.textMuted, fontSize: 13 },
   expenseList: { gap: 8 },
   expenseRow: {
     borderTopWidth: 1,
-    borderTopColor: '#242424',
+    borderTopColor: colors.border,
     paddingTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1113,90 +1136,108 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   expenseText: { flex: 1 },
-  expenseMerchant: { color: '#f5f5f5', fontSize: 14, fontWeight: '700' },
-  expenseMeta: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
-  expenseAmount: { color: '#f5f5f5', fontSize: 14, fontWeight: '800' },
+  expenseMerchant: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  expenseMeta: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
+  expenseAmount: { color: colors.text, fontSize: 14, fontWeight: '800' },
   primaryButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.accent,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  primaryButtonText: { color: '#0a0a0a', fontSize: 13, fontWeight: '800' },
+  primaryButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '800' },
   technicalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   technicalHeaderText: { flex: 1, gap: 4 },
-  technicalToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
-  sectionPreviewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  sectionPreviewChip: {
-    borderRadius: 999,
+  technicalToggle: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  evidenceProofList: {
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a3038',
-    backgroundColor: '#15181c',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderColor: colors.infoBorder,
+    backgroundColor: colors.infoMuted,
   },
-  sectionPreviewText: { color: '#c7d3df', fontSize: 12, fontWeight: '600' },
+  evidenceProofListExpanded: { gap: 0 },
+  evidenceProofRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  evidenceProofLabel: { color: colors.textSubtle, fontSize: 12, flex: 1 },
+  evidenceProofValue: { color: colors.text, fontSize: 13, fontWeight: '800', flex: 1.2, textAlign: 'right' },
+  evidenceSummaryText: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
   metricList: { gap: 0 },
   supportBlock: { gap: 10 },
-  supportBlockTitle: { color: '#e5e5e5', fontSize: 13, fontWeight: '700' },
+  supportBlockTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
   metricRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#242424',
+    borderTopColor: colors.border,
     paddingTop: 10,
   },
   metricTextBlock: { flex: 1 },
-  metricLabel: { color: '#8a8a8a', fontSize: 12, flex: 1 },
-  metricMerchant: { color: '#f5f5f5', fontSize: 13, fontWeight: '700' },
-  metricSub: { color: '#8a8a8a', fontSize: 12, marginTop: 2 },
-  metricValue: { color: '#f5f5f5', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
-  technicalHint: { color: '#a9a39a', fontSize: 12, lineHeight: 18, marginTop: -2 },
+  metricLabel: { color: colors.textSubtle, fontSize: 12, flex: 1 },
+  metricMerchant: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  metricSub: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
+  metricValue: { color: colors.text, fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
+  technicalHint: { color: colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: -2 },
   technicalNoteBlock: { gap: 10, marginTop: 4 },
+  feedbackBlock: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    paddingTop: 16,
+    gap: 12,
+  },
+  feedbackCopy: { gap: 4 },
+  feedbackTitle: { color: colors.text, fontSize: 15, fontWeight: '750' },
+  feedbackBody: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
   feedbackRow: { flexDirection: 'row', gap: 10 },
   feedbackButton: {
     flex: 1,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: colors.borderStrong,
     paddingVertical: 11,
     alignItems: 'center',
   },
-  feedbackButtonActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  feedbackButtonText: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
-  feedbackButtonTextActive: { color: '#0a0a0a' },
-  feedbackNote: { color: '#86efac', fontSize: 12, lineHeight: 18 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
+  feedbackButtonActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  feedbackButtonText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  feedbackButtonTextActive: { color: colors.textInverse },
+  feedbackNote: { color: colors.success, fontSize: 12, lineHeight: 18 },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   modalCard: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     padding: 20,
     gap: 14,
   },
-  modalTitle: { color: '#f5f5f5', fontSize: 18, fontWeight: '800' },
+  modalTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
   reasonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   reasonChip: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: colors.borderStrong,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  reasonChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  reasonChipText: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
-  reasonChipTextActive: { color: '#0a0a0a' },
+  reasonChipActive: { backgroundColor: colors.text, borderColor: colors.text },
+  reasonChipText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  reasonChipTextActive: { color: colors.background },
   noteInput: {
     minHeight: 84,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
-    color: '#f5f5f5',
+    borderColor: colors.borderStrong,
+    color: colors.text,
     padding: 12,
     textAlignVertical: 'top',
   },
@@ -1205,18 +1246,18 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: colors.borderStrong,
     alignItems: 'center',
     paddingVertical: 12,
   },
-  modalSecondaryText: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
+  modalSecondaryText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
   modalPrimaryButton: {
     flex: 1,
     borderRadius: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     alignItems: 'center',
     paddingVertical: 12,
   },
   modalPrimaryButtonDisabled: { opacity: 0.4 },
-  modalPrimaryText: { color: '#0a0a0a', fontSize: 13, fontWeight: '800' },
+  modalPrimaryText: { color: colors.background, fontSize: 13, fontWeight: '800' },
 });

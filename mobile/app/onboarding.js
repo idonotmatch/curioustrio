@@ -13,6 +13,9 @@ import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { invalidateCache } from '../services/cache';
 import { saveCurrentUserCache } from '../services/currentUserCache';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
+import { PrimaryButton } from '../components/ui/Buttons';
+import { colors, radius, spacing, typography } from '../theme/tokens';
 const { startGmailConnectFlow } = require('../services/gmailAuthFlow');
 const {
   getAuthProvider,
@@ -55,6 +58,9 @@ function ChoiceButton({ title, body, onPress, tone = 'default', disabled = false
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.86}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled }}
     >
       <Text style={[styles.choiceTitle, tone === 'primary' && styles.choiceTitlePrimary]}>{title}</Text>
       {body ? <Text style={[styles.choiceBody, tone === 'primary' && styles.choiceBodyPrimary]}>{body}</Text> : null}
@@ -216,6 +222,11 @@ export default function OnboardingScreen() {
     try {
       await api.post('/households', { name: householdName.trim() });
       await invalidateCache('cache:household');
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.householdExpenses,
+        FRESHNESS_DOMAINS.budget,
+      ], { reason: 'household_created' });
       setStep(offerGoogleGmailStep ? 'gmail' : 'firstAction');
     } catch (e) {
       Alert.alert('Could not create shared setup', e?.message || 'Please try again.');
@@ -230,6 +241,13 @@ export default function OnboardingScreen() {
     try {
       await api.post(`/households/invites/${inviteToken.trim()}/accept`, {});
       await invalidateCache('cache:household');
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.householdExpenses,
+        FRESHNESS_DOMAINS.budget,
+        FRESHNESS_DOMAINS.insights,
+        FRESHNESS_DOMAINS.forecastMovement,
+      ], { reason: 'household_joined' });
       setStep(offerGoogleGmailStep ? 'gmail' : 'firstAction');
     } catch (e) {
       Alert.alert('Could not join shared setup', e?.message || 'Check the invite code and try again.');
@@ -266,6 +284,10 @@ export default function OnboardingScreen() {
       });
       await saveCurrentUserCache(updatedUser);
       await invalidateCache('cache:household');
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.gmailImport,
+      ], { reason: 'onboarding_completed' });
       routeAfterOnboarding(primaryChoice);
     } catch (e) {
       Alert.alert('Could not finish setup', e?.message || 'Please try again.');
@@ -276,7 +298,7 @@ export default function OnboardingScreen() {
   if (checkingSession) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator color="#f5f5f5" />
+        <ActivityIndicator color={colors.text} />
       </View>
     );
   }
@@ -293,7 +315,7 @@ export default function OnboardingScreen() {
       >
         <ChoiceButton
           title="Create an account"
-          body="Use Google or Apple, then come right back here."
+          body="Use email, Google, or Apple, then come right back here."
           tone="primary"
           disabled={loading}
           onPress={() => router.push('/login')}
@@ -324,21 +346,19 @@ export default function OnboardingScreen() {
         <TextInput
           style={styles.input}
           placeholder="Weekend apartment, Home, Smith family..."
-          placeholderTextColor="#5a5a5a"
+          placeholderTextColor={colors.textDisabled}
           value={householdName}
           onChangeText={setHouseholdName}
           autoFocus
           returnKeyType="done"
           onSubmitEditing={handleCreateHousehold}
         />
-        <TouchableOpacity
-          style={[styles.primaryButton, (!householdName.trim() || loading) && styles.buttonDisabled]}
+        <PrimaryButton
+          title={loading ? 'Creating...' : 'Continue'}
           onPress={handleCreateHousehold}
           disabled={!householdName.trim() || loading}
-          activeOpacity={0.88}
-        >
-          <Text style={styles.primaryButtonText}>{loading ? 'Creating...' : 'Continue'}</Text>
-        </TouchableOpacity>
+          loading={loading}
+        />
       </QuestionShell>
     );
   }
@@ -356,7 +376,7 @@ export default function OnboardingScreen() {
         <TextInput
           style={styles.input}
           placeholder="Paste invite code"
-          placeholderTextColor="#5a5a5a"
+          placeholderTextColor={colors.textDisabled}
           value={inviteToken}
           onChangeText={setInviteToken}
           autoCapitalize="none"
@@ -364,14 +384,12 @@ export default function OnboardingScreen() {
           returnKeyType="done"
           onSubmitEditing={handleJoinHousehold}
         />
-        <TouchableOpacity
-          style={[styles.primaryButton, (!inviteToken.trim() || loading) && styles.buttonDisabled]}
+        <PrimaryButton
+          title={loading ? 'Joining...' : 'Continue'}
           onPress={handleJoinHousehold}
           disabled={!inviteToken.trim() || loading}
-          activeOpacity={0.88}
-        >
-          <Text style={styles.primaryButtonText}>{loading ? 'Joining...' : 'Continue'}</Text>
-        </TouchableOpacity>
+          loading={loading}
+        />
       </QuestionShell>
     );
   }
@@ -458,14 +476,14 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
-    paddingHorizontal: 20,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.xl,
     paddingVertical: 28,
     justifyContent: 'center',
   },
@@ -481,10 +499,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   progressText: {
-    color: '#5f5f5f',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    color: colors.textDisabled,
+    ...typography.eyebrow,
   },
   backButton: {
     paddingVertical: 6,
@@ -494,91 +510,75 @@ const styles = StyleSheet.create({
     height: 20,
   },
   backText: {
-    color: '#8d8d8d',
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: '600',
   },
   card: {
-    backgroundColor: '#111',
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.borderSubtle,
     paddingHorizontal: 18,
     paddingVertical: 18,
   },
   eyebrow: {
-    color: '#767676',
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    color: colors.textSubtle,
+    ...typography.eyebrow,
     marginBottom: 8,
   },
   title: {
-    color: '#f5f5f5',
-    fontSize: 28,
-    fontWeight: '700',
-    lineHeight: 34,
+    color: colors.text,
+    ...typography.screenTitle,
   },
   body: {
-    color: '#9a9a9a',
+    color: colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
     marginTop: 10,
   },
   cardContent: {
-    gap: 10,
+    gap: spacing.md,
     marginTop: 22,
   },
   choiceButton: {
-    backgroundColor: '#161616',
-    borderRadius: 8,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
   choiceButtonPrimary: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   choiceTitle: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
   choiceTitlePrimary: {
-    color: '#0a0a0a',
+    color: colors.textInverse,
   },
   choiceBody: {
-    color: '#9a9a9a',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
     marginTop: 4,
   },
   choiceBodyPrimary: {
-    color: '#434343',
+    color: colors.warningMuted,
   },
   input: {
-    backgroundColor: '#161616',
-    borderRadius: 8,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#262626',
-    color: '#f5f5f5',
+    borderColor: colors.border,
+    color: colors.text,
     fontSize: 15,
     paddingHorizontal: 14,
     paddingVertical: 14,
-  },
-  primaryButton: {
-    minHeight: 48,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  primaryButtonText: {
-    color: '#0a0a0a',
-    fontSize: 15,
-    fontWeight: '700',
   },
   buttonDisabled: {
     opacity: 0.45,

@@ -3,21 +3,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
-import { invalidateCacheByPrefix } from '../services/cache';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
 import { loadExpenseItemsSnapshot, loadExpenseSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
+import { colors, mutedCategoryColor, radius, spacing } from '../theme/tokens';
 
 const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
-
-const CATEGORY_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316'];
-
-function categoryColor(name) {
-  if (!name) return '#333';
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
-  return CATEGORY_COLORS[Math.abs(h) % CATEGORY_COLORS.length];
-}
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -124,8 +116,9 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
   }, [expense?.id]);
 
   const isOwn = !currentUserId || String(localExpense.user_id) === String(currentUserId);
-  const color = categoryColor(localExpense.category_name);
+  const color = mutedCategoryColor(localExpense.category_name);
   const isRefund = Number(localExpense.amount) < 0;
+  const merchantTitle = localExpense.merchant || localExpense.description || 'Expense';
   const categoryLabel = localExpense.category_parent_name || localExpense.category_name || 'Uncategorized';
   const locationLabel = deriveLocationLabel(localExpense);
   const ownerLabel = isOwn ? 'You' : (localExpense.user_name || 'Household member');
@@ -194,11 +187,6 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
     setCategorySavingId(category.id);
     try {
       await api.patch(`/expenses/${localExpense.id}`, { category_id: category.id });
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-      ]);
       setLocalExpense(prev => ({
         ...prev,
         category_id: category.id,
@@ -213,6 +201,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       };
       saveExpenseSnapshot(updatedExpense);
       patchExpenseInCachedLists(updatedExpense);
+      await invalidateExpenseMutationCaches();
       setCategoryPickerOpen(false);
     } catch {
       // Preserve the current row state if the update fails.
@@ -229,11 +218,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           await api.delete(`/expenses/${localExpense.id}`);
           await removeExpenseFromCachedLists(localExpense.id);
           await removeExpenseSnapshot(localExpense.id);
-          await Promise.all([
-            invalidateCacheByPrefix('cache:expenses:'),
-            invalidateCacheByPrefix('cache:budget:'),
-            invalidateCacheByPrefix('cache:household-expenses:'),
-          ]);
+          await invalidateExpenseMutationCaches();
           onDelete?.(localExpense.id);
         } catch {
           // Item stays in list if delete fails.
@@ -258,12 +243,12 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
           })}
           activeOpacity={0.7}
         >
-          <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : color }]} />
+          <View style={[styles.accent, { backgroundColor: pending ? colors.warning : color }]} />
           <View style={styles.left}>
             <View style={styles.headerRow}>
               <View style={styles.titleWrap}>
                 <View style={styles.titleRow}>
-                  <Text style={styles.merchant} numberOfLines={1}>{localExpense.merchant}</Text>
+                  <Text style={styles.merchant} numberOfLines={1}>{merchantTitle}</Text>
                   <Text style={styles.dateInline} numberOfLines={1}>{dateLabel}</Text>
                 </View>
               </View>
@@ -283,12 +268,12 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
                 <Text style={styles.categoryChipText} numberOfLines={1}>{categoryLabel}</Text>
                 {isOwn && !pending && categoryOptions.length > 0 ? (
                   categorySavingId ? (
-                    <ActivityIndicator size="small" color="#777" style={styles.categorySpinner} />
+                    <ActivityIndicator size="small" color={colors.textDisabled} style={styles.categorySpinner} />
                   ) : (
                     <Ionicons
                       name={categoryPickerOpen ? 'chevron-up' : 'chevron-down'}
                       size={11}
-                      color="#777"
+                      color={colors.textDisabled}
                       style={styles.categoryChevron}
                     />
                   )
@@ -372,14 +357,14 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
                 </View>
               ) : null}
             </View>
-            <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-down'} size={12} color="#777" />
+            <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textDisabled} />
           </TouchableOpacity>
         )}
 
         {itemsExpanded && hasItemDetails && (
           <View style={styles.itemsPanel}>
             {itemsLoading ? (
-              <ActivityIndicator size="small" color="#777" style={{ paddingVertical: 8 }} />
+              <ActivityIndicator size="small" color={colors.textDisabled} style={{ paddingVertical: 8 }} />
             ) : items?.length ? (
               <>
                 {items.slice(0, 5).map((item, index) => (
@@ -407,8 +392,8 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#111',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     marginBottom: 6,
     overflow: 'hidden',
   },
@@ -417,7 +402,7 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   containerPending: {
-    backgroundColor: '#141008',
+    backgroundColor: colors.warningMuted,
   },
   accent: {
     width: 3,
@@ -426,7 +411,7 @@ const styles = StyleSheet.create({
   left: {
     flex: 1,
     paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.md,
   },
   headerRow: {
     flexDirection: 'row',
@@ -446,7 +431,7 @@ const styles = StyleSheet.create({
   },
   merchant: {
     fontSize: 15,
-    color: '#f5f5f5',
+    color: colors.text,
     fontWeight: '500',
     letterSpacing: -0.2,
     flexShrink: 1,
@@ -455,7 +440,7 @@ const styles = StyleSheet.create({
   dateInline: {
     flexShrink: 0,
     fontSize: 12,
-    color: '#7c7c7c',
+    color: colors.textSubtle,
   },
   rightCol: {
     alignItems: 'flex-end',
@@ -485,21 +470,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     maxWidth: '72%',
-    backgroundColor: '#161616',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#222',
-    borderRadius: 999,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   categoryChipInlineActive: {
-    borderColor: '#333',
+    borderColor: colors.accentMuted,
   },
   categoryChipInlineStatic: {
     paddingRight: 10,
   },
   categoryChipText: {
-    color: '#d7d7d7',
+    color: colors.text,
     fontSize: 12,
     fontWeight: '500',
     flexShrink: 1,
@@ -512,70 +497,70 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#7c7c7c',
+    color: colors.textSubtle,
   },
   locationMetaText: {
     fontSize: 12,
-    color: '#7c7c7c',
+    color: colors.textSubtle,
     marginTop: 4,
   },
   metaDivider: {
     fontSize: 12,
-    color: '#4d4d4d',
+    color: colors.textDisabled,
   },
   ownerChip: {
-    backgroundColor: '#151515',
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#202020',
-    borderRadius: 999,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.pill,
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
   ownerChipOwn: {
-    backgroundColor: '#1a2230',
-    borderColor: '#26314a',
+    backgroundColor: colors.infoMuted,
+    borderColor: colors.infoMuted,
   },
   ownerChipText: {
-    color: '#9f9f9f',
+    color: colors.textMuted,
     fontSize: 10,
     fontWeight: '600',
   },
   ownerChipTextOwn: {
-    color: '#cfe0ff',
+    color: colors.textMuted,
   },
   privateLabel: {
-    color: '#6f6f6f',
+    color: colors.textDisabled,
     fontSize: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   trackOnlyChip: {
-    backgroundColor: '#10271d',
+    backgroundColor: colors.successMuted,
     borderWidth: 1,
-    borderColor: '#1f513d',
-    borderRadius: 999,
+    borderColor: colors.successMuted,
+    borderRadius: radius.pill,
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
   trackOnlyChipText: {
-    color: '#9ae6b4',
+    color: colors.success,
     fontSize: 10,
     fontWeight: '700',
   },
   amount: {
     fontSize: 15,
-    color: '#f5f5f5',
+    color: colors.text,
     fontWeight: '600',
     letterSpacing: -0.3,
     textAlign: 'right',
   },
   amountRefund: {
-    color: '#4ade80',
+    color: colors.success,
   },
   categoryPicker: {
     marginLeft: 3,
     borderTopWidth: 1,
-    borderTopColor: '#1b1b1b',
+    borderTopColor: colors.borderSubtle,
   },
   categoryPickerContent: {
     paddingHorizontal: 12,
@@ -583,24 +568,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   categoryOptionChip: {
-    backgroundColor: '#151515',
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#222',
-    borderRadius: 999,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   categoryOptionChipActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   categoryOptionText: {
-    color: '#999',
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: '500',
   },
   categoryOptionTextActive: {
-    color: '#0a0a0a',
+    color: colors.textInverse,
   },
   itemToggleRow: {
     flexDirection: 'row',
@@ -612,7 +597,7 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 10,
     borderTopWidth: 1,
-    borderTopColor: '#181818',
+    borderTopColor: colors.borderSubtle,
   },
   itemToggleText: {
     flex: 1,
@@ -620,21 +605,21 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   deleteAction: {
-    backgroundColor: '#ef4444',
+    backgroundColor: colors.danger,
     justifyContent: 'center',
     alignItems: 'center',
     width: 72,
-    borderRadius: 10,
+    borderRadius: radius.md,
     marginBottom: 6,
   },
   deleteText: {
-    color: '#fff',
+    color: colors.text,
     fontWeight: '600',
     fontSize: 14,
   },
   itemCount: {
     fontSize: 12,
-    color: '#787878',
+    color: colors.textSubtle,
   },
   itemSignalRow: {
     flexDirection: 'row',
@@ -643,30 +628,30 @@ const styles = StyleSheet.create({
   },
   itemSignalChip: {
     borderRadius: 8,
-    backgroundColor: '#171717',
+    backgroundColor: colors.surfaceRaised,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
   itemSignalChipPositive: {
-    backgroundColor: '#182418',
+    backgroundColor: colors.successMuted,
   },
   itemSignalChipInfo: {
-    backgroundColor: '#1d2531',
+    backgroundColor: colors.infoMuted,
   },
   itemSignalChipText: {
-    color: '#9a9a9a',
+    color: colors.textMuted,
     fontSize: 10,
     fontWeight: '700',
   },
   itemSignalChipTextPositive: {
-    color: '#86efac',
+    color: colors.success,
   },
   itemSignalChipTextInfo: {
-    color: '#bfdbfe',
+    color: colors.info,
   },
   itemsPanel: {
     borderTopWidth: 1,
-    borderTopColor: '#1b1b1b',
+    borderTopColor: colors.borderSubtle,
     marginLeft: 3,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -684,24 +669,24 @@ const styles = StyleSheet.create({
   },
   itemName: {
     flex: 1,
-    color: '#cfcfcf',
+    color: colors.text,
     fontSize: 13,
   },
   itemMeta: {
-    color: '#7e7e7e',
+    color: colors.textSubtle,
     fontSize: 11,
     marginTop: 2,
   },
   itemAmount: {
-    color: '#a8a8a8',
+    color: colors.textMuted,
     fontSize: 12,
   },
   itemEmpty: {
-    color: '#777',
+    color: colors.textSubtle,
     fontSize: 12,
   },
   itemMore: {
-    color: '#777',
+    color: colors.textSubtle,
     fontSize: 12,
     marginTop: 4,
   },

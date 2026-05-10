@@ -5,11 +5,14 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
+import { MetricStrip } from '../components/ui/MetricStrip';
+import { EmptyState, InlineError, LoadingState, SectionHeader } from '../components/ui/States';
+import { StatusChip } from '../components/ui/StatusChip';
+import { colors } from '../theme/tokens';
 
 function reasonLabel(reason = '') {
   switch (`${reason}`.trim()) {
@@ -144,7 +147,7 @@ function surfacedRows(debug = null) {
 function DiagnosticsSection({ title, children }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <SectionHeader title={title} />
       {children}
     </View>
   );
@@ -203,7 +206,10 @@ export default function InsightDiagnosticsScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={[styles.heroCard, tone.card]}>
-        <Text style={[styles.heroEyebrow, tone.eyebrow]}>Insight diagnostics</Text>
+        <View style={styles.heroTop}>
+          <Text style={[styles.heroEyebrow, tone.eyebrow]}>Insight diagnostics</Text>
+          <StatusChip label={summary.tone === 'good' ? 'Healthy' : 'Review'} tone={summary.tone === 'good' ? 'success' : 'info'} />
+        </View>
         <Text style={[styles.heroTitle, tone.title]}>{summary.title}</Text>
         <Text style={styles.heroBody}>{summary.body}</Text>
         <TouchableOpacity
@@ -217,43 +223,24 @@ export default function InsightDiagnosticsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.loadingCard}>
-          <ActivityIndicator color="#d4d4d4" />
-          <Text style={styles.loadingText}>Checking the insight engine...</Text>
-        </View>
+        <LoadingState label="Checking the insight engine" />
       ) : null}
 
       {!loading && error ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Couldn’t load insight diagnostics</Text>
-          <Text style={styles.errorBody}>{error}</Text>
-          <TouchableOpacity style={styles.errorRetry} onPress={() => loadDebug()}>
-            <Text style={styles.errorRetryText}>Try again</Text>
-          </TouchableOpacity>
-        </View>
+        <InlineError title="Could not load insight diagnostics" body={error} onAction={() => loadDebug()} />
       ) : null}
 
       {!loading && !error && debug ? (
         <>
           <DiagnosticsSection title="Current counts">
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricValue}>{compactNumber(debug?.final?.count)}</Text>
-                <Text style={styles.metricLabel}>Surfaced now</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricValue}>{compactNumber(debug?.raw?.count)}</Text>
-                <Text style={styles.metricLabel}>Raw candidates</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricValue}>{compactNumber(debug?.feedback?.below_threshold_raw_count)}</Text>
-                <Text style={styles.metricLabel}>Below threshold</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricValue}>{compactNumber(debug?.feedback?.dismissed_raw_count)}</Text>
-                <Text style={styles.metricLabel}>Dismissed</Text>
-              </View>
-            </View>
+            <MetricStrip
+              items={[
+                { label: 'Surfaced now', value: compactNumber(debug?.final?.count) },
+                { label: 'Raw candidates', value: compactNumber(debug?.raw?.count) },
+                { label: 'Below threshold', value: compactNumber(debug?.feedback?.below_threshold_raw_count) },
+                { label: 'Dismissed', value: compactNumber(debug?.feedback?.dismissed_raw_count) },
+              ]}
+            />
           </DiagnosticsSection>
 
           {currentRows.length > 0 ? (
@@ -303,6 +290,14 @@ export default function InsightDiagnosticsScreen() {
               </View>
             </DiagnosticsSection>
           ) : null}
+
+          {currentRows.length === 0 && reasonRows.length === 0 && suppressedRows.length === 0 ? (
+            <EmptyState
+              title="No diagnostic rows to show"
+              body="The insight engine did not return surfaced, blocked, or suppressed rows for this check."
+              icon="analytics-outline"
+            />
+          ) : null}
         </>
       ) : null}
     </ScrollView>
@@ -310,7 +305,7 @@ export default function InsightDiagnosticsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40, gap: 18 },
   heroCard: {
     borderRadius: 16,
@@ -318,13 +313,19 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 8,
   },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
   heroCardGood: {
-    backgroundColor: '#0f1412',
-    borderColor: '#1d3b2a',
+    backgroundColor: colors.successMuted,
+    borderColor: colors.successMuted,
   },
   heroCardNeutral: {
-    backgroundColor: '#111214',
-    borderColor: '#21252b',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
   },
   heroEyebrow: {
     fontSize: 12,
@@ -332,69 +333,69 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  heroEyebrowGood: { color: '#8fd2a6' },
-  heroEyebrowNeutral: { color: '#9cabbb' },
+  heroEyebrowGood: { color: colors.success },
+  heroEyebrowNeutral: { color: colors.text },
   heroTitle: {
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700',
   },
-  heroTitleGood: { color: '#eefaf1' },
-  heroTitleNeutral: { color: '#f5f5f5' },
+  heroTitleGood: { color: colors.text },
+  heroTitleNeutral: { color: colors.text },
   heroBody: {
-    color: '#b8c2cd',
+    color: colors.text,
     fontSize: 14,
     lineHeight: 20,
   },
   refreshButton: {
     marginTop: 6,
     alignSelf: 'flex-start',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   refreshButtonText: {
-    color: '#0a0a0a',
+    color: colors.background,
     fontSize: 13,
     fontWeight: '700',
   },
   buttonDisabled: { opacity: 0.55 },
   loadingCard: {
-    backgroundColor: '#111214',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#20252b',
+    borderColor: colors.border,
     borderRadius: 14,
     padding: 18,
     alignItems: 'center',
     gap: 10,
   },
   loadingText: {
-    color: '#a6b1bd',
+    color: colors.text,
     fontSize: 14,
   },
   errorCard: {
-    backgroundColor: '#141111',
-    borderColor: '#332020',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.dangerMuted,
     borderWidth: 1,
     borderRadius: 14,
     padding: 16,
     gap: 8,
   },
-  errorTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '700' },
-  errorBody: { color: '#d0b4b4', fontSize: 14, lineHeight: 20 },
+  errorTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  errorBody: { color: colors.danger, fontSize: 14, lineHeight: 20 },
   errorRetry: {
     alignSelf: 'flex-start',
     marginTop: 4,
-    backgroundColor: '#201616',
+    backgroundColor: colors.dangerMuted,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  errorRetryText: { color: '#f0c8c8', fontSize: 13, fontWeight: '700' },
+  errorRetryText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   section: { gap: 10 },
   sectionTitle: {
-    color: '#8d98a6',
+    color: colors.text,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
@@ -408,43 +409,43 @@ const styles = StyleSheet.create({
   metricCard: {
     minWidth: '47%',
     flexGrow: 1,
-    backgroundColor: '#101114',
-    borderColor: '#1c2026',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
     borderWidth: 1,
     borderRadius: 14,
     padding: 14,
     gap: 4,
   },
   metricValue: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 24,
     fontWeight: '700',
   },
   metricLabel: {
-    color: '#96a2af',
+    color: colors.text,
     fontSize: 13,
   },
   stack: { gap: 10 },
   listCard: {
-    backgroundColor: '#101114',
-    borderColor: '#1b2026',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
     borderWidth: 1,
     borderRadius: 14,
     padding: 14,
     gap: 6,
   },
   listTitle: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 20,
   },
   listMeta: {
-    color: '#90a0af',
+    color: colors.textSubtle,
     fontSize: 12,
   },
   listBody: {
-    color: '#b7c1cc',
+    color: colors.text,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -452,8 +453,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#101114',
-    borderColor: '#1b2026',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -462,12 +463,12 @@ const styles = StyleSheet.create({
   },
   reasonLabel: {
     flex: 1,
-    color: '#d8e1ea',
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 19,
   },
   reasonCount: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 14,
     fontWeight: '700',
   },

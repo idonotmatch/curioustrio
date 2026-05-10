@@ -1,0 +1,48 @@
+<svg width="900" height="1720" viewBox="0 0 900 1720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="1720" fill="#FBFBF8"/>
+  <text x="56" y="54" fill="#111111" font-family="Arial, sans-serif" font-size="18">hello dang</text>
+  <text x="844" y="54" text-anchor="end" fill="#5E6470" font-family="Arial, sans-serif" font-size="15">Back to Adlo</text>
+
+  <rect x="108" y="108" width="684" height="1492" rx="32" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <circle cx="168" cy="176" r="26" fill="#3D76F6"/>
+  <text x="168" y="185" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="25" font-weight="700">A</text>
+  <text x="208" y="184" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Adlo Terms of Service</text>
+  <text x="208" y="216" fill="#5E6470" font-family="Arial, sans-serif" font-size="16">Effective date: April 5, 2026</text>
+
+  <text x="148" y="288" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Use of the Service</text>
+  <text x="148" y="324" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Adlo helps users track expenses, review imports, manage budgets,</text>
+  <text x="148" y="350" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">monitor recurring purchases, and receive spending insights.</text>
+
+  <text x="148" y="420" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Accounts and Connected Services</text>
+  <text x="148" y="456" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Some features rely on third-party services like Google Gmail.</text>
+  <text x="148" y="482" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Users can revoke connected access through those providers.</text>
+
+  <text x="148" y="552" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Your Data and Household Features</text>
+  <text x="148" y="588" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Users remain responsible for the information they submit. Shared</text>
+  <text x="148" y="614" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">household data may be visible to household members based on app settings.</text>
+  <text x="148" y="640" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Private expenses are intended to remain private to their creator.</text>
+
+  <text x="148" y="710" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Recommendations, Offers, and Paid Features</text>
+  <text x="148" y="746" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Adlo may offer premium features, contextual recommendations, and</text>
+  <text x="148" y="772" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">affiliate links. Adlo does not sell personal information and does</text>
+  <text x="148" y="798" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">not use Gmail data for third-party advertising.</text>
+
+  <rect x="148" y="846" width="604" height="116" rx="22" fill="#F8F8F8" stroke="#E5E7EB"/>
+  <text x="178" y="890" fill="#111111" font-family="Arial, sans-serif" font-size="19" font-weight="700">No financial advice</text>
+  <text x="178" y="920" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Insights, forecasts, reminders, and recommendations are informational.</text>
+  <text x="178" y="946" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Users remain responsible for their own financial decisions.</text>
+
+  <text x="148" y="1030" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Availability and Accuracy</text>
+  <text x="148" y="1066" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Adlo is provided on an “as is” and “as available” basis. Imported data,</text>
+  <text x="148" y="1092" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">parsing, projections, and recommendations may not always be complete,</text>
+  <text x="148" y="1118" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">accurate, or appropriate for every situation.</text>
+
+  <text x="148" y="1188" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Acceptable Use, Termination, and Liability</text>
+  <text x="148" y="1224" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Users may not misuse or interfere with the service. Access may be</text>
+  <text x="148" y="1250" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">suspended or terminated for misuse. Liability is limited to the fullest</text>
+  <text x="148" y="1276" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">extent permitted by law.</text>
+
+  <line x1="148" y1="1358" x2="752" y2="1358" stroke="#E5E7EB"/>
+  <text x="148" y="1412" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Contact</text>
+  <text x="148" y="1448" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">dang@hellodang.com</text>
+</svg>

@@ -63,6 +63,21 @@ describe('emailParser', () => {
     expect(complete).not.toHaveBeenCalled();
   });
 
+  it('classifies post-purchase review requests without an LLM call', async () => {
+    const result = await classifyEmailExpense(
+      'Seller GORILLA COMMERCE requests you to share your experience for your recent order with other Amazon shoppers.',
+      'Did your recent Amazon order meet your expectations? Review it on Amazon',
+      'no-reply@amazon.com',
+      '2026-05-06'
+    );
+    expect(result).toEqual({
+      disposition: 'not_expense',
+      merchant: null,
+      reason: 'heuristic_skip',
+    });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   it('classifies purchase emails with the classifier prompt', async () => {
     complete.mockResolvedValue('{"disposition":"expense","merchant":"Amazon","reason":"order receipt"}');
     const result = await classifyEmailExpense(
@@ -113,6 +128,17 @@ describe('emailParser', () => {
     expect(uberSignals.shouldSurfaceToReview).toBe(true);
     expect(lyftSignals.senderLooksTransactional).toBe(true);
     expect(lyftSignals.shouldSurfaceToReview).toBe(true);
+  });
+
+  it('treats Venmo payment receipts as review-worthy transaction signals', () => {
+    const signals = analyzeEmailSignals(
+      'You paid Carter @ Ardmore Barbershop $35.00',
+      'venmo@venmo.com',
+      'Haircut. Transaction details. Status Completed.'
+    );
+    expect(signals.senderLooksTransactional).toBe(true);
+    expect(signals.strongMoneySignal).toBe(true);
+    expect(signals.shouldSurfaceToReview).toBe(true);
   });
 
   it('derives receipt families for grocery, travel, and ride emails', () => {

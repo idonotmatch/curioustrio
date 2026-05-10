@@ -29,6 +29,7 @@ Move Adlo from a strong heuristic finance tracker with emerging intelligence int
 - those review judgments now feed back into ranking so the engine can learn what users consider normal vs signal-worthy
 - Summary receipt scan now jumps directly into camera capture
 - the main mobile confirm and approve flows now invalidate household-expense caches, improving cross-surface consistency
+- mobile now has an internal freshness coordinator for quiet local refreshes after mutations and app foreground; true active cross-household realtime events remain the next data-consistency layer
 - public Adlo trust pages now exist on `hellodang.com` for OAuth and broader distribution
 
 ### Strategic systems now in flight
@@ -67,6 +68,34 @@ Reduces:
 - personal liability exposure
 - distribution ambiguity
 - trust friction during OAuth review and early growth
+
+## Priority 1A: Realtime Household Freshness
+
+### Why
+
+The app now has the internal coordination layer needed to refresh dependent mobile surfaces quietly, but it still lacks a server-side event feed for active household collaboration.
+
+If one household member adds, edits, approves, dismisses, hides, deletes, recategorizes, or imports an expense while another member is already in the app, the second member can still sit on stale shared context until foreground, navigation, or manual refresh.
+
+### Scope
+
+Build:
+
+- a backend household event model for shared mutations
+- event writes from expense, pending-review, Gmail import, budget, category, household membership, recurring, and watched-plan mutation paths
+- a mobile realtime subscription or lightweight polling fallback that listens for household/user-scoped events
+- a mapping from event domains into the existing mobile freshness coordinator
+- dedupe/coalescing so active screens refresh quietly without visible thrash
+- tests for event creation, authorization boundaries, and mobile domain mapping
+
+### Outcome
+
+Enables:
+
+- active cross-household freshness
+- fewer stale shared totals, pending badges, forecast cards, and activity rows
+- a cleaner foundation for future collaborative workflows
+- no user-visible "registry" or event log; the UX should simply feel current
 
 ## Priority 2: Insight Productization and Trust
 

@@ -90,7 +90,7 @@ function buildInsightAction(insight) {
       reason: 'Needs context',
       title: 'Read the driver first',
       body: 'Use the breakdown to see whether this is broad pressure, one unusual purchase, or a category shift.',
-      cta: 'Open detail',
+      cta: 'Review drivers',
       route: {
         pathname: '/trend-detail',
         params: {
@@ -114,7 +114,7 @@ function buildInsightAction(insight) {
       reason: 'Early signal',
       title: 'Read the signal in context',
       body: 'This is an early read, so the most useful next step is understanding the pattern before reacting too hard.',
-      cta: 'Open detail',
+      cta: 'Review evidence',
       route: {
         pathname: '/insight-detail',
         params: {
@@ -135,7 +135,7 @@ function buildInsightAction(insight) {
     reason: 'Needs context',
     title: 'Review the detail',
     body: 'Open the supporting detail before deciding whether this is worth acting on.',
-    cta: 'Open detail',
+    cta: 'Review detail',
     route: null,
   };
 }

@@ -1,6 +1,7 @@
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createEditableExpenseItem, updateEditableExpenseItem } from '../services/itemEditing';
+import { colors } from '../theme/tokens';
 
 export function ExpenseItemsSection({
   styles,
@@ -31,7 +32,7 @@ export function ExpenseItemsSection({
         <Text style={[styles.itemsHeaderText, activeReviewField === 'items' && styles.itemsHeaderTextActive]}>
           {items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : 'Items'}
         </Text>
-        <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-forward'} size={14} color={activeReviewField === 'items' ? '#f5f5f5' : '#444'} />
+        <Ionicons name={itemsExpanded ? 'chevron-up' : 'chevron-forward'} size={14} color={activeReviewField === 'items' ? colors.text : colors.textDisabled} />
       </TouchableOpacity>
 
       {itemsExpanded ? (
@@ -48,7 +49,7 @@ export function ExpenseItemsSection({
                         entryIndex === index ? updateEditableExpenseItem(entry, 'description', value) : entry
                       )))}
                       placeholder="Description"
-                      placeholderTextColor="#444"
+                      placeholderTextColor={colors.textDisabled}
                     />
                     <TouchableOpacity
                       onPress={() => setItemsEdits((current) => current.filter((_, entryIndex) => entryIndex !== index))}
@@ -67,7 +68,7 @@ export function ExpenseItemsSection({
                           entryIndex === index ? updateEditableExpenseItem(entry, 'quantity', value) : entry
                         )))}
                         placeholder="1"
-                        placeholderTextColor="#444"
+                        placeholderTextColor={colors.textDisabled}
                         keyboardType="decimal-pad"
                       />
                     </View>
@@ -80,7 +81,7 @@ export function ExpenseItemsSection({
                           entryIndex === index ? updateEditableExpenseItem(entry, 'unit_price', value) : entry
                         )))}
                         placeholder="0.00"
-                        placeholderTextColor="#444"
+                        placeholderTextColor={colors.textDisabled}
                         keyboardType="decimal-pad"
                       />
                     </View>
@@ -93,7 +94,7 @@ export function ExpenseItemsSection({
                           entryIndex === index ? updateEditableExpenseItem(entry, 'amount', value) : entry
                         )))}
                         placeholder="0.00"
-                        placeholderTextColor="#444"
+                        placeholderTextColor={colors.textDisabled}
                         keyboardType="decimal-pad"
                       />
                     </View>

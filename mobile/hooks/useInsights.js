@@ -1,6 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { invalidateCacheByPrefix, loadWithCache } from '../services/cache';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 
 function buildInsightSuppressionKey(insight = {}) {
   const metadata = insight?.metadata || {};
@@ -35,18 +37,25 @@ function filterSuppressedInsights(insights = [], suppressedMap = new Map()) {
 
 export function useInsights(limit = 5, options = {}) {
   const fetchLimit = Math.max(limit, Number(options?.fetchLimit) || limit);
+  const freezeFirstPaint = options?.freezeFirstPaint === true;
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dismissedSuppressions, setDismissedSuppressions] = useState(() => new Map());
+  const initialRefreshCompletedRef = useRef(false);
   const cacheKey = `cache:insights:v2:${limit}:${fetchLimit}`;
 
   const refresh = useCallback(async () => {
     setError(null);
+    let deliveryCount = 0;
     await loadWithCache(
       cacheKey,
       () => api.get(`/insights?limit=${fetchLimit}`),
       (data) => {
+        deliveryCount += 1;
+        if (freezeFirstPaint && !initialRefreshCompletedRef.current && deliveryCount > 1) {
+          return;
+        }
         const filtered = filterSuppressedInsights(data || [], dismissedSuppressions);
         setInsights(filtered.slice(0, limit));
         setLoading(false);
@@ -54,7 +63,8 @@ export function useInsights(limit = 5, options = {}) {
       },
       (err) => { setInsights([]); setLoading(false); setError(err?.message || 'Could not load insights'); },
     );
-  }, [cacheKey, fetchLimit, limit, dismissedSuppressions]);
+    initialRefreshCompletedRef.current = true;
+  }, [cacheKey, fetchLimit, freezeFirstPaint, limit, dismissedSuppressions]);
 
   const markSeen = useCallback(async (ids = []) => {
     const cleanIds = ids.filter(Boolean);
@@ -112,6 +122,7 @@ export function useInsights(limit = 5, options = {}) {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.insights, refresh, { delayMs: 700 });
 
   return { insights, loading, error, refresh, markSeen, dismiss, logEvents };
 }

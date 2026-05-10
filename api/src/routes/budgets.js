@@ -4,6 +4,8 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const Household = require('../models/household');
 const BudgetSetting = require('../models/budgetSetting');
+const { requestProjectionRefresh } = require('../services/projectionRefreshService');
+const { emitBudgetFreshnessEvent } = require('../services/freshnessEvents');
 const db = require('../db');
 
 router.use(authenticate);
@@ -205,6 +207,12 @@ router.put('/total', async (req, res, next) => {
       return res.status(400).json({ error: 'monthly_limit must be a positive number' });
     }
     const setting = await BudgetSetting.upsert({ userId: user.id, categoryId: null, monthlyLimit: monthly_limit });
+    requestProjectionRefresh({
+      user,
+      reason: 'budget_total_updated',
+      metadata: { source: 'budget_edit' },
+    });
+    await emitBudgetFreshnessEvent(user, 'budget_total_updated', { scope: 'personal' });
     res.json(setting);
   } catch (err) { next(err); }
 });
@@ -219,6 +227,13 @@ router.put('/category/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'monthly_limit must be a positive number' });
     }
     const setting = await BudgetSetting.upsert({ userId: user.id, categoryId: req.params.id, monthlyLimit: monthly_limit });
+    requestProjectionRefresh({
+      user,
+      reason: 'budget_category_updated',
+      categoryId: req.params.id,
+      metadata: { source: 'budget_edit' },
+    });
+    await emitBudgetFreshnessEvent(user, 'budget_category_updated', { category_id: req.params.id });
     res.json(setting);
   } catch (err) { next(err); }
 });
@@ -230,6 +245,13 @@ router.delete('/category/:id', async (req, res, next) => {
     if (!user) return;
     const removed = await BudgetSetting.remove({ userId: user.id, categoryId: req.params.id });
     if (!removed) return res.status(404).json({ error: 'Budget not found' });
+    requestProjectionRefresh({
+      user,
+      reason: 'budget_category_removed',
+      categoryId: req.params.id,
+      metadata: { source: 'budget_edit' },
+    });
+    await emitBudgetFreshnessEvent(user, 'budget_category_removed', { category_id: req.params.id });
     res.json(removed);
   } catch (err) { next(err); }
 });

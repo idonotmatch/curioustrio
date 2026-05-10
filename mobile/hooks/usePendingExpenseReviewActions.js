@@ -2,6 +2,7 @@ import { Alert } from 'react-native';
 import { api } from '../services/api';
 import { removePendingExpense } from './usePendingExpenses';
 import { removeExpenseFromCachedLists, removeExpenseSnapshot, patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 
 export function usePendingExpenseReviewActions({
   expenseId,
@@ -30,14 +31,7 @@ export function usePendingExpenseReviewActions({
         await saveExpenseSnapshot(approved);
         await patchExpenseInCachedLists(approved);
       }
-      const { invalidateCache, invalidateCacheByPrefix } = await import('../services/cache');
-      await Promise.all([
-        invalidateCache('cache:expenses:pending'),
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
+      await invalidateExpenseMutationCaches();
       removePendingExpense(expenseId);
       router.back();
     } catch (e) {
@@ -52,14 +46,7 @@ export function usePendingExpenseReviewActions({
       await api.post(`/expenses/${expenseId}/dismiss`, { dismissal_reason: dismissalReason });
       await removeExpenseFromCachedLists(expenseId);
       await removeExpenseSnapshot(expenseId);
-      const { invalidateCache, invalidateCacheByPrefix } = await import('../services/cache');
-      await Promise.all([
-        invalidateCache('cache:expenses:pending'),
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
+      await invalidateExpenseMutationCaches();
       removePendingExpense(expenseId);
       setShowDismissReasonSheet(false);
       router.back();

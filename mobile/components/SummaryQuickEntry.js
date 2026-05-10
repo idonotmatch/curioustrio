@@ -1,5 +1,6 @@
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/tokens';
 
 export function SummaryQuickEntry({
   styles,
@@ -42,7 +43,7 @@ export function SummaryQuickEntry({
           placeholder={entryMode === 'check'
             ? '180 running shoes · can i afford 240 air fryer?'
             : '84.50 trader joes · lunch 14 · gas 60 yesterday'}
-          placeholderTextColor="#555"
+          placeholderTextColor={colors.textDisabled}
           onSubmitEditing={handlePrimaryEntry}
           autoCorrect={false}
           returnKeyType={entryMode === 'check' ? 'go' : 'done'}
@@ -50,19 +51,19 @@ export function SummaryQuickEntry({
         />
         <TouchableOpacity style={styles.addBtn} onPress={handlePrimaryEntry} disabled={loading || !input.trim()}>
           {loading
-            ? <ActivityIndicator color="#000" size="small" />
-            : <Ionicons name="arrow-forward" size={18} color="#000" />}
+            ? <ActivityIndicator color={colors.textInverse} size="small" />
+            : <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />}
         </TouchableOpacity>
       </View>
       {quickEntryProcessingMessage ? (
         <View style={styles.quickEntryProcessing}>
-          <ActivityIndicator color="#d4d4d4" size="small" />
+          <ActivityIndicator color={colors.textMuted} size="small" />
           <Text style={styles.quickEntryProcessingText}>{quickEntryProcessingMessage}</Text>
         </View>
       ) : null}
       {entryMode === 'add' ? (
         <TouchableOpacity style={styles.scanLink} onPress={onPressScan}>
-          <Ionicons name="camera-outline" size={14} color="#888" />
+          <Ionicons name="camera-outline" size={14} color={colors.textSubtle} />
           <Text style={styles.scanLinkText}>scan a receipt</Text>
         </TouchableOpacity>
       ) : (

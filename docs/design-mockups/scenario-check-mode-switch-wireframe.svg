@@ -1,0 +1,28 @@
+<svg width="1200" height="920" viewBox="0 0 1200 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="920" fill="#070707"/>
+  <rect x="330" y="40" width="540" height="840" rx="38" fill="#0A0A0A" stroke="#202020" stroke-width="2"/>
+  <text x="382" y="100" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="30" font-weight="700">Summary</text>
+
+  <text x="382" y="158" fill="#8B8B8B" font-family="Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2">QUICK ENTRY</text>
+  <rect x="382" y="182" width="188" height="40" rx="20" fill="#111111" stroke="#1F1F1F"/>
+  <rect x="384" y="184" width="92" height="36" rx="18" fill="#F5F5F5"/>
+  <text x="417" y="208" fill="#000000" font-family="Arial, sans-serif" font-size="16" font-weight="700">Add</text>
+  <text x="505" y="208" fill="#B8C7D6" font-family="Arial, sans-serif" font-size="16" font-weight="700">Check</text>
+
+  <rect x="382" y="244" width="356" height="52" rx="12" fill="#0E1721" stroke="#1D3247"/>
+  <text x="402" y="276" fill="#89A2BC" font-family="Arial, sans-serif" font-size="17">180 running shoes</text>
+  <rect x="748" y="244" width="56" height="52" rx="12" fill="#DDEBFF"/>
+  <text x="767" y="276" fill="#173A5E" font-family="Arial, sans-serif" font-size="22" font-weight="700">✓</text>
+
+  <text x="382" y="332" fill="#6E7F90" font-family="Arial, sans-serif" font-size="14">`Add` parses an expense. `Check` parses a purchase scenario.</text>
+
+  <rect x="382" y="392" width="420" height="124" rx="16" fill="#111111" stroke="#1A1A1A"/>
+  <text x="404" y="440" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="22" font-weight="700">Projected under budget</text>
+  <text x="404" y="470" fill="#9A9A9A" font-family="Arial, sans-serif" font-size="15">Insight stack remains unchanged below the entry module.</text>
+
+  <rect x="860" y="170" width="250" height="320" rx="22" fill="#0F1114" stroke="#1D232B"/>
+  <text x="890" y="210" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="24" font-weight="700">Tradeoff</text>
+  <text x="890" y="252" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">Most elegant long-term model.</text>
+  <text x="890" y="294" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">But introduces more behavioral ambiguity for MVP.</text>
+  <text x="890" y="336" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">Better once users already understand scenario check.</text>
+</svg>

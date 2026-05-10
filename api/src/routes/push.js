@@ -6,6 +6,7 @@ const PushToken = require('../models/pushToken');
 const { sendNotifications } = require('../services/pushService');
 const RecurringExpense = require('../models/recurringExpense');
 const { pushNotificationsEnabled } = require('../services/pushPreferences');
+const { safePushData } = require('../services/pushEligibility');
 
 router.post('/register', authenticate, async (req, res, next) => {
   try {
@@ -34,7 +35,7 @@ router.post('/notify-pending', authenticate, async (req, res, next) => {
       to: t.token,
       title: due.length === 1 ? 'A recurring expense is coming up' : `${due.length} recurring expenses are coming up`,
       body: 'Open Adlo to review what may be due soon.',
-      data: { type: 'recurring', route: '/watching-plans', count: due.length },
+      data: safePushData({ type: 'recurring', route: '/watching-plans', count: due.length }),
     }));
 
     await sendNotifications(messages);

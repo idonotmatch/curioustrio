@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/tokens';
 
 export function PendingExpenseAttentionCard({
   styles,
@@ -35,7 +36,7 @@ export function PendingExpenseAttentionCard({
         >
           <View style={styles.priorityFieldTop}>
             <Text style={styles.priorityFieldLabel}>{field.label}</Text>
-            <Ionicons name="chevron-forward" size={14} color="#5f6b7a" />
+            <Ionicons name="chevron-forward" size={14} color={colors.textDisabled} />
           </View>
           <Text style={styles.priorityFieldValue}>{field.value}</Text>
           <Text style={styles.priorityFieldReason}>

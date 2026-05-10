@@ -13,6 +13,8 @@ const OPTIONAL_ENV_VARS = [
   'GOOGLE_CLIENT_SECRET',
   'GOOGLE_REDIRECT_URI',
   'CRON_SECRET',
+  'CRON_ALERT_WEBHOOK_URL',
+  'SENTRY_DSN',
 ];
 
 function isPresent(value) {

@@ -14,6 +14,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser';
 import { api } from '../services/api';
 import { ensurePushRegistration } from '../services/pushRegistration';
 import { saveCurrentUserCache } from '../services/currentUserCache';
+import { colors } from '../theme/tokens';
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
@@ -138,8 +139,8 @@ export default function NotificationsScreen() {
               value={pushGmailReviewEnabled}
               onValueChange={(value) => savePushSetting('push_gmail_review_enabled', value, setPushGmailReviewEnabled)}
               disabled={pushSavingKey === 'push_gmail_review_enabled'}
-              trackColor={{ false: '#2a2a2a', true: '#3a7a4a' }}
-              thumbColor="#f5f5f5"
+              trackColor={{ false: colors.borderStrong, true: colors.successMuted }}
+              thumbColor={colors.text}
             />
           </View>
 
@@ -152,8 +153,8 @@ export default function NotificationsScreen() {
               value={pushInsightsEnabled}
               onValueChange={(value) => savePushSetting('push_insights_enabled', value, setPushInsightsEnabled)}
               disabled={pushSavingKey === 'push_insights_enabled'}
-              trackColor={{ false: '#2a2a2a', true: '#3a7a4a' }}
-              thumbColor="#f5f5f5"
+              trackColor={{ false: colors.borderStrong, true: colors.successMuted }}
+              thumbColor={colors.text}
             />
           </View>
 
@@ -166,8 +167,8 @@ export default function NotificationsScreen() {
               value={pushRecurringEnabled}
               onValueChange={(value) => savePushSetting('push_recurring_enabled', value, setPushRecurringEnabled)}
               disabled={pushSavingKey === 'push_recurring_enabled'}
-              trackColor={{ false: '#2a2a2a', true: '#3a7a4a' }}
-              thumbColor="#f5f5f5"
+              trackColor={{ false: colors.borderStrong, true: colors.successMuted }}
+              thumbColor={colors.text}
             />
           </View>
 
@@ -179,31 +180,31 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
-  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 24 },
-  sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  sectionIntro: { color: '#666', fontSize: 13, marginBottom: 12 },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 24 },
+  sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  sectionIntro: { color: colors.textDisabled, fontSize: 13, marginBottom: 12 },
   permissionCard: {
     marginBottom: 14,
     padding: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
-    backgroundColor: '#111',
+    borderColor: colors.textInverse,
+    backgroundColor: colors.surface,
     gap: 12,
   },
   permissionCopy: { gap: 4 },
-  permissionTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '700' },
-  permissionBody: { color: '#8c8c8c', fontSize: 13, lineHeight: 18 },
+  permissionTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  permissionBody: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
   permissionButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  permissionButtonText: { color: '#0a0a0a', fontSize: 13, fontWeight: '700' },
+  permissionButtonText: { color: colors.background, fontSize: 13, fontWeight: '700' },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -211,10 +212,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: colors.borderSubtle,
   },
   toggleCopy: { flex: 1, paddingRight: 10 },
-  toggleTitle: { color: '#f5f5f5', fontSize: 15 },
-  toggleSubtitle: { color: '#666', fontSize: 13, marginTop: 2 },
-  msgError: { color: '#ef4444', fontSize: 13, marginTop: 10 },
+  toggleTitle: { color: colors.text, fontSize: 15 },
+  toggleSubtitle: { color: colors.textDisabled, fontSize: 13, marginTop: 2 },
+  msgError: { color: colors.danger, fontSize: 13, marginTop: 10 },
 });

@@ -23,11 +23,14 @@ const trendsRouter = require('./routes/trends');
 const pushRouter = require('./routes/push');
 const placesRouter = require('./routes/places');
 const priceObservationsRouter = require('./routes/priceObservations');
+const freshnessRouter = require('./routes/freshness');
 const cronRouter = require('./routes/cron');
 const { seedDefaultCategories } = require('./db');
 const { runStartupChecks } = require('./startup/runStartupChecks');
+const { initObservability } = require('./services/observability');
 
 const app = express();
+initObservability();
 
 // Trust Render's load balancer so express-rate-limit sees the real client IP
 // via X-Forwarded-For rather than the proxy's internal IP. Without this,
@@ -95,6 +98,7 @@ app.use('/trends', trendsRouter);
 app.use('/push', pushRouter);
 app.use('/places', placesRouter);
 app.use('/price-observations', priceObservationsRouter);
+app.use('/freshness', freshnessRouter);
 app.use('/cron', cronRouter);
 app.use(errorHandler);
 

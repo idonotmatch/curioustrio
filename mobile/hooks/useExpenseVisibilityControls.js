@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import { api } from '../services/api';
-import { invalidateCacheByPrefix } from '../services/cache';
 import { patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 
 export function useExpenseVisibilityControls({
   expenseId,
@@ -41,12 +41,7 @@ export function useExpenseVisibilityControls({
       setBudgetExclusionReason(refreshed.budget_exclusion_reason || null);
       saveExpenseSnapshot(refreshed);
       patchExpenseInCachedLists(refreshed);
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
+      await invalidateExpenseMutationCaches();
       return refreshed;
     } catch (e) {
       setExpense(previousExpense);
@@ -91,12 +86,7 @@ export function useExpenseVisibilityControls({
       setExpense(refreshed);
       saveExpenseSnapshot(refreshed);
       patchExpenseInCachedLists(refreshed);
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
+      await invalidateExpenseMutationCaches();
       return refreshed;
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save review options');

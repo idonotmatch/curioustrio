@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
 
 export function useHouseholdExpenses(month, startDayOverride, { enabled = true } = {}) {
@@ -36,6 +38,7 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
   }, [enabled, month, startDayOverride]);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.householdExpenses, refresh);
 
   // Server already filtered by month — sum all returned expenses
   const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);

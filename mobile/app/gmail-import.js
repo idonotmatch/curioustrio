@@ -11,7 +11,9 @@ import {
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
-import { invalidateCache } from '../services/cache';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from '../hooks/useFreshnessRefresh';
 import { GmailImportOverview } from '../components/GmailImportOverview';
 import { GmailPendingReviewSection } from '../components/GmailPendingReviewSection';
 import { GmailImportLogSection } from '../components/GmailImportLogSection';
@@ -34,6 +36,7 @@ import {
   syncErrorMessage,
 } from '../services/gmailImportPresentation';
 import { buildMockGmailImportState, buildMockPendingExpenses } from '../fixtures/mockGmailImport';
+import { colors } from '../theme/tokens';
 const { startGmailConnectFlow } = require('../services/gmailAuthFlow');
 
 const SUMMARY_WINDOW_DAYS = 90;
@@ -178,7 +181,7 @@ export default function GmailImportScreen() {
             setDisconnectingGmail(true);
             try {
               await api.delete('/gmail/connection');
-              await invalidateCache('cache:expenses:pending');
+              await invalidateExpenseMutationCaches();
               setImportSummary(null);
               setImportLog([]);
               setPendingReviewItems([]);
@@ -239,7 +242,7 @@ export default function GmailImportScreen() {
     setGmailSyncing(true);
     try {
       const result = await api.post('/gmail/import', {});
-      await invalidateCache('cache:expenses:pending');
+      await invalidateExpenseMutationCaches();
       await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
       Alert.alert('Gmail sync',
@@ -262,7 +265,7 @@ export default function GmailImportScreen() {
     setRetryingFailedIds((current) => [...current, logId]);
     try {
       const result = await api.post(`/gmail/import-log/${logId}/retry`, {});
-      await invalidateCache('cache:expenses:pending');
+      await invalidateExpenseMutationCaches();
       await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
       Alert.alert(
         'Retry complete',
@@ -283,7 +286,7 @@ export default function GmailImportScreen() {
     setRetryingAllFailed(true);
     try {
       const result = await api.post('/gmail/retry-failed', { limit: 10 });
-      await invalidateCache('cache:expenses:pending');
+      await invalidateExpenseMutationCaches();
       await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
       Alert.alert(
         'Retries finished',
@@ -295,6 +298,12 @@ export default function GmailImportScreen() {
       setRetryingAllFailed(false);
     }
   }
+
+  useFreshnessRefresh(FRESHNESS_DOMAINS.gmailImport, () => {
+    loadImportSummary();
+    loadPendingQueue();
+    if (importLogExpanded) loadImportLog();
+  }, { delayMs: 700 });
 
   return (
     <>
@@ -388,62 +397,62 @@ export default function GmailImportScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
   welcomeCard: {
     marginBottom: 22,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
   },
   welcomeEyebrow: {
-    color: '#7b7b7b',
+    color: colors.textSubtle,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
   },
-  welcomeTitle: { color: '#f5f5f5', fontSize: 21, fontWeight: '700', marginBottom: 8, lineHeight: 28 },
-  welcomeBody: { color: '#9a9a9a', fontSize: 14, lineHeight: 20 },
-  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#111', paddingBottom: 24 },
-  sectionTitle: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  welcomeTitle: { color: colors.text, fontSize: 21, fontWeight: '700', marginBottom: 8, lineHeight: 28 },
+  welcomeBody: { color: colors.textSubtle, fontSize: 14, lineHeight: 20 },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.surface, paddingBottom: 24 },
+  sectionTitle: { fontSize: 10, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rowInfo: { flex: 1, marginRight: 12 },
-  rowTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '500' },
-  rowSub: { color: '#555', fontSize: 12, marginTop: 2 },
-  rowMetaAlert: { color: '#d97706', fontSize: 11, marginTop: 6, lineHeight: 16 },
-  devPreviewNote: { color: '#8ab4ff', fontSize: 11, marginTop: 10, lineHeight: 16 },
+  rowTitle: { color: colors.text, fontSize: 15, fontWeight: '500' },
+  rowSub: { color: colors.textDisabled, fontSize: 12, marginTop: 2 },
+  rowMetaAlert: { color: colors.warning, fontSize: 11, marginTop: 6, lineHeight: 16 },
+  devPreviewNote: { color: colors.info, fontSize: 11, marginTop: 10, lineHeight: 16 },
   btnGroup: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
+  actionBtn: { backgroundColor: colors.borderSubtle, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: colors.borderStrong, justifyContent: 'center' },
   actionBtnDisabled: { opacity: 0.4 },
-  actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
+  actionBtnText: { color: colors.text, fontSize: 13, fontWeight: '500' },
   inlineDangerLink: { marginTop: 10, alignSelf: 'flex-start' },
-  inlineDangerLinkText: { color: '#f87171', fontSize: 12, fontWeight: '600' },
+  inlineDangerLinkText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
   loadingBlock: { alignSelf: 'flex-start', marginTop: 12 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   summaryCard: {
     width: '48%',
     minHeight: 78,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e1e1e',
+    borderColor: colors.borderSubtle,
     paddingHorizontal: 12,
     paddingVertical: 12,
     justifyContent: 'flex-start',
   },
-  summaryLabel: { color: '#7a7a7a', fontSize: 11, fontWeight: '600', lineHeight: 14 },
-  summaryValue: { color: '#f5f5f5', fontSize: 24, fontWeight: '600', marginTop: 10 },
+  summaryLabel: { color: colors.textSubtle, fontSize: 11, fontWeight: '600', lineHeight: 14 },
+  summaryValue: { color: colors.text, fontSize: 24, fontWeight: '600', marginTop: 10 },
   reasonWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  reasonChip: { borderRadius: 999, borderWidth: 1, borderColor: '#1f1f1f', backgroundColor: '#111', paddingHorizontal: 10, paddingVertical: 6 },
-  reasonChipText: { color: '#777', fontSize: 11 },
+  reasonChip: { borderRadius: 999, borderWidth: 1, borderColor: colors.textInverse, backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 6 },
+  reasonChipText: { color: colors.textDisabled, fontSize: 11 },
   learningList: { gap: 10, marginTop: 4 },
   learningRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  learningDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#8ab4ff', marginTop: 6 },
-  learningText: { color: '#b8b8b8', fontSize: 12, lineHeight: 18, flex: 1 },
+  learningDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent, marginTop: 6 },
+  learningText: { color: colors.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
   templateList: { marginTop: 4, gap: 8 },
   templateRow: {
     flexDirection: 'row',
@@ -452,12 +461,12 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#141414',
+    borderBottomColor: colors.surfaceRaised,
   },
   templateRowMain: { flex: 1 },
-  templateTitle: { color: '#d5d5d5', fontSize: 12, fontWeight: '600' },
-  templateMeta: { color: '#666', fontSize: 11, marginTop: 3 },
-  templateOutcome: { color: '#9ca3af', fontSize: 11, fontWeight: '600' },
+  templateTitle: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  templateMeta: { color: colors.textDisabled, fontSize: 11, marginTop: 3 },
+  templateOutcome: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   senderTrustSection: { marginTop: 14, gap: 10 },
   expandSectionHeader: {
     flexDirection: 'row',
@@ -467,22 +476,22 @@ const styles = StyleSheet.create({
   },
   expandSectionTitleWrap: { flex: 1, gap: 4 },
   senderTrustHeader: { gap: 3 },
-  senderTrustTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600' },
-  senderTrustSub: { color: '#666', fontSize: 11 },
-  sectionEmptyText: { color: '#666', fontSize: 12, lineHeight: 18 },
-  senderTrustCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1e1e1e', padding: 12 },
+  senderTrustTitle: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  senderTrustSub: { color: colors.textDisabled, fontSize: 11 },
+  sectionEmptyText: { color: colors.textDisabled, fontSize: 12, lineHeight: 18 },
+  senderTrustCard: { backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.borderSubtle, padding: 12 },
   senderTrustTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
-  senderTrustDomain: { color: '#f5f5f5', fontSize: 13, fontWeight: '500', flex: 1 },
+  senderTrustDomain: { color: colors.text, fontSize: 13, fontWeight: '500', flex: 1 },
   senderTrustChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  senderTrustChipTrusted: { backgroundColor: 'rgba(34,197,94,0.14)' },
-  senderTrustChipMixed: { backgroundColor: 'rgba(245,158,11,0.16)' },
-  senderTrustChipNoisy: { backgroundColor: 'rgba(248,113,113,0.14)' },
-  senderTrustChipUnknown: { backgroundColor: 'rgba(96,165,250,0.14)' },
-  senderTrustChipText: { color: '#f5f5f5', fontSize: 11, fontWeight: '700' },
-  senderTrustMeta: { color: '#777', fontSize: 11, marginTop: 6 },
-  senderTrustDetail: { color: '#555', fontSize: 11, marginTop: 4, lineHeight: 16 },
-  senderTrustPolicy: { color: '#8ab4ff', fontSize: 11, marginTop: 8, fontWeight: '600' },
-  senderTrustPolicyStrong: { color: '#fcd34d' },
+  senderTrustChipTrusted: { backgroundColor: colors.successMuted },
+  senderTrustChipMixed: { backgroundColor: colors.warningMuted },
+  senderTrustChipNoisy: { backgroundColor: colors.dangerMuted },
+  senderTrustChipUnknown: { backgroundColor: colors.infoMuted },
+  senderTrustChipText: { color: colors.text, fontSize: 11, fontWeight: '700' },
+  senderTrustMeta: { color: colors.textDisabled, fontSize: 11, marginTop: 6 },
+  senderTrustDetail: { color: colors.textDisabled, fontSize: 11, marginTop: 4, lineHeight: 16 },
+  senderTrustPolicy: { color: colors.info, fontSize: 11, marginTop: 8, fontWeight: '600' },
+  senderTrustPolicyStrong: { color: colors.warning },
   expandToggle: {
     marginTop: 2,
     flexDirection: 'row',
@@ -490,13 +499,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
-    backgroundColor: '#0f0f0f',
+    borderColor: colors.textInverse,
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  expandToggleText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
-  summaryWindow: { color: '#444', fontSize: 11, marginTop: 10 },
+  expandToggleText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  summaryWindow: { color: colors.textDisabled, fontSize: 11, marginTop: 10 },
   logToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   inlineRetryBtn: {
     alignSelf: 'flex-start',
@@ -504,38 +513,38 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
-    backgroundColor: '#111',
+    borderColor: colors.textInverse,
+    backgroundColor: colors.surface,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  inlineRetryBtnText: { color: '#b8b8b8', fontSize: 12, fontWeight: '600' },
-  openQueueLink: { color: '#8ab4ff', fontSize: 12, fontWeight: '600' },
+  inlineRetryBtnText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  openQueueLink: { color: colors.info, fontSize: 12, fontWeight: '600' },
   pendingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#111',
+    borderBottomColor: colors.surface,
   },
   pendingRowMain: { flex: 1, marginRight: 12 },
-  pendingMerchant: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
-  pendingMeta: { color: '#8ab4ff', fontSize: 11, marginTop: 4 },
+  pendingMerchant: { color: colors.text, fontSize: 13, fontWeight: '500' },
+  pendingMeta: { color: colors.info, fontSize: 11, marginTop: 4 },
   pendingRowRight: { alignItems: 'flex-end' },
-  pendingAmount: { color: '#f5f5f5', fontSize: 13, fontWeight: '600' },
-  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#111' },
+  pendingAmount: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surface },
   logRowLeft: { flex: 1, marginRight: 12 },
-  logSubject: { color: '#f5f5f5', fontSize: 13 },
-  logFrom: { color: '#555', fontSize: 11, marginTop: 2 },
-  logDetail: { color: '#555', fontSize: 11, marginTop: 4 },
-  logContext: { color: '#8ab4ff', fontSize: 11, marginTop: 6 },
+  logSubject: { color: colors.text, fontSize: 13 },
+  logFrom: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
+  logDetail: { color: colors.textDisabled, fontSize: 11, marginTop: 4 },
+  logContext: { color: colors.info, fontSize: 11, marginTop: 6 },
   logRowRight: { alignItems: 'flex-end' },
-  logStatus: { fontSize: 11, color: '#888', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  logStatusImported: { color: '#4ade80' },
-  logStatusFailed: { color: '#ef4444' },
-  logDate: { color: '#444', fontSize: 11, marginTop: 2 },
+  logStatus: { fontSize: 11, color: colors.textSubtle, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  logStatusImported: { color: colors.success },
+  logStatusFailed: { color: colors.danger },
+  logDate: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
   logRetryBtn: { marginTop: 8, paddingHorizontal: 8, paddingVertical: 6 },
-  logRetryBtnText: { color: '#8ab4ff', fontSize: 11, fontWeight: '600' },
-  emptyText: { color: '#555', fontSize: 13, marginBottom: 12 },
+  logRetryBtnText: { color: colors.info, fontSize: 11, fontWeight: '600' },
+  emptyText: { color: colors.textDisabled, fontSize: 13, marginBottom: 12 },
 });

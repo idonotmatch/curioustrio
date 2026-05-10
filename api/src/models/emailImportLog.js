@@ -283,6 +283,7 @@ async function listByUser(userId, limit = 100) {
   try {
     const result = await db.query(
       `SELECT l.id,
+              l.message_id,
               l.expense_id, l.status, l.subject, l.from_address, l.sender_domain, l.subject_pattern, l.skip_reason, l.imported_at,
               NULL::text AS snippet,
               l.structured_item_block_level,
@@ -307,6 +308,7 @@ async function listByUser(userId, limit = 100) {
     if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
       `SELECT l.id,
+              l.message_id,
               l.expense_id, l.status, l.subject, l.from_address,
               NULL::text AS sender_domain,
               NULL::text AS subject_pattern,

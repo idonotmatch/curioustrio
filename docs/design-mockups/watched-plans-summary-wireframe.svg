@@ -1,0 +1,30 @@
+<svg width="900" height="760" viewBox="0 0 900 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="760" fill="#0A0A0A"/>
+  <rect x="210" y="40" width="480" height="680" rx="28" fill="#111111" stroke="#202020"/>
+  <text x="250" y="92" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="28" font-weight="700">Summary</text>
+
+  <text x="250" y="150" fill="#8E8E8E" font-family="Arial, sans-serif" font-size="13" letter-spacing="1.4">QUICK ENTRY</text>
+  <rect x="250" y="166" width="400" height="86" rx="18" fill="#151515" stroke="#242424"/>
+  <rect x="266" y="182" width="92" height="28" rx="14" fill="#1A1A1A"/>
+  <rect x="364" y="182" width="92" height="28" rx="14" fill="#F5F5F5"/>
+  <text x="292" y="201" fill="#A9A9A9" font-family="Arial, sans-serif" font-size="13">Add</text>
+  <text x="392" y="201" fill="#000000" font-family="Arial, sans-serif" font-size="13" font-weight="700">Plan</text>
+  <text x="270" y="234" fill="#6F6F6F" font-family="Arial, sans-serif" font-size="15">can i afford 180 running shoes</text>
+  <rect x="606" y="198" width="28" height="28" rx="14" fill="#F5F5F5"/>
+
+  <rect x="250" y="286" width="400" height="96" rx="18" fill="#101216" stroke="#1E2731"/>
+  <text x="270" y="316" fill="#DDE8F2" font-family="Arial, sans-serif" font-size="16" font-weight="700">Watching</text>
+  <text x="270" y="338" fill="#8FA0B2" font-family="Arial, sans-serif" font-size="13">2 active plans</text>
+  <text x="270" y="362" fill="#AFC0D5" font-family="Arial, sans-serif" font-size="14">1 got easier · 1 got tighter</text>
+  <rect x="547" y="315" width="83" height="34" rx="17" fill="#F5F5F5"/>
+  <text x="568" y="337" fill="#000000" font-family="Arial, sans-serif" font-size="13" font-weight="700">See plans</text>
+
+  <text x="250" y="438" fill="#8E8E8E" font-family="Arial, sans-serif" font-size="13" letter-spacing="1.4">INSIGHTS</text>
+  <rect x="250" y="454" width="400" height="112" rx="18" fill="#131313" stroke="#212121"/>
+  <text x="270" y="486" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="18" font-weight="700">Groceries are driving the difference</text>
+  <text x="270" y="514" fill="#A2A2A2" font-family="Arial, sans-serif" font-size="14">Groceries are running about $86 higher than your usual household pace.</text>
+
+  <rect x="250" y="586" width="400" height="112" rx="18" fill="#131313" stroke="#212121"/>
+  <text x="270" y="618" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="18" font-weight="700">Your personal budget may be too low</text>
+  <text x="270" y="646" fill="#A2A2A2" font-family="Arial, sans-serif" font-size="14">You are projected to finish this month above budget.</text>
+</svg>

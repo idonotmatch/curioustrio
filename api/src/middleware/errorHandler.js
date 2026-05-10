@@ -1,6 +1,8 @@
+const { captureException } = require('../services/observability');
+
 function errorHandler(err, req, res, next) {
   const status = err.status || 500;
-  console.error('[api error]', {
+  const context = {
     status,
     request_id: req?.requestId || null,
     method: req?.method || null,
@@ -8,7 +10,9 @@ function errorHandler(err, req, res, next) {
     message: err?.message || null,
     code: err?.code || null,
     stack: process.env.NODE_ENV === 'production' ? undefined : err?.stack,
-  });
+  };
+  console.error('[api error]', context);
+  if (status >= 500) captureException(err, context);
   // Don't leak DB messages, stack info, or internal details to clients in production.
   const message = status >= 500 && process.env.NODE_ENV === 'production'
     ? 'Internal server error'

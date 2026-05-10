@@ -9,7 +9,9 @@ import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
+import { colors } from '../theme/tokens';
 
 export default function AccountsScreen() {
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
@@ -90,6 +92,7 @@ export default function AccountsScreen() {
     setSavingName(true);
     try {
       await api.patch('/households/me', { name: householdNameInput.trim() });
+      markFreshnessStale([FRESHNESS_DOMAINS.household], { reason: 'household_updated' });
       setHouseholdData(prev => ({
         ...prev,
         household: { ...prev.household, name: householdNameInput.trim() },
@@ -107,6 +110,11 @@ export default function AccountsScreen() {
     setCreatingHousehold(true);
     try {
       await api.post('/households', { name: newHouseholdName.trim() });
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.householdExpenses,
+        FRESHNESS_DOMAINS.budget,
+      ], { reason: 'household_created' });
       setNewHouseholdName('');
       loadHousehold();
     } catch (e) {
@@ -130,6 +138,13 @@ export default function AccountsScreen() {
             setRemovingMemberId(memberId);
             try {
               await api.delete(`/households/me/members/${memberId}`);
+              markFreshnessStale([
+                FRESHNESS_DOMAINS.household,
+                FRESHNESS_DOMAINS.householdExpenses,
+                FRESHNESS_DOMAINS.budget,
+                FRESHNESS_DOMAINS.insights,
+                FRESHNESS_DOMAINS.forecastMovement,
+              ], { reason: 'household_member_removed' });
               loadHousehold();
             } catch (e) {
               Alert.alert('Could not remove member', e.message || 'Please try again.');
@@ -156,6 +171,13 @@ export default function AccountsScreen() {
             setLeavingHousehold(true);
             try {
               await api.post('/households/me/leave', {});
+              markFreshnessStale([
+                FRESHNESS_DOMAINS.household,
+                FRESHNESS_DOMAINS.householdExpenses,
+                FRESHNESS_DOMAINS.budget,
+                FRESHNESS_DOMAINS.insights,
+                FRESHNESS_DOMAINS.forecastMovement,
+              ], { reason: 'household_left' });
               loadHousehold();
             } catch (e) {
               Alert.alert('Could not leave household', e.message || 'Please try again.');
@@ -196,6 +218,13 @@ export default function AccountsScreen() {
     setJoiningHousehold(true);
     try {
       await api.post(`/households/invites/${joinToken.trim()}/accept`, {});
+      markFreshnessStale([
+        FRESHNESS_DOMAINS.household,
+        FRESHNESS_DOMAINS.householdExpenses,
+        FRESHNESS_DOMAINS.budget,
+        FRESHNESS_DOMAINS.insights,
+        FRESHNESS_DOMAINS.forecastMovement,
+      ], { reason: 'household_joined' });
       setJoinToken('');
       loadHousehold();
     } catch (e) {
@@ -219,7 +248,7 @@ export default function AccountsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>HOUSEHOLD</Text>
           {householdLoading ? (
-            <ActivityIndicator color="#555" style={{ alignSelf: 'flex-start' }} />
+            <ActivityIndicator color={colors.textDisabled} style={{ alignSelf: 'flex-start' }} />
           ) : householdData && householdData !== 'none' ? (
             <>
               {/* Household name — inline editable */}
@@ -239,20 +268,20 @@ export default function AccountsScreen() {
                     disabled={savingName}
                   >
                     {savingName
-                      ? <ActivityIndicator color="#000" size="small" />
+                      ? <ActivityIndicator color={colors.textInverse} size="small" />
                       : <Text style={styles.nameEditBtnText}>Save</Text>}
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.nameCancelBtn} onPress={() => {
                     setHouseholdNameInput(householdData.household?.name || '');
                     setEditingName(false);
                   }}>
-                    <Ionicons name="close" size={18} color="#555" />
+                    <Ionicons name="close" size={18} color={colors.textDisabled} />
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity style={styles.nameRow} onPress={() => setEditingName(true)}>
                   <Text style={styles.householdName}>{householdData.household?.name}</Text>
-                  <Ionicons name="pencil-outline" size={14} color="#555" style={{ marginLeft: 8 }} />
+                  <Ionicons name="pencil-outline" size={14} color={colors.textDisabled} style={{ marginLeft: 8 }} />
                 </TouchableOpacity>
               )}
 
@@ -270,7 +299,7 @@ export default function AccountsScreen() {
                       style={{ paddingVertical: 8, paddingHorizontal: 4 }}
                     >
                       {removingMemberId === m.id
-                        ? <ActivityIndicator size="small" color="#ef4444" />
+                        ? <ActivityIndicator size="small" color={colors.danger} />
                         : <Text style={styles.removeText}>Remove</Text>}
                     </TouchableOpacity>
                   )}
@@ -289,7 +318,7 @@ export default function AccountsScreen() {
                       <Text style={styles.actionBtnText}>Share</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.actionBtn, { borderColor: '#333' }]}
+                      style={[styles.actionBtn, { borderColor: colors.borderStrong }]}
                       onPress={() => setGeneratedInvite(null)}
                     >
                       <Text style={styles.actionBtnText}>New invite</Text>
@@ -301,7 +330,7 @@ export default function AccountsScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="their@email.com"
-                    placeholderTextColor="#333"
+                    placeholderTextColor={colors.borderStrong}
                     value={inviteEmail}
                     onChangeText={setInviteEmail}
                     keyboardType="email-address"
@@ -313,7 +342,7 @@ export default function AccountsScreen() {
                     disabled={sendingInvite || !inviteEmail.trim()}
                   >
                     {sendingInvite
-                      ? <ActivityIndicator color="#f5f5f5" size="small" />
+                      ? <ActivityIndicator color={colors.text} size="small" />
                       : <Text style={styles.actionBtnText}>Generate</Text>}
                   </TouchableOpacity>
                 </View>
@@ -324,7 +353,7 @@ export default function AccountsScreen() {
                 disabled={leavingHousehold}
               >
                 {leavingHousehold
-                  ? <ActivityIndicator color="#ef4444" size="small" />
+                  ? <ActivityIndicator color={colors.danger} size="small" />
                   : <Text style={styles.leaveBtnText}>Leave household</Text>}
               </TouchableOpacity>
             </>
@@ -336,7 +365,7 @@ export default function AccountsScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Household name"
-                  placeholderTextColor="#333"
+                  placeholderTextColor={colors.borderStrong}
                   value={newHouseholdName}
                   onChangeText={setNewHouseholdName}
                 />
@@ -346,7 +375,7 @@ export default function AccountsScreen() {
                   disabled={creatingHousehold || !newHouseholdName.trim()}
                 >
                   {creatingHousehold
-                    ? <ActivityIndicator color="#f5f5f5" size="small" />
+                    ? <ActivityIndicator color={colors.text} size="small" />
                     : <Text style={styles.actionBtnText}>Create</Text>}
                 </TouchableOpacity>
               </View>
@@ -355,7 +384,7 @@ export default function AccountsScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Paste invite token"
-                  placeholderTextColor="#333"
+                  placeholderTextColor={colors.borderStrong}
                   value={joinToken}
                   onChangeText={setJoinToken}
                   autoCapitalize="none"
@@ -366,7 +395,7 @@ export default function AccountsScreen() {
                   disabled={joiningHousehold || !joinToken.trim()}
                 >
                   {joiningHousehold
-                    ? <ActivityIndicator color="#f5f5f5" size="small" />
+                    ? <ActivityIndicator color={colors.text} size="small" />
                     : <Text style={styles.actionBtnText}>Join</Text>}
                 </TouchableOpacity>
               </View>
@@ -378,7 +407,7 @@ export default function AccountsScreen() {
           <Text style={styles.sectionTitle}>SESSION</Text>
           <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} disabled={signingOut}>
             {signingOut
-              ? <ActivityIndicator color="#ef4444" size="small" />
+              ? <ActivityIndicator color={colors.danger} size="small" />
               : <Text style={styles.signOutText}>Sign out</Text>}
           </TouchableOpacity>
           <TouchableOpacity
@@ -387,7 +416,7 @@ export default function AccountsScreen() {
             disabled={deletingAccount}
           >
             {deletingAccount
-              ? <ActivityIndicator color="#ef4444" size="small" />
+              ? <ActivityIndicator color={colors.danger} size="small" />
               : <Text style={styles.deleteAccountText}>Delete Adlo account and data</Text>}
           </TouchableOpacity>
           <Text style={styles.deleteAccountMeta}>
@@ -401,40 +430,40 @@ export default function AccountsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
-  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: '#111', paddingBottom: 24 },
-  sectionTitle: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
-  emptyText: { color: '#555', fontSize: 13, marginBottom: 12 },
+  section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.surface, paddingBottom: 24 },
+  sectionTitle: { fontSize: 10, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  emptyText: { color: colors.textDisabled, fontSize: 13, marginBottom: 12 },
 
   nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  householdName: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
+  householdName: { color: colors.text, fontSize: 18, fontWeight: '600' },
   nameEditRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  nameEditBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
-  nameEditBtnText: { color: '#000', fontWeight: '600', fontSize: 13 },
+  nameEditBtn: { backgroundColor: colors.text, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
+  nameEditBtnText: { color: colors.textInverse, fontWeight: '600', fontSize: 13 },
   nameCancelBtn: { padding: 8 },
 
-  subLabel: { fontSize: 10, color: '#444', textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 8 },
-  memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#111' },
-  memberName: { color: '#f5f5f5', fontSize: 14 },
-  memberEmail: { color: '#555', fontSize: 12 },
+  subLabel: { fontSize: 10, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 8 },
+  memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  memberName: { color: colors.text, fontSize: 14 },
+  memberEmail: { color: colors.textDisabled, fontSize: 12 },
   memberInfo: { flex: 1 },
-  removeText: { color: '#ef4444', fontSize: 14 },
+  removeText: { color: colors.danger, fontSize: 14 },
   leaveBtn: { marginTop: 24, paddingVertical: 12, alignItems: 'center' },
-  leaveBtnText: { color: '#ef4444', fontSize: 14 },
+  leaveBtnText: { color: colors.danger, fontSize: 14 },
   inputRow: { flexDirection: 'row', gap: 8 },
-  input: { flex: 1, backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#1f1f1f' },
-  actionBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center' },
+  input: { flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.textInverse },
+  actionBtn: { backgroundColor: colors.borderSubtle, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: colors.borderStrong, justifyContent: 'center' },
   actionBtnDisabled: { opacity: 0.4 },
-  actionBtnText: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
+  actionBtnText: { color: colors.text, fontSize: 13, fontWeight: '500' },
   signOutBtn: { paddingVertical: 14, alignItems: 'center' },
-  signOutText: { color: '#ef4444', fontSize: 15 },
+  signOutText: { color: colors.danger, fontSize: 15 },
   deleteAccountBtn: { paddingVertical: 14, alignItems: 'center' },
-  deleteAccountText: { color: '#f87171', fontSize: 14, fontWeight: '600' },
-  deleteAccountMeta: { color: '#555', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 4 },
-  tokenCard: { backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a', padding: 14, marginTop: 4 },
-  tokenLabel: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
-  tokenValue: { color: '#f5f5f5', fontSize: 13, fontFamily: 'monospace', lineHeight: 20, marginBottom: 6 },
-  tokenExpiry: { color: '#555', fontSize: 11, marginBottom: 12 },
+  deleteAccountText: { color: colors.danger, fontSize: 14, fontWeight: '600' },
+  deleteAccountMeta: { color: colors.textDisabled, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 4 },
+  tokenCard: { backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.borderStrong, padding: 14, marginTop: 4 },
+  tokenLabel: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  tokenValue: { color: colors.text, fontSize: 13, fontFamily: 'monospace', lineHeight: 20, marginBottom: 6 },
+  tokenExpiry: { color: colors.textDisabled, fontSize: 11, marginBottom: 12 },
   tokenActions: { flexDirection: 'row', gap: 8 },
 });

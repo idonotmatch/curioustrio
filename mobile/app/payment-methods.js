@@ -11,6 +11,8 @@ import {
 import { Stack } from 'expo-router';
 import { api } from '../services/api';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
+import { colors } from '../theme/tokens';
 
 function cardKey(card = {}) {
   return `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
@@ -67,6 +69,7 @@ export default function PaymentMethodsScreen() {
         next_card_label: draftLabel || null,
         next_card_last4: draftLast4 || null,
       });
+      await invalidateExpenseMutationCaches({ includePending: false });
       cancelEdit();
       await loadCards();
     } catch (e) {
@@ -86,6 +89,7 @@ export default function PaymentMethodsScreen() {
         card_last4: card.card_last4 || null,
       });
       if (editingKey === key) cancelEdit();
+      await invalidateExpenseMutationCaches({ includePending: false });
       await loadCards();
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not remove payment method');
@@ -104,7 +108,7 @@ export default function PaymentMethodsScreen() {
         </Text>
 
         {loading ? (
-          <ActivityIndicator color="#666" style={styles.loader} />
+          <ActivityIndicator color={colors.textDisabled} style={styles.loader} />
         ) : cards.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>No saved cards yet</Text>
@@ -145,14 +149,14 @@ export default function PaymentMethodsScreen() {
                       value={draftLabel}
                       onChangeText={setDraftLabel}
                       placeholder="Card nickname"
-                      placeholderTextColor="#555"
+                      placeholderTextColor={colors.textDisabled}
                     />
                     <TextInput
                       style={styles.last4Input}
                       value={draftLast4}
                       onChangeText={(value) => setDraftLast4(value.replace(/\D/g, '').slice(0, 4))}
                       placeholder="Last 4"
-                      placeholderTextColor="#555"
+                      placeholderTextColor={colors.textDisabled}
                       keyboardType="number-pad"
                       maxLength={4}
                     />
@@ -174,57 +178,57 @@ export default function PaymentMethodsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
-  sectionTitle: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
-  sectionIntro: { color: '#777', fontSize: 13, lineHeight: 18, marginBottom: 18 },
+  sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+  sectionIntro: { color: colors.textDisabled, fontSize: 13, lineHeight: 18, marginBottom: 18 },
   loader: { marginTop: 20, alignSelf: 'flex-start' },
   emptyCard: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     borderRadius: 12,
     padding: 16,
   },
-  emptyTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  emptyBody: { color: '#777', fontSize: 13, lineHeight: 18 },
+  emptyTitle: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  emptyBody: { color: colors.textDisabled, fontSize: 13, lineHeight: 18 },
   cardRow: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   cardText: { flex: 1, minWidth: 0 },
-  cardTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
-  cardMeta: { color: '#777', fontSize: 12, marginTop: 4 },
+  cardTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  cardMeta: { color: colors.textDisabled, fontSize: 12, marginTop: 4 },
   actionsRow: { alignItems: 'flex-end', gap: 10 },
-  editAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600' },
-  forgetAction: { color: '#ef4444', fontSize: 13, fontWeight: '600' },
+  editAction: { color: colors.info, fontSize: 13, fontWeight: '600' },
+  forgetAction: { color: colors.danger, fontSize: 13, fontWeight: '600' },
   editor: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   input: {
-    backgroundColor: '#0b0b0b',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     borderRadius: 10,
-    color: '#fff',
+    color: colors.text,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
   },
   last4Input: {
     width: 76,
-    backgroundColor: '#0b0b0b',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     borderRadius: 10,
-    color: '#fff',
+    color: colors.text,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
   },
-  saveAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '700' },
-  cancelAction: { color: '#777', fontSize: 13, fontWeight: '600' },
+  saveAction: { color: colors.info, fontSize: 13, fontWeight: '700' },
+  cancelAction: { color: colors.textDisabled, fontSize: 13, fontWeight: '600' },
 });

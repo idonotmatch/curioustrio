@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 
 export function useCategories() {
   const [categories, setCategories] = useState([]);
@@ -19,6 +21,7 @@ export function useCategories() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.categories, refresh);
 
   return { categories, loading, refresh };
 }

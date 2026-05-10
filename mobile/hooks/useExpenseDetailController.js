@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { useExpenseVisibilityControls } from './useExpenseVisibilityControls';
 import {
   applyExpenseToState,
@@ -160,12 +161,7 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
       saveExpenseSnapshot(refreshed);
       patchExpenseInCachedLists(refreshed);
       setEditing(false);
-      await Promise.all([
-        invalidateCacheByPrefix('cache:expenses:'),
-        invalidateCacheByPrefix('cache:budget:'),
-        invalidateCacheByPrefix('cache:household-expenses:'),
-        invalidateCacheByPrefix('cache:insights:'),
-      ]);
+      await invalidateExpenseMutationCaches();
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -183,11 +179,7 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
             await api.delete(`/expenses/${id}`);
             await removeExpenseFromCachedLists(id);
             await removeExpenseSnapshot(id);
-            await Promise.all([
-              invalidateCacheByPrefix('cache:expenses:'),
-              invalidateCacheByPrefix('cache:budget:'),
-              invalidateCacheByPrefix('cache:household-expenses:'),
-            ]);
+            await invalidateExpenseMutationCaches();
             router.back();
           } catch (e) {
             Alert.alert('Error', e.message);

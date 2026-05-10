@@ -3,6 +3,7 @@ const InsightNotification = require('../models/insightNotification');
 const { sendNotifications } = require('./pushService');
 const { buildInsightsForUser } = require('./insightBuilder');
 const { pushNotificationsEnabled } = require('./pushPreferences');
+const { safePushData, shouldSendInsightPush } = require('./pushEligibility');
 const InsightEvent = require('../models/insightEvent');
 const { inferOutcomeEventsForUser, summarizeOutcomeWindows } = require('./insightOutcomeInference');
 const { buildInsightPreferenceSummary, shouldSendPushForInsight } = require('./insightPreferenceSummary');
@@ -77,7 +78,7 @@ function toPushMessage(token, insight) {
       scope: metadata.scope,
       month: metadata.month,
       group_key: metadata.group_key,
-      metadata,
+      metadata: safePushData(metadata),
     },
   };
 }
@@ -98,15 +99,24 @@ async function dispatchInsightPushesForUser(user) {
     outcomeWindows: summarizeOutcomeWindows(allEvents),
   });
   const candidates = insights.filter((insight) => (
-    PUSHABLE_INSIGHT_TYPES.has(insight.type) &&
-    insight.state?.status !== 'seen' &&
-    insight.state?.status !== 'dismissed' &&
+    shouldSendInsightPush({ insight, allowedTypes: PUSHABLE_INSIGHT_TYPES }).send &&
     shouldSendPushForInsight(insight, preferenceSummary)
   ));
   if (!candidates.length) return { sent: 0, considered: 0 };
 
   const sentIds = await InsightNotification.findSentIds(user.id, candidates.map((insight) => insight.id), 'push');
-  const unsent = candidates.filter((insight) => !sentIds.has(insight.id)).slice(0, 2);
+  const sentContinuityKeys = new Set(
+    candidates
+      .filter((insight) => sentIds.has(insight.id))
+      .map((insight) => insight?.metadata?.continuity_key)
+      .filter(Boolean)
+  );
+  const unsent = candidates.filter((insight) => shouldSendInsightPush({
+    insight,
+    sentIds,
+    sentContinuityKeys,
+    allowedTypes: PUSHABLE_INSIGHT_TYPES,
+  }).send).slice(0, 1);
   if (!unsent.length) return { sent: 0, considered: candidates.length };
 
   const messages = tokens.flatMap((token) => unsent.map((insight) => toPushMessage(token, insight)));

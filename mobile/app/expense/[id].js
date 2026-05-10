@@ -19,6 +19,7 @@ import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
 import { toLocalDateString } from '../../services/date';
+import { colors } from '../../theme/tokens';
 import {
   formatImportedAt,
   formatEmailText,
@@ -34,6 +35,7 @@ import {
   itemSubmeta,
   summarizeItemSignals,
 } from '../../services/expenseDetailPresentation';
+import { fieldProvenance, sourcePresentation } from '../../services/provenancePresentation';
 
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
@@ -137,18 +139,18 @@ export default function ExpenseDetailScreen() {
     }
   }, [isPendingEmailReview, items, itemsExpanded, isItemsFirstReview]);
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color="#555" /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator color={colors.textDisabled} /></View>;
   if (!expense) return <View style={styles.center}><Text style={styles.muted}>Expense not found.</Text></View>;
 
   const formattedDate = (() => {
     const d = new Date((expense.date || '').slice(0, 10) + 'T12:00:00');
     return isNaN(d) ? expense.date : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   })();
-  const sourceLabel = { manual: 'Manual entry', camera: 'Receipt scan', email: 'Email import', refund: 'Refund' };
   const isRefund = Number(expense.amount) < 0;
   const categoryLabel = expense.category_parent_name || expense.category_name || 'Uncategorized';
   const ownerLabel = expense.user_name || 'You';
-  const sourceText = sourceLabel[expense.source] || expense.source;
+  const sourceInfo = sourcePresentation(expense);
+  const provenanceFields = fieldProvenance(expense, gmailReviewHint);
   const categoryReasoning = expense.category_reasoning || null;
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
@@ -214,7 +216,7 @@ export default function ExpenseDetailScreen() {
         title: expense.merchant,
         headerRight: editing || !canEdit ? undefined : () => (
           <TouchableOpacity onPress={() => setEditing(true)} style={{ marginRight: 4 }}>
-            <Ionicons name="pencil-outline" size={20} color="#f5f5f5" />
+            <Ionicons name="pencil-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         ),
       }} />
@@ -223,8 +225,8 @@ export default function ExpenseDetailScreen() {
       <View style={styles.hero}>
         {editing && canEdit && !isPendingEmailReview ? (
           <View style={styles.editRow}>
-            <TextInput style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]} value={merchant} onChangeText={setMerchant} placeholderTextColor="#444" placeholder="Merchant" />
-            <TextInput style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#444" />
+            <TextInput style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]} value={merchant} onChangeText={setMerchant} placeholderTextColor={colors.textDisabled} placeholder="Merchant" />
+            <TextInput style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textDisabled} />
           </View>
         ) : (
           <>
@@ -240,7 +242,7 @@ export default function ExpenseDetailScreen() {
                 <Text style={styles.heroMetaText}>{categoryLabel}</Text>
               </View>
               <View style={styles.heroMetaChip}>
-                <Text style={styles.heroMetaText}>{sourceText}</Text>
+                <Text style={styles.heroMetaText}>{sourceInfo.label}</Text>
               </View>
               {expense.user_name ? (
                 <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
@@ -256,6 +258,14 @@ export default function ExpenseDetailScreen() {
                 <View style={[styles.heroMetaChip, styles.heroMetaChipMuted]}>
                   <Text style={styles.heroMetaText}>Track only</Text>
                 </View>
+              ) : null}
+            </View>
+            <View style={styles.provenanceSummary}>
+              <Text style={styles.provenanceSummaryTitle}>{sourceInfo.detail}</Text>
+              {provenanceFields.length ? (
+                <Text style={styles.provenanceSummaryMeta}>
+                  {provenanceFields.map((field) => `${field.label}: ${field.value}`).join(' · ')}
+                </Text>
               ) : null}
             </View>
           </>
@@ -499,14 +509,14 @@ export default function ExpenseDetailScreen() {
               <TextInput
                 style={[styles.editInputInline, { flex: 1 }]}
                 placeholder="nickname"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.textDisabled}
                 value={cardLabel}
                 onChangeText={setCardLabel}
               />
               <TextInput
                 style={[styles.editInputInline, { width: 50 }]}
                 placeholder="last4"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.textDisabled}
                 value={cardLast4}
                 onChangeText={t => setCardLast4(t.replace(/\D/g, '').slice(0, 4))}
                 keyboardType="number-pad"
@@ -554,7 +564,7 @@ export default function ExpenseDetailScreen() {
                     <Text style={styles.locationName}>{locationLabel}</Text>
                     {expense.address ? <Text style={styles.locationAddress}>{expense.address}</Text> : null}
                   </View>
-                  <Ionicons name="map-outline" size={18} color="#444" />
+                  <Ionicons name="map-outline" size={18} color={colors.textDisabled} />
                 </TouchableOpacity>
               );
             })()
@@ -571,7 +581,7 @@ export default function ExpenseDetailScreen() {
               value={notes}
               onChangeText={setNotes}
               placeholder="Add a note"
-              placeholderTextColor="#444"
+              placeholderTextColor={colors.textDisabled}
               multiline
             />
           ) : (
@@ -646,146 +656,158 @@ function Row({ label, children }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  center: { flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' },
-  muted: { color: '#555' },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  muted: { color: colors.textDisabled },
 
-  hero: { padding: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#111' },
-  merchant: { fontSize: 20, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.3 },
-  amount: { fontSize: 36, color: '#f5f5f5', fontWeight: '600', marginTop: 4, letterSpacing: -1 },
-  amountRefund: { color: '#4ade80' },
+  hero: { padding: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  merchant: { fontSize: 20, color: colors.text, fontWeight: '600', letterSpacing: -0.3 },
+  amount: { fontSize: 36, color: colors.text, fontWeight: '600', marginTop: 4, letterSpacing: -1 },
+  amountRefund: { color: colors.success },
   heroMetaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   heroMetaChip: {
-    backgroundColor: '#141414',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   heroMetaChipMuted: {
-    backgroundColor: '#101010',
+    backgroundColor: colors.surface,
   },
-  heroMetaText: { color: '#a4a4a4', fontSize: 12, fontWeight: '500' },
-  reviewBanner: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: -4,
-    backgroundColor: '#15120a',
+  heroMetaText: { color: colors.textMuted, fontSize: 12, fontWeight: '500' },
+  provenanceSummary: {
+    marginTop: 12,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#2c220f',
+    borderColor: colors.textInverse,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  reviewBannerEyebrow: { color: '#cbb37c', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
-  reviewBannerTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
-  reviewBannerText: { color: '#b8aa86', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  provenanceSummaryTitle: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
+  provenanceSummaryMeta: { color: colors.textDisabled, fontSize: 11, lineHeight: 16, marginTop: 4 },
+  reviewBanner: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: -4,
+    backgroundColor: colors.warningMuted,
+    borderWidth: 1,
+    borderColor: colors.warningMuted,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reviewBannerEyebrow: { color: colors.warning, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
+  reviewBannerTitle: { color: colors.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  reviewBannerText: { color: colors.text, fontSize: 12, lineHeight: 17, marginTop: 4 },
   reviewBannerSubjectBlock: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#24201a',
+    borderTopColor: colors.warningMuted,
   },
   reviewBannerSubjectLabel: {
-    color: '#cbb37c',
+    color: colors.warning,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
-  reviewBannerSubjectValue: { color: '#f1eadc', fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  reviewBannerSubjectValue: { color: colors.text, fontSize: 13, fontWeight: '600', lineHeight: 18 },
   reviewFactGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   reviewFactChip: {
     minWidth: 100,
     maxWidth: '48%',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a2112',
-    backgroundColor: '#110e08',
+    borderColor: colors.warningMuted,
+    backgroundColor: colors.warningMuted,
     paddingHorizontal: 9,
     paddingVertical: 8,
   },
-  reviewFactLabel: { color: '#8f8468', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
-  reviewFactValue: { color: '#f1eadc', fontSize: 12, fontWeight: '600' },
+  reviewFactLabel: { color: colors.warning, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+  reviewFactValue: { color: colors.text, fontSize: 12, fontWeight: '600' },
   reviewFocusBlock: {
     marginTop: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#302614',
-    backgroundColor: '#120f09',
+    borderColor: colors.warningMuted,
+    backgroundColor: colors.warningMuted,
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
-  reviewFocusTitle: { color: '#f5f0e2', fontSize: 12, fontWeight: '600', marginBottom: 3 },
-  reviewFocusBody: { color: '#c8bda3', fontSize: 12, lineHeight: 17 },
+  reviewFocusTitle: { color: colors.text, fontSize: 12, fontWeight: '600', marginBottom: 3 },
+  reviewFocusBody: { color: colors.text, fontSize: 12, lineHeight: 17 },
   reviewPatternBlock: {
     marginTop: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1f3a2c',
-    backgroundColor: '#0d1511',
+    borderColor: colors.successMuted,
+    backgroundColor: colors.successMuted,
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
-  reviewPatternLabel: { color: '#86efac', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
-  reviewPatternBody: { color: '#d8f3e1', fontSize: 12, lineHeight: 17 },
-  reviewBannerMeta: { color: '#7f7766', fontSize: 11, lineHeight: 16, marginBottom: 6 },
+  reviewPatternLabel: { color: colors.success, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+  reviewPatternBody: { color: colors.text, fontSize: 12, lineHeight: 17 },
+  reviewBannerMeta: { color: colors.textSubtle, fontSize: 11, lineHeight: 16, marginBottom: 6 },
   reviewBannerEmailContext: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#24201a',
+    borderTopColor: colors.warningMuted,
   },
   reviewBannerEmailLabel: {
-    color: '#cbb37c',
+    color: colors.warning,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
-  reviewBannerEmailSnippet: { color: '#c9c1af', fontSize: 12, lineHeight: 18 },
+  reviewBannerEmailSnippet: { color: colors.text, fontSize: 12, lineHeight: 18 },
   reviewProvenanceCard: {
     marginHorizontal: 20,
     marginTop: 16,
     marginBottom: -4,
-    backgroundColor: '#14110d',
+    backgroundColor: colors.warningMuted,
     borderWidth: 1,
-    borderColor: '#25201a',
+    borderColor: colors.warningMuted,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  reviewSectionEyebrow: { color: '#8a816f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
-  reviewProvenanceTitle: { color: '#f3efe8', fontSize: 15, fontWeight: '600', lineHeight: 20 },
-  reviewProvenanceMeta: { color: '#a79b87', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  reviewProvenanceHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 },
+  reviewSectionEyebrow: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
+  reviewProvenanceTitle: { color: colors.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  reviewProvenanceMeta: { color: colors.text, fontSize: 12, lineHeight: 17, marginTop: 6 },
   reviewReasonBlock: {
     marginTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#24201a',
+    borderTopColor: colors.warningMuted,
     paddingTop: 10,
     gap: 4,
   },
-  reviewReasonLabel: { color: '#bda777', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  reviewReasonBody: { color: '#dfd5c4', fontSize: 12, lineHeight: 18 },
+  reviewReasonLabel: { color: colors.text, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  reviewReasonBody: { color: colors.text, fontSize: 12, lineHeight: 18 },
   reviewPathRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  reviewProvenanceHint: { color: '#f3efe8', fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  reviewProvenanceHint: { color: colors.text, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   reviewSnippetBlock: {
     marginTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#24201a',
+    borderTopColor: colors.warningMuted,
     paddingTop: 10,
     gap: 4,
   },
-  reviewSnippetLabel: { color: '#8a816f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  reviewProvenanceSnippet: { color: '#c8bfaf', fontSize: 12, lineHeight: 18 },
+  reviewSnippetLabel: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  reviewProvenanceSnippet: { color: colors.text, fontSize: 12, lineHeight: 18 },
   reviewSummaryCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: -4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -793,29 +815,29 @@ const styles = StyleSheet.create({
   reviewSummaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   headerCopyBlock: { flex: 1, minWidth: 0 },
   headerActionWrap: { flexShrink: 0, alignSelf: 'flex-start', paddingLeft: 4 },
-  reviewSummaryTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
-  reviewSummarySubtitle: { color: '#8d8d8d', fontSize: 12, lineHeight: 17, marginTop: 5 },
+  reviewSummaryTitle: { color: colors.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  reviewSummarySubtitle: { color: colors.textSubtle, fontSize: 12, lineHeight: 17, marginTop: 5 },
   reviewSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   reviewSummaryChip: {
     minWidth: 104,
     maxWidth: '48%',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#222',
-    backgroundColor: '#0d0d0d',
+    borderColor: colors.border,
+    backgroundColor: colors.background,
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
-  reviewSummaryChipLabel: { color: '#7f7f7f', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  reviewSummaryChipValue: { color: '#f3f3f3', fontSize: 13, fontWeight: '600' },
+  reviewSummaryChipLabel: { color: colors.textSubtle, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  reviewSummaryChipValue: { color: colors.text, fontSize: 13, fontWeight: '600' },
   inlineEditFieldList: {
     gap: 10,
   },
   inlineEditFieldCard: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#222',
-    backgroundColor: '#0d0d0d',
+    borderColor: colors.border,
+    backgroundColor: colors.background,
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 8,
@@ -826,7 +848,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   inlineEditAmountDollar: {
-    color: '#f3f3f3',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
     marginRight: 4,
@@ -834,14 +856,14 @@ const styles = StyleSheet.create({
   inlineEditAmountInput: {
     flex: 1,
     minWidth: 0,
-    color: '#f3f3f3',
+    color: colors.text,
     fontSize: 18,
     fontWeight: '600',
     paddingVertical: 0,
     paddingHorizontal: 0,
   },
   inlineEditTextInput: {
-    color: '#f3f3f3',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
     paddingVertical: 0,
@@ -849,7 +871,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   inlineEditStaticValue: {
-    color: '#f3f3f3',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
     minHeight: 24,
@@ -874,82 +896,82 @@ const styles = StyleSheet.create({
   inlineEditCategoryChip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#151515',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 8,
     paddingVertical: 5,
   },
   inlineEditCategoryChipActive: {
-    borderColor: '#8ab4ff',
-    backgroundColor: '#132033',
+    borderColor: colors.info,
+    backgroundColor: colors.infoMuted,
   },
   inlineEditCategoryChipText: {
-    color: '#cfcfcf',
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
   },
   inlineEditCategoryChipTextActive: {
-    color: '#d7e7ff',
+    color: colors.text,
   },
-  reviewAttentionBody: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  reviewAttentionBody: { color: colors.text, fontSize: 12, lineHeight: 18, marginTop: 4 },
   priorityFieldsCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: -4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   priorityFieldsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 8 },
-  priorityFieldsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  priorityFieldsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
-  priorityFieldsAction: { color: '#8ab4ff', fontSize: 13, fontWeight: '600', marginTop: 2, flexShrink: 0 },
+  priorityFieldsEyebrow: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  priorityFieldsTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  priorityFieldsAction: { color: colors.info, fontSize: 13, fontWeight: '600', marginTop: 2, flexShrink: 0 },
   reviewControlsCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: -4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  reviewControlsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  reviewControlsTitle: { color: '#f5f5f5', fontSize: 14, fontWeight: '600', marginBottom: 10 },
+  reviewControlsEyebrow: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  reviewControlsTitle: { color: colors.text, fontSize: 14, fontWeight: '600', marginBottom: 10 },
   reviewSuggestionCard: {
     marginTop: 2,
     marginBottom: 10,
-    backgroundColor: '#0d1511',
+    backgroundColor: colors.successMuted,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f3a2c',
+    borderColor: colors.successMuted,
     padding: 12,
   },
   reviewSuggestionHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   reviewSuggestionCopy: { flex: 1 },
-  reviewSuggestionEyebrow: { color: '#86efac', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  reviewSuggestionTitle: { color: '#e8f7ee', fontSize: 13, fontWeight: '600', lineHeight: 18 },
-  reviewSuggestionDetail: { color: '#8bb59a', fontSize: 11, lineHeight: 16, marginTop: 6 },
-  reviewSuggestionMeta: { color: '#b7d8c2', fontSize: 11, lineHeight: 16, marginTop: 6 },
+  reviewSuggestionEyebrow: { color: colors.success, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  reviewSuggestionTitle: { color: colors.text, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  reviewSuggestionDetail: { color: colors.text, fontSize: 11, lineHeight: 16, marginTop: 6 },
+  reviewSuggestionMeta: { color: colors.text, fontSize: 11, lineHeight: 16, marginTop: 6 },
   reviewSuggestionAction: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#29533d',
-    backgroundColor: '#123222',
+    borderColor: colors.success,
+    backgroundColor: colors.successMuted,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  reviewSuggestionActionText: { color: '#c7f9d7', fontSize: 11, fontWeight: '700' },
-  priorityFieldRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  priorityFieldRowActive: { backgroundColor: '#0f141d', marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 8 },
+  reviewSuggestionActionText: { color: colors.text, fontSize: 11, fontWeight: '700' },
+  priorityFieldRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+  priorityFieldRowActive: { backgroundColor: colors.infoMuted, marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 8 },
   priorityFieldTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },
-  priorityFieldLabel: { color: '#d6d6d6', fontSize: 12, fontWeight: '600', flex: 1, minWidth: 0, paddingTop: 2 },
-  priorityFieldValue: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', marginTop: 5 },
-  priorityFieldReason: { color: '#9aa5b1', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  priorityFieldLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '600', flex: 1, minWidth: 0, paddingTop: 2 },
+  priorityFieldValue: { color: colors.text, fontSize: 15, fontWeight: '600', marginTop: 5 },
+  priorityFieldReason: { color: colors.text, fontSize: 12, lineHeight: 18, marginTop: 4 },
   secondaryDetailsToggle: {
     marginHorizontal: 20,
     marginTop: 12,
@@ -961,58 +983,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  secondaryDetailsEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  secondaryDetailsTitle: { color: '#cfcfcf', fontSize: 13, lineHeight: 18 },
+  secondaryDetailsEyebrow: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  secondaryDetailsTitle: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   recurringCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: 4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     padding: 14,
   },
   recurringHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  recurringTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
-  recurringSubtitle: { color: '#777', fontSize: 13, lineHeight: 18, marginTop: 4 },
-  recurringAction: { color: '#8ab4ff', fontSize: 14, fontWeight: '600' },
-  recurringNotePreview: { color: '#b8b8b8', fontSize: 13, lineHeight: 18, marginTop: 10 },
+  recurringTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  recurringSubtitle: { color: colors.textDisabled, fontSize: 13, lineHeight: 18, marginTop: 4 },
+  recurringAction: { color: colors.info, fontSize: 14, fontWeight: '600' },
+  recurringNotePreview: { color: colors.textMuted, fontSize: 13, lineHeight: 18, marginTop: 10 },
   categoryReasoningCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: 4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     padding: 14,
   },
-  categoryReasoningEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  categoryReasoningTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
-  categoryReasoningBody: { color: '#cfcfcf', fontSize: 13, lineHeight: 19, marginTop: 6 },
+  categoryReasoningEyebrow: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  categoryReasoningTitle: { color: colors.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  categoryReasoningBody: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: 6 },
   categoryReasoningMetaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   categoryReasoningMetaChip: {
-    backgroundColor: '#161616',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#242424',
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 9,
     paddingVertical: 6,
   },
-  categoryReasoningMetaText: { color: '#a8a8a8', fontSize: 11, fontWeight: '600' },
+  categoryReasoningMetaText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   itemHistoryCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: 4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     padding: 14,
   },
-  itemHistoryEyebrow: { color: '#6f6f6f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  itemHistoryTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  itemHistoryEyebrow: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  itemHistoryTitle: { color: colors.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
   itemHistoryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1021,38 +1043,38 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     marginTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
   itemHistoryText: { flex: 1, minWidth: 0 },
-  itemHistoryName: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
-  itemHistorySummary: { color: '#cfcfcf', fontSize: 13, lineHeight: 19, marginTop: 4 },
-  itemHistoryMeta: { color: '#8d8d8d', fontSize: 12, marginTop: 5 },
+  itemHistoryName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  itemHistorySummary: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  itemHistoryMeta: { color: colors.textSubtle, fontSize: 12, marginTop: 5 },
   itemHistoryRight: { alignItems: 'flex-end', gap: 6, maxWidth: 110 },
   itemHistoryBadge: {
-    color: '#d7d7d7',
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.borderSubtle,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 5,
     overflow: 'hidden',
   },
-  itemHistoryUnit: { color: '#8ab4ff', fontSize: 11, fontWeight: '600', textAlign: 'right' },
+  itemHistoryUnit: { color: colors.info, fontSize: 11, fontWeight: '600', textAlign: 'right' },
   editDetailsCard: {
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: 4,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 2,
   },
   editDetailsTitle: {
-    color: '#555',
+    color: colors.textDisabled,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -1060,68 +1082,68 @@ const styles = StyleSheet.create({
   },
 
   editRow: { flexDirection: 'row', gap: 10 },
-  editInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
-  editInputFocused: { borderColor: '#8ab4ff', backgroundColor: '#0f141d' },
+  editInput: { backgroundColor: colors.surface, borderRadius: 8, padding: 10, color: colors.text, fontSize: 15, borderWidth: 1, borderColor: colors.textInverse },
+  editInputFocused: { borderColor: colors.info, backgroundColor: colors.infoMuted },
   editAmount: { width: 100 },
-  editInputInline: { color: '#f5f5f5', fontSize: 14, textAlign: 'right', flex: 1, padding: 4 },
+  editInputInline: { color: colors.text, fontSize: 14, textAlign: 'right', flex: 1, padding: 4 },
   datePicker: { marginRight: -8 },
   reviewFieldWrapActive: {
     borderWidth: 1,
-    borderColor: '#263448',
-    backgroundColor: '#0f141d',
+    borderColor: colors.infoMuted,
+    backgroundColor: colors.infoMuted,
     borderRadius: 10,
     marginHorizontal: -8,
     paddingHorizontal: 8,
   },
 
   section: { paddingHorizontal: 20 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
-  label: { fontSize: 13, color: '#444', width: 90 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  label: { fontSize: 13, color: colors.textDisabled, width: 90 },
   trackOnlyTextWrap: { flex: 1, paddingRight: 12 },
-  trackOnlyHint: { color: '#666', fontSize: 11, lineHeight: 16, marginTop: 2, maxWidth: 220 },
+  trackOnlyHint: { color: colors.textDisabled, fontSize: 11, lineHeight: 16, marginTop: 2, maxWidth: 220 },
   trackOnlyReasonBlock: { marginBottom: 16 },
-  trackOnlyReasonLabel: { color: '#bdbdbd', fontSize: 12, marginBottom: 10 },
+  trackOnlyReasonLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 10 },
   reasonChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   reasonChip: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#121212',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceRaised,
   },
   reasonChipActive: {
-    borderColor: '#0f3a2b',
-    backgroundColor: '#0f3a2b',
+    borderColor: colors.successMuted,
+    backgroundColor: colors.successMuted,
   },
-  reasonChipText: { color: '#cfcfcf', fontSize: 12, fontWeight: '600' },
-  reasonChipTextActive: { color: '#fff' },
+  reasonChipText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  reasonChipTextActive: { color: colors.text },
   valueWrap: { flex: 1, alignItems: 'flex-end' },
-  value: { fontSize: 14, color: '#f5f5f5', textAlign: 'right' },
+  value: { fontSize: 14, color: colors.text, textAlign: 'right' },
   noteCard: {
     marginHorizontal: 20,
     marginTop: 4,
     marginBottom: 4,
     padding: 14,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
   },
   noteCardLabel: {
-    color: '#555',
+    color: colors.textDisabled,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 10,
   },
   noteText: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 16,
     lineHeight: 24,
   },
   noteInput: {
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 15,
     lineHeight: 22,
     minHeight: 84,
@@ -1129,106 +1151,106 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  catChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#1f1f1f' },
-  catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  catChipText: { fontSize: 12, color: '#555' },
-  catChipTextActive: { color: '#000', fontWeight: '600' },
+  catChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.textInverse },
+  catChipActive: { backgroundColor: colors.text, borderColor: colors.text },
+  catChipText: { fontSize: 12, color: colors.textDisabled },
+  catChipTextActive: { color: colors.textInverse, fontWeight: '600' },
 
   locationSection: { marginHorizontal: 20, marginTop: 4 },
-  locationCard: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
+  locationCard: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.textInverse },
   locationInfo: { flex: 1 },
-  locationName: { color: '#f5f5f5', fontSize: 13, fontWeight: '500' },
-  locationAddress: { color: '#555', fontSize: 11, marginTop: 2 },
+  locationName: { color: colors.text, fontSize: 13, fontWeight: '500' },
+  locationAddress: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
 
-  dupSection: { margin: 20, padding: 12, backgroundColor: '#141008', borderRadius: 8, borderWidth: 1, borderColor: '#2a1f00' },
-  dupTitle: { color: '#f59e0b', fontWeight: '600', fontSize: 13, marginBottom: 4 },
-  dupItem: { color: '#78716c', fontSize: 12, marginTop: 2 },
+  dupSection: { margin: 20, padding: 12, backgroundColor: colors.warningMuted, borderRadius: 8, borderWidth: 1, borderColor: colors.warningMuted },
+  dupTitle: { color: colors.warning, fontWeight: '600', fontSize: 13, marginBottom: 4 },
+  dupItem: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
 
-  saveBtn: { margin: 20, marginBottom: 8, backgroundColor: '#f5f5f5', borderRadius: 10, padding: 14, alignItems: 'center' },
-  saveBtnText: { color: '#000', fontWeight: '600', fontSize: 15 },
+  saveBtn: { margin: 20, marginBottom: 8, backgroundColor: colors.text, borderRadius: 10, padding: 14, alignItems: 'center' },
+  saveBtnText: { color: colors.textInverse, fontWeight: '600', fontSize: 15 },
   pendingActions: { flexDirection: 'row', marginHorizontal: 20, marginTop: 20, gap: 10 },
-  approveBtn: { flex: 1, backgroundColor: '#22c55e', borderRadius: 10, padding: 14, alignItems: 'center' },
-  approveBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  dismissBtn: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' },
-  dismissBtnText: { color: '#ef4444', fontWeight: '600', fontSize: 15 },
+  approveBtn: { flex: 1, backgroundColor: colors.success, borderRadius: 10, padding: 14, alignItems: 'center' },
+  approveBtnText: { color: colors.text, fontWeight: '600', fontSize: 15 },
+  dismissBtn: { flex: 1, backgroundColor: colors.borderSubtle, borderRadius: 10, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: colors.borderStrong },
+  dismissBtnText: { color: colors.danger, fontWeight: '600', fontSize: 15 },
   deleteBtn: { margin: 20, marginTop: 8, padding: 14, alignItems: 'center' },
-  deleteBtnText: { color: '#ef4444', fontSize: 14 },
+  deleteBtnText: { color: colors.danger, fontSize: 14 },
 
-  itemsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f' },
-  itemsHeaderActive: { borderColor: '#263448', backgroundColor: '#0f141d' },
-  itemsHeaderText: { fontSize: 13, color: '#444', fontWeight: '500' },
-  itemsHeaderTextActive: { color: '#f5f5f5' },
-  itemsList: { marginHorizontal: 20, marginBottom: 4, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#1f1f1f', overflow: 'hidden' },
+  itemsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.textInverse },
+  itemsHeaderActive: { borderColor: colors.infoMuted, backgroundColor: colors.infoMuted },
+  itemsHeaderText: { fontSize: 13, color: colors.textDisabled, fontWeight: '500' },
+  itemsHeaderTextActive: { color: colors.text },
+  itemsList: { marginHorizontal: 20, marginBottom: 4, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.textInverse, overflow: 'hidden' },
   itemSummaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2 },
-  itemSummaryChip: { borderRadius: 8, backgroundColor: '#182418', paddingHorizontal: 10, paddingVertical: 5 },
-  itemSummaryChipMuted: { borderRadius: 8, backgroundColor: '#171717', paddingHorizontal: 10, paddingVertical: 5 },
-  itemSummaryChipText: { color: '#86efac', fontSize: 11, fontWeight: '700' },
-  itemSummaryChipTextMuted: { color: '#8a8a8a', fontSize: 11, fontWeight: '700' },
-  itemReadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', gap: 12 },
+  itemSummaryChip: { borderRadius: 8, backgroundColor: colors.successMuted, paddingHorizontal: 10, paddingVertical: 5 },
+  itemSummaryChipMuted: { borderRadius: 8, backgroundColor: colors.surfaceRaised, paddingHorizontal: 10, paddingVertical: 5 },
+  itemSummaryChipText: { color: colors.success, fontSize: 11, fontWeight: '700' },
+  itemSummaryChipTextMuted: { color: colors.textSubtle, fontSize: 11, fontWeight: '700' },
+  itemReadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, gap: 12 },
   itemReadText: { flex: 1, minWidth: 0, gap: 4 },
   itemReadTop: { flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 },
-  itemReadDesc: { fontSize: 13, color: '#f5f5f5', flexShrink: 1, fontWeight: '600' },
-  itemReadMeta: { fontSize: 12, color: '#b8b8b8' },
-  itemReadSubmeta: { fontSize: 11, color: '#777' },
-  itemReadAmount: { fontSize: 13, color: '#888', paddingLeft: 8, paddingTop: 1, fontWeight: '700' },
-  itemMatchChip: { borderRadius: 8, backgroundColor: '#1d2531', paddingHorizontal: 8, paddingVertical: 4 },
-  itemMatchChipText: { color: '#bfdbfe', fontSize: 10, fontWeight: '700' },
-  itemEditCard: { gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  itemReadDesc: { fontSize: 13, color: colors.text, flexShrink: 1, fontWeight: '600' },
+  itemReadMeta: { fontSize: 12, color: colors.textMuted },
+  itemReadSubmeta: { fontSize: 11, color: colors.textDisabled },
+  itemReadAmount: { fontSize: 13, color: colors.textSubtle, paddingLeft: 8, paddingTop: 1, fontWeight: '700' },
+  itemMatchChip: { borderRadius: 8, backgroundColor: colors.infoMuted, paddingHorizontal: 8, paddingVertical: 4 },
+  itemMatchChipText: { color: colors.info, fontSize: 10, fontWeight: '700' },
+  itemEditCard: { gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   itemEditRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemEditDesc: { flex: 1, minWidth: 0, color: '#f5f5f5', fontSize: 13, padding: 4 },
+  itemEditDesc: { flex: 1, minWidth: 0, color: colors.text, fontSize: 13, padding: 4 },
   itemEditMetricsRow: { flexDirection: 'row', gap: 8 },
   itemEditMetricField: { flex: 1, minWidth: 0 },
   itemEditMetricFieldWide: { flex: 1.3, minWidth: 0 },
-  itemEditMetricLabel: { color: '#6f6f6f', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
+  itemEditMetricLabel: { color: colors.textDisabled, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
   itemEditMetricInput: {
-    backgroundColor: '#0e0e0e',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: colors.border,
     borderRadius: 6,
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 13,
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
   itemRemoveBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  itemRemoveText: { color: '#555', fontSize: 20, lineHeight: 22 },
+  itemRemoveText: { color: colors.textDisabled, fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingHorizontal: 14, paddingVertical: 10 },
-  addItemText: { color: '#555', fontSize: 13 },
+  addItemText: { color: colors.textDisabled, fontSize: 13 },
   itemBalance: { paddingHorizontal: 14, paddingBottom: 10 },
   itemBalanceText: { fontSize: 12 },
-  itemBalanceOk: { color: '#4ade80' },
-  itemBalanceWarn: { color: '#f59e0b' },
+  itemBalanceOk: { color: colors.success },
+  itemBalanceWarn: { color: colors.warning },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: colors.overlayStrong,
     justifyContent: 'center',
     padding: 20,
   },
   modalCard: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     padding: 18,
   },
-  modalTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  modalSubtitle: { color: '#8e8e8e', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
-  modalLabel: { color: '#d5d5d5', fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  modalTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
+  modalSubtitle: { color: colors.textSubtle, fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
+  modalLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginBottom: 8 },
   modalInput: {
-    backgroundColor: '#0b0b0b',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     borderRadius: 12,
-    color: '#fff',
+    color: colors.text,
     paddingHorizontal: 12,
     paddingVertical: 12,
     marginBottom: 8,
   },
   modalTextarea: { minHeight: 90, textAlignVertical: 'top' },
-  modalHelp: { color: '#686868', fontSize: 12, marginBottom: 16 },
+  modalHelp: { color: colors.textSubtle, fontSize: 12, marginBottom: 16 },
   modalActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   modalRightActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
-  modalDelete: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
-  modalCancel: { color: '#8a8a8a', fontSize: 14, fontWeight: '600' },
-  modalSave: { color: '#8ab4ff', fontSize: 14, fontWeight: '700' },
+  modalDelete: { color: colors.danger, fontSize: 14, fontWeight: '600' },
+  modalCancel: { color: colors.textSubtle, fontSize: 14, fontWeight: '600' },
+  modalSave: { color: colors.info, fontSize: 14, fontWeight: '700' },
 });

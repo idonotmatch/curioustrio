@@ -7,9 +7,10 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "npm run test:smoke && npm run test:logic",
+    "test": "npm run test:palette && npm run test:smoke && npm run test:logic",
+    "test:palette": "node scripts/verify-color-tokens.js",
     "test:smoke": "node scripts/verify-mobile-smoke.js",
-    "test:logic": "node scripts/test-auth-boot-routing.js && node scripts/test-api-config.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js && node scripts/test-onboarding-flow.js"
+    "test:logic": "node scripts/test-auth-boot-routing.js && node scripts/test-api-config.js && node scripts/test-email-auth.js && node scripts/test-password-recovery.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js && node scripts/test-insight-trend-visual.js && node scripts/test-onboarding-flow.js && node scripts/test-provenance-presentation.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "^55.0.9",

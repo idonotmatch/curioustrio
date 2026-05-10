@@ -1,0 +1,50 @@
+<svg width="900" height="1720" viewBox="0 0 900 1720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="1720" fill="#FBFBF8"/>
+  <text x="56" y="54" fill="#111111" font-family="Arial, sans-serif" font-size="18">hello dang</text>
+  <text x="844" y="54" text-anchor="end" fill="#5E6470" font-family="Arial, sans-serif" font-size="15">Back to Adlo</text>
+
+  <rect x="108" y="108" width="684" height="1492" rx="32" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <circle cx="168" cy="176" r="26" fill="#3D76F6"/>
+  <text x="168" y="185" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="25" font-weight="700">A</text>
+  <text x="208" y="184" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Adlo Privacy Policy</text>
+  <text x="208" y="216" fill="#5E6470" font-family="Arial, sans-serif" font-size="16">Effective date: April 5, 2026</text>
+
+  <text x="148" y="288" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Information We Collect</text>
+  <text x="148" y="324" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Account information, expense details, household data, feedback,</text>
+  <text x="148" y="350" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">location details, push tokens, and parsed item-level records.</text>
+
+  <text x="148" y="420" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Google User Data</text>
+  <text x="148" y="456" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Adlo requests Gmail read-only access to detect expense-related</text>
+  <text x="148" y="482" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">emails like receipts, confirmations, refunds, bookings, and</text>
+  <text x="148" y="508" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">subscriptions. It does not send email on your behalf.</text>
+
+  <rect x="148" y="548" width="604" height="106" rx="22" fill="#F6F9FF" stroke="#DCE7FF"/>
+  <text x="178" y="592" fill="#111111" font-family="Arial, sans-serif" font-size="19" font-weight="700">Important</text>
+  <text x="178" y="622" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Adlo does not sell Gmail data or use Gmail data for advertising.</text>
+
+  <text x="148" y="718" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">How We Use Information</text>
+  <text x="148" y="754" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Expense organization, Gmail import, budgeting, recurring tracking,</text>
+  <text x="148" y="780" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">projections, insights, reminders, household sharing, and service operations.</text>
+
+  <text x="148" y="850" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Monetization and Recommendations</text>
+  <text x="148" y="886" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Adlo may offer premium features and contextual recommendations.</text>
+  <text x="148" y="912" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Some links may be affiliate links. Adlo does not use ad-network</text>
+  <text x="148" y="938" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">personalization or Gmail-based advertising.</text>
+
+  <text x="148" y="1008" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Data Sharing</text>
+  <text x="148" y="1044" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Data may be shared with service providers, household members where</text>
+  <text x="148" y="1070" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">sharing is enabled, and when legally required.</text>
+
+  <text x="148" y="1140" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Private Expenses</text>
+  <text x="148" y="1176" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Private expenses are intended to remain visible only to the user</text>
+  <text x="148" y="1202" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">who created them, even in a household context.</text>
+
+  <text x="148" y="1272" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Retention, Security, and Your Choices</text>
+  <text x="148" y="1308" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">Data is retained as needed to operate the service and comply with</text>
+  <text x="148" y="1334" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">obligations. Users can disconnect Gmail through Google account settings</text>
+  <text x="148" y="1360" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">and contact Adlo to request deletion or ask questions.</text>
+
+  <line x1="148" y1="1438" x2="752" y2="1438" stroke="#E5E7EB"/>
+  <text x="148" y="1492" fill="#111111" font-family="Arial, sans-serif" font-size="24" font-weight="700">Contact</text>
+  <text x="148" y="1528" fill="#3B3F47" font-family="Arial, sans-serif" font-size="18">dang@hellodang.com</text>
+</svg>

@@ -3,3 +3,8 @@ archive/
 .env
 .env.local
 test.html
+.DS_Store
+.claude/
+.claire/
+.superpowers/
+mobile/.agents/

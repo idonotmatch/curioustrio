@@ -6,6 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
 import { queueConfirmedExpenseClientWork } from '../services/confirmClientWork';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { LocationPicker } from '../components/LocationPicker';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCategories } from '../hooks/useCategories';
@@ -17,6 +18,7 @@ import {
   normalizeExpenseItemPayload,
   updateEditableExpenseItem,
 } from '../services/itemEditing';
+import { colors } from '../theme/tokens';
 
 function parseConfirmData(value) {
   try {
@@ -305,6 +307,7 @@ export default function ConfirmScreen() {
         if ((cardLabel || '') === (card.card_label || '')) setCardLabel('');
         if ((cardLast4 || '') === (card.card_last4 || '')) setCardLast4('');
       }
+      await invalidateExpenseMutationCaches({ includePending: false });
       await refreshSavedCards();
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not remove saved card');
@@ -321,6 +324,7 @@ export default function ConfirmScreen() {
         next_card_label: cardLabel || null,
         next_card_last4: cardLast4 || null,
       });
+      await invalidateExpenseMutationCaches({ includePending: false });
       await refreshSavedCards();
       setSelectedSavedCardKey(savedCardKey({
         payment_method: selectedSavedCard.payment_method,
@@ -528,7 +532,7 @@ export default function ConfirmScreen() {
             value={merchant.trim() ? merchant : description}
             onChangeText={merchant.trim() ? setMerchant : setDescription}
             placeholder={merchant.trim() ? 'Merchant name' : 'What was this for?'}
-            placeholderTextColor="#444"
+            placeholderTextColor={colors.textDisabled}
           />
         </View>
       </View>
@@ -546,7 +550,7 @@ export default function ConfirmScreen() {
                 value={description}
                 onChangeText={setDescription}
                 placeholder="Description"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.textDisabled}
               />
             </View>
           </View>
@@ -571,7 +575,7 @@ export default function ConfirmScreen() {
             }}
             keyboardType="decimal-pad"
             placeholder="0.00"
-            placeholderTextColor="#444"
+            placeholderTextColor={colors.textDisabled}
           />
         </View>
         {reviewNote('amount', 'Amount may need a quick check.')}
@@ -627,7 +631,7 @@ export default function ConfirmScreen() {
             <TextInput
               style={styles.catSearchInput}
               placeholder="Search or create..."
-              placeholderTextColor="#444"
+              placeholderTextColor={colors.textDisabled}
               value={catSearch}
               onChangeText={setCatSearch}
               autoCorrect={false}
@@ -639,7 +643,7 @@ export default function ConfirmScreen() {
                 disabled={catCreating}
               >
                 {catCreating
-                  ? <ActivityIndicator size="small" color="#000" />
+                  ? <ActivityIndicator size="small" color={colors.textInverse} />
                   : <Text style={styles.catCreateText}>
                       {catSuggestion?.parent_name && catSuggestion.source !== 'fallback_uncategorized' && catSuggestion.source !== 'created_uncategorized'
                         ? `+ Create under ${catSuggestion.parent_name}`
@@ -651,7 +655,7 @@ export default function ConfirmScreen() {
           {catSearch.trim() && !categories.find(c => c.name.toLowerCase() === catSearch.trim().toLowerCase()) ? (
             <View style={styles.catSuggestionRow}>
               {catSuggestionLoading ? (
-                <ActivityIndicator size="small" color="#666" />
+                <ActivityIndicator size="small" color={colors.textDisabled} />
               ) : catSuggestion?.parent_name ? (
                 <Text style={styles.catSuggestionText}>
                   {catSuggestion.source === 'fallback_uncategorized' || catSuggestion.source === 'created_uncategorized'
@@ -714,7 +718,7 @@ export default function ConfirmScreen() {
                 <TextInput
                   style={styles.itemDescInput}
                   placeholder="Description"
-                  placeholderTextColor="#444"
+                  placeholderTextColor={colors.textDisabled}
                   value={item.description}
                   onChangeText={v => handleItemChange(i, 'description', v)}
                 />
@@ -728,7 +732,7 @@ export default function ConfirmScreen() {
                   <TextInput
                     style={styles.itemMetricInput}
                     placeholder="1"
-                    placeholderTextColor="#444"
+                    placeholderTextColor={colors.textDisabled}
                     value={item.quantity}
                     onChangeText={v => handleItemChange(i, 'quantity', v)}
                     keyboardType="decimal-pad"
@@ -739,7 +743,7 @@ export default function ConfirmScreen() {
                   <TextInput
                     style={styles.itemMetricInput}
                     placeholder="0.00"
-                    placeholderTextColor="#444"
+                    placeholderTextColor={colors.textDisabled}
                     value={item.unit_price}
                     onChangeText={v => handleItemChange(i, 'unit_price', v)}
                     keyboardType="decimal-pad"
@@ -750,7 +754,7 @@ export default function ConfirmScreen() {
                   <TextInput
                     style={styles.itemMetricInput}
                     placeholder="0.00"
-                    placeholderTextColor="#444"
+                    placeholderTextColor={colors.textDisabled}
                     value={item.amount}
                     onChangeText={v => handleItemChange(i, 'amount', v)}
                     keyboardType="decimal-pad"
@@ -770,8 +774,8 @@ export default function ConfirmScreen() {
         <Switch
           value={isRefund}
           onValueChange={handleRefundToggle}
-          trackColor={{ false: '#333', true: '#f97316' }}
-          thumbColor={isRefund ? '#fff' : '#888'}
+          trackColor={{ false: colors.borderStrong, true: colors.warning }}
+          thumbColor={isRefund ? colors.text : colors.textSubtle}
         />
       </View>
 
@@ -836,14 +840,14 @@ export default function ConfirmScreen() {
               <TextInput
                 style={[styles.cardInput, { flex: 1 }]}
                 placeholder="Card nickname (optional)"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.textDisabled}
                 value={cardLabel}
                 onChangeText={setCardLabel}
               />
               <TextInput
                 style={[styles.cardInput, { width: 64 }]}
                 placeholder="last 4"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.textDisabled}
                 value={cardLast4}
                 onChangeText={t => setCardLast4(t.replace(/\D/g, '').slice(0, 4))}
                 keyboardType="number-pad"
@@ -864,8 +868,8 @@ export default function ConfirmScreen() {
         <Switch
           value={isPrivate}
           onValueChange={setIsPrivate}
-          trackColor={{ false: '#333', true: '#6366f1' }}
-          thumbColor={isPrivate ? '#fff' : '#888'}
+          trackColor={{ false: colors.borderStrong, true: colors.accentMuted }}
+          thumbColor={isPrivate ? colors.accent : colors.textSubtle}
         />
       </View>
 
@@ -877,8 +881,8 @@ export default function ConfirmScreen() {
         <Switch
           value={excludeFromBudget}
           onValueChange={setExcludeFromBudget}
-          trackColor={{ false: '#333', true: '#0f3a2b' }}
-          thumbColor={excludeFromBudget ? '#fff' : '#888'}
+          trackColor={{ false: colors.borderStrong, true: colors.successMuted }}
+          thumbColor={excludeFromBudget ? colors.success : colors.textSubtle}
         />
       </View>
 
@@ -909,8 +913,8 @@ export default function ConfirmScreen() {
           <Switch
             value={saveToRoll}
             onValueChange={setSaveToRoll}
-            trackColor={{ false: '#333', true: '#fff' }}
-            thumbColor={saveToRoll ? '#000' : '#888'}
+          trackColor={{ false: colors.borderStrong, true: colors.accentMuted }}
+          thumbColor={saveToRoll ? colors.accent : colors.textSubtle}
           />
         </View>
       )}
@@ -924,7 +928,7 @@ export default function ConfirmScreen() {
           onPress={handleConfirm}
           disabled={saving}
         >
-          <Text style={styles.confirmText}>{saving ? 'saving...' : 'confirm →'}</Text>
+          <Text style={styles.confirmText}>{saving ? 'saving...' : 'confirm'}</Text>
         </TouchableOpacity>
       </View>
     </DismissKeyboardScrollView>
@@ -932,30 +936,30 @@ export default function ConfirmScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20 },
   watchBanner: {
-    backgroundColor: '#101521',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#22314a',
+    borderColor: colors.infoMuted,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 10,
   },
-  watchBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  watchBannerBody: { color: '#9db2cb', fontSize: 12, lineHeight: 17 },
+  watchBannerTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  watchBannerBody: { color: colors.text, fontSize: 12, lineHeight: 17 },
   reviewBanner: {
-    backgroundColor: '#171717',
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: colors.borderStrong,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 10,
   },
-  reviewBannerTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  reviewBannerText: { color: '#888', fontSize: 12 },
+  reviewBannerTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  reviewBannerText: { color: colors.textSubtle, fontSize: 12 },
   editableGroup: { marginBottom: 8 },
   confidenceNoteRow: {
     flexDirection: 'row',
@@ -971,17 +975,17 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   confidenceMedium: {
-    backgroundColor: '#241b0a',
+    backgroundColor: colors.warningMuted,
     borderWidth: 1,
-    borderColor: '#4a3412',
+    borderColor: colors.warningMuted,
   },
   confidenceLow: {
-    backgroundColor: '#2a1414',
+    backgroundColor: colors.dangerMuted,
     borderWidth: 1,
-    borderColor: '#553030',
+    borderColor: colors.dangerMuted,
   },
   confidencePillText: {
-    color: '#d8d8d8',
+    color: colors.text,
     fontSize: 10,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -989,18 +993,18 @@ const styles = StyleSheet.create({
   },
   confidenceHint: {
     flex: 1,
-    color: '#6f6f6f',
+    color: colors.textDisabled,
     fontSize: 11,
   },
 
   editableRow: {
-    backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
+    backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  editableLabel: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 92 },
+  editableLabel: { fontSize: 11, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, width: 92 },
   editableInput: {
     flex: 1,
-    color: '#fff',
+    color: colors.text,
     fontSize: 15,
     textAlign: 'right',
     paddingHorizontal: 6,
@@ -1009,103 +1013,103 @@ const styles = StyleSheet.create({
   },
   confirmDatePicker: { marginRight: -2 },
   dateButton: { flex: 1, alignItems: 'flex-end', paddingHorizontal: 6, paddingVertical: 4, minHeight: 28, justifyContent: 'center' },
-  dateButtonText: { color: '#fff', fontSize: 15, textAlign: 'right' },
+  dateButtonText: { color: colors.text, fontSize: 15, textAlign: 'right' },
 
   categoryRow: {
-    backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12,
+    backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  categoryLabel: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, width: 92 },
+  categoryLabel: { fontSize: 11, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, width: 92 },
   categoryRight: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 6, minHeight: 28, paddingLeft: 8 },
-  categoryValue: { flexShrink: 1, fontSize: 15, color: '#fff', textAlign: 'right' },
-  categoryChevron: { fontSize: 11, color: '#888' },
+  categoryValue: { flexShrink: 1, fontSize: 15, color: colors.text, textAlign: 'right' },
+  categoryChevron: { fontSize: 11, color: colors.textSubtle },
   categoryPicker: {
-    backgroundColor: '#111', borderRadius: 8, padding: 10, marginBottom: 8, gap: 8,
+    backgroundColor: colors.surface, borderRadius: 8, padding: 10, marginBottom: 8, gap: 8,
   },
   catSearchRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
-  catSearchInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
-  catCreateBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },
-  catCreateText: { color: '#000', fontSize: 14, fontWeight: '600' },
+  catSearchInput: { flex: 1, backgroundColor: colors.borderSubtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
+  catCreateBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },
+  catCreateText: { color: colors.textInverse, fontSize: 14, fontWeight: '600' },
   catSuggestionRow: { minHeight: 18, justifyContent: 'center' },
-  catSuggestionText: { color: '#777', fontSize: 12 },
+  catSuggestionText: { color: colors.textDisabled, fontSize: 12 },
   catChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  catChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
-  catChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  catChipText: { fontSize: 14, color: '#999' },
-  catChipTextActive: { color: '#000', fontWeight: '600' },
+  catChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.borderSubtle, borderWidth: 1, borderColor: colors.borderStrong },
+  catChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  catChipText: { fontSize: 14, color: colors.textSubtle },
+  catChipTextActive: { color: colors.textInverse, fontWeight: '600' },
 
   toggleRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8,
+    backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8,
   },
   toggleTextWrap: { flex: 1, paddingRight: 12 },
-  toggleLabel: { color: '#fff', fontSize: 15 },
-  toggleHint: { color: '#7c7c7c', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  toggleLabel: { color: colors.text, fontSize: 15 },
+  toggleHint: { color: colors.textSubtle, fontSize: 12, lineHeight: 17, marginTop: 2 },
   trackOnlyReasonBlock: { marginTop: -4, marginBottom: 14 },
-  trackOnlyReasonLabel: { color: '#bdbdbd', fontSize: 12, marginBottom: 10 },
+  trackOnlyReasonLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 10 },
   reasonChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   reasonChip: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#121212',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceRaised,
   },
   reasonChipActive: {
-    borderColor: '#0f3a2b',
-    backgroundColor: '#0f3a2b',
+    borderColor: colors.successMuted,
+    backgroundColor: colors.successMuted,
   },
-  reasonChipText: { color: '#cfcfcf', fontSize: 12, fontWeight: '600' },
-  reasonChipTextActive: { color: '#fff' },
-  paymentSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
-  sectionLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  reasonChipText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  reasonChipTextActive: { color: colors.text },
+  paymentSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
+  sectionLabel: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   methodRow: { flexDirection: 'row', gap: 6 },
-  methodChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a' },
-  methodChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  methodChipText: { fontSize: 14, color: '#999' },
-  methodChipTextActive: { color: '#000', fontWeight: '600' },
+  methodChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+  methodChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  methodChipText: { fontSize: 14, color: colors.textSubtle },
+  methodChipTextActive: { color: colors.textInverse, fontWeight: '600' },
   savedCardsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  savedCardChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a' },
-  savedCardChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  savedCardChipText: { fontSize: 14, color: '#999' },
-  savedCardChipTextActive: { color: '#000', fontWeight: '600' },
-  savedCardsHint: { color: '#666', fontSize: 11, marginTop: 8 },
-  savedCardsMatchNote: { color: '#8ab4ff', fontSize: 11, marginTop: 6, lineHeight: 16 },
+  savedCardChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+  savedCardChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  savedCardChipText: { fontSize: 14, color: colors.textSubtle },
+  savedCardChipTextActive: { color: colors.textInverse, fontWeight: '600' },
+  savedCardsHint: { color: colors.textDisabled, fontSize: 11, marginTop: 8 },
+  savedCardsMatchNote: { color: colors.info, fontSize: 11, marginTop: 6, lineHeight: 16 },
   savedCardUpdateBtn: { marginTop: 10, alignSelf: 'flex-end' },
-  savedCardUpdateText: { color: '#8ab4ff', fontSize: 13, fontWeight: '600' },
+  savedCardUpdateText: { color: colors.info, fontSize: 13, fontWeight: '600' },
   cardRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  cardInput: { backgroundColor: '#111', borderRadius: 8, padding: 10, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
+  cardInput: { backgroundColor: colors.surface, borderRadius: 8, padding: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
 
-  itemsSection: { backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8 },
+  itemsSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
   itemCard: {
-    backgroundColor: '#151515',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: colors.border,
     padding: 10,
     marginBottom: 8,
     gap: 8,
   },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemDescInput: { flex: 1, backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
+  itemDescInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 6, padding: 8, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
   itemMetricsRow: { flexDirection: 'row', gap: 8 },
   itemMetricField: { flex: 1, minWidth: 0 },
   itemMetricFieldWide: { flex: 1.3, minWidth: 0 },
-  itemMetricLabel: { color: '#7f7f7f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
-  itemMetricInput: { backgroundColor: '#111', borderRadius: 6, padding: 8, color: '#f5f5f5', fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a' },
+  itemMetricLabel: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
+  itemMetricInput: { backgroundColor: colors.surface, borderRadius: 6, padding: 8, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
   removeItemBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  removeItemText: { color: '#999', fontSize: 20, lineHeight: 22 },
+  removeItemText: { color: colors.textSubtle, fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingVertical: 6 },
-  addItemText: { color: '#999', fontSize: 14 },
-  addItemsPrompt: { backgroundColor: '#151515', borderRadius: 8, borderWidth: 1, borderColor: '#242424', padding: 12, marginBottom: 8 },
-  addItemsPromptTitle: { color: '#f5f5f5', fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  addItemsPromptBody: { color: '#8b8b8b', fontSize: 12, lineHeight: 17 },
+  addItemText: { color: colors.textSubtle, fontSize: 14 },
+  addItemsPrompt: { backgroundColor: colors.surfaceMuted, borderRadius: 8, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 8 },
+  addItemsPromptTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  addItemsPromptBody: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
 
   actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
-  discard: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 16, alignItems: 'center' },
-  discardText: { color: '#999', fontSize: 15 },
-  confirm: { flex: 2, backgroundColor: '#fff', borderRadius: 10, padding: 16, alignItems: 'center' },
+  discard: { flex: 1, backgroundColor: colors.borderSubtle, borderRadius: 10, padding: 16, alignItems: 'center' },
+  discardText: { color: colors.textSubtle, fontSize: 15 },
+  confirm: { flex: 2, backgroundColor: colors.accent, borderRadius: 10, padding: 16, alignItems: 'center' },
   confirmDisabled: { opacity: 0.5 },
-  confirmText: { color: '#000', fontSize: 15, fontWeight: '700' },
+  confirmText: { color: colors.textInverse, fontSize: 15, fontWeight: '700' },
 });

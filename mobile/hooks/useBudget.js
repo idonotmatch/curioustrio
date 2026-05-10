@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
 import { loadWithCache, loadCacheOnly } from '../services/cache';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 
 // cacheOnly: true for personal scope (only local user mutates it).
 //            false (default) for household scope (other members can change it).
@@ -33,6 +35,7 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
   }, [month, scope, cacheOnly, startDayOverride, enabled]);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.budget, refresh);
 
   return { budget, loading, error, refresh };
 }

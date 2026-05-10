@@ -9,6 +9,7 @@ import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insig
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
+import { colors } from '../theme/tokens';
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -915,7 +916,7 @@ export default function TrendDetailScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
           <View style={styles.center}>
-            <ActivityIndicator color="#f5f5f5" />
+            <ActivityIndicator color={colors.text} />
           </View>
         ) : error ? (
           <View style={styles.center}>
@@ -1090,7 +1091,7 @@ export default function TrendDetailScreen() {
                   Help Adlo learn whether this category move feels temporary, expected, or like a real spending pattern shift.
                 </Text>
                 {categoryExpensesLoading ? (
-                  <ActivityIndicator color="#f5f5f5" style={styles.inlineLoader} />
+                  <ActivityIndicator color={colors.text} style={styles.inlineLoader} />
                 ) : categoryExpenses.length ? (
                   <>
                     <Text style={styles.sectionEyebrow}>What&apos;s driving it</Text>
@@ -1484,7 +1485,7 @@ export default function TrendDetailScreen() {
               value={feedbackNote}
               onChangeText={setFeedbackNote}
               placeholder="What should Adlo know instead?"
-              placeholderTextColor="#6f6f6f"
+              placeholderTextColor={colors.textDisabled}
               style={styles.noteInput}
               multiline
               textAlignVertical="top"
@@ -1516,18 +1517,18 @@ export default function TrendDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0a0a0a' },
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48, gap: 16 },
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
-  errorText: { color: '#999', fontSize: 15 },
+  errorText: { color: colors.textSubtle, fontSize: 15 },
   inlineLoader: { marginTop: 8, marginBottom: 4 },
-  sectionEyebrow: { color: '#8e8e93', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8, marginBottom: 8 },
+  sectionEyebrow: { color: colors.textSubtle, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8, marginBottom: 8 },
   hero: { gap: 8, marginBottom: 8 },
   scopeChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#161616',
-    color: '#d4d4d4',
+    backgroundColor: colors.surfaceRaised,
+    color: colors.textMuted,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
@@ -1535,43 +1536,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  heroTitle: { fontSize: 30, color: '#f5f5f5', fontWeight: '600', letterSpacing: -0.8 },
-  heroCopy: { fontSize: 15, color: '#b5b5b5', lineHeight: 22 },
-  heroContext: { fontSize: 13, color: '#8ca7bf', lineHeight: 18 },
+  heroTitle: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: -0.8 },
+  heroCopy: { fontSize: 15, color: colors.textMuted, lineHeight: 22 },
+  heroContext: { fontSize: 13, color: colors.info, lineHeight: 18 },
   sharedContextCard: {
-    backgroundColor: '#101b24',
+    backgroundColor: colors.infoMuted,
     borderWidth: 1,
-    borderColor: '#1a2f40',
+    borderColor: colors.infoMuted,
     borderRadius: 14,
     padding: 14,
     gap: 8,
   },
   supportingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   supportingHeaderText: { flex: 1, gap: 4 },
-  supportingToggle: { color: '#d4d4d4', fontSize: 13, fontWeight: '700' },
+  supportingToggle: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
   supportingDetailStack: { gap: 14, marginTop: 2 },
   supportingSection: { gap: 8 },
-  supportingSectionTitle: { fontSize: 13, color: '#d8dde3', fontWeight: '700' },
+  supportingSectionTitle: { fontSize: 13, color: colors.text, fontWeight: '700' },
   actionButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  actionButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
+  actionButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '700' },
   card: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.borderSubtle,
     borderRadius: 14,
     padding: 14,
     gap: 10,
   },
-  cardEyebrow: { color: '#8e8e93', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
-  detailCardTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '700' },
-  cardTitle: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.2 },
-  metricRow: { fontSize: 14, color: '#e5e5e5' },
+  cardEyebrow: { color: colors.textSubtle, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
+  detailCardTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
+  cardTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.2 },
+  metricRow: { fontSize: 14, color: colors.text },
   driverRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1579,19 +1580,19 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
   driverRowHighlight: {
-    backgroundColor: '#151515',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 10,
     paddingHorizontal: 10,
   },
   driverText: { flex: 1 },
-  driverName: { fontSize: 15, color: '#f5f5f5', fontWeight: '500' },
-  driverMeta: { fontSize: 12, color: '#888', marginTop: 2 },
-  driverDelta: { fontSize: 13, color: '#d4d4d4', textAlign: 'right' },
+  driverName: { fontSize: 15, color: colors.text, fontWeight: '500' },
+  driverMeta: { fontSize: 12, color: colors.textSubtle, marginTop: 2 },
+  driverDelta: { fontSize: 13, color: colors.textMuted, textAlign: 'right' },
   oneOffList: { gap: 6, marginTop: 4 },
-  oneOffRow: { fontSize: 14, color: '#e5e5e5' },
+  oneOffRow: { fontSize: 14, color: colors.text },
   reviewList: { gap: 10 },
   reviewRow: {
     flexDirection: 'row',
@@ -1600,58 +1601,58 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.borderSubtle,
   },
-  emptyText: { fontSize: 13, color: '#777' },
+  emptyText: { fontSize: 13, color: colors.textDisabled },
   feedbackRow: { flexDirection: 'row', gap: 10 },
-  feedbackCopy: { fontSize: 13, color: '#9d9d9d', lineHeight: 18 },
+  feedbackCopy: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
   feedbackButton: {
     flex: 1,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#151515',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceMuted,
     paddingVertical: 12,
     alignItems: 'center',
   },
   feedbackButtonActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.text,
+    borderColor: colors.text,
   },
   feedbackButtonText: {
-    color: '#d4d4d4',
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: '600',
   },
   feedbackButtonTextActive: {
-    color: '#000',
+    color: colors.textInverse,
   },
   feedbackNote: {
     fontSize: 12,
-    color: '#7fcf9f',
+    color: colors.success,
   },
   modalScrim: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
+    backgroundColor: colors.overlayStrong,
     justifyContent: 'center',
     padding: 20,
   },
   modalCard: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#232323',
+    borderColor: colors.border,
     padding: 18,
     gap: 14,
   },
   modalTitle: {
     fontSize: 20,
-    color: '#f5f5f5',
+    color: colors.text,
     fontWeight: '600',
   },
   modalCopy: {
     fontSize: 14,
-    color: '#a1a1a1',
+    color: colors.textMuted,
     lineHeight: 20,
   },
   reasonList: {
@@ -1662,32 +1663,32 @@ const styles = StyleSheet.create({
   reasonChip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2b2b2b',
-    backgroundColor: '#181818',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfacePressed,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   reasonChipActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
+    backgroundColor: colors.text,
+    borderColor: colors.text,
   },
   reasonChipText: {
-    color: '#d7d7d7',
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: '600',
   },
   reasonChipTextActive: {
-    color: '#000',
+    color: colors.textInverse,
   },
   noteInput: {
     minHeight: 88,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2b2b2b',
-    backgroundColor: '#151515',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    color: '#f5f5f5',
+    color: colors.text,
     fontSize: 14,
   },
   modalActions: {
@@ -1700,13 +1701,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   modalSecondaryText: {
-    color: '#bcbcbc',
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: '600',
   },
   modalPrimaryButton: {
     borderRadius: 12,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.text,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -1714,7 +1715,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   modalPrimaryText: {
-    color: '#000',
+    color: colors.textInverse,
     fontSize: 14,
     fontWeight: '700',
   },

@@ -18,6 +18,8 @@ const GMAIL_SEARCH_QUERY = [
   'OR',
   '"payment received"',
   'OR',
+  '"you paid"',
+  'OR',
   '"receipt for your payment"',
   'OR',
   '"ride receipt"',
@@ -35,6 +37,8 @@ const GMAIL_SEARCH_QUERY = [
   'from:(uber.com)',
   'OR',
   'from:(lyftmail.com)',
+  'OR',
+  'from:(venmo.com)',
   ')',
 ].join(' ');
 
@@ -130,13 +134,18 @@ async function disconnectGmailConnection(userId) {
   return { disconnected: true, revoked, had_token: true };
 }
 
-async function listRecentMessages(userId, maxResults = 50) {
+async function listRecentMessages(userId, options = 50) {
+  const config = typeof options === 'number'
+    ? { maxResults: options }
+    : (options || {});
+  const maxResults = Math.max(1, Math.min(Number(config.maxResults) || 50, 100));
+  const query = `${config.query || GMAIL_SEARCH_QUERY}`.trim() || GMAIL_SEARCH_QUERY;
   const auth = await getAuthenticatedClient(userId);
   const gmail = google.gmail({ version: 'v1', auth });
   const response = await gmail.users.messages.list({
     userId: 'me',
     maxResults,
-    q: GMAIL_SEARCH_QUERY,
+    q: query,
   });
   return response.data.messages || [];
 }

@@ -1,4 +1,6 @@
 import { View, Text, TouchableOpacity } from 'react-native';
+import { EmptyState, InlineError, SectionHeader } from './ui/States';
+import { StatusChip } from './ui/StatusChip';
 const { decodeHtmlEntities } = require('../services/text');
 
 function extractedItemCount(item = {}) {
@@ -23,18 +25,23 @@ export function GmailPendingReviewSection({
 
   return (
     <View style={styles.section}>
-      <View style={styles.logToggleRow}>
-        <Text style={styles.sectionTitle}>AWAITING YOUR REVIEW</Text>
-        {displayPendingReviewItems.length > 0 ? (
-          <TouchableOpacity onPress={openReviewQueue} activeOpacity={0.75}>
-            <Text style={styles.openQueueLink}>Open queue</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <SectionHeader
+        eyebrow="Gmail"
+        title="Awaiting your review"
+        body={displayPendingReviewItems.length > 0 ? 'Imports that need a decision before they count as done.' : null}
+        actionLabel={displayPendingReviewItems.length > 0 ? 'Open queue' : null}
+        onAction={displayPendingReviewItems.length > 0 ? openReviewQueue : null}
+      />
+      {pendingReviewError ? (
+        <InlineError title="Could not load review queue" body={pendingReviewError} />
+      ) : null}
       {displayPendingReviewItems.length === 0 ? (
-        <Text style={styles.emptyText}>
-          {pendingReviewError || 'No Gmail imports are currently waiting in your review queue.'}
-        </Text>
+        <EmptyState
+          compact
+          icon="checkmark-circle-outline"
+          title="No Gmail imports waiting"
+          body="New imports that need confirmation will appear here."
+        />
       ) : (
         displayPendingReviewItems.slice(0, 3).map((item) => {
           const itemCount = extractedItemCount(item);
@@ -61,12 +68,12 @@ export function GmailPendingReviewSection({
                 ) : null}
                 <Text style={styles.pendingMeta} numberOfLines={1}>
                   {[
-                    reviewMode,
                     itemCount > 0 ? `${itemCount} extracted item${itemCount === 1 ? '' : 's'}` : null,
                   ].filter(Boolean).join('  ·  ')}
                 </Text>
               </View>
               <View style={styles.pendingRowRight}>
+                <StatusChip label={reviewMode} tone={reviewMode === 'Quick check' ? 'success' : reviewMode === 'Items first' ? 'warning' : 'info'} />
                 <Text style={styles.pendingAmount}>${Number(item.amount || 0).toFixed(2)}</Text>
               </View>
             </TouchableOpacity>

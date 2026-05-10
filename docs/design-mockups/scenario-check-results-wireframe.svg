@@ -1,0 +1,48 @@
+<svg width="1400" height="980" viewBox="0 0 1400 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="980" fill="#F4F7FB"/>
+  <rect x="300" y="36" width="800" height="908" rx="36" fill="#FBFDFF" stroke="#C9D6E8" stroke-width="2"/>
+  <text x="356" y="96" fill="#1F2937" font-family="Arial, sans-serif" font-size="28" font-weight="700">Scenario result</text>
+  <rect x="356" y="130" width="150" height="36" rx="18" fill="#E6F7ED"/>
+  <text x="391" y="154" fill="#166534" font-family="Arial, sans-serif" font-size="18" font-weight="700">Comfortable</text>
+  <text x="356" y="212" fill="#0F172A" font-family="Arial, sans-serif" font-size="36" font-weight="700">Yes, this looks comfortably absorbable.</text>
+  <text x="356" y="252" fill="#475569" font-family="Arial, sans-serif" font-size="22">A $180 running-shoes purchase still leaves room after expected recurring spend.</text>
+
+  <rect x="356" y="296" width="220" height="126" rx="24" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="384" y="334" fill="#64748B" font-family="Arial, sans-serif" font-size="16" font-weight="700">CURRENT HEADROOM</text>
+  <text x="384" y="384" fill="#0F172A" font-family="Arial, sans-serif" font-size="34" font-weight="700">$242</text>
+
+  <rect x="590" y="296" width="220" height="126" rx="24" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="618" y="334" fill="#64748B" font-family="Arial, sans-serif" font-size="16" font-weight="700">AFTER PURCHASE</text>
+  <text x="618" y="384" fill="#0F172A" font-family="Arial, sans-serif" font-size="34" font-weight="700">$62</text>
+
+  <rect x="824" y="296" width="220" height="126" rx="24" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="852" y="334" fill="#64748B" font-family="Arial, sans-serif" font-size="16" font-weight="700">RECURRING PRESSURE</text>
+  <text x="852" y="384" fill="#0F172A" font-family="Arial, sans-serif" font-size="34" font-weight="700">$38</text>
+
+  <text x="356" y="486" fill="#111827" font-family="Arial, sans-serif" font-size="28" font-weight="700">Why this answer</text>
+  <rect x="356" y="514" width="688" height="118" rx="24" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="388" y="554" fill="#111827" font-family="Arial, sans-serif" font-size="24" font-weight="700">Month projection</text>
+  <text x="388" y="586" fill="#475569" font-family="Arial, sans-serif" font-size="19">You were already trending under budget this month, so this purchase does not</text>
+  <text x="388" y="610" fill="#475569" font-family="Arial, sans-serif" font-size="19">push the projection above zero.</text>
+
+  <rect x="356" y="652" width="688" height="148" rx="24" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="388" y="692" fill="#111827" font-family="Arial, sans-serif" font-size="24" font-weight="700">Recurring purchases still ahead</text>
+  <text x="388" y="724" fill="#475569" font-family="Arial, sans-serif" font-size="19">Expected soon: diapers, dog food</text>
+  <text x="388" y="754" fill="#475569" font-family="Arial, sans-serif" font-size="19">These are already reflected in the tighter risk-adjusted headroom.</text>
+
+  <rect x="356" y="828" width="250" height="54" rx="27" fill="#E8EEF7" stroke="#D0DBEA" stroke-dasharray="6 6"/>
+  <text x="414" y="862" fill="#35506B" font-family="Arial, sans-serif" font-size="21" font-weight="700">Watch this scenario</text>
+
+  <rect x="1090" y="296" width="230" height="504" rx="28" fill="#F8FAFC" stroke="#D7E2F1"/>
+  <text x="1122" y="336" fill="#111827" font-family="Arial, sans-serif" font-size="22" font-weight="700">Other states</text>
+  <text x="1122" y="384" fill="#166534" font-family="Arial, sans-serif" font-size="18" font-weight="700">Comfortable</text>
+  <text x="1122" y="414" fill="#334155" font-family="Arial, sans-serif" font-size="17">Room remains even after recurring pressure.</text>
+  <text x="1122" y="468" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="18" font-weight="700">Absorbable</text>
+  <text x="1122" y="498" fill="#334155" font-family="Arial, sans-serif" font-size="17">Fits, but uses a meaningful share of room.</text>
+  <text x="1122" y="552" fill="#B45309" font-family="Arial, sans-serif" font-size="18" font-weight="700">Tight</text>
+  <text x="1122" y="582" fill="#334155" font-family="Arial, sans-serif" font-size="17">Technically possible, but month gets narrow.</text>
+  <text x="1122" y="636" fill="#B91C1C" font-family="Arial, sans-serif" font-size="18" font-weight="700">Risky / Not absorbable</text>
+  <text x="1122" y="666" fill="#334155" font-family="Arial, sans-serif" font-size="17">Projected over-budget after this purchase.</text>
+  <text x="1122" y="720" fill="#475569" font-family="Arial, sans-serif" font-size="18" font-weight="700">Unknown</text>
+  <text x="1122" y="750" fill="#334155" font-family="Arial, sans-serif" font-size="17">Not enough history to answer confidently yet.</text>
+</svg>

@@ -1251,3 +1251,65 @@ describe('GET /gmail/import-summary', () => {
     expect(Array.isArray(res.body.debug.top_corrected_fields)).toBe(true);
   });
 });
+
+describe('GET /gmail/import-health', () => {
+  it('reports disconnected health without probing Gmail', async () => {
+    const res = await request(app).get('/gmail/import-health?days=14&limit=10');
+
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(false);
+    expect(res.body.probes.inbox.error).toMatch(/not connected/i);
+    expect(res.body.recommendations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'gmail_disconnected', level: 'error' }),
+    ]));
+    expect(listRecentMessages).not.toHaveBeenCalled();
+  });
+
+  it('flags recent inbox messages that have no import log', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope, last_synced_at, last_sync_status)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly', NOW(), 'success')`,
+      [userId, encrypt('ref_tok')]
+    );
+    await db.query(
+      `INSERT INTO email_import_log (user_id, message_id, status, subject, from_address)
+       VALUES ($1, 'logged-inbox', 'imported', 'Receipt from Example', 'receipts@example.com')`,
+      [userId]
+    );
+
+    listRecentMessages.mockImplementation((_userId, options = {}) => {
+      if (`${options.query || ''}`.includes('in:inbox')) {
+        return Promise.resolve([{ id: 'logged-inbox' }, { id: 'unlogged-inbox' }]);
+      }
+      return Promise.resolve([{ id: 'logged-inbox' }]);
+    });
+    getMessage.mockResolvedValue({
+      subject: 'Order update from Missed Store',
+      from: 'orders@missed.example',
+      snippet: 'Total $42.10',
+      body: 'Total $42.10',
+      receivedAt: '2026-05-05',
+    });
+
+    const res = await request(app).get('/gmail/import-health?days=14&limit=10');
+
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(true);
+    expect(res.body.probes.inbox).toMatchObject({
+      checked_count: 2,
+      logged_count: 1,
+      unlogged_count: 1,
+    });
+    expect(res.body.probes.inbox.candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        message_id: 'unlogged-inbox',
+        import_status: 'unlogged',
+        subject: 'Order update from Missed Store',
+        sender: 'missed.example',
+      }),
+    ]));
+    expect(res.body.recommendations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'unlogged_inbox_messages', level: 'warning' }),
+    ]));
+  });
+});

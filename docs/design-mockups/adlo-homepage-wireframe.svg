@@ -1,0 +1,51 @@
+<svg width="900" height="1500" viewBox="0 0 900 1500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="1500" fill="#FBFBF8"/>
+  <text x="56" y="54" fill="#111111" font-family="Arial, sans-serif" font-size="18">hello dang</text>
+  <text x="844" y="54" text-anchor="end" fill="#5E6470" font-family="Arial, sans-serif" font-size="15">Privacy</text>
+  <text x="774" y="54" text-anchor="end" fill="#5E6470" font-family="Arial, sans-serif" font-size="15">Terms</text>
+
+  <rect x="350" y="118" width="200" height="200" rx="44" fill="#E8F0FF"/>
+  <circle cx="450" cy="218" r="58" fill="#3D76F6"/>
+  <text x="450" y="233" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="58" font-weight="700">A</text>
+
+  <text x="450" y="394" text-anchor="middle" fill="#111111" font-family="Arial, sans-serif" font-size="52" font-weight="700">Adlo</text>
+  <text x="450" y="444" text-anchor="middle" fill="#3B3F47" font-family="Arial, sans-serif" font-size="24">Expense tracking that helps you organize spending,</text>
+  <text x="450" y="476" text-anchor="middle" fill="#3B3F47" font-family="Arial, sans-serif" font-size="24">monitor recurring purchases, and understand where</text>
+  <text x="450" y="508" text-anchor="middle" fill="#3B3F47" font-family="Arial, sans-serif" font-size="24">your month is heading.</text>
+
+  <rect x="268" y="560" width="364" height="60" rx="18" fill="#111111"/>
+  <text x="450" y="598" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="20" font-weight="700">Read the privacy policy</text>
+
+  <rect x="145" y="694" width="610" height="166" rx="28" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="184" y="742" fill="#111111" font-family="Arial, sans-serif" font-size="27" font-weight="700">Why Adlo uses Google access</text>
+  <text x="184" y="786" fill="#3B3F47" font-family="Arial, sans-serif" font-size="21">Adlo uses Gmail read-only access to identify expense-related</text>
+  <text x="184" y="815" fill="#3B3F47" font-family="Arial, sans-serif" font-size="21">emails like receipts, order confirmations, and subscription</text>
+  <text x="184" y="844" fill="#3B3F47" font-family="Arial, sans-serif" font-size="21">notices. It does not send email or use Gmail data for advertising.</text>
+
+  <text x="145" y="942" fill="#111111" font-family="Arial, sans-serif" font-size="31" font-weight="700">What Adlo does</text>
+
+  <rect x="145" y="974" width="292" height="124" rx="24" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="175" y="1020" fill="#111111" font-family="Arial, sans-serif" font-size="23" font-weight="700">Capture expenses</text>
+  <text x="175" y="1057" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">Manual entry, receipts,</text>
+  <text x="175" y="1083" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">and Gmail imports</text>
+
+  <rect x="463" y="974" width="292" height="124" rx="24" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="493" y="1020" fill="#111111" font-family="Arial, sans-serif" font-size="23" font-weight="700">Track budgets</text>
+  <text x="493" y="1057" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">Monthly spend, pace,</text>
+  <text x="493" y="1083" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">and category pressure</text>
+
+  <rect x="145" y="1122" width="292" height="124" rx="24" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="175" y="1168" fill="#111111" font-family="Arial, sans-serif" font-size="23" font-weight="700">Monitor recurring items</text>
+  <text x="175" y="1205" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">Repurchase timing,</text>
+  <text x="175" y="1231" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">price changes, restock windows</text>
+
+  <rect x="463" y="1122" width="292" height="124" rx="24" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="493" y="1168" fill="#111111" font-family="Arial, sans-serif" font-size="23" font-weight="700">Generate insights</text>
+  <text x="493" y="1205" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">Forecasts, one-off detection,</text>
+  <text x="493" y="1231" fill="#5E6470" font-family="Arial, sans-serif" font-size="19">and spending guidance</text>
+
+  <line x1="145" y1="1316" x2="755" y2="1316" stroke="#E5E7EB"/>
+  <text x="145" y="1360" fill="#111111" font-family="Arial, sans-serif" font-size="27" font-weight="700">Trust</text>
+  <text x="145" y="1400" fill="#3B3F47" font-family="Arial, sans-serif" font-size="21">Adlo does not send email, sell your data, or use Gmail data for advertising.</text>
+  <text x="145" y="1443" fill="#5E6470" font-family="Arial, sans-serif" font-size="18">Questions: dang@hellodang.com</text>
+</svg>

@@ -1,12 +1,16 @@
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
+const parser = require('@babel/parser');
 
 const projectRoot = path.join(__dirname, '..');
 const filesToCheck = [
   'app/_layout.js',
   'app/accounts.js',
   'app/confirm.js',
+  'app/diagnostics.js',
   'app/expense/[id].js',
+  'app/email-import-health.js',
   'app/gmail-import.js',
   'app/insight-diagnostics.js',
   'app/login.js',
@@ -14,6 +18,7 @@ const filesToCheck = [
   'app/manual-add.js',
   'app/onboarding.js',
   'app/recurring-item.js',
+  'app/reset-password.js',
   'app/scenario-check.js',
   'app/watching-plans.js',
   'app/(tabs)/settings.js',
@@ -21,6 +26,7 @@ const filesToCheck = [
   'components/GlobalAddLauncher.js',
   'components/NLInput.js',
   'components/GmailImportOverview.js',
+  'components/InsightTrendVisual.js',
   'components/PendingExpenseReviewPanel.js',
   'components/PendingExpenseEmailCard.js',
   'components/PendingExpenseApprovalCard.js',
@@ -28,32 +34,52 @@ const filesToCheck = [
   'components/PendingExpenseItemsCard.js',
   'components/SmartSuggestionCard.js',
   'components/SummaryInsightsRail.js',
+  'components/ui/Buttons.js',
+  'components/ui/MetricStrip.js',
+  'components/ui/SegmentedControl.js',
+  'components/ui/States.js',
+  'components/ui/StatusChip.js',
   'services/insightPresentation.js',
+  'services/insightTrendVisual.js',
   'services/manualAddSuggestions.js',
   'services/confirmClientWork.js',
   'services/confirmNavigation.js',
   'services/apiConfig.js',
   'services/currentUserCache.js',
+  'services/emailAuth.js',
+  'services/expenseMutationEffects.js',
+  'services/observability.js',
+  'services/provenancePresentation.js',
   'services/gmailAuthFlow.js',
   'services/itemEditing.js',
   'services/internalTools.js',
   'services/internalToolsConfig.js',
   'services/onboardingFlow.js',
+  'services/passwordRecovery.js',
   'services/pushRegistration.js',
   'services/storageSanitizers.js',
   'services/authBootRouting.js',
   'services/scenarioCheckPresentation.js',
+  'services/summarySnapshot.js',
   'scripts/test-auth-boot-routing.js',
   'scripts/test-api-config.js',
+  'scripts/test-email-auth.js',
   'scripts/test-storage-sanitizers.js',
   'scripts/test-internal-tools-config.js',
+  'scripts/test-insight-trend-visual.js',
   'scripts/test-onboarding-flow.js',
+  'scripts/test-provenance-presentation.js',
+  'scripts/test-password-recovery.js',
 ];
 
 for (const relativePath of filesToCheck) {
   const absolutePath = path.join(projectRoot, relativePath);
   process.stdout.write(`[mobile-smoke] checking ${relativePath}\n`);
   execFileSync(process.execPath, ['--check', absolutePath], { stdio: 'inherit' });
+  parser.parse(fs.readFileSync(absolutePath, 'utf8'), {
+    sourceType: 'unambiguous',
+    plugins: ['jsx'],
+  });
 }
 
 process.stdout.write('[mobile-smoke] syntax checks passed\n');

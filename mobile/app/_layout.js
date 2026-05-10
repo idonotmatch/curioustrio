@@ -1,5 +1,6 @@
-import { Stack, useRootNavigationState, useRouter } from 'expo-router';
+import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as Linking from 'expo-linking';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppState, Image, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
@@ -10,8 +11,28 @@ import { stashNavigationPayload } from '../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../services/insightLocalStore';
 import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
 import { loadCurrentUserCache, saveCurrentUserCache } from '../services/currentUserCache';
+import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
+import { startHouseholdFreshnessBridge } from '../services/householdFreshnessBridge';
+import { captureException } from '../services/observability';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
-const { defaultAuthedRoute, shouldRouteToOnboarding } = require('../services/authBootRouting');
+import { colors } from '../theme/tokens';
+const {
+  AUTH_BOOT_CACHE_TIMEOUT_MS,
+  AUTH_BOOT_SYNC_BACKGROUND_TIMEOUT_MS,
+  AUTH_BOOT_SYNC_TIMEOUT_MS,
+  AUTH_LINK_TIMEOUT_MS,
+  defaultAuthedRoute,
+  isAuthEntryPath,
+  resolveWithTimeout,
+  shouldRouteToOnboarding,
+} = require('../services/authBootRouting');
+const {
+  RESET_PASSWORD_ROUTE,
+  applyPasswordRecoveryUrl,
+  endPasswordRecovery,
+  isPasswordRecoveryActive,
+} = require('../services/passwordRecovery');
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -55,14 +76,36 @@ const RECURRING_PUSH_INSIGHT_TYPES = new Set([
 
 function AppNavigator() {
   const router = useRouter();
+  const pathname = usePathname();
   const rootNavigationState = useRootNavigationState();
   const [bootstrapped, setBootstrapped] = useState(false);
+  const [authLinkReady, setAuthLinkReady] = useState(false);
   const resolvingSessionRef = useRef(false);
+  const routedSessionIdRef = useRef(null);
   const gmailSyncInFlightRef = useRef(false);
   const lastGmailAutoSyncAttemptRef = useRef(0);
+  const gmailAutoSyncTimerRef = useRef(null);
   const lastHandledNotificationRef = useRef(null);
   const pendingNotificationResponseRef = useRef(null);
   const hasOnboardingRoute = rootNavigationState?.routeNames?.includes('onboarding') === true;
+
+  async function maybeHandlePasswordRecoveryUrl(url) {
+    if (!url) return false;
+    try {
+      const { handled } = await applyPasswordRecoveryUrl(url, supabase.auth);
+      if (!handled) return false;
+      router.replace(RESET_PASSWORD_ROUTE);
+      setBootstrapped(true);
+      return true;
+    } catch (error) {
+      endPasswordRecovery();
+      captureException(error, { area: 'password_recovery_link' });
+      console.error('[password-recovery] failed to apply reset link:', error?.message ?? error);
+      router.replace('/login');
+      setBootstrapped(true);
+      return true;
+    }
+  }
 
   async function navigateFromNotificationResponse(response) {
     const identifier = response?.notification?.request?.identifier;
@@ -172,6 +215,7 @@ function AppNavigator() {
       const stale = !lastSyncedAt || Number.isNaN(lastSyncedAt) || (now - lastSyncedAt) >= 30 * 60 * 1000;
       if (!stale) return;
       await api.post('/gmail/import', {}, { token });
+      await invalidateExpenseMutationCaches();
     } catch {
       // Non-fatal
     } finally {
@@ -179,8 +223,19 @@ function AppNavigator() {
     }
   }
 
+  function scheduleGmailAutoSync(token) {
+    if (!token) return;
+    if (gmailAutoSyncTimerRef.current) clearTimeout(gmailAutoSyncTimerRef.current);
+    gmailAutoSyncTimerRef.current = setTimeout(() => {
+      gmailAutoSyncTimerRef.current = null;
+      maybeAutoSyncGmail(token);
+    }, 1800);
+  }
+
   // Auth state listener
   useEffect(() => {
+    if (!authLinkReady) return undefined;
+
     async function syncSessionUser(session) {
       try {
         // Pass the token directly from the session object already in memory.
@@ -198,10 +253,12 @@ function AppNavigator() {
         try {
           me = await api.post('/users/sync', payload, { token: session.access_token });
         } catch (syncErr) {
+          captureException(syncErr, { area: 'auth_sync', fallback: 'users_me' });
           console.error('[routeAuthenticatedSession] sync failed, falling back to /users/me:', syncErr?.message ?? syncErr);
           try {
             me = await api.get('/users/me', { token: session.access_token });
           } catch (meErr) {
+            captureException(meErr, { area: 'auth_sync_fallback' });
             console.error('[routeAuthenticatedSession] /users/me fallback failed:', meErr?.message ?? meErr);
           }
         }
@@ -217,43 +274,113 @@ function AppNavigator() {
       if (resolvingSessionRef.current) return null;
       resolvingSessionRef.current = true;
       try {
-        return await syncSessionUser(session);
+        return await resolveWithTimeout(
+          syncSessionUser(session),
+          AUTH_BOOT_SYNC_BACKGROUND_TIMEOUT_MS,
+          null
+        );
       } finally {
         resolvingSessionRef.current = false;
       }
     }
 
     async function routeAuthenticatedSession(session) {
-      const cachedUser = await loadCurrentUserCache();
-      const safeCachedUser = cachedUser?.auth_user_id === session.user.id ? cachedUser : null;
+      const routeKey = `${session.user.id}:${session.access_token ? session.access_token.slice(-12) : 'no-token'}`;
+      const alreadyRoutedSession = routedSessionIdRef.current === routeKey;
+      if (alreadyRoutedSession && bootstrapped && !isAuthEntryPath(pathname)) {
+        scheduleGmailAutoSync(session.access_token);
+        return;
+      }
 
-      if (!bootstrapped) {
-        const routeUser = safeCachedUser || await syncSessionInBackground(session);
+      const cachedUser = await resolveWithTimeout(
+        loadCurrentUserCache(),
+        AUTH_BOOT_CACHE_TIMEOUT_MS,
+        null
+      );
+      const safeCachedUser = cachedUser?.auth_user_id === session.user.id ? cachedUser : null;
+      const shouldReplaceAuthEntry = isAuthEntryPath(pathname);
+
+      if (isPasswordRecoveryActive()) {
+        setBootstrapped(true);
+        router.replace(RESET_PASSWORD_ROUTE);
+        if (!safeCachedUser) {
+          syncSessionInBackground(session);
+        }
+        return;
+      }
+
+      if (!bootstrapped || shouldReplaceAuthEntry) {
+        let routeUser = safeCachedUser;
+        if (!routeUser) {
+          const syncPromise = syncSessionInBackground(session);
+          routeUser = await resolveWithTimeout(syncPromise, AUTH_BOOT_SYNC_TIMEOUT_MS, null);
+          if (!routeUser) {
+            console.info('[boot] user sync still pending; routing with cached/default state');
+            syncPromise
+              .then((resolvedUser) => {
+                if (!resolvedUser) return;
+                if (resolvedUser && hasOnboardingRoute && shouldRouteToOnboarding(resolvedUser)) {
+                  router.replace('/onboarding');
+                }
+              })
+              .catch(() => {
+                // Non-fatal. The app has already left the logo screen.
+              });
+          }
+        }
         router.replace(defaultAuthedRoute(routeUser, hasOnboardingRoute));
+        routedSessionIdRef.current = routeKey;
         setBootstrapped(true);
         if (safeCachedUser) {
           syncSessionInBackground(session);
         }
-      } else if (hasOnboardingRoute && safeCachedUser && shouldRouteToOnboarding(safeCachedUser)) {
+      } else if (hasOnboardingRoute && safeCachedUser && shouldRouteToOnboarding(safeCachedUser) && pathname !== '/onboarding') {
         router.replace('/onboarding');
       }
-      maybeAutoSyncGmail(session.access_token);
+      scheduleGmailAutoSync(session.access_token);
     }
 
     // Subscribe to auth state changes.
     // INITIAL_SESSION fires on app start with the restored session (or null if not logged in).
     // SIGNED_IN fires after a fresh login. Both need the same handling.
+    let active = true;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        endPasswordRecovery();
         router.replace('/login');
         setBootstrapped(true);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [bootstrapped, hasOnboardingRoute]);
+    resolveWithTimeout(supabase.auth.getSession(), AUTH_BOOT_SYNC_TIMEOUT_MS, null)
+      .then((result) => {
+        if (!active || bootstrapped) return;
+        const session = result?.data?.session || null;
+        if (session) {
+          routeAuthenticatedSession(session);
+        } else {
+          endPasswordRecovery();
+          router.replace('/login');
+          setBootstrapped(true);
+        }
+      })
+      .catch(() => {
+        if (!active || bootstrapped) return;
+        router.replace('/login');
+        setBootstrapped(true);
+      });
+
+    return () => {
+      active = false;
+      if (gmailAutoSyncTimerRef.current) {
+        clearTimeout(gmailAutoSyncTimerRef.current);
+        gmailAutoSyncTimerRef.current = null;
+      }
+      subscription.unsubscribe();
+    };
+  }, [authLinkReady, bootstrapped, hasOnboardingRoute, pathname, router]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (state) => {
@@ -261,6 +388,16 @@ function AppNavigator() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
+          markFreshnessStale([
+            FRESHNESS_DOMAINS.expenses,
+            FRESHNESS_DOMAINS.householdExpenses,
+            FRESHNESS_DOMAINS.budget,
+            FRESHNESS_DOMAINS.pendingExpenses,
+            FRESHNESS_DOMAINS.insights,
+            FRESHNESS_DOMAINS.forecastMovement,
+            FRESHNESS_DOMAINS.gmailImport,
+            FRESHNESS_DOMAINS.household,
+          ], { reason: 'app_foreground', delayMs: 800 });
           maybeAutoSyncGmail(session.access_token);
         }
       } catch {
@@ -271,6 +408,37 @@ function AppNavigator() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    async function bootstrapAuthLinks() {
+      try {
+        const initialUrl = await resolveWithTimeout(
+          Linking.getInitialURL(),
+          AUTH_LINK_TIMEOUT_MS,
+          null
+        );
+        if (!active) return;
+        await maybeHandlePasswordRecoveryUrl(initialUrl);
+      } finally {
+        if (active) setAuthLinkReady(true);
+      }
+    }
+
+    bootstrapAuthLinks();
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      maybeHandlePasswordRecoveryUrl(url);
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (!authLinkReady) return undefined;
+
     async function handleNotificationResponse(response) {
       if (!bootstrapped) {
         pendingNotificationResponseRef.current = response;
@@ -292,7 +460,7 @@ function AppNavigator() {
       });
 
     return () => subscription.remove();
-  }, [bootstrapped, router]);
+  }, [authLinkReady, bootstrapped, router]);
 
   useEffect(() => {
     if (!bootstrapped || !pendingNotificationResponseRef.current) return;
@@ -300,6 +468,11 @@ function AppNavigator() {
     pendingNotificationResponseRef.current = null;
     navigateFromNotificationResponse(response);
   }, [bootstrapped, router]);
+
+  useEffect(() => {
+    if (!bootstrapped) return undefined;
+    return startHouseholdFreshnessBridge();
+  }, [bootstrapped]);
 
   if (!bootstrapped) {
     return (
@@ -317,13 +490,14 @@ function AppNavigator() {
 
   return (
     <Stack screenOptions={{
-      headerStyle: { backgroundColor: '#0a0a0a' },
-      headerTintColor: '#f5f5f5',
+      headerStyle: { backgroundColor: colors.background },
+      headerTintColor: colors.text,
       headerTitleStyle: { fontWeight: '500', fontSize: 15 },
       headerShadowVisible: false,
-      contentStyle: { backgroundColor: '#0a0a0a' },
+      contentStyle: { backgroundColor: colors.background },
     }}>
       <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="reset-password" options={{ title: 'Reset password', headerBackTitle: 'Back' }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="manual-add"
@@ -369,7 +543,7 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   splashContainer: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },

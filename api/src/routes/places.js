@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const { searchPlaces, MapkitSearchUnavailableError } = require('../services/mapkitService');
+const { captureException } = require('../services/observability');
 
 router.use(authenticate);
 
@@ -33,6 +34,11 @@ router.get('/search', async (req, res, next) => {
     res.json({ result: results[0] || null, results });
     } catch (err) {
       if (err instanceof MapkitSearchUnavailableError || err?.name === 'MapkitSearchUnavailableError') {
+        captureException(err, {
+          area: 'places_search',
+          ...redactPlaceSearchContext(req.query?.q),
+          has_location_bias: req.query?.lat != null && req.query?.lng != null,
+        });
         console.error('[places/search] unavailable', {
           ...redactPlaceSearchContext(req.query?.q),
           has_location_bias: req.query?.lat != null && req.query?.lng != null,

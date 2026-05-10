@@ -1,6 +1,36 @@
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { formatTemplateLabel } from '../services/gmailImportPresentation';
+import { EmptyState, LoadingState } from './ui/States';
+import { StatusChip, statusToneForState } from './ui/StatusChip';
+import { colors } from '../theme/tokens';
 const { decodeHtmlEntities } = require('../services/text');
+
+function logSubjectLabel(entry = {}) {
+  const subject = decodeHtmlEntities(`${entry.subject || ''}`).trim();
+  if (subject) return subject;
+  const template = entry.subject_pattern && entry.subject_pattern !== 'unknown_subject'
+    ? formatTemplateLabel(entry.subject_pattern)
+    : null;
+  const sender = entry.sender_domain && entry.sender_domain !== 'unknown'
+    ? entry.sender_domain
+    : null;
+  if (template && sender) return `${template} · ${sender}`;
+  if (template) return template;
+  if (sender) return sender;
+  return '(no subject)';
+}
+
+function logOutcomeText(entry = {}, formatLogDetail) {
+  const detail = formatLogDetail(entry);
+  if (detail) return detail;
+  if (entry.skip_reason === 'classifier_uncertain') return 'Skipped because the email looked purchase-related but did not have a readable final total.';
+  if (entry.skip_reason === 'missing_amount') return 'Skipped because no readable amount was found.';
+  if (entry.skip_reason === 'duplicate_expense') return 'Skipped because it matched an existing expense.';
+  if (`${entry.skip_reason || ''}`.startsWith('template_skip_')) return 'Filtered as a recurring non-charge email template.';
+  if (entry.status === 'failed') return entry.skip_reason ? `Failed: ${entry.skip_reason}` : 'Import failed before this email could be processed.';
+  return null;
+}
 
 export function GmailImportLogSection({
   styles,
@@ -26,7 +56,7 @@ export function GmailImportLogSection({
         activeOpacity={0.7}
       >
         <Text style={styles.sectionTitle}>IMPORT LOG</Text>
-        <Ionicons name={importLogExpanded ? 'chevron-up' : 'chevron-down'} size={13} color="#444" />
+        <Ionicons name={importLogExpanded ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textDisabled} />
       </TouchableOpacity>
       {displayImportLog.some((entry) => entry.status === 'failed') ? (
         <TouchableOpacity
@@ -42,22 +72,27 @@ export function GmailImportLogSection({
       ) : null}
       {importLogExpanded ? (
         importLogLoading ? (
-          <ActivityIndicator color="#555" style={styles.loadingBlock} />
+          <LoadingState compact label="Loading import history" style={styles.loadingBlock} />
         ) : displayImportLog.length === 0 ? (
-          <Text style={styles.emptyText}>No import history yet.</Text>
+          <EmptyState
+            compact
+            title="No import history yet"
+            body="Run a Gmail sync to start building the import log."
+            icon="mail-outline"
+          />
         ) : (
           displayImportLog.map((entry) => (
             <View key={entry.id} style={styles.logRow}>
               <View style={styles.logRowLeft}>
                 <Text style={styles.logSubject} numberOfLines={1}>
-                  {decodeHtmlEntities(`${entry.subject || ''}`).trim() || '(no subject)'}
+                  {logSubjectLabel(entry)}
                 </Text>
                 <Text style={styles.logFrom} numberOfLines={1}>
                   {entry.from_address || '—'}
                 </Text>
-                {formatLogDetail(entry) ? (
+                {logOutcomeText(entry, formatLogDetail) ? (
                   <Text style={styles.logDetail} numberOfLines={1}>
-                    {formatLogDetail(entry)}
+                    {logOutcomeText(entry, formatLogDetail)}
                   </Text>
                 ) : null}
                 {entry.review_source === 'gmail' ? (
@@ -75,13 +110,7 @@ export function GmailImportLogSection({
                 ) : null}
               </View>
               <View style={styles.logRowRight}>
-                <Text style={[
-                  styles.logStatus,
-                  entry.status === 'imported' && styles.logStatusImported,
-                  entry.status === 'failed' && styles.logStatusFailed,
-                ]}>
-                  {formatLogStatus(entry)}
-                </Text>
+                <StatusChip label={formatLogStatus(entry)} tone={statusToneForState(formatLogStatus(entry))} />
                 <Text style={styles.logDate}>
                   {new Date(entry.imported_at).toLocaleDateString()}
                 </Text>

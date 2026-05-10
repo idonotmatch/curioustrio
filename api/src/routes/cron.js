@@ -7,6 +7,7 @@ const PushToken = require('../models/pushToken');
 const { importForUser } = require('../services/gmailImporter');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 const { runDataRetention } = require('../services/dataRetentionService');
+const { notifyCronAlert } = require('../services/cronAlertService');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -55,8 +56,28 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
           source: 'scheduler',
           error: e?.message ? `${e.message}`.slice(0, 500) : 'Unknown Gmail sync error',
         });
+        notifyCronAlert({
+          job: 'gmail-sync',
+          level: 'error',
+          message: 'Gmail scheduler failed for a connected account.',
+          metadata: { user_id: userId },
+        }).catch(() => {});
         console.error(`[cron/gmail-sync] user=${userId} error:`, e.message);
       }
+    }
+
+    if (totalFailed > 0) {
+      notifyCronAlert({
+        job: 'gmail-sync',
+        level: 'warning',
+        message: 'Gmail scheduler completed with failed message imports.',
+        metadata: {
+          users_processed: usersProcessed,
+          total_imported: totalImported,
+          total_skipped: totalSkipped,
+          total_failed: totalFailed,
+        },
+      }).catch(() => {});
     }
 
     console.log(`[cron/gmail-sync] done — users=${usersProcessed} imported=${totalImported} skipped=${totalSkipped} failed=${totalFailed}`);
@@ -81,6 +102,12 @@ router.post('/insights-push', cronAuth, async (req, res, next) => {
         notificationsSent += Number(result.sent || 0);
         console.log(`[cron/insights-push] user=${userId} sent=${result.sent || 0} considered=${result.considered || 0}`);
       } catch (e) {
+        notifyCronAlert({
+          job: 'insights-push',
+          level: 'error',
+          message: 'Insight push scheduler failed for a user.',
+          metadata: { user_id: userId },
+        }).catch(() => {});
         console.error(`[cron/insights-push] user=${userId} error:`, e.message);
       }
     }

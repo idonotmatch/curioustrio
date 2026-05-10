@@ -7,7 +7,9 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
+import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
+import { colors } from '../theme/tokens';
 
 export default function CategoriesScreen() {
   const [categories, setCategories] = useState([]);
@@ -59,6 +61,17 @@ export default function CategoriesScreen() {
     setSnoozedSuggestionIds(prev => prev.filter(id => suggestions.some(s => s.id === id)));
   }, [suggestions]);
 
+  function markCategoriesChanged(reason = 'categories_changed') {
+    markFreshnessStale([
+      FRESHNESS_DOMAINS.categories,
+      FRESHNESS_DOMAINS.expenses,
+      FRESHNESS_DOMAINS.householdExpenses,
+      FRESHNESS_DOMAINS.budget,
+      FRESHNESS_DOMAINS.insights,
+      FRESHNESS_DOMAINS.forecastMovement,
+    ], { reason });
+  }
+
   async function addCategory() {
     if (!newCatName.trim()) return;
     if (newCatType === 'leaf' && !newCatParentId) {
@@ -71,6 +84,7 @@ export default function CategoriesScreen() {
       const body = { name: newCatName.trim() };
       if (newCatType === 'leaf' && newCatParentId) body.parent_id = newCatParentId;
       await api.post('/categories', body);
+      markCategoriesChanged('category_created');
       setNewCatName('');
       setNewCatParentId(null);
       load();
@@ -111,6 +125,7 @@ export default function CategoriesScreen() {
       const body = { name: editingCatName.trim() };
       if (editingParentId !== undefined) body.parent_id = editingParentId;
       await api.patch(`/categories/${id}`, body);
+      markCategoriesChanged('category_updated');
       setEditingCatId(null);
       load();
     } catch (e) {
@@ -131,7 +146,7 @@ export default function CategoriesScreen() {
         {
           text: action, style: cat.is_default ? 'default' : 'destructive', onPress: async () => {
             setErrorMsg('');
-            try { await api.delete(`/categories/${cat.id}`); load(); }
+            try { await api.delete(`/categories/${cat.id}`); markCategoriesChanged('category_deleted'); load(); }
             catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
           },
         },
@@ -143,6 +158,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/${id}/restore`, {});
+      markCategoriesChanged('category_restored');
       load();
     } catch (e) {
       setErrorMsg(e.message || 'Something went wrong');
@@ -154,6 +170,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.patch(`/categories/${id}`, { parent_id: movingParentId });
+      markCategoriesChanged('category_moved');
       setMovingCatId(null);
       setMovingParentId(null);
       load();
@@ -170,6 +187,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/${id}/merge`, { target_category_id: mergeTargetId });
+      markCategoriesChanged('category_merged');
       setMergingCatId(null);
       setMergeTargetId(null);
       load();
@@ -184,6 +202,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/suggestions/${id}/accept`);
+      markCategoriesChanged('category_suggestion_accepted');
       load();
     } catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
   }
@@ -192,6 +211,7 @@ export default function CategoriesScreen() {
     setErrorMsg('');
     try {
       await api.post(`/categories/suggestions/${id}/reject`);
+      markCategoriesChanged('category_suggestion_rejected');
       load();
     } catch (e) { setErrorMsg(e.message || 'Something went wrong'); }
   }
@@ -237,7 +257,7 @@ export default function CategoriesScreen() {
         style={styles.deleteSwipe}
         onPress={() => deleteCategory(cat)}
       >
-        <Ionicons name={cat.is_default ? 'eye-off-outline' : 'trash-outline'} size={16} color="#fff" />
+        <Ionicons name={cat.is_default ? 'eye-off-outline' : 'trash-outline'} size={16} color={colors.text} />
         <Text style={styles.deleteSwipeText}>{cat.is_default ? 'Hide' : 'Delete'}</Text>
       </TouchableOpacity>
     );
@@ -314,7 +334,7 @@ export default function CategoriesScreen() {
             ) : (
               <>
                 <TouchableOpacity onPress={() => startEditing(cat)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="pencil-outline" size={16} color="#555" />
+                  <Ionicons name="pencil-outline" size={16} color={colors.textDisabled} />
                 </TouchableOpacity>
                 {canWorkflow && (
                   <>
@@ -406,7 +426,7 @@ export default function CategoriesScreen() {
       <Stack.Screen options={{ title: 'Category Details' }} />
       <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
-          <ActivityIndicator color="#555" style={{ marginTop: 40 }} />
+          <ActivityIndicator color={colors.textDisabled} style={{ marginTop: 40 }} />
         ) : (
           <>
             {/* Add new — TOP */}
@@ -456,7 +476,7 @@ export default function CategoriesScreen() {
                   value={newCatName}
                   onChangeText={setNewCatName}
                   placeholder={newCatType === 'parent' ? 'e.g. Food & Drink' : 'e.g. Groceries'}
-                  placeholderTextColor="#444"
+                  placeholderTextColor={colors.textDisabled}
                   onSubmitEditing={addCategory}
                   returnKeyType="done"
                 />
@@ -469,7 +489,7 @@ export default function CategoriesScreen() {
                   disabled={!newCatName.trim() || addingCat || (newCatType === 'leaf' && !newCatParentId)}
                 >
                   {addingCat
-                    ? <ActivityIndicator color="#000" size="small" />
+                    ? <ActivityIndicator color={colors.textInverse} size="small" />
                     : <Text style={styles.addBtnText}>Add</Text>}
                 </TouchableOpacity>
               </View>
@@ -548,7 +568,7 @@ export default function CategoriesScreen() {
                       </>
                     ) : (
                       <TouchableOpacity onPress={() => startEditing(parent)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Ionicons name="pencil-outline" size={15} color="#555" />
+                        <Ionicons name="pencil-outline" size={15} color={colors.textDisabled} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -608,99 +628,99 @@ export default function CategoriesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
 
-  sectionLabel: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
-  empty: { color: '#888', fontSize: 15, marginBottom: 12 },
-  defaultsNote: { color: '#888', fontSize: 14, marginBottom: 10 },
-  hiddenDefaultsNote: { color: '#777', fontSize: 13, marginBottom: 8 },
+  sectionLabel: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+  empty: { color: colors.textSubtle, fontSize: 15, marginBottom: 12 },
+  defaultsNote: { color: colors.textSubtle, fontSize: 14, marginBottom: 10 },
+  hiddenDefaultsNote: { color: colors.textDisabled, fontSize: 13, marginBottom: 8 },
   defaultsSummaryCard: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1d1d1d',
+    borderColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
   },
-  defaultsSummaryTitle: { color: '#d4d4d4', fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  defaultsSummaryText: { color: '#767676', fontSize: 13 },
+  defaultsSummaryTitle: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  defaultsSummaryText: { color: colors.textSubtle, fontSize: 13 },
 
   // Add section
   addSection: { marginBottom: 28 },
   typeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   typeBtn: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
-    backgroundColor: '#111', borderWidth: 1, borderColor: '#222',
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  typeBtnActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  typeBtnActive: { backgroundColor: colors.text, borderColor: colors.text },
   typeBtnDisabled: { opacity: 0.3 },
-  typeBtnText: { fontSize: 14, color: '#999' },
-  typeBtnTextActive: { color: '#000', fontWeight: '600' },
-  typeBtnTextDisabled: { color: '#888' },
+  typeBtnText: { fontSize: 14, color: colors.textSubtle },
+  typeBtnTextActive: { color: colors.textInverse, fontWeight: '600' },
+  typeBtnTextDisabled: { color: colors.textSubtle },
   parentPicker: { marginBottom: 10 },
   parentPickerRow: { flexDirection: 'row', gap: 8 },
   addRow: { flexDirection: 'row', gap: 10 },
-  addBtn: { backgroundColor: '#f5f5f5', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
+  addBtn: { backgroundColor: colors.text, borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
   addBtnDisabled: { opacity: 0.3 },
-  addBtnText: { color: '#000', fontWeight: '600', fontSize: 14 },
-  errorMsg: { color: '#ef4444', fontSize: 14, marginTop: 10 },
+  addBtnText: { color: colors.textInverse, fontWeight: '600', fontSize: 14 },
+  errorMsg: { color: colors.danger, fontSize: 14, marginTop: 10 },
 
   // Suggestions
-  suggestCard: { backgroundColor: '#111', borderRadius: 10, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: '#2a2a1a' },
+  suggestCard: { backgroundColor: colors.surface, borderRadius: 10, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: colors.warningMuted },
   suggestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  suggestTitle: { fontSize: 12, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
-  suggestCount: { fontSize: 13, color: '#777' },
-  suggestRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  suggestTitle: { fontSize: 12, color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
+  suggestCount: { fontSize: 13, color: colors.textDisabled },
+  suggestRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
   suggestBody: { marginBottom: 10 },
-  suggestLabel: { color: '#ccc', fontSize: 15, fontWeight: '500' },
-  suggestMeta: { color: '#9a9a9a', fontSize: 13, marginTop: 4 },
-  suggestExamples: { color: '#777', fontSize: 13, marginTop: 4 },
+  suggestLabel: { color: colors.textMuted, fontSize: 15, fontWeight: '500' },
+  suggestMeta: { color: colors.textSubtle, fontSize: 13, marginTop: 4 },
+  suggestExamples: { color: colors.textDisabled, fontSize: 13, marginTop: 4 },
   suggestActions: { flexDirection: 'row', gap: 14 },
-  acceptText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
-  laterText: { color: '#aaa', fontSize: 14 },
-  rejectText: { color: '#999', fontSize: 14 },
+  acceptText: { color: colors.success, fontSize: 14, fontWeight: '600' },
+  laterText: { color: colors.textMuted, fontSize: 14 },
+  rejectText: { color: colors.textSubtle, fontSize: 14 },
 
   // Category rows
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#111', backgroundColor: '#0a0a0a' },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: colors.surface, backgroundColor: colors.background },
   rowIndented: { paddingLeft: 16 },
   catLabelWrap: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, flex: 1, marginRight: 8 },
-  catName: { flex: 1, fontSize: 15, color: '#f5f5f5' },
-  defaultTag: { color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  customTag: { color: '#555', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  overrideTag: { color: '#8f8f8f', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  hiddenTag: { color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  catName: { flex: 1, fontSize: 15, color: colors.text },
+  defaultTag: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  customTag: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  overrideTag: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  hiddenTag: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
   actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  rowActionText: { color: '#777', fontSize: 13 },
-  saveText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
-  cancelText: { color: '#999', fontSize: 14 },
+  rowActionText: { color: colors.textDisabled, fontSize: 13 },
+  saveText: { color: colors.success, fontSize: 14, fontWeight: '600' },
+  cancelText: { color: colors.textSubtle, fontSize: 14 },
   disabledActionText: { opacity: 0.4 },
 
   // Edit mode within row
   editBlock: { flex: 1, marginRight: 12 },
-  editInput: { backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: '#f5f5f5', fontSize: 15, borderWidth: 1, borderColor: '#1f1f1f' },
+  editInput: { backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: colors.text, fontSize: 15, borderWidth: 1, borderColor: colors.textInverse },
   editParentPicker: { marginTop: 8 },
   editParentRow: { flexDirection: 'row', gap: 6 },
-  workflowBlock: { paddingLeft: 16, paddingRight: 12, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#111' },
-  workflowLabel: { color: '#888', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
-  workflowHint: { color: '#666', fontSize: 13, marginTop: 8 },
+  workflowBlock: { paddingLeft: 16, paddingRight: 12, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  workflowLabel: { color: colors.textSubtle, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
+  workflowHint: { color: colors.textDisabled, fontSize: 13, marginTop: 8 },
   workflowActions: { flexDirection: 'row', gap: 14, alignItems: 'center', marginTop: 10 },
 
   // Parent chips (shared)
-  parentChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', marginRight: 2 },
-  parentChipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  parentChipText: { fontSize: 14, color: '#999' },
-  parentChipTextActive: { color: '#000', fontWeight: '600' },
+  parentChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginRight: 2 },
+  parentChipActive: { backgroundColor: colors.text, borderColor: colors.text },
+  parentChipText: { fontSize: 14, color: colors.textSubtle },
+  parentChipTextActive: { color: colors.textInverse, fontWeight: '600' },
 
   // Parent category header
-  parentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  parentLabel: { flex: 1, fontSize: 13, color: '#aaa', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  parentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
+  parentLabel: { flex: 1, fontSize: 13, color: colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   ungroupedSection: { marginTop: 12 },
-  ungroupedLabel: { fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  ungroupedLabel: { fontSize: 12, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
 
   // Swipe delete
-  deleteSwipe: { backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', width: 72, borderBottomWidth: 1, borderBottomColor: '#111', gap: 3 },
-  deleteSwipeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  deleteSwipe: { backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center', width: 72, borderBottomWidth: 1, borderBottomColor: colors.surface, gap: 3 },
+  deleteSwipeText: { color: colors.text, fontSize: 12, fontWeight: '600' },
 });

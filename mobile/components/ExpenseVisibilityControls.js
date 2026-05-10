@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, Switch } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function ExpenseVisibilityControls({
   styles,
@@ -26,8 +27,8 @@ export function ExpenseVisibilityControls({
           value={isPrivate}
           onValueChange={canAdjust ? onTogglePrivate : undefined}
           disabled={!canAdjust || savingControls}
-          trackColor={{ false: '#1f1f1f', true: '#6366f1' }}
-          thumbColor={isPrivate ? '#fff' : '#555'}
+          trackColor={{ false: colors.borderSubtle, true: colors.accentMuted }}
+          thumbColor={isPrivate ? colors.accent : colors.textDisabled}
         />
       </View>
 
@@ -40,8 +41,8 @@ export function ExpenseVisibilityControls({
           value={excludeFromBudget}
           onValueChange={canAdjust ? onToggleTrackOnly : undefined}
           disabled={!canAdjust || savingControls}
-          trackColor={{ false: '#1f1f1f', true: '#0f3a2b' }}
-          thumbColor={excludeFromBudget ? '#fff' : '#555'}
+          trackColor={{ false: colors.borderSubtle, true: colors.successMuted }}
+          thumbColor={excludeFromBudget ? colors.success : colors.textDisabled}
         />
       </View>
 

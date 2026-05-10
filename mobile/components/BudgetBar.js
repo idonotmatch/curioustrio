@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function BudgetBar({ spent, limit, label }) {
   if (!limit) return null;
@@ -24,10 +25,10 @@ export function BudgetBar({ spent, limit, label }) {
 const styles = StyleSheet.create({
   container: { marginTop: 8 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  label: { fontSize: 11, color: '#666' },
-  remaining: { fontSize: 11, color: '#888' },
-  over: { color: '#f97316' },
-  track: { height: 4, backgroundColor: '#222', borderRadius: 2, overflow: 'hidden' },
-  fill: { height: 4, backgroundColor: '#fff', borderRadius: 2 },
-  fillOver: { backgroundColor: '#f97316' },
+  label: { fontSize: 11, color: colors.textDisabled },
+  remaining: { fontSize: 11, color: colors.textSubtle },
+  over: { color: colors.warning },
+  track: { height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' },
+  fill: { height: 4, backgroundColor: colors.text, borderRadius: 2 },
+  fillOver: { backgroundColor: colors.warning },
 });

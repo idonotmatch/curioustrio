@@ -138,7 +138,7 @@ export function getInsightActionDescriptor(insight, context = {}) {
         reason: recurringDelta >= 50 ? 'Costs rising' : 'Needs context',
       };
     default:
-      return { label: 'Open detail', reason: 'Needs context' };
+      return { label: 'Review evidence', reason: 'Needs context' };
   }
 }
 

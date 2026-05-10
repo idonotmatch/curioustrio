@@ -1,0 +1,37 @@
+<svg width="1200" height="920" viewBox="0 0 1200 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="920" fill="#070707"/>
+  <rect x="330" y="40" width="540" height="840" rx="38" fill="#0A0A0A" stroke="#202020" stroke-width="2"/>
+  <text x="382" y="100" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="30" font-weight="700">Summary</text>
+
+  <text x="382" y="158" fill="#8B8B8B" font-family="Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2">QUICK ADD</text>
+  <rect x="382" y="180" width="356" height="52" rx="12" fill="#111111" stroke="#1F1F1F"/>
+  <text x="402" y="212" fill="#5F5F5F" font-family="Arial, sans-serif" font-size="17">84.50 trader joes · lunch 14 · gas 60 yesterday</text>
+  <rect x="748" y="180" width="56" height="52" rx="12" fill="#F5F5F5"/>
+  <text x="770" y="212" fill="#000000" font-family="Arial, sans-serif" font-size="26" font-weight="700">→</text>
+  <text x="382" y="258" fill="#888888" font-family="Arial, sans-serif" font-size="15">scan a receipt</text>
+
+  <text x="382" y="320" fill="#8B8B8B" font-family="Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2">QUICK CHECK</text>
+  <rect x="382" y="342" width="356" height="48" rx="12" fill="#0E1721" stroke="#1D3247"/>
+  <text x="402" y="372" fill="#89A2BC" font-family="Arial, sans-serif" font-size="17">180 running shoes · can I afford 240 air fryer?</text>
+  <rect x="748" y="342" width="92" height="48" rx="12" fill="#DDEBFF"/>
+  <text x="774" y="372" fill="#173A5E" font-family="Arial, sans-serif" font-size="18" font-weight="700">Check</text>
+  <text x="382" y="418" fill="#6E7F90" font-family="Arial, sans-serif" font-size="14">Pressure-test a purchase against this period's projected room.</text>
+
+  <text x="382" y="486" fill="#8B8B8B" font-family="Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2">INSIGHTS</text>
+  <rect x="382" y="512" width="420" height="124" rx="16" fill="#111111" stroke="#1A1A1A"/>
+  <rect x="404" y="534" width="72" height="24" rx="12" fill="#1A1A1A" stroke="#262626"/>
+  <text x="424" y="551" fill="#D0D0D0" font-family="Arial, sans-serif" font-size="12" font-weight="700">Household</text>
+  <text x="404" y="590" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="22" font-weight="700">Projected under budget</text>
+  <text x="404" y="620" fill="#9A9A9A" font-family="Arial, sans-serif" font-size="15">You're still trending under your usual household finish this period.</text>
+
+  <rect x="382" y="660" width="420" height="124" rx="16" fill="#111111" stroke="#1A1A1A"/>
+  <text x="404" y="710" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="22" font-weight="700">Recurring restock window</text>
+  <text x="404" y="740" fill="#9A9A9A" font-family="Arial, sans-serif" font-size="15">There is room to restock a due-soon recurring item this month.</text>
+
+  <rect x="860" y="160" width="250" height="310" rx="22" fill="#0F1114" stroke="#1D232B"/>
+  <text x="890" y="200" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="24" font-weight="700">Why this fits</text>
+  <text x="890" y="240" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">Same vertical rhythm as Quick Add.</text>
+  <text x="890" y="282" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">Feels like a utility, not a promo block.</text>
+  <text x="890" y="324" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">Sets up natural-language planning.</text>
+  <text x="890" y="366" fill="#9EB2C8" font-family="Arial, sans-serif" font-size="17">Leaves the insight stack visually dominant.</text>
+</svg>

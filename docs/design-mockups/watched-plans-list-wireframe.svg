@@ -1,0 +1,32 @@
+<svg width="900" height="900" viewBox="0 0 900 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="900" fill="#0A0A0A"/>
+  <rect x="210" y="36" width="480" height="828" rx="28" fill="#111111" stroke="#202020"/>
+  <text x="250" y="90" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="28" font-weight="700">Watching</text>
+  <text x="250" y="116" fill="#8FA0B2" font-family="Arial, sans-serif" font-size="14">Plans you explicitly asked Adlo to keep an eye on.</text>
+
+  <rect x="250" y="156" width="400" height="136" rx="18" fill="#131313" stroke="#212121"/>
+  <text x="270" y="188" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="18" font-weight="700">Running shoes</text>
+  <text x="270" y="210" fill="#8E8E8E" font-family="Arial, sans-serif" font-size="12">You · Watching</text>
+  <text x="270" y="234" fill="#B8C8FF" font-family="Arial, sans-serif" font-size="13" font-weight="700">Looks easier now</text>
+  <text x="270" y="256" fill="#8F99AC" font-family="Arial, sans-serif" font-size="13">$60 more room opened up.</text>
+  <text x="580" y="188" fill="#9CA3AF" font-family="Arial, sans-serif" font-size="11" letter-spacing="1.1">ABSORBABLE</text>
+  <text x="582" y="214" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="22" font-weight="700">$180</text>
+  <rect x="270" y="266" width="96" height="32" rx="16" fill="#F5F5F5"/>
+  <text x="301" y="287" fill="#000000" font-family="Arial, sans-serif" font-size="13" font-weight="700">Re-check</text>
+  <text x="560" y="286" fill="#8A8A8A" font-family="Arial, sans-serif" font-size="13">Stop watching</text>
+
+  <rect x="250" y="316" width="400" height="136" rx="18" fill="#131313" stroke="#212121"/>
+  <text x="270" y="348" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="18" font-weight="700">Air fryer</text>
+  <text x="270" y="370" fill="#8E8E8E" font-family="Arial, sans-serif" font-size="12">Household · Watching</text>
+  <text x="270" y="394" fill="#B8C8FF" font-family="Arial, sans-serif" font-size="13" font-weight="700">Tighter than before</text>
+  <text x="270" y="416" fill="#8F99AC" font-family="Arial, sans-serif" font-size="13">$45 less room is left now.</text>
+  <text x="603" y="348" fill="#9CA3AF" font-family="Arial, sans-serif" font-size="11" letter-spacing="1.1">TIGHT</text>
+  <text x="582" y="374" fill="#F5F5F5" font-family="Arial, sans-serif" font-size="22" font-weight="700">$240</text>
+  <rect x="270" y="426" width="96" height="32" rx="16" fill="#F5F5F5"/>
+  <text x="301" y="447" fill="#000000" font-family="Arial, sans-serif" font-size="13" font-weight="700">Re-check</text>
+  <text x="560" y="446" fill="#8A8A8A" font-family="Arial, sans-serif" font-size="13">Stop watching</text>
+
+  <rect x="250" y="492" width="400" height="118" rx="18" fill="#101216" stroke="#1E2731"/>
+  <text x="270" y="524" fill="#DDE8F2" font-family="Arial, sans-serif" font-size="16" font-weight="700">Why this lives here</text>
+  <text x="270" y="550" fill="#8FA0B2" font-family="Arial, sans-serif" font-size="14">Watched plans are separate from transactions because they are not money you have spent yet.</text>
+</svg>

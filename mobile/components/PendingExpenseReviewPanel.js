@@ -5,6 +5,7 @@ import { PendingExpenseEmailCard } from './PendingExpenseEmailCard';
 import { PendingExpenseApprovalCard } from './PendingExpenseApprovalCard';
 import { PendingExpenseAttentionCard } from './PendingExpenseAttentionCard';
 import { PendingExpenseItemsCard } from './PendingExpenseItemsCard';
+import { colors } from '../theme/tokens';
 
 export function PendingExpenseReviewPanel({
   styles,
@@ -188,7 +189,7 @@ export function PendingExpenseReviewPanel({
             {secondaryDetailsExpanded ? 'Hide payment, notes, location, and other details' : 'Show payment, notes, location, and other details'}
           </Text>
         </View>
-        <Ionicons name={secondaryDetailsExpanded ? 'chevron-up' : 'chevron-forward'} size={16} color="#7d7d7d" />
+        <Ionicons name={secondaryDetailsExpanded ? 'chevron-up' : 'chevron-forward'} size={16} color={colors.textSubtle} />
       </TouchableOpacity>
     </>
   );

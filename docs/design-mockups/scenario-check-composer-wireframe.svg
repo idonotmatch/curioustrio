@@ -1,0 +1,23 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" fill="#F4F7FB"/>
+  <rect x="340" y="40" width="520" height="820" rx="36" fill="#FBFDFF" stroke="#C9D6E8" stroke-width="2"/>
+  <text x="390" y="100" fill="#1F2937" font-family="Arial, sans-serif" font-size="26" font-weight="700">Scenario Check</text>
+  <text x="390" y="142" fill="#475569" font-family="Arial, sans-serif" font-size="20">Quick pressure test for a one-off purchase.</text>
+  <rect x="390" y="188" width="420" height="78" rx="22" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="418" y="218" fill="#64748B" font-family="Arial, sans-serif" font-size="16" font-weight="700">AMOUNT</text>
+  <text x="418" y="248" fill="#0F172A" font-family="Arial, sans-serif" font-size="34" font-weight="700">$180.00</text>
+  <rect x="390" y="292" width="420" height="78" rx="22" fill="#FFFFFF" stroke="#D7E2F1"/>
+  <text x="418" y="322" fill="#64748B" font-family="Arial, sans-serif" font-size="16" font-weight="700">LABEL (OPTIONAL)</text>
+  <text x="418" y="350" fill="#334155" font-family="Arial, sans-serif" font-size="24">running shoes</text>
+  <text x="390" y="412" fill="#64748B" font-family="Arial, sans-serif" font-size="16" font-weight="700">SCOPE</text>
+  <rect x="390" y="430" width="200" height="54" rx="27" fill="#173A5E"/>
+  <text x="466" y="464" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="21" font-weight="700">Mine</text>
+  <rect x="610" y="430" width="200" height="54" rx="27" fill="#E8EEF7"/>
+  <text x="666" y="464" fill="#35506B" font-family="Arial, sans-serif" font-size="21" font-weight="700">Household</text>
+  <rect x="390" y="522" width="420" height="96" rx="22" fill="#EDF7FF" stroke="#C7E0F4"/>
+  <text x="418" y="558" fill="#174A6A" font-family="Arial, sans-serif" font-size="22" font-weight="700">This month</text>
+  <text x="418" y="588" fill="#3F647F" font-family="Arial, sans-serif" font-size="18">Uses the active budget period and current spend projection.</text>
+  <rect x="390" y="658" width="420" height="56" rx="28" fill="#173A5E"/>
+  <text x="515" y="693" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="22" font-weight="700">Check this purchase</text>
+  <text x="390" y="760" fill="#64748B" font-family="Arial, sans-serif" font-size="18">MVP keeps the form intentionally small: amount, label, scope.</text>
+</svg>

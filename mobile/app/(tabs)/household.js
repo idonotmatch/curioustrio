@@ -6,6 +6,7 @@ import { useBudget } from '../../hooks/useBudget';
 import { useCategories } from '../../hooks/useCategories';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { BudgetBar } from '../../components/BudgetBar';
+import { colors } from '../../theme/tokens';
 
 export default function HouseholdScreen() {
   const { expenses, loading, refresh } = useHouseholdExpenses();
@@ -33,7 +34,7 @@ export default function HouseholdScreen() {
         data={displayExpenses}
         keyExtractor={item => item.id}
         renderItem={({ item }) => <ExpenseItem expense={item} categories={categories} showUser onDelete={handleDelete} />}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           !loading && (
@@ -55,12 +56,12 @@ export default function HouseholdScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  header: { padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  totalLabel: { fontSize: 13, color: '#999', textTransform: 'uppercase', letterSpacing: 1 },
-  total: { fontSize: 32, color: '#fff', fontWeight: '700', marginTop: 4 },
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
+  totalLabel: { fontSize: 13, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1 },
+  total: { fontSize: 32, color: colors.text, fontWeight: '700', marginTop: 4 },
   list: { padding: 16 },
-  empty: { color: '#999', textAlign: 'center', marginTop: 40, fontSize: 15 },
+  empty: { color: colors.textSubtle, textAlign: 'center', marginTop: 40, fontSize: 15 },
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -68,14 +69,14 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#fff',
+    backgroundColor: colors.text,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: colors.textInverse,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
-  fabText: { fontSize: 28, color: '#000', lineHeight: 32, fontWeight: '300' },
+  fabText: { fontSize: 28, color: colors.textInverse, lineHeight: 32, fontWeight: '300' },
 });

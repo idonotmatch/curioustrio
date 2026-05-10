@@ -1,10 +1,30 @@
 const assert = require('assert');
 const {
+  isAuthEntryPath,
   shouldRouteToOnboarding,
   defaultAuthedRoute,
+  resolveWithTimeout,
 } = require('../services/authBootRouting');
 
-function run() {
+async function run() {
+  assert.strictEqual(
+    isAuthEntryPath('/login'),
+    true,
+    'login should be treated as an auth entry path'
+  );
+
+  assert.strictEqual(
+    isAuthEntryPath('/reset-password'),
+    true,
+    'password reset should be treated as an auth entry path'
+  );
+
+  assert.strictEqual(
+    isAuthEntryPath('/(tabs)/summary'),
+    false,
+    'authenticated content should not be treated as an auth entry path'
+  );
+
   assert.strictEqual(
     shouldRouteToOnboarding({ onboarding_complete: false }),
     true,
@@ -47,7 +67,22 @@ function run() {
     'unknown users should land on summary when boot state cannot be resolved'
   );
 
+  assert.strictEqual(
+    await resolveWithTimeout(new Promise(() => {}), 5, 'fallback'),
+    'fallback',
+    'boot timeout helper should resolve fallback when a dependency hangs'
+  );
+
+  assert.strictEqual(
+    await resolveWithTimeout(Promise.resolve('ready'), 50, 'fallback'),
+    'ready',
+    'boot timeout helper should preserve fast successful dependencies'
+  );
+
   process.stdout.write('[mobile-logic] auth boot routing checks passed\n');
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

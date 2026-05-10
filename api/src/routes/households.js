@@ -6,6 +6,7 @@ const User = require('../models/user');
 const Household = require('../models/household');
 const HouseholdInvite = require('../models/householdInvite');
 const { hashEmail } = require('../services/emailHmac');
+const { emitFreshnessEvent, emitHouseholdFreshnessEvent, DOMAINS } = require('../services/freshnessEvents');
 
 const router = express.Router();
 
@@ -30,6 +31,7 @@ router.post('/', authenticate, async (req, res, next) => {
 
     const household = await Household.create({ name, createdBy: user.id });
     await User.setHouseholdId(user.id, household.id);
+    await emitHouseholdFreshnessEvent({ ...user, household_id: household.id }, 'household_created');
 
     return res.status(201).json(household);
   } catch (err) {
@@ -64,10 +66,12 @@ router.patch('/me', authenticate, async (req, res, next) => {
         return res.status(400).json({ error: 'budget_start_day must be between 1 and 28' });
       }
       const household = await Household.updateSettings(user.household_id, { budgetStartDay: day });
+      await emitHouseholdFreshnessEvent(user, 'household_budget_period_changed', { budget_start_day: day });
       return res.status(200).json(household);
     }
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
     const household = await Household.updateName(user.household_id, name.trim());
+    await emitHouseholdFreshnessEvent(user, 'household_updated');
     return res.status(200).json(household);
   } catch (err) {
     next(err);
@@ -151,6 +155,9 @@ router.post('/invites/:token/accept', authenticate, async (req, res, next) => {
       client.release();
     }
 
+    await emitHouseholdFreshnessEvent({ ...user, household_id: invite.household_id }, 'household_member_joined', {
+      joined_user_id: user.id,
+    });
     return res.status(200).json({ household_id: invite.household_id });
   } catch (err) {
     next(err);
@@ -165,7 +172,21 @@ router.post('/me/leave', authenticate, async (req, res, next) => {
     if (!user?.household_id) {
       return res.status(400).json({ error: 'Not in a household' });
     }
+    const previousHouseholdId = user.household_id;
     await User.setHouseholdId(user.id, null);
+    await emitFreshnessEvent({ ...user, household_id: previousHouseholdId }, {
+      eventType: 'household_member_left',
+      domains: [DOMAINS.household, DOMAINS.householdExpenses, DOMAINS.budget, DOMAINS.insights, DOMAINS.forecastMovement],
+      entityType: 'household',
+      entityId: previousHouseholdId,
+      metadata: { left_user_id: user.id },
+    });
+    await emitFreshnessEvent(user, {
+      eventType: 'household_left_self',
+      domains: [DOMAINS.household, DOMAINS.householdExpenses, DOMAINS.budget, DOMAINS.insights, DOMAINS.forecastMovement],
+      targetUserId: user.id,
+      privateOnly: true,
+    });
     return res.status(200).json({ household_id: null });
   } catch (err) {
     next(err);
@@ -196,6 +217,18 @@ router.delete('/me/members/:userId', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Member not found in your household' });
     }
     await User.setHouseholdId(target.id, null);
+    await emitHouseholdFreshnessEvent(requester, 'household_member_removed', {
+      removed_user_id: target.id,
+    });
+    await emitFreshnessEvent(requester, {
+      eventType: 'household_removed_self',
+      domains: [DOMAINS.household, DOMAINS.householdExpenses, DOMAINS.budget, DOMAINS.insights, DOMAINS.forecastMovement],
+      entityType: 'household',
+      entityId: requester.household_id,
+      metadata: { removed_by_user_id: requester.id },
+      privateOnly: true,
+      targetUserId: target.id,
+    });
     return res.status(200).json({ household_id: null });
   } catch (err) {
     next(err);

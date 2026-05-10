@@ -5,6 +5,7 @@ import { InsightCard } from './InsightCard';
 export function SummaryInsightsRail({
   styles,
   displayInsights,
+  loading = false,
   insightsError,
   refreshInsights,
   hasMultipleInsights,
@@ -15,8 +16,8 @@ export function SummaryInsightsRail({
   title = 'Insights',
   hint,
 }) {
-  if (!(displayInsights.length > 0 || insightsError)) return null;
   const [currentIndex, setCurrentIndex] = useState(0);
+  if (!(displayInsights.length > 0 || insightsError || loading)) return null;
   const snapInterval = insightCardWidth + 12;
   const activeIndex = Math.max(0, Math.min(currentIndex, Math.max(displayInsights.length - 1, 0)));
 
@@ -35,6 +36,20 @@ export function SummaryInsightsRail({
           <Text style={styles.insightsErrorAction}>Tap to retry</Text>
         </TouchableOpacity>
       ) : null}
+      {loading && displayInsights.length === 0 && !insightsError ? (
+        <View style={[styles.insightSkeletonCard, { width: insightCardWidth }]}>
+          <View style={styles.insightSkeletonMetaRow}>
+            <View style={styles.insightSkeletonChip} />
+            <View style={styles.insightSkeletonChipShort} />
+          </View>
+          <View style={styles.insightSkeletonTitle} />
+          <View style={styles.insightSkeletonTitleShort} />
+          <View style={styles.insightSkeletonBody} />
+          <View style={styles.insightSkeletonBodyShort} />
+          <View style={styles.insightSkeletonFooter} />
+        </View>
+      ) : null}
+      {displayInsights.length > 0 ? (
       <ScrollView
         horizontal
         scrollEnabled={hasMultipleInsights}
@@ -70,6 +85,7 @@ export function SummaryInsightsRail({
           />
         ))}
       </ScrollView>
+      ) : null}
       {displayInsights.length > 1 ? (
         <View style={styles.insightsDots}>
           {displayInsights.map((insight, index) => (

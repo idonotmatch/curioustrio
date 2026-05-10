@@ -1,4 +1,5 @@
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export const DISMISS_REASON_OPTIONS = [
   { value: 'not_an_expense', label: 'Not an expense' },
@@ -43,30 +44,30 @@ export function DismissReasonSheet({ visible, onClose, onSelect, busy = false })
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: colors.overlayStrong,
     justifyContent: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: colors.textInverse,
     padding: 18,
   },
-  title: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  subtitle: { color: '#8e8e8e', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
+  title: { color: colors.text, fontSize: 20, fontWeight: '700' },
+  subtitle: { color: colors.textSubtle, fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
   options: { gap: 10 },
   option: {
-    backgroundColor: '#0b0b0b',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
   optionDisabled: { opacity: 0.5 },
-  optionText: { color: '#f5f5f5', fontSize: 14, fontWeight: '600' },
+  optionText: { color: colors.text, fontSize: 14, fontWeight: '600' },
   cancel: { marginTop: 18, alignItems: 'center' },
-  cancelText: { color: '#8a8a8a', fontSize: 14, fontWeight: '600' },
+  cancelText: { color: colors.textSubtle, fontSize: 14, fontWeight: '600' },
 });

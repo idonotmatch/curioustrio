@@ -26,6 +26,8 @@ describe('gmailClient helpers', () => {
     expect(GMAIL_SEARCH_QUERY).toContain('"ride receipt"');
     expect(GMAIL_SEARCH_QUERY).toContain('from:(uber.com)');
     expect(GMAIL_SEARCH_QUERY).toContain('from:(lyftmail.com)');
+    expect(GMAIL_SEARCH_QUERY).toContain('from:(venmo.com)');
+    expect(GMAIL_SEARCH_QUERY).toContain('"you paid"');
     expect(GMAIL_SEARCH_QUERY).toContain('from:(auto-confirm@amazon.com)');
     expect(GMAIL_SEARCH_QUERY).toContain('-category:promotions');
     expect(GMAIL_SEARCH_QUERY).toContain('-category:social');

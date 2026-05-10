@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const { disconnectGmailConnection } = require('../services/gmailClient');
 const { deleteAccountDataForUser } = require('../services/accountDeletionService');
+const { emitBudgetFreshnessEvent } = require('../services/freshnessEvents');
 
 function normalizeEmail(value) {
   const email = `${value || ''}`.trim().toLowerCase();
@@ -173,6 +174,11 @@ router.patch('/settings', authenticate, async (req, res, next) => {
         onboardingComplete: onboarding_complete,
         firstRunPrimaryChoice: first_run_primary_choice,
       });
+      if (budget_start_day !== undefined) {
+        await emitBudgetFreshnessEvent(updated, 'personal_budget_period_changed', {
+          budget_start_day: parseInt(budget_start_day, 10),
+        });
+      }
       return res.json(serializeUser(updated));
     }
 

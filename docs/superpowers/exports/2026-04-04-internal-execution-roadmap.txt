@@ -1,0 +1,355 @@
+ADLO INTERNAL EXECUTION ROADMAP
+
+OBJECTIVE
+
+Move Adlo from a strong heuristic finance tracker with emerging intelligence into a
+trusted, proactive, and increasingly adaptive financial companion.
+
+CURRENT STATE
+
+Foundation that is already working
+
+- manual, receipt, and Gmail capture
+
+- household-aware budgets and feed/detail flows
+
+- queue/review system
+
+- category hierarchy and merchant memory
+
+- item metadata preservation and normalization
+
+- recurring purchase detection
+
+- recurring item history and watch candidates
+
+- insights surface with state, event logging, and first-pass push dispatch
+
+Strategic systems now in flight
+
+- item intelligence
+
+- recurring purchase intelligence
+
+- spending trend intelligence
+
+- insights engine
+
+EXECUTION PRIORITIES
+
+PRIORITY 1: EXTERNAL PRICE OBSERVATION FOUNDATION
+
+Why
+
+This is the missing piece for the recurring purchase value loop.
+
+We can already:
+
+- detect recurring items
+
+- estimate repurchase timing
+
+- identify price spikes and historical baselines
+
+We cannot yet:
+
+- observe current external prices
+
+- compare current market price to user baseline
+
+- trigger proactive "buy soon, it is cheaper now" insights from external data
+
+Scope
+
+Build:
+
+- product_price_observations schema
+
+- ingestion route/service
+
+- comparison layer between watch candidates and observed prices
+
+Outcome
+
+Unlocks:
+
+- proactive savings opportunities
+
+- pre-purchase price watch
+
+- stronger recurring-item value proposition
+
+PRIORITY 2: INSIGHT DRILL-DOWNS AND TRUST
+
+Why
+
+Insights are now visible and event-logged, but only recurring-item insights have a true
+drill-down surface.
+
+Trend and budget insights still need:
+
+- clearer explanation
+
+- deeper detail
+
+- a better answer to "why am I seeing this?"
+
+Scope
+
+Build:
+
+- trend detail screen
+
+- category-driver detail screen or filtered transaction view
+
+- clearer action mapping from Summary insight cards
+
+Outcome
+
+Improves:
+
+- user trust
+
+- interpretability
+
+- quality of event data from taps and downstream action
+
+PRIORITY 3: NOTIFICATION POLICY AND RANKING
+
+Why
+
+Push and on-screen insight surfaces now exist, but relevance will quickly become the
+limiting factor.
+
+Scope
+
+Short term:
+
+- tighten which insight types are eligible for push
+
+- add throttling / cooldown rules
+
+- tune thresholds and ordering
+
+Medium term:
+
+- use event data (shown, tapped, dismissed) to improve ranking
+
+Outcome
+
+Prevents:
+
+- notification fatigue
+
+- noisy insight surfaces
+
+- erosion of trust
+
+PRIORITY 4: ITEM IDENTITY QUALITY
+
+Why
+
+The accuracy ceiling for recurring/item intelligence is still constrained by fuzzy
+product identity, especially for groceries and produce.
+
+Scope
+
+Improve:
+
+- description-only product matching
+
+- produce and variable-weight normalization
+
+- merchant-aware aliasing
+
+- multi-item recurring selection UX
+
+Outcome
+
+Enables:
+
+- better recurring detection
+
+- cleaner price comparisons
+
+- stronger recommendation quality
+
+PRIORITY 5: TREND INTELLIGENCE EXPANSION
+
+Why
+
+Trend insights are meaningful now, but still early.
+
+Scope
+
+Expand:
+
+- one-off vs recurring attribution
+
+- projected over-budget insights
+
+- category surge and merchant surge signals
+
+- better budget realism guidance
+
+Outcome
+
+Strengthens the "finance companion" value beyond recurring purchases.
+
+PRODUCT SYSTEM MATURITY BY AREA
+
+Expense Capture
+
+State
+
+- Maturing and already valuable
+
+Next
+
+- parser/provenance improvements
+
+- Gmail ops verification
+
+- stronger location resolution
+
+Ideal
+
+- fast, low-friction, high-confidence capture from all channels
+
+Feed / Detail / Queue
+
+State
+
+- Maturing
+
+Next
+
+- better drill-down experiences
+
+- continued detail polish
+
+Ideal
+
+- the canonical place to inspect, edit, explain, and act on financial behavior
+
+Budgets / Household
+
+State
+
+- Stable foundation
+
+Next
+
+- better realism recommendations and monthly guidance
+
+Ideal
+
+- adaptive budgeting informed by actual behavior
+
+Categories
+
+State
+
+- Maturing
+
+Next
+
+- UX clarity and cleanup
+
+Ideal
+
+- mostly automatic, minimally managed taxonomy
+
+Item Intelligence
+
+State
+
+- Emerging and strategic
+
+Next
+
+- identity quality
+
+- external price observations
+
+Ideal
+
+- product-level financial memory and recommendation engine
+
+Insights Engine
+
+State
+
+- Early but real
+
+Next
+
+- deeper drill-downs
+
+- ranking and notification tuning
+
+- richer hybrid insights
+
+Ideal
+
+- adaptive, personalized, explainable financial guidance
+
+NEAR-TERM BACKLOG
+
+Now
+
+1. External price observation foundation
+
+2. Trend / category insight drill-down screens
+
+3. Push policy and insight ranking tuning
+
+4. Gmail production ops verification
+
+Next
+
+5. Better grocery / produce identity
+
+6. Stronger one-off vs recurring attribution
+
+7. Category UX polish
+
+8. Transaction/detail polish
+
+Later
+
+9. Learned ranking / personalization
+
+10. Dynamic watch timing
+
+11. Seasonal / longer-horizon trend intelligence
+
+12. Broader proactive recommendation system
+
+KEY RISKS / WATCHOUTS
+
+1. Push and insight noise can erode trust quickly if thresholds are too eager.
+
+2. Item-level intelligence quality is still bounded by identity quality for messy
+   consumer data.
+
+3. Gmail cron reliability still needs full production verification.
+
+4. Trend thresholds will need continued tuning as real usage broadens.
+
+5. Test-suite open-handle noise remains tooling debt.
+
+OPERATING PRINCIPLE
+
+The product should progress in this order:
+
+1. improve data quality
+
+2. improve interpretability
+
+3. improve proactive usefulness
+
+4. improve personalization
+
+That keeps Adlo trustworthy while it grows into the broader adaptive finance companion
+vision.

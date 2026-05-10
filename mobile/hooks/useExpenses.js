@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
 
 // Personal expenses can be mutated from multiple devices for the same account.
@@ -33,6 +35,7 @@ export function useExpenses(month, startDayOverride) {
   }, [month, startDayOverride]);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.expenses, refresh);
 
   return { expenses, loading, error, refresh };
 }

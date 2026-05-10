@@ -7,6 +7,7 @@ const Category = require('../models/category');
 const CategorySuggestion = require('../models/categorySuggestion');
 const MerchantMapping = require('../models/merchantMapping');
 const categorySuggester = require('../services/categorySuggester');
+const { emitCategoryFreshnessEvent } = require('../services/freshnessEvents');
 
 router.use(authenticate);
 
@@ -154,6 +155,7 @@ router.post('/suggestions/:id/accept', async (req, res, next) => {
     if (!user?.household_id) return res.status(403).json({ error: 'No household' });
     const result = await CategorySuggestion.accept(req.params.id, user.household_id);
     if (!result) return res.status(404).json({ error: 'Suggestion not found' });
+    await emitCategoryFreshnessEvent(user, 'category_suggestion_accepted', { suggestion_id: req.params.id });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -165,6 +167,7 @@ router.post('/suggestions/:id/reject', async (req, res, next) => {
     if (!user?.household_id) return res.status(403).json({ error: 'No household' });
     const result = await CategorySuggestion.reject(req.params.id, user.household_id);
     if (!result) return res.status(404).json({ error: 'Suggestion not found' });
+    await emitCategoryFreshnessEvent(user, 'category_suggestion_rejected', { suggestion_id: req.params.id });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -214,6 +217,7 @@ router.post('/quick', async (req, res, next) => {
       name: name.trim(),
       parentId: parent?.id || null,
     });
+    await emitCategoryFreshnessEvent(user, 'category_created', { category_id: category.id, quick_create: true });
     res.status(201).json({
       ...category,
       parent_name: parent?.name || null,
@@ -240,6 +244,7 @@ router.post('/', async (req, res, next) => {
     if (!parent_id && user?.household_id) {
       categorySuggester.suggest(user.household_id, category.id).catch(() => {});
     }
+    await emitCategoryFreshnessEvent(user, 'category_created', { category_id: category.id });
     res.status(201).json(category);
   } catch (err) { next(err); }
 });
@@ -265,6 +270,7 @@ router.patch('/:id', async (req, res, next) => {
         householdId: user.household_id,
         displayName: name,
       });
+      await emitCategoryFreshnessEvent(user, 'category_renamed', { category_id: req.params.id, default_override: true });
       return res.json(category);
     }
     if (parentId && parentId === req.params.id) {
@@ -288,6 +294,7 @@ router.patch('/:id', async (req, res, next) => {
       sortOrder,
     });
     if (!category) return res.status(404).json({ error: 'Not found' });
+    await emitCategoryFreshnessEvent(user, 'category_updated', { category_id: req.params.id });
     res.json(category);
   } catch (err) { next(err); }
 });
@@ -303,6 +310,10 @@ router.post('/:id/merge', async (req, res, next) => {
       targetId: target_category_id,
       householdId: user.household_id,
     });
+    await emitCategoryFreshnessEvent(user, 'category_merged', {
+      source_category_id: req.params.id,
+      target_category_id,
+    });
     res.json(result);
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -317,6 +328,7 @@ router.delete('/:id', async (req, res, next) => {
     if (!requireHousehold(user, res)) return;
     const result = await Category.remove({ id: req.params.id, householdId: user.household_id });
     if (!result) return res.status(404).json({ error: 'Not found' });
+    await emitCategoryFreshnessEvent(user, result.hidden ? 'category_hidden' : 'category_deleted', { category_id: req.params.id });
     res.status(204).send();
   } catch (err) { next(err); }
 });
@@ -329,6 +341,7 @@ router.post('/:id/restore', async (req, res, next) => {
     if (!category || !category.is_default) return res.status(404).json({ error: 'Not found' });
     await Category.restoreDefault({ id: req.params.id, householdId: user.household_id });
     const restored = await Category.findByHousehold(user.household_id, { includeHidden: true });
+    await emitCategoryFreshnessEvent(user, 'category_restored', { category_id: req.params.id });
     res.json(restored.find(c => c.id === req.params.id) || null);
   } catch (err) { next(err); }
 });

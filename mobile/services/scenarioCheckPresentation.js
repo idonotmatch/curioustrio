@@ -1,3 +1,4 @@
+import { colors } from '../theme/tokens';
 export function formatScenarioCurrency(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return '—';
@@ -14,43 +15,43 @@ export function statusConfig(status) {
       return {
         label: 'Comfortable',
         headline: 'Yes, this looks comfortably absorbable.',
-        tone: '#166534',
-        chipBg: '#e6f7ed',
+        tone: colors.success,
+        chipBg: colors.successMuted,
       };
     case 'absorbable':
       return {
         label: 'Absorbable',
         headline: 'Yes, but this uses a meaningful share of your remaining room.',
-        tone: '#1d4ed8',
-        chipBg: '#e8f0ff',
+        tone: colors.info,
+        chipBg: colors.infoMuted,
       };
     case 'tight':
       return {
         label: 'Tight',
         headline: 'Maybe, but the rest of the month would get tight.',
-        tone: '#b45309',
-        chipBg: '#fff4e5',
+        tone: colors.warning,
+        chipBg: colors.warningMuted,
       };
     case 'risky':
       return {
         label: 'Risky',
         headline: 'This would likely push the month into a riskier range.',
-        tone: '#b91c1c',
-        chipBg: '#ffe8e8',
+        tone: colors.danger,
+        chipBg: colors.dangerMuted,
       };
     case 'not_absorbable':
       return {
         label: 'Not absorbable',
         headline: 'This does not look absorbable in the current month.',
-        tone: '#991b1b',
-        chipBg: '#ffe0e0',
+        tone: colors.danger,
+        chipBg: colors.dangerMuted,
       };
     default:
       return {
         label: 'Unknown',
         headline: 'There is not enough history yet to answer this confidently.',
-        tone: '#475569',
-        chipBg: '#e5e7eb',
+        tone: colors.textSubtle,
+        chipBg: colors.surfacePressed,
       };
   }
 }

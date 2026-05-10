@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const Household = require('../models/household');
 const Expense = require('../models/expense');
+const ExpenseItem = require('../models/expenseItem');
 const Category = require('../models/category');
 const EmailImportLog = require('../models/emailImportLog');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
@@ -24,6 +25,9 @@ const {
   handleApprovedExpenseReview,
   handleDismissedExpenseReview,
 } = require('../services/expenseEmailReviewService');
+const { requestProjectionRefresh } = require('../services/projectionRefreshService');
+const { emitExpenseFreshnessEvent } = require('../services/freshnessEvents');
+const { canDeleteExpense, canViewExpense } = require('../services/expenseAccessPolicy');
 const {
   attachExpenseReviewContext,
   attachExpensesReviewContext,
@@ -35,19 +39,6 @@ router.use(authenticate);
 
 async function getUser(req) {
   return User.findByProviderUid(req.userId);
-}
-
-function canViewExpense(user, expense) {
-  if (!user || !expense) return false;
-  if (expense.user_id === user.id) return true;
-  const inSameHousehold = !!(user.household_id && expense.household_id === user.household_id);
-  if (!inSameHousehold) return false;
-  return expense.is_private !== true;
-}
-
-function canDeleteExpense(user, expense) {
-  if (!user || !expense) return false;
-  return expense.user_id === user.id;
 }
 
 function collectChangedFields(originalExpense, patch = {}) {
@@ -295,6 +286,16 @@ router.post('/confirm', async (req, res, next) => {
       },
       originalParsedItems,
     });
+    requestProjectionRefresh({
+      user,
+      reason: 'expense_confirmed',
+      expense,
+      metadata: { source: source || 'manual' },
+    });
+    await emitExpenseFreshnessEvent(user, expense, {
+      eventType: 'expense_confirmed',
+      metadata: { source: source || 'manual' },
+    });
 
     res.status(201).json({ expense, duplicate_flags });
   } catch (err) {
@@ -438,6 +439,12 @@ router.post('/:id/dismiss', async (req, res, next) => {
     let expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     expense = await handleDismissedExpenseReview(expense, user.id, req.body?.dismissal_reason);
+    await emitExpenseFreshnessEvent(user, expense, {
+      eventType: 'pending_expense_dismissed',
+      includePending: true,
+      includeGmail: expense?.source === 'email',
+      metadata: { source: expense?.source || null },
+    });
     res.json(await attachExpenseReviewContext(expense, user.id, {
       includeItems: true,
       includeCategoryReasoning: true,
@@ -452,6 +459,18 @@ router.post('/:id/approve', async (req, res, next) => {
     let expense = await Expense.updateStatus(req.params.id, user.id, 'confirmed');
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     expense = await handleApprovedExpenseReview(expense, user.id, req.body?.review_context);
+    requestProjectionRefresh({
+      user,
+      reason: 'expense_review_approved',
+      expense,
+      metadata: { source: 'gmail_review' },
+    });
+    await emitExpenseFreshnessEvent(user, expense, {
+      eventType: 'pending_expense_approved',
+      includePending: true,
+      includeGmail: expense?.source === 'email',
+      metadata: { source: 'gmail_review' },
+    });
     res.json(expense);
   } catch (err) { next(err); }
 });
@@ -482,6 +501,16 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     } finally {
       client.release();
     }
+    requestProjectionRefresh({
+      user,
+      reason: 'expense_deleted',
+      expense,
+      metadata: { source: 'expense_delete' },
+    });
+    await emitExpenseFreshnessEvent(user, expense, {
+      eventType: 'expense_deleted',
+      metadata: { source: 'expense_delete' },
+    });
     res.status(204).end();
   } catch (err) { next(err); }
 });
@@ -616,6 +645,33 @@ router.patch('/:id', async (req, res, next) => {
         });
       }
     }
+    if (collectChangedFields(originalExpense, req.body).some((field) => [
+      'amount',
+      'date',
+      'category_id',
+      'merchant',
+      'is_private',
+      'exclude_from_budget',
+      'budget_exclusion_reason',
+    ].includes(field))) {
+      requestProjectionRefresh({
+        user,
+        reason: 'expense_updated',
+        expense,
+        categoryId: expense.category_id,
+        merchant: expense.merchant,
+        metadata: {
+          source: 'expense_edit',
+          changed_fields: collectChangedFields(originalExpense, req.body),
+        },
+      });
+    }
+    await emitExpenseFreshnessEvent(user, expense, {
+      eventType: 'expense_updated',
+      metadata: {
+        changed_fields: collectChangedFields(originalExpense, req.body),
+      },
+    });
     res.json(expense);
   } catch (err) { next(err); }
 });

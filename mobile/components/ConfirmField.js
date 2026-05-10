@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function ConfirmField({ label, value, onPress }) {
   return (
@@ -12,8 +13,8 @@ export function ConfirmField({ label, value, onPress }) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#1a1a1a', borderRadius: 8, padding: 12, marginBottom: 8,
+    backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8,
   },
-  label: { fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 },
-  value: { fontSize: 14, color: '#fff' },
+  label: { fontSize: 10, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1 },
+  value: { fontSize: 14, color: colors.text },
 });

@@ -1,0 +1,50 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="390" height="844" fill="#0B0E12"/>
+  <text x="28" y="68" fill="#F4F7F9" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="700">Summary</text>
+  <text x="261" y="68" fill="#8FA1AE" font-family="Helvetica, Arial, sans-serif" font-size="15">Household · Apr</text>
+
+  <rect x="22" y="96" width="346" height="218" rx="26" fill="url(#heroC)"/>
+  <text x="42" y="130" fill="#D7EEFF" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.2">HOUSEHOLD STATE</text>
+  <text x="42" y="168" fill="#FFFFFF" font-family="Helvetica, Arial, sans-serif" font-size="42" font-weight="700">$2,913</text>
+  <text x="42" y="192" fill="#DCE7F0" font-family="Helvetica, Arial, sans-serif" font-size="16">household spend so far · $487 remaining</text>
+
+  <rect x="42" y="214" width="306" height="12" rx="6" fill="#243244"/>
+  <rect x="42" y="214" width="256" height="12" rx="6" fill="#91C6FF"/>
+
+  <text x="42" y="252" fill="#FFFFFF" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700">Household spending is slightly above usual.</text>
+  <text x="42" y="276" fill="#DCE7F0" font-family="Helvetica, Arial, sans-serif" font-size="15">Groceries are ahead of pace, and there are 3 items waiting for review.</text>
+
+  <rect x="22" y="336" width="346" height="130" rx="22" fill="#12171D" stroke="#1D2630"/>
+  <text x="42" y="368" fill="#93A5B1" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.1">FEATURED INSIGHT</text>
+  <rect x="42" y="383" width="74" height="24" rx="12" fill="#204C74"/>
+  <text x="56" y="399" fill="#DCEEFF" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700">Household</text>
+  <text x="42" y="430" fill="#F4F7F9" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="700">Diapers may be due soon</text>
+  <text x="42" y="454" fill="#C1CCD4" font-family="Helvetica, Arial, sans-serif" font-size="15">You usually buy these every 18 days, and the next purchase looks close.</text>
+
+  <text x="22" y="504" fill="#90A1AE" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.1">ACTIVITY DIGEST</text>
+  <rect x="22" y="518" width="346" height="200" rx="22" fill="#10151A" stroke="#1A222B"/>
+  <text x="42" y="552" fill="#F4F7F9" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700">Shared activity</text>
+
+  <rect x="42" y="572" width="306" height="46" rx="14" fill="#141B22"/>
+  <text x="58" y="601" fill="#F4F7F9" font-family="Helvetica, Arial, sans-serif" font-size="15">3 expenses pending review</text>
+  <text x="282" y="601" fill="#91C6FF" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700">Review</text>
+
+  <rect x="42" y="630" width="306" height="46" rx="14" fill="#141B22"/>
+  <text x="58" y="659" fill="#F4F7F9" font-family="Helvetica, Arial, sans-serif" font-size="15">5 Gmail imports this week</text>
+  <text x="269" y="659" fill="#8FA1AE" font-family="Helvetica, Arial, sans-serif" font-size="13">Last sync 22m ago</text>
+
+  <text x="42" y="704" fill="#90A1AE" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.1">QUICK ACTIONS</text>
+  <rect x="42" y="720" width="98" height="44" rx="14" fill="#EEF3F6"/>
+  <text x="61" y="747" fill="#0B0E12" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700">Add expense</text>
+  <rect x="152" y="720" width="92" height="44" rx="14" fill="#171E25"/>
+  <text x="171" y="747" fill="#D2D9DF" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700">Queue</text>
+  <rect x="256" y="720" width="92" height="44" rx="14" fill="#171E25"/>
+  <text x="278" y="747" fill="#D2D9DF" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700">Insights</text>
+
+  <defs>
+    <linearGradient id="heroC" x1="22" y1="96" x2="368" y2="314" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17344A"/>
+      <stop offset="1" stop-color="#202A37"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,5 +1,8 @@
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { MetricStrip } from './ui/MetricStrip';
+import { SectionHeader } from './ui/States';
+import { colors } from '../theme/tokens';
 
 export function GmailImportOverview({
   styles,
@@ -41,7 +44,11 @@ export function GmailImportOverview({
 }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>GMAIL</Text>
+      <SectionHeader
+        eyebrow="Gmail"
+        title="Import control"
+        body="Connection, sync state, review volume, and sender learning."
+      />
       <View style={styles.row}>
         <View style={styles.rowInfo}>
           <Text style={styles.rowTitle}>Gmail import</Text>
@@ -103,27 +110,18 @@ export function GmailImportOverview({
       ) : null}
       {displayGmailStatus?.connected ? (
         importSummaryLoading ? (
-          <ActivityIndicator color="#555" style={styles.loadingBlock} />
+          <ActivityIndicator color={colors.textDisabled} style={styles.loadingBlock} />
         ) : displayImportSummary ? (
           <>
-            <View style={styles.summaryGrid}>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Imported</Text>
-                <Text style={styles.summaryValue}>{displayImportSummary.imported}</Text>
-              </View>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Awaiting review</Text>
-                <Text style={styles.summaryValue}>{displayImportSummary.current_pending_review ?? displayImportSummary.imported_pending_review}</Text>
-              </View>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Approved cleanly</Text>
-                <Text style={styles.summaryValue}>{displayImportSummary.approved_without_changes ?? 0}</Text>
-              </View>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Filtered out</Text>
-                <Text style={styles.summaryValue}>{displayImportSummary.skipped}</Text>
-              </View>
-            </View>
+            <MetricStrip
+              items={[
+                { label: 'Imported', value: displayImportSummary.imported },
+                { label: 'Awaiting review', value: displayImportSummary.current_pending_review ?? displayImportSummary.imported_pending_review },
+                { label: 'Approved cleanly', value: displayImportSummary.approved_without_changes ?? 0 },
+                { label: 'Filtered out', value: displayImportSummary.skipped },
+              ]}
+              style={styles.summaryGrid}
+            />
             <View style={styles.senderTrustSection}>
               <View style={styles.senderTrustHeader}>
                 <Text style={styles.senderTrustTitle}>Import health</Text>
@@ -156,7 +154,7 @@ export function GmailImportOverview({
                 <Ionicons
                   name={learningExpanded ? 'chevron-up' : 'chevron-down'}
                   size={15}
-                  color="#666"
+                  color={colors.textDisabled}
                 />
               </TouchableOpacity>
               {learningExpanded ? (
@@ -236,7 +234,7 @@ export function GmailImportOverview({
                 <Ionicons
                   name={senderSectionExpanded ? 'chevron-up' : 'chevron-down'}
                   size={15}
-                  color="#666"
+                  color={colors.textDisabled}
                 />
               </TouchableOpacity>
               {senderCards.length > 0 ? (
@@ -287,7 +285,7 @@ export function GmailImportOverview({
                       <Ionicons
                         name={senderTrustExpanded ? 'chevron-up' : 'chevron-down'}
                         size={14}
-                        color="#888"
+                        color={colors.textSubtle}
                       />
                     </TouchableOpacity>
                   ) : null}

@@ -1,19 +1,26 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/tokens';
+import { InsightTrendVisual } from './InsightTrendVisual';
 import {
   getInsightActionDescriptor,
   getInsightPrimaryMetric,
   getInsightScopeLabel,
 } from '../services/insightPresentation';
+const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 
-const INSIGHT_CARD_MIN_HEIGHT = 182;
+const INSIGHT_CARD_MIN_HEIGHT = 164;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
 const INSIGHT_SUMMARY_BODY_LINES = 2;
+
+function pluralVerb(label, singular, plural) {
+  return `${label || ''}`.trim().toLowerCase().endsWith('s') ? plural : singular;
+}
 
 function insightRoleLabel(insight) {
   const type = `${insight?.type || ''}`;
   if (type.startsWith('early_')) return type === 'early_cleanup' ? 'Setup' : 'Learning';
-  if (type.startsWith('developing_')) return 'Explain';
+  if (type.startsWith('developing_')) return 'Shift';
   if (type === 'usage_set_budget') return 'Setup';
   if (type === 'usage_start_logging' || type === 'usage_building_history') return 'Learning';
   if (
@@ -23,7 +30,7 @@ function insightRoleLabel(insight) {
     || type === 'projected_category_surge'
     || type === 'recurring_cost_pressure'
   ) {
-    return 'Explain';
+    return 'Driver';
   }
   if (type === 'projected_month_end_over_budget' || type === 'budget_too_low') return 'Act';
   if (type === 'projected_month_end_under_budget' || type === 'projected_category_under_baseline' || type === 'usage_ready_to_plan') return 'Plan';
@@ -32,14 +39,15 @@ function insightRoleLabel(insight) {
 }
 
 function insightActionLabel(insight) {
-  return getInsightActionDescriptor(insight).label;
-}
-
-function insightActionReason(insight) {
-  if (insight?.action?.reason) return insight.action.reason;
-  if (insight?.metadata?.scope_relationship === 'personal_household_overlap') return 'Your impact';
-  if (insight?.metadata?.scope === 'household') return 'Shared context';
-  return getInsightActionDescriptor(insight).reason;
+  const descriptor = getInsightActionDescriptor(insight);
+  const label = descriptor.label;
+  if (`${label}`.toLowerCase() === 'open detail') {
+    const type = `${insight?.type || ''}`;
+    if (type.includes('category') || insight?.metadata?.category_name) return 'Inspect driver';
+    if (type.includes('one_off')) return 'Review purchase';
+    return 'Review evidence';
+  }
+  return label;
 }
 
 function insightToneStyles(insight) {
@@ -93,12 +101,68 @@ function shouldShowPrimaryMetric(insight, primaryMetric) {
   return !body.includes(metricValue);
 }
 
+function insightDisplayTitle(insight) {
+  const type = `${insight?.type || ''}`;
+  const metadata = insight?.metadata || {};
+  const categoryName = metadata.category_name;
+  const merchantName = metadata.merchant_name;
+
+  if (categoryName && (
+    type === 'early_top_category'
+    || type === 'developing_category_shift'
+    || type === 'top_category_driver'
+    || type === 'projected_category_surge'
+  )) {
+    return `${categoryName} ${pluralVerb(categoryName, 'is', 'are')} driving the week`;
+  }
+  if (categoryName && type === 'projected_category_under_baseline') {
+    return `${categoryName} ${pluralVerb(categoryName, 'has', 'have')} room`;
+  }
+  if (merchantName && (type === 'early_repeated_merchant' || type === 'developing_repeated_merchant')) {
+    return `${merchantName} is repeating`;
+  }
+  if (type === 'developing_weekly_spend_change') return 'The week is picking up';
+  if (type === 'one_off_expense_skewing_projection' || type === 'one_offs_driving_variance') return 'One purchase is skewing the month';
+  return insight?.title || 'Insight';
+}
+
+function insightDisplayBody(insight) {
+  const type = `${insight?.type || ''}`;
+  const metadata = insight?.metadata || {};
+  const categoryName = metadata.category_name;
+  const scopeRelationship = metadata.scope_relationship;
+  const householdCarry = scopeRelationship === 'personal_household_overlap'
+    ? ' It is also affecting the household view.'
+    : '';
+
+  if (categoryName && (type === 'early_top_category' || type === 'developing_category_shift' || type === 'top_category_driver')) {
+    return scopeRelationship === 'personal_household_overlap'
+      ? `Recent spending is unusually ${categoryName.toLowerCase()}-heavy, and it is affecting the household view.`
+      : `Recent spending is unusually ${categoryName.toLowerCase()}-heavy.`;
+  }
+  if (categoryName && type === 'projected_category_surge') {
+    return `${categoryName} is tracking above its usual month-end shape.${householdCarry}`;
+  }
+  if (type === 'developing_weekly_spend_change') {
+    return `The last 7 days are running heavier than the prior week.${householdCarry}`;
+  }
+  if (type === 'one_off_expense_skewing_projection' || type === 'one_offs_driving_variance') {
+    const merchant = metadata.largest_expense?.merchant || metadata.top_unusual_expense?.merchant;
+    return merchant ? `${merchant} is making the forecast look heavier than the underlying pattern.` : 'A larger purchase is making the forecast look heavier than the underlying pattern.';
+  }
+  return insight?.body || '';
+}
+
 export function InsightCard({ insight, width, onPress, onDismiss, disabled = false, emphasis = 'default' }) {
   const tone = insightToneStyles(insight);
   const primaryMetric = getInsightPrimaryMetric(insight);
   const showPrimaryMetric = shouldShowPrimaryMetric(insight, primaryMetric);
   const isPrimary = emphasis === 'primary';
   const scopeLabel = getInsightScopeLabel(insight);
+  const roleLabel = insightRoleLabel(insight);
+  const trendVisual = getInsightTrendVisual(insight);
+  const displayTitle = insightDisplayTitle(insight);
+  const displayBody = insightDisplayBody(insight);
 
   return (
     <TouchableOpacity
@@ -121,8 +185,12 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
             <View style={styles.insightScopeChip}>
               <Text style={styles.insightScopeText}>{scopeLabel}</Text>
             </View>
+            <View style={[styles.insightRoleChip, tone.roleChip]}>
+              <Text style={[styles.insightRoleText, tone.roleText]}>{roleLabel}</Text>
+            </View>
           </View>
           <TouchableOpacity
+            style={styles.dismissButton}
             onPress={(event) => {
               event?.stopPropagation?.();
               onDismiss?.(insight);
@@ -130,31 +198,28 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
             disabled={disabled}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel={`Dismiss insight: ${insight.title}`}
+            accessibilityLabel={`Dismiss insight: ${displayTitle}`}
           >
-            <Ionicons name="close" size={16} color="#666" />
+            <Ionicons name="close" size={15} color={colors.textDisabled} />
           </TouchableOpacity>
         </View>
-        <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{insight.title}</Text>
-        <View style={[styles.insightMetricSlot, isPrimary && styles.insightMetricSlotPrimary]}>
-          {showPrimaryMetric ? (
-            <View style={styles.insightMetricRow}>
-              <Text style={[styles.insightMetricValue, isPrimary && styles.insightMetricValuePrimary]} numberOfLines={1}>{primaryMetric.value}</Text>
-              <Text style={[styles.insightMetricLabel, isPrimary && styles.insightMetricLabelPrimary]} numberOfLines={1}>{primaryMetric.label}</Text>
-            </View>
-          ) : null}
-        </View>
+        <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{displayTitle}</Text>
+        {showPrimaryMetric ? (
+          <View style={[styles.insightMetricPanel, isPrimary && styles.insightMetricPanelPrimary]}>
+            <Text style={[styles.insightMetricValue, isPrimary && styles.insightMetricValuePrimary]} numberOfLines={1}>{primaryMetric.value}</Text>
+            <Text style={[styles.insightMetricLabel, isPrimary && styles.insightMetricLabelPrimary]} numberOfLines={1}>{primaryMetric.label}</Text>
+          </View>
+        ) : null}
       </View>
       <View style={styles.insightContent}>
-        <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{insight.body}</Text>
+        <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
       </View>
-      <View style={[styles.insightFooter, isPrimary && styles.insightFooterPrimary]}>
-        <View style={styles.insightFooterCopy}>
-          <Text style={styles.insightActionEyebrow}>Next step</Text>
-          <Text style={[styles.insightActionLabel, isPrimary && styles.insightActionLabelPrimary]} numberOfLines={2}>{insightActionLabel(insight)}</Text>
-          <Text style={[styles.insightActionReason, isPrimary && styles.insightActionReasonPrimary]} numberOfLines={2}>{insightActionReason(insight)}</Text>
+      {trendVisual ? <InsightTrendVisual visual={trendVisual} compact /> : null}
+      <View style={styles.insightFooter}>
+        <Text style={styles.insightActionLabel} numberOfLines={1}>{insightActionLabel(insight)}</Text>
+        <View style={styles.insightCTA}>
+          <Ionicons name="chevron-forward" size={14} color={colors.text} />
         </View>
-        <Ionicons name="chevron-forward" size={16} color={isPrimary ? '#eef5ff' : '#dce8f5'} />
       </View>
     </TouchableOpacity>
   );
@@ -162,115 +227,116 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
 
 const styles = StyleSheet.create({
   insightCard: {
-    backgroundColor: '#111',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.borderSubtle,
     minHeight: INSIGHT_CARD_MIN_HEIGHT,
     justifyContent: 'space-between',
   },
   insightCardPrimary: {
-    minHeight: 190,
-    paddingHorizontal: 16,
+    minHeight: 184,
+    paddingHorizontal: 17,
     paddingVertical: 14,
+    borderColor: colors.infoBorder,
+    backgroundColor: colors.surfaceRaised,
   },
-  insightCardWarn: { backgroundColor: '#141111', borderColor: '#2d1d1d' },
-  insightCardPlan: { backgroundColor: '#101317', borderColor: '#1b2a38' },
-  insightCardSetup: { backgroundColor: '#12120f', borderColor: '#2b2818' },
-  insightCardLearning: { backgroundColor: '#101512', borderColor: '#1d3424' },
-  insightCardExplain: { backgroundColor: '#111214', borderColor: '#20252b' },
+  insightCardWarn: { borderColor: colors.dangerMuted },
+  insightCardPlan: { borderColor: colors.infoMuted },
+  insightCardSetup: { borderColor: colors.warningMuted },
+  insightCardLearning: { borderColor: colors.successMuted },
+  insightCardExplain: { borderColor: colors.border },
   insightCardDisabled: { opacity: 0.72 },
   insightHeader: { gap: 10 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   insightMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   insightScopeChip: {
     alignSelf: 'flex-start',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.borderSubtle,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: colors.border,
   },
-  insightScopeText: { fontSize: 11, color: '#cfcfcf', fontWeight: '600', letterSpacing: 0.3 },
-  insightRoleChipWarn: { backgroundColor: '#251717', borderColor: '#4a2424' },
-  insightRoleChipPlan: { backgroundColor: '#13202b', borderColor: '#28435b' },
-  insightRoleChipSetup: { backgroundColor: '#252110', borderColor: '#4b4118' },
-  insightRoleChipLearning: { backgroundColor: '#132219', borderColor: '#275234' },
-  insightRoleChipExplain: { backgroundColor: '#171b20', borderColor: '#2d353e' },
-  insightRoleTextWarn: { color: '#f2b4b4' },
-  insightRoleTextPlan: { color: '#a9d2f8' },
-  insightRoleTextSetup: { color: '#e6d08d' },
-  insightRoleTextLearning: { color: '#a9e0b3' },
-  insightRoleTextExplain: { color: '#b6c1cc' },
-  insightTitle: { fontSize: 16, color: '#f5f5f5', fontWeight: '600', lineHeight: 21 },
+  insightScopeText: { fontSize: 11, color: colors.textMuted, fontWeight: '600', letterSpacing: 0.3 },
+  insightRoleChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  insightRoleText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase' },
+  insightRoleChipWarn: { backgroundColor: colors.dangerMuted, borderColor: colors.dangerMuted },
+  insightRoleChipPlan: { backgroundColor: colors.infoMuted, borderColor: colors.infoMuted },
+  insightRoleChipSetup: { backgroundColor: colors.warningMuted, borderColor: colors.warningMuted },
+  insightRoleChipLearning: { backgroundColor: colors.successMuted, borderColor: colors.successMuted },
+  insightRoleChipExplain: { backgroundColor: colors.surfacePressed, borderColor: colors.infoMuted },
+  insightRoleTextWarn: { color: colors.danger },
+  insightRoleTextPlan: { color: colors.info },
+  insightRoleTextSetup: { color: colors.warning },
+  insightRoleTextLearning: { color: colors.success },
+  insightRoleTextExplain: { color: colors.text },
+  insightTitle: { fontSize: 16, color: colors.text, fontWeight: '600', lineHeight: 21 },
   insightTitlePrimary: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
-  insightMetricSlot: {
-    minHeight: 20,
-    justifyContent: 'flex-end',
+  insightMetricPanel: {
+    alignSelf: 'flex-start',
+    borderLeftWidth: 2,
+    borderLeftColor: colors.accent,
+    paddingLeft: 10,
+    paddingVertical: 2,
   },
-  insightMetricSlotPrimary: {
-    minHeight: 24,
-  },
-  insightMetricRow: {
-    marginTop: 1,
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
+  insightMetricPanelPrimary: { paddingLeft: 12 },
   insightMetricValue: {
-    fontSize: 18,
-    lineHeight: 22,
-    color: '#d5dde6',
-    fontWeight: '500',
+    fontSize: 22,
+    lineHeight: 26,
+    color: colors.text,
+    fontWeight: '750',
   },
   insightMetricValuePrimary: {
-    fontSize: 20,
-    lineHeight: 24,
-    color: '#edf4fb',
-    fontWeight: '600',
+    fontSize: 28,
+    lineHeight: 32,
+    color: colors.text,
+    fontWeight: '800',
   },
   insightMetricLabel: {
     fontSize: 10,
     lineHeight: 13,
-    color: '#7f8994',
+    color: colors.textSubtle,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
     flexShrink: 1,
   },
   insightMetricLabelPrimary: {
-    color: '#96a7b7',
+    color: colors.textMuted,
   },
   insightContent: { flex: 1, justifyContent: 'flex-start', marginTop: 8 },
-  insightBody: { fontSize: 13, color: '#999', lineHeight: 18 },
-  insightBodyPrimary: { fontSize: 14, color: '#b7c2cd', lineHeight: 20 },
+  insightBody: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
+  insightBodyPrimary: { fontSize: 14, color: colors.text, lineHeight: 20 },
   insightFooter: {
-    marginTop: 14,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#1f1f1f',
+    marginTop: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
+    alignItems: 'center',
+    gap: 10,
   },
-  insightFooterPrimary: {
-    marginTop: 16,
-    paddingTop: 12,
+  insightActionLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '700', flex: 1 },
+  insightCTA: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfacePressed,
   },
-  insightFooterCopy: { flex: 1, gap: 4 },
-  insightActionEyebrow: {
-    fontSize: 10,
-    color: '#7f8994',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+  dismissButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  insightActionReason: { fontSize: 12, color: '#7e8791', lineHeight: 16, flexShrink: 1 },
-  insightActionLabel: { fontSize: 13, color: '#dce8f5', fontWeight: '700', flexShrink: 1 },
-  insightActionReasonPrimary: { color: '#90a0af' },
-  insightActionLabelPrimary: { color: '#eef5ff', fontSize: 14 },
 });

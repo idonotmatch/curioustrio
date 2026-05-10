@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export function ExpenseDetailActions({
   styles,
@@ -58,7 +59,7 @@ export function ExpenseDetailActions({
       {canEdit ? (
         <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
           {deleting
-            ? <ActivityIndicator color="#ef4444" size="small" />
+            ? <ActivityIndicator color={colors.danger} size="small" />
             : <Text style={styles.deleteBtnText}>Delete expense</Text>}
         </TouchableOpacity>
       ) : null}

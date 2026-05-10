@@ -260,10 +260,10 @@ function selectMoneyContextLines(structured = '', limit = 24) {
 
 function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
-  const senderLooksTransactional = /@(amazon|walmart|target|uber|lyft|lyftmail|ubereats|instacart|doordash|stripe|shopify|square|paypal|apple|google|expedia|delta|united|airbnb|booking|hilton|marriott|costco|bestbuy|etsy|ebay|wayfair|chewy|seamless|grubhub)\./i.test(fromAddress);
-  const negativeSignals = /(tracking|shipped|out for delivery|delivered|newsletter|unsubscribe|promotion|sale ends|weekly digest|security alert|sign in|password reset|view in browser|manage preferences)/i.test(text);
-  const transactionalContext = /(receipt|order|confirmation|purchase|charged|invoice|payment|refund|return|renewal|booking|subscription|trip|reservation)/i.test(text);
-  const strongMoneySignal = /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund amount|refund total|you paid|charged to)[^$\d]{0,30}\$?\s?-?\d+(?:\.\d{2})?/i.test(text);
+  const senderLooksTransactional = /@(amazon|walmart|target|uber|lyft|lyftmail|ubereats|instacart|doordash|stripe|shopify|square|paypal|venmo|apple|google|expedia|delta|united|airbnb|booking|hilton|marriott|costco|bestbuy|etsy|ebay|wayfair|chewy|seamless|grubhub)\./i.test(fromAddress);
+  const negativeSignals = /(tracking|shipped|out for delivery|delivered|newsletter|unsubscribe|promotion|sale ends|weekly digest|security alert|sign in|password reset|view in browser|manage preferences|review your recent (?:order|purchase)|recent .* meet your expectations|share your experience|seller .* requests you to share)/i.test(text);
+  const transactionalContext = /(receipt|order|confirmation|purchase|charged|invoice|payment|paid|refund|return|renewal|booking|subscription|trip|reservation)/i.test(text);
+  const strongMoneySignal = /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund amount|refund total|you paid|paid .*?@|charged to)[^$\d]{0,50}\$?\s?-?\d+(?:\.\d{2})?/i.test(text);
   const mediumMoneySignal = /(?:\btotal\b|\binvoice amount\b|\bpayment received\b|\bamount\b)[^$\d]{0,20}\$?\s?-?\d+(?:\.\d{2})?/i.test(text)
     || (/\$\s?-?\d+(?:\.\d{2})?/.test(text) && transactionalContext);
   const weakMoneySignal = /(?:save|from|starting at|under|up to|earn|credit|discount)[^$\d]{0,20}\$?\s?\d+(?:\.\d{2})?/i.test(text)

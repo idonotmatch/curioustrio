@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 
 export function useRecurring() {
   const [recurring, setRecurring] = useState([]);
@@ -16,6 +18,7 @@ export function useRecurring() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.recurring, refresh);
 
   return { recurring, loading, refresh };
 }

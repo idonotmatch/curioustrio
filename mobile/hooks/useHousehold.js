@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
+import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
+import { useFreshnessRefresh } from './useFreshnessRefresh';
 
 // Returns household info. memberCount is 0 if the user has no household.
 export function useHousehold() {
@@ -28,6 +30,7 @@ export function useHousehold() {
       },
     );
   }, [refreshKey]);
+  useFreshnessRefresh(FRESHNESS_DOMAINS.household, refresh);
 
   return { household, members, memberCount: members.length, loading, refresh };
 }
