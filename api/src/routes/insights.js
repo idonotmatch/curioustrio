@@ -88,9 +88,34 @@ async function recordInsightExposures(userId, insights, limit) {
   await InsightEvent.createBatch(userId, events);
 }
 
+async function recordInsightExposuresBestEffort(userId, insights, limit) {
+  try {
+    await recordInsightExposures(userId, insights, limit);
+  } catch (err) {
+    console.error('[insights] exposure logging skipped:', {
+      user_id: userId || null,
+      message: err?.message || String(err || 'unknown_error'),
+      code: err?.code || null,
+    });
+  }
+}
+
+async function attachInsightForecastsBestEffort(userId, insights, options = {}) {
+  try {
+    return await attachInsightForecasts(userId, insights, options);
+  } catch (err) {
+    console.error('[insights] forecast attachment skipped:', {
+      user_id: userId || null,
+      message: err?.message || String(err || 'unknown_error'),
+      code: err?.code || null,
+    });
+    return insights;
+  }
+}
+
 async function findInsightByIdForUser(user, insightId) {
   if (!user?.id || !insightId) return null;
-  const insights = await attachInsightForecasts(
+  const insights = await attachInsightForecastsBestEffort(
     user.id,
     (await buildInsightsForUser({ user, limit: 50 })).map(attachInsightAction)
   );
@@ -102,11 +127,11 @@ router.get('/', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
-    const insights = await attachInsightForecasts(
+    const insights = await attachInsightForecastsBestEffort(
       user.id,
       (await buildInsightsForUser({ user, limit })).map(attachInsightAction)
     );
-    await recordInsightExposures(user.id, insights, limit);
+    await recordInsightExposuresBestEffort(user.id, insights, limit);
     res.json(insights);
   } catch (err) {
     next(err);

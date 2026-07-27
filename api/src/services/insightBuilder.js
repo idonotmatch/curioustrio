@@ -1502,6 +1502,42 @@ function determineUsageFallbackScope(insights = [], user = null) {
   return 'personal';
 }
 
+function logInsightOptionalFailure(area, err, user = null) {
+  console.error('[insightBuilder] optional insight context skipped:', {
+    area,
+    user_id: user?.id || null,
+    message: err?.message || String(err || 'unknown_error'),
+    code: err?.code || null,
+  });
+}
+
+async function loadInsightStateMapBestEffort(user, insightIds = []) {
+  try {
+    return await InsightState.getStateMap(user.id, insightIds);
+  } catch (err) {
+    logInsightOptionalFailure('state', err, user);
+    return new Map();
+  }
+}
+
+async function loadInsightEventsBestEffort(user, limit = 500) {
+  try {
+    return await InsightEvent.getRecentByUser(user.id, limit);
+  } catch (err) {
+    logInsightOptionalFailure('events', err, user);
+    return [];
+  }
+}
+
+async function inferOutcomeEventsBestEffort(user, events = []) {
+  try {
+    return await inferOutcomeEventsForUser({ user, events });
+  } catch (err) {
+    logInsightOptionalFailure('outcome_inference', err, user);
+    return [];
+  }
+}
+
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
   let recurringSignals = [];
@@ -1736,10 +1772,10 @@ async function buildInsightsForUser({ user, limit = 10 }) {
   if (!user?.id || !rawInsights.length) return rawInsights.slice(0, limit);
 
   const [stateMap, recentEvents] = await Promise.all([
-    InsightState.getStateMap(user.id, rawInsights.map((insight) => insight.id)),
-    InsightEvent.getRecentByUser(user.id, 500),
+    loadInsightStateMapBestEffort(user, rawInsights.map((insight) => insight.id)),
+    loadInsightEventsBestEffort(user, 500),
   ]);
-  const inferredEvents = await inferOutcomeEventsForUser({ user, events: recentEvents });
+  const inferredEvents = await inferOutcomeEventsBestEffort(user, recentEvents);
   const allEvents = [...recentEvents, ...inferredEvents];
   const feedbackSummary = summarizeFeedbackEvents(allEvents);
   const outcomeWindows = summarizeOutcomeWindows(allEvents);
