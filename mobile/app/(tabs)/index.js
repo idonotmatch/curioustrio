@@ -1,6 +1,6 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -180,6 +180,8 @@ export default function FeedScreen() {
   const { budget: personalBudget, error: personalBudgetError, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, error: householdBudgetError, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { categories } = useCategories();
+  const refreshInFlightRef = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     setSelectedMonth(currentPeriod(transactionStartDay));
   }, [transactionStartDay]);
@@ -192,12 +194,22 @@ export default function FeedScreen() {
   const [displayExpenses, setDisplayExpenses] = useState([]);
   useEffect(() => { setDisplayExpenses(sortExpenses(expenses, sortKey)); }, [expenses, sortKey]);
 
-  const refresh = useCallback(() => {
-    refreshMine();
-    if (isMultiMember) refreshHouseholdExpenses();
-    refreshPersonalBudget();
-    if (isMultiMember) refreshHouseholdBudget();
-    refreshHousehold();
+  const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refreshMine(),
+        isMultiMember ? refreshHouseholdExpenses() : Promise.resolve(),
+        refreshPersonalBudget(),
+        isMultiMember ? refreshHouseholdBudget() : Promise.resolve(),
+        Promise.resolve(refreshHousehold()),
+      ]);
+    } finally {
+      refreshInFlightRef.current = false;
+      setRefreshing(false);
+    }
   }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshHousehold, isMultiMember]);
 
   useFocusEffect(useCallback(() => {
@@ -254,7 +266,7 @@ export default function FeedScreen() {
         data={listData}
         keyExtractor={(item, i) => item.id || `expense-${i}`}
         renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
+        refreshControl={<RefreshControl refreshing={loading || refreshing} onRefresh={refresh} tintColor={colors.text} />}
         contentContainerStyle={styles.list}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"

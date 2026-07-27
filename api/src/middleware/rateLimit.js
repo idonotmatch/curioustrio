@@ -2,7 +2,7 @@ const rateLimit = require('express-rate-limit');
 
 const standard = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
+  max: Number(process.env.STANDARD_RATE_LIMIT_MAX || 1000),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
