@@ -261,6 +261,7 @@ async function processMessageImport(user, msgId, {
   categories,
   todayDate,
   allowExistingRetry = false,
+  forceReview = false,
   existingLog = null,
   outcomes = createOutcomes(),
 } = {}) {
@@ -272,7 +273,7 @@ async function processMessageImport(user, msgId, {
     }
   }
 
-  let msgSubject, msgFrom, msgSnippet;
+  let msgSubject, msgFrom, msgSnippet, createdExpense;
   try {
     const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msgId);
     msgSubject = subject;
@@ -280,7 +281,7 @@ async function processMessageImport(user, msgId, {
     msgSnippet = snippet;
     const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
     const senderQuality = await getSenderImportQuality(user.id, from, subject);
-    const softenSkipBehavior = shouldSoftenSkipBehavior(senderQuality);
+    const softenSkipBehavior = forceReview || senderQuality?.sender_preference?.force_review || shouldSoftenSkipBehavior(senderQuality);
     const templateQuality = senderQuality?.template_quality || {};
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
     const signals = analyzeEmailSignals(subject, from, body);
@@ -288,6 +289,8 @@ async function processMessageImport(user, msgId, {
 
     if (
       templateQuality.should_skip_prequeue
+      && !forceReview
+      && !senderQuality?.sender_preference?.force_review
       && !signals.shouldSurfaceToReview
       && !signals.strongMoneySignal
       && !signals.mediumMoneySignal
@@ -338,7 +341,7 @@ async function processMessageImport(user, msgId, {
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
       }
-      if (senderQuality.level === 'noisy' && !softenSkipBehavior) {
+      if (senderQuality.level === 'noisy' && !softenSkipBehavior && Number(templateQuality.filtering_dismissals || 0) >= 2) {
         const skipReason = 'low_sender_quality';
         await EmailImportLog.upsertResult({
           userId: user.id, messageId: msgId, status: 'skipped',
@@ -463,7 +466,7 @@ async function processMessageImport(user, msgId, {
       };
     }
 
-    const reviewMode = structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality);
+    const reviewMode = forceReview ? 'full_review' : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
 
     const expense = await Expense.create({
       userId: user.id,
@@ -488,6 +491,7 @@ async function processMessageImport(user, msgId, {
       reviewMode: reviewMode || null,
       reviewSource: 'gmail',
     });
+    createdExpense = expense;
 
     if (itemsWithProducts.length > 0) {
       await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
@@ -539,10 +543,15 @@ async function processMessageImport(user, msgId, {
       reason: failureReason,
     });
     increment(outcomes.failed_reasons, failureReason);
-    await EmailImportLog.upsertResult({
-      userId: user.id, messageId: msgId, status: 'failed',
-      subject: msgSubject, fromAddress: msgFrom, skipReason: failureReason, snippet: msgSnippet,
-    });
+    if (existingLog && !msgFrom) {
+      await EmailImportLog.markRetryFailed(existingLog.id, user.id, failureReason);
+    } else {
+      await EmailImportLog.upsertResult({
+        userId: user.id, messageId: msgId, status: 'failed',
+        expenseId: createdExpense?.id || null,
+        subject: msgSubject, fromAddress: msgFrom, skipReason: failureReason, snippet: msgSnippet,
+      });
+    }
     return { imported: 0, skipped: 0, failed: 1, error: e };
   }
 }
@@ -597,17 +606,49 @@ async function importForUser(user) {
   return { imported, skipped, failed, outcomes };
 }
 
-async function retryFailedImportLog(user, log) {
-  const categories = await Category.findByHousehold(user.household_id);
-  const todayDate = new Date().toISOString().split('T')[0];
-  const outcomes = createOutcomes();
-  return processMessageImport(user, log.message_id, {
-    categories,
-    todayDate,
-    allowExistingRetry: true,
-    existingLog: log,
-    outcomes,
-  });
+async function recoverImportLog(user, log, { forceReview = false, outcomes = createOutcomes() } = {}) {
+  // Serialize recovery across API instances, then re-read to make repeated taps idempotent.
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lock = await client.query(
+      'SELECT pg_try_advisory_xact_lock(hashtext($1), hashtext($2)) AS locked',
+      [user.id, log.message_id]
+    );
+    if (!lock.rows[0].locked) {
+      throw Object.assign(new Error('This email is already being processed. Try again shortly.'), { status: 409 });
+    }
+    const current = await EmailImportLog.findByIdForUser(log.id, user.id);
+    if (!current) throw Object.assign(new Error('Import log not found'), { status: 404 });
+    if (current.expense_id || current.status === 'imported') {
+      return { imported: 0, skipped: 1, failed: 0, reason: 'existing' };
+    }
+    if (!['skipped', 'failed'].includes(current.status) || (!forceReview && current.status !== 'failed')) {
+      throw Object.assign(new Error('This import cannot be retried'), { status: 400 });
+    }
+    if (forceReview && current.status === 'skipped' && current.skip_reason !== 'duplicate_expense') {
+      await EmailImportLog.recordLogFeedback(current.id, user.id, 'should_have_imported');
+    }
+    const categories = await Category.findByHousehold(user.household_id);
+    return await processMessageImport(user, current.message_id, {
+      categories,
+      todayDate: new Date().toISOString().split('T')[0],
+      allowExistingRetry: true,
+      forceReview,
+      existingLog: current,
+      outcomes,
+    });
+  } finally {
+    try { await client.query('ROLLBACK'); } finally { client.release(); }
+  }
+}
+
+async function retryFailedImportLog(user, log, options = {}) {
+  return recoverImportLog(user, log, options);
+}
+
+async function reviewSkippedImportLog(user, log) {
+  return recoverImportLog(user, log, { forceReview: true });
 }
 
 async function removePendingImportedExpense(expenseId, userId) {
@@ -665,16 +706,8 @@ async function retryFailedImportsForUser(user, { limit = 10 } = {}) {
   let imported = 0, skipped = 0, failed = 0;
   const outcomes = createOutcomes();
 
-  const categories = await Category.findByHousehold(user.household_id);
-  const todayDate = new Date().toISOString().split('T')[0];
   for (const log of failedLogs) {
-    const result = await processMessageImport(user, log.message_id, {
-      categories,
-      todayDate,
-      allowExistingRetry: true,
-      existingLog: log,
-      outcomes,
-    });
+    const result = await retryFailedImportLog(user, log, { outcomes });
     imported += result.imported;
     skipped += result.skipped;
     failed += result.failed;
@@ -685,6 +718,7 @@ async function retryFailedImportsForUser(user, { limit = 10 } = {}) {
 module.exports = {
   importForUser,
   retryFailedImportLog,
+  reviewSkippedImportLog,
   retryFailedImportsForUser,
   reprocessImportLog,
   findLikelyAmount,

@@ -417,6 +417,36 @@ describe('gmailImportQualityService', () => {
     });
   });
 
+  it.each(['wrong_details', 'duplicate', 'other'])('does not suppress receipts after %s dismissals', async (reason) => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue(Array.from({ length: 3 }, () => ({
+      sender_domain: 'shop.com', subject_pattern: 'generic_receipt', review_action: 'dismissed',
+      review_changed_fields: [`dismiss_reason_${reason}`],
+    })));
+    const quality = await getSenderImportQuality('user-1', 'orders@shop.com', 'Your receipt');
+    expect(quality.template_quality.should_skip_prequeue).toBe(false);
+  });
+
+  it('requires two explicit exclusion dismissals to filter a receipt template', async () => {
+    const dismissed = { sender_domain: 'shop.com', subject_pattern: 'generic_receipt', review_action: 'dismissed', review_changed_fields: ['dismiss_reason_not_an_expense'] };
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([dismissed, { ...dismissed, review_action: null }]);
+    expect((await getSenderImportQuality('user-1', 'orders@shop.com', 'Your receipt')).template_quality.should_skip_prequeue).toBe(false);
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([dismissed, dismissed]);
+    expect((await getSenderImportQuality('user-1', 'orders@shop.com', 'Your receipt')).template_quality.should_skip_prequeue).toBe(true);
+  });
+
+  it('honors a correction for the matching sender and template even with scrubbed email context', async () => {
+    EmailImportLog.listQualitySignalsByUser.mockResolvedValue([]);
+    EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([{
+      sender_domain: 'shop.com', subject_pattern: 'generic_shipping', user_feedback: 'should_have_imported',
+    }]);
+    const corrected = await getSenderImportQuality('user-1', 'updates@shop.com', 'Your package has shipped');
+    expect(corrected.template_quality).toMatchObject({ should_skip_prequeue: false, force_import_review: true });
+    const otherSender = await getSenderImportQuality('user-1', 'updates@elsewhere.com', 'Your package has shipped');
+    expect(otherSender.template_quality.should_skip_prequeue).toBe(true);
+    const otherTemplate = await getSenderImportQuality('user-1', 'updates@shop.com', 'Sale ends today');
+    expect(otherTemplate.template_quality.force_import_review).toBe(false);
+  });
+
   it('recommends quick_check when a trusted sender has earned the fast lane', () => {
     expect(recommendReviewMode({
       level: 'trusted',

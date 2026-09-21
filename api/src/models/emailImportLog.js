@@ -386,6 +386,36 @@ async function findByIdForUser(id, userId) {
   }
 }
 
+async function listReviewHistory(userId, { filter = 'potential', limit = 50, cursor = null } = {}) {
+  const conditions = {
+    potential: "l.status = 'skipped' AND (l.skip_reason LIKE 'template_skip_%' OR l.skip_reason IN ('classifier_uncertain', 'missing_amount', 'low_sender_quality'))",
+    skipped: "l.status = 'skipped' AND COALESCE(l.skip_reason, '') <> 'existing'",
+    failed: "l.status = 'failed'",
+    imported: "(l.status = 'imported' OR (l.status = 'skipped' AND l.skip_reason = 'existing'))",
+  };
+  const result = await db.query(
+    `SELECT l.id, l.status, l.subject, l.from_address, l.sender_domain, l.subject_pattern,
+            l.skip_reason, l.imported_at, l.imported_at::text AS cursor_time,
+            l.expense_id, l.user_feedback, e.status AS expense_status, e.amount
+     FROM email_import_log l
+     LEFT JOIN expenses e ON e.id = l.expense_id
+     WHERE l.user_id = $1 AND ${conditions[filter] || conditions.skipped}
+       AND ($3::timestamptz IS NULL OR (l.imported_at, l.id) < ($3::timestamptz, $4::uuid))
+     ORDER BY l.imported_at DESC, l.id DESC
+     LIMIT $2`,
+    [userId, limit + 1, cursor?.at || null, cursor?.id || null]
+  );
+  const entries = result.rows.slice(0, limit);
+  const last = entries[entries.length - 1];
+  const nextCursor = result.rows.length > limit && last
+    ? Buffer.from(JSON.stringify({ at: last.cursor_time, id: last.id })).toString('base64url')
+    : null;
+  return {
+    entries: entries.map(({ cursor_time, ...entry }) => entry),
+    next_cursor: nextCursor,
+  };
+}
+
 async function listFailedByUser(userId, limit = 25) {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
   try {
@@ -497,6 +527,14 @@ async function recordLogFeedback(logId, userId, feedback) {
     [logId, userId, cleanFeedback]
   );
   return result.rows[0] || null;
+}
+
+async function markRetryFailed(logId, userId, reason) {
+  await db.query(
+    `UPDATE email_import_log SET status = 'failed', skip_reason = $3, imported_at = NOW()
+     WHERE id = $1 AND user_id = $2`,
+    [logId, userId, reason]
+  );
 }
 
 async function summarizeByUser(userId, days = 30) {
@@ -733,7 +771,7 @@ async function listDecisionFeedbackByUser(userId, days = 30) {
   const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
   try {
     const result = await db.query(
-      `SELECT from_address, sender_domain, status, user_feedback
+      `SELECT from_address, sender_domain, subject, subject_pattern, status, user_feedback
        FROM email_import_log
        WHERE user_id = $1
          AND imported_at >= NOW() - ($2::text || ' days')::interval
@@ -745,7 +783,7 @@ async function listDecisionFeedbackByUser(userId, days = 30) {
   } catch (err) {
     if (!isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
-      `SELECT from_address, NULL::text AS sender_domain, status, user_feedback
+      `SELECT from_address, NULL::text AS sender_domain, subject, NULL::text AS subject_pattern, status, user_feedback
        FROM email_import_log
        WHERE user_id = $1
          AND imported_at >= NOW() - ($2::text || ' days')::interval
@@ -761,7 +799,7 @@ async function listTemplateSignalsByUser(userId, days = 30) {
   const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
   try {
     const result = await db.query(
-      `SELECT l.subject,
+      `SELECT l.user_feedback, l.subject,
               l.from_address,
               l.sender_domain,
               l.subject_pattern,
@@ -784,7 +822,7 @@ async function listTemplateSignalsByUser(userId, days = 30) {
   } catch (err) {
     if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
     const fallback = await db.query(
-      `SELECT l.subject,
+      `SELECT l.user_feedback, l.subject,
               l.from_address,
               NULL::text AS sender_domain,
               NULL::text AS subject_pattern,
@@ -872,8 +910,10 @@ module.exports = {
   findByIdForUser,
   findByMessageId,
   listByUser,
+  listReviewHistory,
   listFailedByUser,
   recordLogFeedback,
+  markRetryFailed,
   summarizeByUser,
   listQualitySignalsByUser,
   listDecisionFeedbackByUser,

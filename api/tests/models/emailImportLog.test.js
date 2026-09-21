@@ -129,6 +129,54 @@ describe('EmailImportLog.create', () => {
   });
 });
 
+describe('EmailImportLog review history', () => {
+  it('paginates all skipped rows without mixing failures or another user', async () => {
+    const isolated = await db.query(
+      `INSERT INTO users (provider_uid, name, email) VALUES ('test-import-history', 'History Test', 'history@test.com') RETURNING id`
+    );
+    const userId = isolated.rows[0].id;
+    try {
+      for (const [messageId, status, reason] of [
+        ['history-a', 'skipped', 'missing_amount'],
+        ['history-b', 'skipped', 'classifier_not_expense'],
+        ['history-c', 'skipped', 'template_skip_generic_receipt'],
+        ['history-error', 'failed', 'Network error'],
+        ['history-imported', 'imported', null],
+      ]) {
+        await EmailImportLog.create({ userId, messageId, status, skipReason: reason, fromAddress: 'orders@shop.com', subject: 'Your receipt' });
+      }
+      await db.query(`UPDATE email_import_log SET imported_at = '2026-09-20 12:00:00.123456+00' WHERE user_id = $1`, [userId]);
+      const first = await EmailImportLog.listReviewHistory(userId, { filter: 'skipped', limit: 2 });
+      expect(first.entries).toHaveLength(2);
+      const cursor = JSON.parse(Buffer.from(first.next_cursor, 'base64url').toString());
+      expect(cursor.at).toContain('123456');
+      const second = await EmailImportLog.listReviewHistory(userId, { filter: 'skipped', limit: 2, cursor });
+      expect(second.entries).toHaveLength(1);
+      expect(second.next_cursor).toBeNull();
+      expect(new Set([...first.entries, ...second.entries].map((entry) => entry.id)).size).toBe(3);
+      expect((await EmailImportLog.listReviewHistory(userId, { filter: 'potential' })).entries).toHaveLength(2);
+      expect((await EmailImportLog.listReviewHistory(userId, { filter: 'failed' })).entries).toHaveLength(1);
+      expect((await EmailImportLog.listReviewHistory(userId, { filter: 'imported' })).entries).toHaveLength(1);
+      const elsewhere = await EmailImportLog.listReviewHistory(testUserId, { filter: 'skipped' });
+      expect(elsewhere.entries.some((entry) => first.entries.some((item) => item.id === entry.id))).toBe(false);
+    } finally {
+      await db.query('DELETE FROM email_import_log WHERE user_id = $1', [userId]);
+      await db.query('DELETE FROM users WHERE id = $1', [userId]);
+    }
+  });
+
+  it('retains template correction fingerprints after a failed fetch', async () => {
+    process.env.GMAIL_MINIMAL_LOG_MODE = 'true';
+    const log = await EmailImportLog.create({ userId: testUserId, messageId: 'history-correction', status: 'skipped', fromAddress: 'orders@shop.com', subject: 'Your receipt' });
+    await EmailImportLog.recordLogFeedback(log.id, testUserId, 'should_have_imported');
+    await EmailImportLog.markRetryFailed(log.id, testUserId, 'Network error');
+    const signals = await EmailImportLog.listDecisionFeedbackByUser(testUserId);
+    expect(signals).toEqual(expect.arrayContaining([expect.objectContaining({
+      sender_domain: 'shop.com', subject_pattern: 'generic_receipt', user_feedback: 'should_have_imported',
+    })]));
+  });
+});
+
 describe('EmailImportLog.findByMessageId', () => {
   it('returns the row when it exists', async () => {
     await EmailImportLog.create({

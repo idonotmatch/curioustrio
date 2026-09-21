@@ -6,8 +6,8 @@ const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
 const EmailImportLog = require('../models/emailImportLog');
 const GmailSenderPreference = require('../models/gmailSenderPreference');
-const { getAuthUrl, exchangeCode, disconnectGmailConnection } = require('../services/gmailClient');
-const { importForUser, retryFailedImportLog, retryFailedImportsForUser } = require('../services/gmailImporter');
+const { getAuthUrl, exchangeCode, disconnectGmailConnection, getMessage } = require('../services/gmailClient');
+const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reviewSkippedImportLog } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { getGmailImportHealth } = require('../services/gmailImportHealthService');
 const { aiEndpoints } = require('../middleware/rateLimit');
@@ -219,6 +219,60 @@ router.get('/import-log', authenticate, async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const logs = await EmailImportLog.listByUser(user.id, limit);
     res.json(logs);
+  } catch (err) { next(err); }
+});
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+router.get('/review-history', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const filter = req.query.filter || 'potential';
+    if (!['potential', 'skipped', 'failed', 'imported'].includes(filter)) return res.status(400).json({ error: 'Invalid filter' });
+    let cursor = null;
+    if (req.query.cursor) {
+      try {
+        cursor = JSON.parse(Buffer.from(req.query.cursor, 'base64url').toString());
+        if (!UUID_PATTERN.test(cursor.id) || typeof cursor.at !== 'string' || !Number.isFinite(Date.parse(cursor.at))) throw new Error();
+      } catch {
+        return res.status(400).json({ error: 'Invalid cursor' });
+      }
+    }
+    const result = await EmailImportLog.listReviewHistory(user.id, { filter, cursor });
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.get('/import-log/:id/context', authenticate, async (req, res, next) => {
+  try {
+    if (!UUID_PATTERN.test(req.params.id)) return res.status(400).json({ error: 'Invalid import id' });
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const log = await EmailImportLog.findByIdForUser(req.params.id, user.id);
+    if (!log) return res.status(404).json({ error: 'Import log not found' });
+    const { subject, from, snippet, receivedAt } = await getMessage(user.id, log.message_id);
+    res.set('Cache-Control', 'no-store');
+    res.json({ subject, from_address: from, snippet, received_at: receivedAt });
+  } catch (err) {
+    const classified = classifyGmailImportError(err);
+    res.status(classified.status).json({ error: classified.status === 401
+      ? classified.message : 'Could not load this email. It may no longer be available in Gmail.' });
+  }
+});
+
+router.post('/import-log/:id/review', authenticate, aiEndpoints, async (req, res, next) => {
+  try {
+    if (!UUID_PATTERN.test(req.params.id)) return res.status(400).json({ error: 'Invalid import id' });
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+    const log = await EmailImportLog.findByIdForUser(req.params.id, user.id);
+    if (!log) return res.status(404).json({ error: 'Import log not found' });
+    const result = log.status === 'failed'
+      ? await retryFailedImportLog(user, log)
+      : await reviewSkippedImportLog(user, log);
+    const { error, ...outcome } = result;
+    res.json({ ...outcome, ...(error ? { error: classifyGmailImportError(error).message } : {}) });
   } catch (err) { next(err); }
 });
 

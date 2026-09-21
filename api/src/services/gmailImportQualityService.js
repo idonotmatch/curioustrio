@@ -152,7 +152,16 @@ function frequentDismissReason(senderQuality = {}) {
   return topReasons.find((entry) => Number(entry?.count || 0) >= 2)?.reason || null;
 }
 
-function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
+function isFilteringDismissal(row) {
+  return row.review_action === 'dismissed'
+    && (Array.isArray(row.review_changed_fields) ? row.review_changed_fields : []).some((field) => [
+      'dismiss_reason_not_an_expense',
+      'dismiss_reason_transfer_or_payment',
+      'dismiss_reason_business_or_track_only',
+    ].includes(field));
+}
+
+function summarizeTemplateRows(rows = [], fromAddress = '', subject = '', feedbackRows = []) {
   const senderDomain = extractSenderDomain(fromAddress);
   const subjectPattern = extractSubjectPattern(subject, fromAddress);
   const templateRows = rows.filter((row) =>
@@ -179,13 +188,19 @@ function summarizeTemplateRows(rows = [], fromAddress = '', subject = '') {
     deterministicItemCountTotal += Math.max(0, Number(row.deterministic_item_count || 0));
   }
 
-  const learnedDisposition = inferTemplateDisposition(subjectPattern, imported, cleanApproved, dismissed);
+  const corrected = feedbackRows.some((row) => row.user_feedback === 'should_have_imported'
+    && rowSenderDomain(row) === senderDomain && rowSubjectPattern(row) === subjectPattern);
+  const filteringDismissals = templateRows.filter(isFilteringDismissal).length;
+  const learnedDisposition = inferTemplateDisposition(
+    subjectPattern, imported, cleanApproved, filteringDismissals, corrected
+  );
 
   return {
     subject_pattern: subjectPattern,
     imported,
     clean_approved: cleanApproved,
     dismissed,
+    filtering_dismissals: filteringDismissals,
     edited,
     clean_approval_rate: toRate(cleanApproved, imported),
     dismissal_rate: toRate(dismissed, imported),
@@ -269,7 +284,8 @@ function automationRecommendation(senderQuality = {}, templateQuality = null) {
   };
 }
 
-function inferTemplateDisposition(subjectPattern = '', imported = 0, cleanApproved = 0, dismissed = 0) {
+function inferTemplateDisposition(subjectPattern = '', imported = 0, cleanApproved = 0, dismissed = 0, corrected = false) {
+  if (corrected) return 'transactional';
   const baseline = {
     amazon_order: 'transactional',
     amazon_refund: 'transactional',
@@ -290,7 +306,7 @@ function inferTemplateDisposition(subjectPattern = '', imported = 0, cleanApprov
   if (imported >= 2) {
     const dismissalRate = toRate(dismissed, imported);
     const cleanApprovalRate = toRate(cleanApproved, imported);
-    if (dismissalRate >= 0.5) learnedDisposition = 'non_transactional';
+    if (dismissed >= 2 && dismissalRate >= 0.5) learnedDisposition = 'non_transactional';
     else if (cleanApprovalRate >= 0.5) learnedDisposition = 'transactional';
   }
   return learnedDisposition;
@@ -317,6 +333,8 @@ function buildTemplateSummary(rows = [], limit = 8) {
       structured_item_block_strong_count: 0,
       deterministic_item_count_total: 0,
       top_skip_reasons: new Map(),
+      filtering_dismissals: 0,
+      corrected: false,
     };
 
     current.total += 1;
@@ -325,6 +343,8 @@ function buildTemplateSummary(rows = [], limit = 8) {
     if (row.status === 'failed') current.failed += 1;
     if (row.review_action === 'approved') current.approved += 1;
     if (row.review_action === 'dismissed') current.dismissed += 1;
+    if (isFilteringDismissal(row)) current.filtering_dismissals += 1;
+    if (row.user_feedback === 'should_have_imported') current.corrected = true;
     if (Number(row.review_edit_count || 0) > 0) current.edited += 1;
     const itemBlockLevel = `${row.structured_item_block_level || ''}`.trim().toLowerCase();
     if (itemBlockLevel && itemBlockLevel !== 'none') current.structured_item_block_count += 1;
@@ -354,7 +374,7 @@ function buildTemplateSummary(rows = [], limit = 8) {
       average_deterministic_item_count: entry.imported
         ? Number((entry.deterministic_item_count_total / entry.imported).toFixed(2))
         : 0,
-      learned_disposition: inferTemplateDisposition(entry.subject_pattern, entry.imported, entry.approved, entry.dismissed),
+      learned_disposition: inferTemplateDisposition(entry.subject_pattern, entry.imported, entry.approved, entry.filtering_dismissals, entry.corrected),
       level: classifyTemplateMetrics({
         imported: entry.imported,
         clean_approval_rate: toRate(entry.approved, entry.imported),
@@ -721,7 +741,7 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const review_paths = senderSummary.review_paths || [];
   const review_path_reliability = senderSummary.review_path_reliability || summarizeReviewPathReliability([], metrics);
   const item_reliability = summarizeItemReliability(senderRows);
-  const template_quality = summarizeTemplateRows(rows, fromAddress, subject);
+  const template_quality = summarizeTemplateRows(rows, fromAddress, subject, feedbackRows);
   const automation = automationRecommendation({
     ...senderSummary,
     level,
