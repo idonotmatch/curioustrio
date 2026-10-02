@@ -98,8 +98,13 @@ function periodBounds(month, startDay = 1) {
   };
 }
 
-async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1, categoryId = null } = {}) {
+async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1, categoryId = null, cursor = null } = {}) {
   const params = [userId, limit, offset];
+  let cursorClause = '';
+  if (cursor) {
+    params.push(cursor.date, cursor.created_at, cursor.id);
+    cursorClause = `AND (e.date, e.created_at, e.id) < ($${params.length - 2}::date, $${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+  }
   let monthClause = '';
   if (month) {
     const { from, to } = periodBounds(month, startDay);
@@ -126,9 +131,10 @@ async function findByUser(userId, { limit = 50, offset = 0, month, startDay = 1,
      LEFT JOIN categories  c  ON e.category_id = c.id
      LEFT JOIN categories  pc ON c.parent_id   = pc.id
      WHERE e.user_id = $1 AND e.status = 'confirmed'
+     ${cursorClause}
      ${monthClause}
      ${categoryClause}
-     ORDER BY e.date DESC, e.created_at DESC
+     ORDER BY e.date DESC, e.created_at DESC, e.id DESC
      LIMIT $2 OFFSET $3`,
     params
   );
@@ -281,8 +287,13 @@ async function findById(id) {
   return result.rows[0] || null;
 }
 
-async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month, startDay = 1, categoryId = null } = {}) {
+async function findByHousehold(householdId, { limit = 50, offset = 0, userId, month, startDay = 1, categoryId = null, cursor = null } = {}) {
   const params = [householdId, limit, offset];
+  let cursorClause = '';
+  if (cursor) {
+    params.push(cursor.date, cursor.created_at, cursor.id);
+    cursorClause = `AND (e.date, e.created_at, e.id) < ($${params.length - 2}::date, $${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+  }
   let privateClause = '';
   if (userId) {
     params.push(userId);
@@ -318,10 +329,11 @@ async function findByHousehold(householdId, { limit = 50, offset = 0, userId, mo
      WHERE (e.household_id = $1
             OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
        AND e.status = 'confirmed'
+     ${cursorClause}
      ${privateClause}
      ${monthClause}
      ${categoryClause}
-     ORDER BY e.date DESC, e.created_at DESC
+     ORDER BY e.date DESC, e.created_at DESC, e.id DESC
      LIMIT $2 OFFSET $3`,
     params
   );

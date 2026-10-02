@@ -11,7 +11,7 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options = {}) => {
     if (!enabled) {
       setBudget(null);
       setError(null);
@@ -31,6 +31,7 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
       () => api.get(url),
       (data) => { setBudget(data); setLoading(false); },
       (err) => { setBudget(null); setError(err?.message || 'Could not load budget'); setLoading(false); },
+      { forceRefresh: options?.forceRefresh === true },
     );
   }, [month, scope, cacheOnly, startDayOverride, enabled]);
 

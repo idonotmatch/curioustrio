@@ -2,21 +2,13 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensio
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useExpenses } from '../../hooks/useExpenses';
-import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
-import { useBudget } from '../../hooks/useBudget';
-import { useHousehold } from '../../hooks/useHousehold';
-import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { useSummaryBundle } from '../../hooks/useSummaryBundle';
 import { useInsights } from '../../hooks/useInsights';
-import { useFreshnessRefresh } from '../../hooks/useFreshnessRefresh';
-import { api } from '../../services/api';
-import { FRESHNESS_DOMAINS } from '../../services/freshnessRegistry';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { SummaryInsightsRail } from '../../components/SummaryInsightsRail';
 import { SummaryMonthPicker } from '../../components/SummaryMonthPicker';
-import { SummaryForecastMovement } from '../../components/SummaryForecastMovement';
 import { requestGlobalAddLauncher } from '../../services/globalAddLauncherBus';
 import { stashNavigationPayload } from '../../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../../services/insightLocalStore';
@@ -29,11 +21,34 @@ import {
   buildPreloadedInsightEvidence,
 } from '../../services/summaryScreenHelpers';
 import { buildMockInsights } from '../../fixtures/mockInsights';
-import { buildMockGmailImportState } from '../../fixtures/mockGmailImport';
 import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 import { colors } from '../../theme/tokens';
 
-const MOCK_GMAIL_IMPORT_SUMMARY = buildMockGmailImportState().importSummary;
+const TREND_INSIGHT_TYPES = new Set([
+  'spend_pace_ahead',
+  'spend_pace_behind',
+  'budget_too_low',
+  'budget_too_high',
+  'top_category_driver',
+  'one_offs_driving_variance',
+  'recurring_cost_pressure',
+  'projected_month_end_over_budget',
+  'projected_month_end_under_budget',
+  'projected_category_under_baseline',
+  'one_off_expense_skewing_projection',
+  'projected_category_surge',
+]);
+const EARLY_DEVELOPING_INSIGHT_TYPES = new Set([
+  'early_budget_pace',
+  'early_top_category',
+  'early_repeated_merchant',
+  'early_spend_concentration',
+  'early_cleanup',
+  'early_logging_momentum',
+  'developing_weekly_spend_change',
+  'developing_category_shift',
+  'developing_repeated_merchant',
+]);
 
 export default function SummaryScreen() {
   const router = useRouter();
@@ -41,13 +56,17 @@ export default function SummaryScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
-  const { household, memberCount } = useHousehold();
+  const currentMonthStr = selectedMonth || currentPeriod(startDay);
+  const [summarySnapshot, setSummarySnapshot] = useState(null);
+  const { summary, loading: summaryLoading, refresh: refreshSummary } = useSummaryBundle(currentMonthStr, startDay);
+  const household = summary?.household || null;
+  const memberCount = Number(summary?.member_count || 0);
   const isMultiMember = memberCount > 1;
-  const { expenses, loading: expensesLoading, refresh: refreshExpenses } = useExpenses(selectedMonth);
-  const { expenses: householdExpenses, loading: householdExpensesLoading, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, null, { enabled: isMultiMember });
-  const { budget: personalBudget, loading: personalBudgetLoading, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal');
-  const { budget: householdBudget, loading: householdBudgetLoading, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { enabled: isMultiMember });
-  const { expenses: pendingExpenses, loading: pendingExpensesLoading, refresh: refreshPending } = usePendingExpenses();
+  const personalBudget = summary?.personal_budget || null;
+  const householdBudget = summary?.household_budget || null;
+  const expenses = summary?.expenses || summarySnapshot?.expenses || [];
+  const householdExpenses = summary?.household_expenses || summarySnapshot?.household_expenses || [];
+  const watchedPlans = summary?.watched_plans || summarySnapshot?.watched_plans || [];
   const {
     insights,
     loading: insightsLoading,
@@ -59,43 +78,24 @@ export default function SummaryScreen() {
   } = useInsights(5, { freezeFirstPaint: true });
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [allowMockInsights, setAllowMockInsights] = useState(__DEV__);
-  const [gmailImportSummary, setGmailImportSummary] = useState(null);
-  const [watchedPlans, setWatchedPlans] = useState([]);
-  const [forecastMovement, setForecastMovement] = useState(null);
-  const [gmailImportSummaryLoading, setGmailImportSummaryLoading] = useState(false);
-  const [watchedPlansLoading, setWatchedPlansLoading] = useState(false);
-  const [forecastMovementLoading, setForecastMovementLoading] = useState(false);
-  const [summarySnapshot, setSummarySnapshot] = useState(null);
-  const currentMonthStr = selectedMonth || currentPeriod(startDay);
   const hasSnapshot = !!summarySnapshot;
-  const usingSnapshotBudget = hasSnapshot && !personalBudget;
-  const usingSnapshotExpenses = hasSnapshot && expensesLoading && (expenses || []).length === 0;
-  const usingSnapshotHouseholdExpenses = hasSnapshot && householdExpensesLoading && (householdExpenses || []).length === 0;
-  const usingSnapshotPending = hasSnapshot && pendingExpensesLoading && (pendingExpenses || []).length === 0;
-  const usingSnapshotWatchedPlans = hasSnapshot && watchedPlansLoading && watchedPlans.length === 0;
-  const usingSnapshotGmail = hasSnapshot && gmailImportSummaryLoading && !gmailImportSummary;
-  const usingSnapshotForecastMovement = hasSnapshot && forecastMovementLoading && !forecastMovement;
+  const usingSnapshotBudget = hasSnapshot && summaryLoading && !personalBudget;
+  const usingSnapshotExpenses = hasSnapshot && summaryLoading && (expenses || []).length === 0;
+  const usingSnapshotHouseholdExpenses = hasSnapshot && summaryLoading && (householdExpenses || []).length === 0;
+  const usingSnapshotWatchedPlans = hasSnapshot && summaryLoading && watchedPlans.length === 0;
   const displayPersonalBudget = personalBudget || summarySnapshot?.personal_budget || null;
   const displayHouseholdBudget = householdBudget || summarySnapshot?.household_budget || null;
   const displayExpensesForSummary = usingSnapshotExpenses ? (summarySnapshot?.expenses || []) : (expenses || []);
   const displayHouseholdExpensesForSummary = usingSnapshotHouseholdExpenses ? (summarySnapshot?.household_expenses || []) : (householdExpenses || []);
-  const displayPendingExpensesForSummary = usingSnapshotPending ? (summarySnapshot?.pending_expenses || []) : (pendingExpenses || []);
   const displayWatchedPlans = usingSnapshotWatchedPlans ? (summarySnapshot?.watched_plans || []) : watchedPlans;
-  const displayForecastMovement = forecastMovement || summarySnapshot?.forecast_movement || null;
   const watchedHouseholdCount = displayWatchedPlans.filter((plan) => plan.scope === 'household').length;
   const watchedPersonalCount = displayWatchedPlans.filter((plan) => plan.scope !== 'household').length;
   const watchedPreferenceNote = displayWatchedPlans.find((plan) => plan?.timing_preference_note)?.timing_preference_note || '';
-  const displayInsights = allowMockInsights && !insightsLoading && insights.length === 0
-    ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
-    : insights;
-  const displayGmailImportSummary = gmailImportSummary || (usingSnapshotGmail ? summarySnapshot?.gmail_import_summary : null) || (__DEV__ ? MOCK_GMAIL_IMPORT_SUMMARY : null);
-  const isUsingSummarySnapshot = usingSnapshotBudget
-    || usingSnapshotExpenses
-    || usingSnapshotHouseholdExpenses
-    || usingSnapshotPending
-    || usingSnapshotWatchedPlans
-    || usingSnapshotGmail
-    || usingSnapshotForecastMovement;
+  const displayInsights = useMemo(() => (
+    allowMockInsights && !insightsLoading && insights.length === 0
+      ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
+      : insights
+  ), [allowMockInsights, currentMonthStr, dismissedMockInsightIds, insights, insightsLoading]);
   const hasMultipleInsights = displayInsights.length > 1;
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
@@ -122,69 +122,13 @@ export default function SummaryScreen() {
     }, 4000);
   }, []);
 
-  const loadGmailImportSummary = useCallback(async () => {
-    setGmailImportSummaryLoading(true);
-    try {
-      const data = await api.get('/gmail/import-summary?days=30');
-      setGmailImportSummary(data);
-    } catch {
-      setGmailImportSummary(null);
-    } finally {
-      setGmailImportSummaryLoading(false);
-    }
-  }, []);
-
-  const loadWatchedPlans = useCallback(async () => {
-    setWatchedPlansLoading(true);
-    try {
-      const data = await api.get('/trends/scenario-memory/watching?limit=5');
-      setWatchedPlans(Array.isArray(data?.items) ? data.items : []);
-    } catch {
-      setWatchedPlans([]);
-    } finally {
-      setWatchedPlansLoading(false);
-    }
-  }, []);
-
-  const loadForecastMovement = useCallback(async () => {
-    setForecastMovementLoading(true);
-    try {
-      const scope = isMultiMember ? 'household' : 'personal';
-      const data = await api.get(`/insights/movement-summary?scope=${scope}&period=${currentMonthStr}`);
-      setForecastMovement(data || null);
-    } catch {
-      setForecastMovement(null);
-    } finally {
-      setForecastMovementLoading(false);
-    }
-  }, [currentMonthStr, isMultiMember]);
-
-  useFreshnessRefresh(FRESHNESS_DOMAINS.gmailImport, loadGmailImportSummary, { delayMs: 700 });
-  useFreshnessRefresh(FRESHNESS_DOMAINS.watchedPlans, loadWatchedPlans, { delayMs: 700 });
-  useFreshnessRefresh(FRESHNESS_DOMAINS.forecastMovement, loadForecastMovement, { delayMs: 900 });
-
   useFocusEffect(useCallback(() => {
     releaseInsightNavigationLock();
-    refreshExpenses();
-    refreshPersonalBudget();
-    if (isMultiMember) refreshHouseholdExpenses();
-    if (isMultiMember) refreshHouseholdBudget();
-    refreshPending();
-    loadGmailImportSummary();
-    loadWatchedPlans();
-    loadForecastMovement();
-    refreshInsights();
+    refreshSummary();
+    refreshInsights({ reason: 'summary_focus' });
   }, [
-    refreshExpenses,
-    refreshPersonalBudget,
-    refreshHouseholdExpenses,
-    refreshHouseholdBudget,
-    refreshPending,
-    loadGmailImportSummary,
-    loadWatchedPlans,
-    loadForecastMovement,
+    refreshSummary,
     refreshInsights,
-    isMultiMember,
     releaseInsightNavigationLock,
   ]));
 
@@ -192,7 +136,8 @@ export default function SummaryScreen() {
     let active = true;
     setSummarySnapshot(null);
     loadSummarySnapshot(currentMonthStr, startDay).then((snapshot) => {
-      if (active) setSummarySnapshot(snapshot);
+      if (!active) return;
+      setSummarySnapshot(snapshot);
     });
     return () => {
       active = false;
@@ -200,24 +145,21 @@ export default function SummaryScreen() {
   }, [currentMonthStr, startDay]);
 
   useEffect(() => {
-    const hasLiveData = personalBudget
+    const hasLiveData = summary
+      || personalBudget
       || householdBudget
       || (expenses || []).length > 0
       || (householdExpenses || []).length > 0
-      || (pendingExpenses || []).length > 0
-      || gmailImportSummary
       || watchedPlans.length > 0
-      || forecastMovement;
+      || displayInsights.length > 0;
     if (!hasLiveData) return;
     saveSummarySnapshot(currentMonthStr, startDay, {
       personalBudget,
       householdBudget,
       expenses,
       householdExpenses,
-      pendingExpenses,
-      gmailImportSummary,
       watchedPlans,
-      forecastMovement,
+      insights: displayInsights,
     }).then((snapshot) => {
       if (snapshot) setSummarySnapshot(snapshot);
     });
@@ -228,10 +170,9 @@ export default function SummaryScreen() {
     householdBudget,
     expenses,
     householdExpenses,
-    pendingExpenses,
-    gmailImportSummary,
     watchedPlans,
-    forecastMovement,
+    displayInsights,
+    summary,
   ]);
 
   useEffect(() => () => {
@@ -278,15 +219,19 @@ export default function SummaryScreen() {
     }
   }, [params.welcome]);
 
-  function handleDismissInsight(insight) {
+  const handleRetryInsights = useCallback(() => {
+    refreshInsights({ force: true, reason: 'manual_retry' });
+  }, [refreshInsights]);
+
+  const handleDismissInsight = useCallback((insight) => {
     if (__DEV__ && insights.length === 0) {
       setDismissedMockInsightIds((current) => [...current, insight.id]);
       return;
     }
     dismissInsight(insight.id, insightEventMetadata(insight));
-  }
+  }, [dismissInsight, insights.length]);
 
-  async function handlePressInsight(insight) {
+  const handlePressInsight = useCallback(async (insight) => {
     if (!insight?.id) return;
     if (openingInsightId) return;
     lockInsightNavigation(insight.id);
@@ -355,22 +300,7 @@ export default function SummaryScreen() {
       return;
     }
 
-    const trendInsightTypes = new Set([
-      'spend_pace_ahead',
-      'spend_pace_behind',
-      'budget_too_low',
-      'budget_too_high',
-      'top_category_driver',
-      'one_offs_driving_variance',
-      'recurring_cost_pressure',
-      'projected_month_end_over_budget',
-      'projected_month_end_under_budget',
-      'projected_category_under_baseline',
-      'one_off_expense_skewing_projection',
-      'projected_category_surge',
-    ]);
-
-    if (trendInsightTypes.has(insight?.type) && insight?.metadata?.month) {
+    if (TREND_INSIGHT_TYPES.has(insight?.type) && insight?.metadata?.month) {
       const preloadedCategoryExpenses = buildPreloadedCategoryExpenses(insight, expenses, householdExpenses);
       const payloadKey = stashNavigationPayload({
         insightMetadata: insight.metadata || {},
@@ -392,19 +322,7 @@ export default function SummaryScreen() {
       return;
     }
 
-    const earlyDevelopingInsightTypes = new Set([
-      'early_budget_pace',
-      'early_top_category',
-      'early_repeated_merchant',
-      'early_spend_concentration',
-      'early_cleanup',
-      'early_logging_momentum',
-      'developing_weekly_spend_change',
-      'developing_category_shift',
-      'developing_repeated_merchant',
-    ]);
-
-    if (earlyDevelopingInsightTypes.has(insight?.type)) {
+    if (EARLY_DEVELOPING_INSIGHT_TYPES.has(insight?.type)) {
       const preloadedEvidence = buildPreloadedInsightEvidence(insight, expenses, householdExpenses);
       saveInsightDetailSnapshot(insight, { preloadEvidence: preloadedEvidence }).catch(() => {});
       const payloadKey = stashNavigationPayload({
@@ -446,7 +364,16 @@ export default function SummaryScreen() {
         payload_key: payloadKey,
       },
     });
-  }
+  }, [
+    currentMonthStr,
+    expenses,
+    householdExpenses,
+    insights.length,
+    lockInsightNavigation,
+    logEvents,
+    openingInsightId,
+    router,
+  ]);
 
   const spent = Number(displayPersonalBudget?.total?.spent || 0);
   const householdSpent = Number(displayHouseholdBudget?.total?.spent || 0);
@@ -475,42 +402,6 @@ export default function SummaryScreen() {
   function openGmailSetup() {
     router.push('/gmail-import');
   }
-
-  function handleMovementCTA(cta = {}) {
-    if (cta.target === 'actions') {
-      router.push('/(tabs)/pending');
-      return;
-    }
-    if (cta.target === 'gmail') {
-      router.push('/gmail-import');
-      return;
-    }
-    if (cta.target === 'settings') {
-      router.push('/(tabs)/settings');
-      return;
-    }
-    if (cta.target === 'add') {
-      openQuickAddWelcome();
-      return;
-    }
-    if (displayInsights[0]) {
-      handlePressInsight(displayInsights[0]);
-      return;
-    }
-    router.push('/(tabs)');
-  }
-
-  function formatSnapshotTime(value) {
-    if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-
-  const snapshotTime = formatSnapshotTime(summarySnapshot?.saved_at);
-  const summaryFreshnessLabel = isUsingSummarySnapshot
-    ? `${gmailImportSummaryLoading || watchedPlansLoading || expensesLoading || pendingExpensesLoading || personalBudgetLoading || (isMultiMember && (householdBudgetLoading || householdExpensesLoading)) ? 'Using saved summary while refreshing' : 'Showing saved summary'}${snapshotTime ? ` from ${snapshotTime}` : ''}`
-    : '';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -602,20 +493,12 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      <SummaryForecastMovement
-        styles={styles}
-        movement={displayForecastMovement}
-        loading={forecastMovementLoading && !displayForecastMovement}
-        freshnessLabel={summaryFreshnessLabel}
-        onPressCTA={handleMovementCTA}
-      />
-
       <SummaryInsightsRail
         styles={styles}
         displayInsights={displayInsights}
         loading={insightsLoading}
         insightsError={insightsError}
-        refreshInsights={refreshInsights}
+        refreshInsights={handleRetryInsights}
         hasMultipleInsights={hasMultipleInsights}
         insightCardWidth={insightCardWidth}
         handlePressInsight={handlePressInsight}
@@ -986,50 +869,6 @@ const styles = StyleSheet.create({
   },
   quickEntryProcessingText: { color: colors.textMuted, fontSize: 12, flex: 1, lineHeight: 17 },
   entryModeSpacer: { height: 24, marginTop: 10 },
-
-  movementSection: { marginTop: 2, marginBottom: 24 },
-  movementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  movementSource: { color: colors.textDisabled, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.7 },
-  movementCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  movementIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  movementSkeletonIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceRaised },
-  movementSkeletonTitle: { width: '58%', height: 14, borderRadius: 5, backgroundColor: colors.surfaceRaised },
-  movementSkeletonBody: { width: '88%', height: 11, borderRadius: 5, backgroundColor: colors.surfaceMuted, marginTop: 4 },
-  movementSkeletonBodyShort: { width: '52%', height: 11, borderRadius: 5, backgroundColor: colors.surfaceMuted },
-  movementToneNeutral: { backgroundColor: colors.neutralWash, borderColor: colors.neutralWashBorder },
-  movementToneInfo: { backgroundColor: colors.infoMuted, borderColor: colors.infoBorder },
-  movementToneWarning: { backgroundColor: colors.warningMuted, borderColor: colors.warningBorder },
-  movementTonePositive: { backgroundColor: colors.successMuted, borderColor: colors.successBorder },
-  movementCopy: { flex: 1, minWidth: 0, gap: 3 },
-  movementTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  movementBody: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
-  movementMetric: { color: colors.textMuted, fontSize: 12, fontWeight: '700', marginTop: 2 },
-  movementFreshness: { color: colors.textDisabled, fontSize: 11, marginTop: 4 },
-  movementCTA: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 3,
-    maxWidth: 96,
-  },
-  movementCTAText: { color: colors.textMuted, fontSize: 12, fontWeight: '800', textAlign: 'right' },
 
   monthPickerOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   monthPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },

@@ -1,7 +1,28 @@
 const db = require('../db');
 
+const CATEGORY_CACHE_TTL_MS = Math.max(1000, Number(process.env.CATEGORY_CACHE_TTL_MS) || 60 * 1000);
+const categoryCache = new Map();
+
+function cacheKey(householdId, includeHidden) {
+  return `${householdId || 'personal'}:${includeHidden ? 'all' : 'visible'}`;
+}
+
+function cloneRows(rows = []) {
+  return rows.map((row) => ({ ...row }));
+}
+
+function clearCategoryCache() {
+  categoryCache.clear();
+}
+
 async function findByHousehold(householdId, { includeHidden = false } = {}) {
-  const result = await db.query(
+  const key = cacheKey(householdId, includeHidden);
+  const cached = categoryCache.get(key);
+  if (cached?.expiresAt > Date.now()) {
+    return cloneRows(await cached.rowsPromise);
+  }
+
+  const rowsPromise = db.query(
     `SELECT c.id,
             c.household_id,
             COALESCE(oco.display_name, c.name) AS name,
@@ -24,8 +45,17 @@ async function findByHousehold(householdId, { includeHidden = false } = {}) {
        ${includeHidden ? '' : 'AND COALESCE(oco.hidden, FALSE) = FALSE'}
      ORDER BY c.sort_order ASC, c.name ASC`,
     [householdId]
-  );
-  return result.rows;
+  ).then((result) => result.rows);
+  categoryCache.set(key, {
+    expiresAt: Date.now() + CATEGORY_CACHE_TTL_MS,
+    rowsPromise,
+  });
+  try {
+    return cloneRows(await rowsPromise);
+  } catch (err) {
+    categoryCache.delete(key);
+    throw err;
+  }
 }
 
 async function findAccessibleById(id, householdId) {
@@ -50,6 +80,7 @@ async function create({ householdId, name, icon, color, parentId = null }) {
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [householdId, name, icon, color, parentId]
   );
+  clearCategoryCache();
   return result.rows[0];
 }
 
@@ -78,6 +109,7 @@ async function update({ id, householdId, name, icon, color, parentId, sortOrder 
      RETURNING *`,
     params
   );
+  clearCategoryCache();
   return result.rows[0] || null;
 }
 
@@ -93,6 +125,7 @@ async function upsertOverride({ categoryId, householdId, hidden, displayName }) 
      RETURNING *`,
     [householdId, categoryId, hidden, displayName && displayName.trim() ? displayName.trim() : null]
   );
+  clearCategoryCache();
   return result.rows[0] || null;
 }
 
@@ -121,6 +154,7 @@ async function remove({ id, householdId }) {
   } else {
     await db.query('DELETE FROM categories WHERE id = $1 AND household_id IS NULL', [id]);
   }
+  clearCategoryCache();
   return { deleted: true, category_id: id };
 }
 
@@ -177,6 +211,7 @@ async function merge({ sourceId, targetId, householdId }) {
     );
 
     await client.query('COMMIT');
+    clearCategoryCache();
     return {
       source_id: sourceId,
       target_id: targetId,
@@ -202,4 +237,5 @@ module.exports = {
   renameDefaultForHousehold,
   remove,
   merge,
+  clearCategoryCache,
 };

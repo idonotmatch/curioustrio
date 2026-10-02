@@ -11,6 +11,7 @@ const {
 const EXPLICIT_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL || ''}`.trim() || null;
 const LOCAL_BASE_URLS = ['http://127.0.0.1:3001', 'http://127.0.0.1:3002'];
 let activeBaseUrl = EXPLICIT_BASE_URL;
+const inFlightGets = new Map();
 
 function deriveExpoHostBaseUrls() {
   return [
@@ -100,7 +101,19 @@ async function request(path, options = {}, tokenOverride) {
 }
 
 export const api = {
-  get: (path, { token } = {}) => request(path, {}, token),
+  get: async (path, { token, dedupe = true } = {}) => {
+    const resolvedToken = token !== undefined ? token : await getToken();
+    if (!dedupe) return request(path, {}, resolvedToken);
+
+    const key = `${resolvedToken || 'anonymous'}:${path}`;
+    const existing = inFlightGets.get(key);
+    if (existing) return existing;
+
+    const pending = request(path, {}, resolvedToken)
+      .finally(() => inFlightGets.delete(key));
+    inFlightGets.set(key, pending);
+    return pending;
+  },
   post: (path, body, { token } = {}) => request(path, { method: 'POST', body: JSON.stringify(body) }, token),
   put: (path, body, { token } = {}) => request(path, { method: 'PUT', body: JSON.stringify(body) }, token),
   patch: (path, body, { token } = {}) => request(path, { method: 'PATCH', body: JSON.stringify(body) }, token),

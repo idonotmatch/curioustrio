@@ -13,29 +13,60 @@ export function useExpenses(month, startDayOverride) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options = {}) => {
     setError(null);
     const params = [
       month && `month=${month}`,
       startDayOverride && `start_day=${startDayOverride}`,
     ].filter(Boolean).join('&');
-    const url = params ? `/expenses?${params}` : '/expenses';
+    const pageParams = [params, 'paginated=1', 'limit=25'].filter(Boolean).join('&');
+    const url = `/expenses?${pageParams}`;
     await loadWithCache(
-      `cache:expenses:${month || 'all'}:${startDayOverride || 'default'}`,
+      `cache:expenses:v2:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => {
-        setExpenses(data);
+        const items = sanitizeExpenseCollection(data?.items || []);
+        setExpenses(items);
+        setNextCursor(data?.next_cursor || null);
         setLoading(false);
-        saveExpenseSnapshots(data);
+        saveExpenseSnapshots(items);
       },
       (err) => { setError(err.message); setLoading(false); },
-      { serialize: sanitizeExpenseCollection },
+      { forceRefresh: options?.forceRefresh === true },
     );
   }, [month, startDayOverride]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = [
+        month && `month=${month}`,
+        startDayOverride && `start_day=${startDayOverride}`,
+        'paginated=1',
+        'limit=25',
+        `cursor=${encodeURIComponent(nextCursor)}`,
+      ].filter(Boolean).join('&');
+      const data = await api.get(`/expenses?${params}`);
+      const items = sanitizeExpenseCollection(data?.items || []);
+      setExpenses((current) => {
+        const seen = new Set(current.map((expense) => expense.id));
+        return [...current, ...items.filter((expense) => !seen.has(expense.id))];
+      });
+      setNextCursor(data?.next_cursor || null);
+      saveExpenseSnapshots(items);
+    } catch (err) {
+      setError(err?.message || 'Could not load more transactions');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, month, nextCursor, startDayOverride]);
 
   useEffect(() => { refresh(); }, [refresh]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.expenses, refresh);
 
-  return { expenses, loading, error, refresh };
+  return { expenses, loading, loadingMore, hasMore: !!nextCursor, error, refresh, loadMore };
 }

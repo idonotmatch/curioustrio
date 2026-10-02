@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
@@ -10,8 +10,12 @@ export function useHousehold() {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const forceRefreshRef = useRef(false);
 
-  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+  const refresh = useCallback((options = {}) => {
+    if (options?.forceRefresh) forceRefreshRef.current = true;
+    setRefreshKey(k => k + 1);
+  }, []);
 
   useEffect(() => {
     loadWithCache(
@@ -28,7 +32,9 @@ export function useHousehold() {
         setMembers([]);
         setLoading(false);
       },
+      { forceRefresh: forceRefreshRef.current },
     );
+    forceRefreshRef.current = false;
   }, [refreshKey]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.household, refresh);
 

@@ -38,47 +38,74 @@ function filterSuppressedInsights(insights = [], suppressedMap = new Map()) {
 export function useInsights(limit = 5, options = {}) {
   const fetchLimit = Math.max(limit, Number(options?.fetchLimit) || limit);
   const freezeFirstPaint = options?.freezeFirstPaint === true;
+  const minRefreshIntervalMs = Math.max(0, Number(options?.minRefreshIntervalMs ?? 15000));
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dismissedSuppressions, setDismissedSuppressions] = useState(() => new Map());
   const initialRefreshCompletedRef = useRef(false);
+  const refreshInFlightRef = useRef(null);
+  const lastRefreshStartedAtRef = useRef(0);
   const cacheKey = `cache:insights:v2:${limit}:${fetchLimit}`;
 
-  const refresh = useCallback(async () => {
-    setError(null);
-    let deliveryCount = 0;
-    await loadWithCache(
-      cacheKey,
-      () => api.get(`/insights?limit=${fetchLimit}`),
-      (data) => {
-        deliveryCount += 1;
-        if (freezeFirstPaint && !initialRefreshCompletedRef.current && deliveryCount > 1) {
-          return;
-        }
-        const filtered = filterSuppressedInsights(data || [], dismissedSuppressions);
-        setInsights(filtered.slice(0, limit));
-        setLoading(false);
-        setError(null);
-      },
-      (err) => { setInsights([]); setLoading(false); setError(err?.message || 'Could not load insights'); },
-    );
-    initialRefreshCompletedRef.current = true;
-  }, [cacheKey, fetchLimit, freezeFirstPaint, limit, dismissedSuppressions]);
+  const refresh = useCallback(async (context = {}) => {
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
+    const reason = `${context?.reason || ''}`;
+    const force = context?.force === true || reason === 'data_changed' || reason === 'handler_registered';
+    const now = Date.now();
+    if (
+      initialRefreshCompletedRef.current
+      && !force
+      && minRefreshIntervalMs > 0
+      && now - lastRefreshStartedAtRef.current < minRefreshIntervalMs
+    ) {
+      return Promise.resolve();
+    }
+
+    lastRefreshStartedAtRef.current = now;
+    const refreshPromise = (async () => {
+      setError(null);
+      let deliveryCount = 0;
+      try {
+        await loadWithCache(
+          cacheKey,
+          () => api.get(`/insights?limit=${fetchLimit}`),
+          (data) => {
+            deliveryCount += 1;
+            if (freezeFirstPaint && !initialRefreshCompletedRef.current && deliveryCount > 1) {
+              return;
+            }
+            const filtered = filterSuppressedInsights(data || [], dismissedSuppressions);
+            setInsights(filtered.slice(0, limit));
+            setLoading(false);
+            setError(null);
+          },
+          (err) => { setInsights([]); setLoading(false); setError(err?.message || 'Could not load insights'); },
+          { forceRefresh: force || context?.forceRefresh === true },
+        );
+      } finally {
+        initialRefreshCompletedRef.current = true;
+        refreshInFlightRef.current = null;
+      }
+    })();
+
+    refreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
+  }, [cacheKey, fetchLimit, freezeFirstPaint, limit, minRefreshIntervalMs, dismissedSuppressions]);
 
   const markSeen = useCallback(async (ids = []) => {
     const cleanIds = ids.filter(Boolean);
     if (!cleanIds.length) return;
     try {
       await api.post('/insights/seen', { ids: cleanIds });
-      await invalidateCacheByPrefix('cache:insights:');
       setInsights((current) => current.map((insight) => (
         cleanIds.includes(insight.id)
           ? { ...insight, state: { status: 'seen', updated_at: new Date().toISOString() } }
           : insight
       )));
     } catch {}
-  }, [cacheKey]);
+  }, []);
 
   const dismiss = useCallback(async (id, metadata = null) => {
     if (!id) return;
@@ -103,7 +130,7 @@ export function useInsights(limit = 5, options = {}) {
     }));
     await api.post(`/insights/${encodeURIComponent(id)}/dismiss`, metadata ? { metadata } : {});
     await invalidateCacheByPrefix('cache:insights:');
-    await refresh();
+    await refresh({ force: true });
   }, [refresh]);
 
   const logEvents = useCallback(async (events = []) => {

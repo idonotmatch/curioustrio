@@ -10,12 +10,15 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options = {}) => {
     if (!enabled) {
       setExpenses([]);
       setError(null);
       setLoading(false);
+      setNextCursor(null);
       return;
     }
     setError(null);
@@ -23,19 +26,48 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
       month && `month=${month}`,
       startDayOverride && `start_day=${startDayOverride}`,
     ].filter(Boolean).join('&');
-    const url = params ? `/expenses/household?${params}` : '/expenses/household';
+    const pageParams = [params, 'paginated=1', 'limit=25'].filter(Boolean).join('&');
+    const url = `/expenses/household?${pageParams}`;
     await loadWithCache(
-      `cache:household-expenses:${month || 'all'}:${startDayOverride || 'default'}`,
+      `cache:household-expenses:v2:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => {
-        setExpenses(data);
+        const items = sanitizeExpenseCollection(data?.items || []);
+        setExpenses(items);
+        setNextCursor(data?.next_cursor || null);
         setLoading(false);
-        saveExpenseSnapshots(data);
+        saveExpenseSnapshots(items);
       },
       (err) => { setError(err.message); setLoading(false); },
-      { serialize: sanitizeExpenseCollection },
+      { forceRefresh: options?.forceRefresh === true },
     );
   }, [enabled, month, startDayOverride]);
+
+  const loadMore = useCallback(async () => {
+    if (!enabled || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = [
+        month && `month=${month}`,
+        startDayOverride && `start_day=${startDayOverride}`,
+        'paginated=1',
+        'limit=25',
+        `cursor=${encodeURIComponent(nextCursor)}`,
+      ].filter(Boolean).join('&');
+      const data = await api.get(`/expenses/household?${params}`);
+      const items = sanitizeExpenseCollection(data?.items || []);
+      setExpenses((current) => {
+        const seen = new Set(current.map((expense) => expense.id));
+        return [...current, ...items.filter((expense) => !seen.has(expense.id))];
+      });
+      setNextCursor(data?.next_cursor || null);
+      saveExpenseSnapshots(items);
+    } catch (err) {
+      setError(err?.message || 'Could not load more transactions');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [enabled, loadingMore, month, nextCursor, startDayOverride]);
 
   useEffect(() => { refresh(); }, [refresh]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.householdExpenses, refresh);
@@ -43,5 +75,5 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
   // Server already filtered by month — sum all returned expenses
   const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
-  return { expenses, loading, error, refresh, total };
+  return { expenses, loading, loadingMore, hasMore: !!nextCursor, error, refresh, loadMore, total };
 }

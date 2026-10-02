@@ -8,7 +8,7 @@ export function useCategories() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options = {}) => {
     await loadWithCache(
       'cache:categories',
       async () => {
@@ -17,6 +17,7 @@ export function useCategories() {
       },
       (data) => { setCategories(data); setLoading(false); },
       () => setLoading(false),
+      { forceRefresh: options?.forceRefresh === true },
     );
   }, []);
 

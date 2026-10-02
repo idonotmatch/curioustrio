@@ -1,7 +1,9 @@
 jest.mock('../../src/models/emailImportLog', () => ({
   summarizeByUser: jest.fn(),
   listQualitySignalsByUser: jest.fn(),
+  listQualitySignalsBySender: jest.fn(),
   listDecisionFeedbackByUser: jest.fn(),
+  listDecisionFeedbackBySender: jest.fn(),
   listTemplateSignalsByUser: jest.fn(),
 }));
 jest.mock('../../src/models/gmailSenderPreference', () => ({
@@ -24,13 +26,21 @@ describe('gmailImportQualityService', () => {
   beforeEach(() => {
     EmailImportLog.summarizeByUser.mockReset();
     EmailImportLog.listQualitySignalsByUser.mockReset();
+    EmailImportLog.listQualitySignalsBySender.mockReset();
     EmailImportLog.listDecisionFeedbackByUser.mockReset();
+    EmailImportLog.listDecisionFeedbackBySender.mockReset();
     EmailImportLog.listTemplateSignalsByUser.mockReset();
     GmailSenderPreference.findByUserAndDomain.mockReset();
     GmailSenderPreference.listByUser.mockReset();
     GmailSenderPreference.findByUserAndDomain.mockResolvedValue(null);
     GmailSenderPreference.listByUser.mockResolvedValue([]);
     EmailImportLog.listDecisionFeedbackByUser.mockResolvedValue([]);
+    EmailImportLog.listQualitySignalsBySender.mockImplementation((userId, senderDomain, days) => (
+      EmailImportLog.listQualitySignalsByUser(userId, days)
+    ));
+    EmailImportLog.listDecisionFeedbackBySender.mockImplementation((userId, senderDomain, days) => (
+      EmailImportLog.listDecisionFeedbackByUser(userId, days)
+    ));
     EmailImportLog.listTemplateSignalsByUser.mockResolvedValue([]);
   });
 

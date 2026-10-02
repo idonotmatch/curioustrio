@@ -34,6 +34,7 @@ const {
   fetchPendingExpensesBase,
 } = require('../services/expenseReviewContext');
 const db = require('../db');
+const { buildExpensePage, decodeExpenseCursor } = require('../services/expensePagination');
 
 router.use(authenticate);
 
@@ -315,8 +316,17 @@ router.get('/', async (req, res, next) => {
     if (categoryId !== undefined && categoryId !== null && categoryId !== '' && categoryId !== 'uncategorized' && !UUID_RE.test(categoryId)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
-    const expenses = await Expense.findByUser(user.id, { month, startDay, categoryId: categoryId || null });
-    res.json(expenses);
+    const paginated = req.query.paginated === '1' || req.query.paginated === 'true';
+    const pageSize = Math.max(1, Math.min(Number(req.query.limit) || 25, 50));
+    const cursor = req.query.cursor ? decodeExpenseCursor(req.query.cursor) : null;
+    if (req.query.cursor && !cursor) return res.status(400).json({ error: 'cursor is invalid' });
+    const expenses = await Expense.findByUser(user.id, {
+      month,
+      startDay,
+      categoryId: categoryId || null,
+      ...(paginated ? { limit: pageSize + 1, cursor } : {}),
+    });
+    res.json(paginated ? buildExpensePage(expenses, pageSize) : expenses);
   } catch (err) { next(err); }
 });
 
@@ -332,10 +342,15 @@ router.get('/household', async (req, res, next) => {
     if (categoryId !== undefined && categoryId !== null && categoryId !== '' && categoryId !== 'uncategorized' && !UUID_RE.test(categoryId)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
+    const paginated = req.query.paginated === '1' || req.query.paginated === 'true';
+    const pageSize = Math.max(1, Math.min(Number(req.query.limit) || 25, 50));
+    const cursor = req.query.cursor ? decodeExpenseCursor(req.query.cursor) : null;
+    if (req.query.cursor && !cursor) return res.status(400).json({ error: 'cursor is invalid' });
+    const pagination = paginated ? { limit: pageSize + 1, cursor } : {};
     const expenses = user.household_id
-      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay, categoryId: categoryId || null })
-      : await Expense.findByUser(user.id, { month, startDay, categoryId: categoryId || null });
-    res.json(expenses);
+      ? await Expense.findByHousehold(user.household_id, { userId: user.id, month, startDay, categoryId: categoryId || null, ...pagination })
+      : await Expense.findByUser(user.id, { month, startDay, categoryId: categoryId || null, ...pagination });
+    res.json(paginated ? buildExpensePage(expenses, pageSize) : expenses);
   } catch (err) { next(err); }
 });
 

@@ -1,4 +1,5 @@
 const HouseholdFreshnessEvent = require('../models/householdFreshnessEvent');
+const UserSummarySnapshot = require('../models/userSummarySnapshot');
 
 const DOMAINS = Object.freeze({
   expenses: 'expenses',
@@ -22,6 +23,15 @@ const EXPENSE_DOMAINS = [
   DOMAINS.forecastMovement,
 ];
 
+const SUMMARY_DOMAINS = new Set([
+  DOMAINS.expenses,
+  DOMAINS.householdExpenses,
+  DOMAINS.budget,
+  DOMAINS.household,
+  DOMAINS.categories,
+  DOMAINS.watchedPlans,
+]);
+
 function eventScopeForUser(user, { privateOnly = false } = {}) {
   return {
     householdId: privateOnly ? null : (user?.household_id || null),
@@ -40,10 +50,25 @@ async function emitFreshnessEvent(user, {
   targetUserId = null,
 } = {}) {
   const scope = eventScopeForUser(user, { privateOnly });
+  const cleanTargetUserId = targetUserId || scope.targetUserId;
+  const affectsSummary = (Array.isArray(domains) ? domains : [domains])
+    .some((domain) => SUMMARY_DOMAINS.has(domain));
+  if (affectsSummary) {
+    UserSummarySnapshot.invalidateScope({
+      userId: scope.userId,
+      householdId: scope.householdId,
+      targetUserId: cleanTargetUserId,
+    }).catch((err) => {
+      console.error('[freshness event] summary invalidation failed', {
+        user_id: user?.id || null,
+        message: err?.message || String(err || 'unknown_error'),
+      });
+    });
+  }
   try {
     return await HouseholdFreshnessEvent.create({
       ...scope,
-      targetUserId: targetUserId || scope.targetUserId,
+      targetUserId: cleanTargetUserId,
       eventType,
       domains,
       entityType,

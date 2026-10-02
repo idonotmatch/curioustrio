@@ -58,6 +58,9 @@ const MIGRATION_PLAN = [
   '062_insight_forecasts.sql',
   '063_insight_forecast_snapshots.sql',
   '064_household_freshness_events.sql',
+  '065_egress_optimization_indexes.sql',
+  '066_insight_portfolio_snapshots.sql',
+  '067_user_summary_snapshots.sql',
 ];
 
 module.exports = {

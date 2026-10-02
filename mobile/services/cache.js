@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+const { isCacheFresh } = require('./cachePolicy');
+
+const DEFAULT_MAX_AGE_MS = 30 * 1000;
 
 function normalizeCacheData(data, serialize) {
   try {
@@ -9,24 +12,30 @@ function normalizeCacheData(data, serialize) {
 }
 
 /**
- * Stale-while-revalidate: serve cache immediately, always background-fetch.
+ * Fresh-while-revalidate: serve cache immediately and only revalidate stale data.
  * Use for data that can be updated by other parties (household members, server-side sync).
  *
  * 1. If a cached value exists, calls onData immediately (instant render, no spinner).
- * 2. Always fetches fresh data in the background regardless of cache age.
+ * 2. Skips the network while the cached value is inside its freshness window.
  * 3. Calls onData again with fresh data and writes it back to cache.
  * 4. Calls onError if the network fetch fails and no cache was served.
  */
-export async function loadWithCache(key, fetcher, onData, onError, { serialize } = {}) {
+export async function loadWithCache(key, fetcher, onData, onError, {
+  serialize,
+  maxAgeMs = DEFAULT_MAX_AGE_MS,
+  forceRefresh = false,
+} = {}) {
   let served = false;
+  let cacheIsFresh = false;
 
   try {
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
-      const { data } = JSON.parse(raw);
+      const { data, ts } = JSON.parse(raw);
       const normalized = normalizeCacheData(data, serialize);
       onData(normalized);
       served = true;
+      cacheIsFresh = isCacheFresh(ts, maxAgeMs);
       if (normalized !== data) {
         AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
       }
@@ -34,6 +43,8 @@ export async function loadWithCache(key, fetcher, onData, onError, { serialize }
   } catch {
     // cache read failure is non-fatal
   }
+
+  if (served && cacheIsFresh && !forceRefresh) return;
 
   try {
     const fresh = await fetcher();
@@ -54,17 +65,22 @@ export async function loadWithCache(key, fetcher, onData, onError, { serialize }
  * 2. If no cache (first load or after invalidation), fetches, caches, then calls onData.
  * 3. Calls onError if fetch fails and no cache was served.
  */
-export async function loadCacheOnly(key, fetcher, onData, onError, { serialize } = {}) {
+export async function loadCacheOnly(key, fetcher, onData, onError, {
+  serialize,
+  forceRefresh = false,
+} = {}) {
+  let served = false;
   try {
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
       const { data } = JSON.parse(raw);
       const normalized = normalizeCacheData(data, serialize);
       onData(normalized);
+      served = true;
       if (normalized !== data) {
         AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
       }
-      return; // cache hit — skip network entirely
+      if (!forceRefresh) return; // cache hit — skip network entirely
     }
   } catch {
     // cache read failure is non-fatal — fall through to network
@@ -76,7 +92,7 @@ export async function loadCacheOnly(key, fetcher, onData, onError, { serialize }
     const normalized = normalizeCacheData(fresh, serialize);
     AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
   } catch (err) {
-    if (onError) onError(err);
+    if (!served && onError) onError(err);
   }
 }
 

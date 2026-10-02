@@ -24,6 +24,7 @@ const pushRouter = require('./routes/push');
 const placesRouter = require('./routes/places');
 const priceObservationsRouter = require('./routes/priceObservations');
 const freshnessRouter = require('./routes/freshness');
+const summaryRouter = require('./routes/summary');
 const cronRouter = require('./routes/cron');
 const { seedDefaultCategories } = require('./db');
 const { runStartupChecks } = require('./startup/runStartupChecks');
@@ -99,6 +100,7 @@ app.use('/push', pushRouter);
 app.use('/places', placesRouter);
 app.use('/price-observations', priceObservationsRouter);
 app.use('/freshness', freshnessRouter);
+app.use('/summary', summaryRouter);
 app.use('/cron', cronRouter);
 app.use(errorHandler);
 

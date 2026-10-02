@@ -8,12 +8,26 @@ import { buildMockPendingExpenses } from '../fixtures/mockGmailImport';
 const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
 
 const FORCE_MOCK_PENDING_PREVIEW = false;
+const OPTIMISTIC_REMOVE_TTL_MS = 2 * 60 * 1000;
 let mockPendingExpensesState = buildMockPendingExpenses();
 let sharedPendingExpenses = [];
+const optimisticallyRemovedPendingIds = new Map();
 const subscribers = new Set();
 
+function pruneOptimisticRemovals(now = Date.now()) {
+  for (const [id, expiresAt] of optimisticallyRemovedPendingIds.entries()) {
+    if (expiresAt <= now) optimisticallyRemovedPendingIds.delete(id);
+  }
+}
+
+function filterOptimisticallyRemoved(expenses = []) {
+  pruneOptimisticRemovals();
+  if (!optimisticallyRemovedPendingIds.size) return expenses;
+  return expenses.filter((expense) => !optimisticallyRemovedPendingIds.has(expense?.id));
+}
+
 function publishPendingExpenses(nextExpenses) {
-  sharedPendingExpenses = Array.isArray(nextExpenses) ? nextExpenses : [];
+  sharedPendingExpenses = filterOptimisticallyRemoved(Array.isArray(nextExpenses) ? nextExpenses : []);
   subscribers.forEach((callback) => {
     try {
       callback(sharedPendingExpenses);
@@ -25,7 +39,16 @@ function publishPendingExpenses(nextExpenses) {
 
 export function removePendingExpense(id) {
   if (!id) return;
+  optimisticallyRemovedPendingIds.set(id, Date.now() + OPTIMISTIC_REMOVE_TTL_MS);
   publishPendingExpenses(sharedPendingExpenses.filter((expense) => expense.id !== id));
+}
+
+export function restorePendingExpense(expense) {
+  if (!expense?.id) return;
+  optimisticallyRemovedPendingIds.delete(expense.id);
+  const exists = sharedPendingExpenses.some((item) => item?.id === expense.id);
+  if (exists) return;
+  publishPendingExpenses([expense, ...sharedPendingExpenses]);
 }
 
 export function usePendingExpenses() {
@@ -34,7 +57,7 @@ export function usePendingExpenses() {
   const [loading, setLoading] = useState(!isUsingMockData);
   const [error, setError] = useState(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options = {}) => {
     if (isUsingMockData) {
       setExpenses([...mockPendingExpensesState]);
       setLoading(false);
@@ -51,7 +74,7 @@ export function usePendingExpenses() {
         saveExpenseSnapshots(data);
       },
       (err) => { setError(err.message); setLoading(false); },
-      { serialize: sanitizeExpenseCollection },
+      { serialize: sanitizeExpenseCollection, forceRefresh: options?.forceRefresh === true },
     );
   }, [isUsingMockData]);
 

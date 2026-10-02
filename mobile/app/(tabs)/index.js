@@ -1,4 +1,4 @@
-import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
@@ -175,8 +175,8 @@ export default function FeedScreen() {
   const [selectedMonth, setSelectedMonth] = useState(() => currentPeriod(transactionStartDay));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showSortPicker, setShowSortPicker] = useState(false);
-  const { expenses: myExpenses, loading: myLoading, error: myError, refresh: refreshMine } = useExpenses(selectedMonth, transactionStartDay);
-  const { expenses: householdExpenses, loading: householdLoading, error: householdError, refresh: refreshHouseholdExpenses } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
+  const { expenses: myExpenses, loading: myLoading, loadingMore: myLoadingMore, hasMore: myHasMore, error: myError, refresh: refreshMine, loadMore: loadMoreMine } = useExpenses(selectedMonth, transactionStartDay);
+  const { expenses: householdExpenses, loading: householdLoading, loadingMore: householdLoadingMore, hasMore: householdHasMore, error: householdError, refresh: refreshHouseholdExpenses, loadMore: loadMoreHousehold } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
   const { budget: personalBudget, error: personalBudgetError, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, error: householdBudgetError, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { categories } = useCategories();
@@ -189,6 +189,9 @@ export default function FeedScreen() {
   const loading = mode === 'mine' ? myLoading : householdLoading;
   const expenseError = mode === 'mine' ? myError : householdError;
   const budgetError = mode === 'mine' ? personalBudgetError : householdBudgetError;
+  const loadingMore = mode === 'mine' ? myLoadingMore : householdLoadingMore;
+  const hasMore = mode === 'mine' ? myHasMore : householdHasMore;
+  const loadMore = mode === 'mine' ? loadMoreMine : loadMoreHousehold;
   const currentSortLabel = SORT_OPTIONS.find((option) => option.key === sortKey)?.label || 'Newest';
 
   const [displayExpenses, setDisplayExpenses] = useState([]);
@@ -200,11 +203,11 @@ export default function FeedScreen() {
     setRefreshing(true);
     try {
       await Promise.all([
-        refreshMine(),
-        isMultiMember ? refreshHouseholdExpenses() : Promise.resolve(),
-        refreshPersonalBudget(),
-        isMultiMember ? refreshHouseholdBudget() : Promise.resolve(),
-        Promise.resolve(refreshHousehold()),
+        refreshMine({ forceRefresh: true }),
+        isMultiMember ? refreshHouseholdExpenses({ forceRefresh: true }) : Promise.resolve(),
+        refreshPersonalBudget({ forceRefresh: true }),
+        isMultiMember ? refreshHouseholdBudget({ forceRefresh: true }) : Promise.resolve(),
+        Promise.resolve(refreshHousehold({ forceRefresh: true })),
       ]);
     } finally {
       refreshInFlightRef.current = false;
@@ -270,6 +273,13 @@ export default function FeedScreen() {
         contentContainerStyle={styles.list}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
+        onEndReached={() => {
+          if (hasMore && !loadingMore) loadMore();
+        }}
+        onEndReachedThreshold={0.35}
+        ListFooterComponent={loadingMore ? (
+          <ActivityIndicator style={styles.loadingMore} color={colors.textMuted} />
+        ) : null}
         ListHeaderComponent={
           expenseError || budgetError ? (
             <View style={styles.feedErrorState}>
@@ -382,6 +392,7 @@ const styles = StyleSheet.create({
   spendSub: { fontSize: 12, color: colors.textDisabled },
 
   list: { padding: 16, paddingBottom: 88 },
+  loadingMore: { paddingVertical: 20 },
   empty: { color: colors.textSubtle, textAlign: 'center', marginTop: 40, fontSize: 15 },
   feedErrorState: {
     marginHorizontal: 16,

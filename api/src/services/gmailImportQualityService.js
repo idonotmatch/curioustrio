@@ -725,8 +725,8 @@ async function getSenderImportQuality(userId, fromAddress, days = 90) {
   const senderDomain = extractSenderDomain(fromAddress);
   const senderPreference = await GmailSenderPreference.findByUserAndDomain(userId, senderDomain);
   const [rows, feedbackRows] = await Promise.all([
-    EmailImportLog.listQualitySignalsByUser(userId, safeDays),
-    EmailImportLog.listDecisionFeedbackByUser(userId, safeDays),
+    EmailImportLog.listQualitySignalsBySender(userId, senderDomain, safeDays),
+    EmailImportLog.listDecisionFeedbackBySender(userId, senderDomain, safeDays),
   ]);
   const senderRows = rows.filter((row) => rowSenderDomain(row) === senderDomain);
   const senderFeedbackSummary = summarizeSenderFeedback(

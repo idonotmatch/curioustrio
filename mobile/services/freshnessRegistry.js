@@ -49,7 +49,7 @@ function scheduleListener(listener, delayMs = DEFAULT_REFRESH_DELAY_MS, reason =
     if (!domains.length) return;
 
     domains.forEach((domain) => listener.seenVersions.set(domain, currentVersion(domain)));
-    Promise.resolve(listener.refresh({ domains, reason })).catch((err) => {
+    Promise.resolve(listener.refresh({ domains, reason, forceRefresh: true })).catch((err) => {
       if (__DEV__) {
         console.warn('[freshness] quiet refresh failed', err?.message || err);
       }

@@ -5,6 +5,21 @@
 -- created by 003_budgets_refunds_push.sql cannot be targeted by the
 -- ON CONFLICT (household_id, category_id) column-list syntax when category_id
 -- is NULL, causing an error on every save of the total monthly budget.
-ALTER TABLE budget_settings
-  RENAME CONSTRAINT budget_settings_household_id_category_id_key
-    TO budget_settings_household_category_uq;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'budget_settings'::regclass
+      AND conname = 'budget_settings_household_id_category_id_key'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'budget_settings'::regclass
+      AND conname = 'budget_settings_household_category_uq'
+  ) THEN
+    ALTER TABLE budget_settings
+      RENAME CONSTRAINT budget_settings_household_id_category_id_key
+        TO budget_settings_household_category_uq;
+  END IF;
+END $$;

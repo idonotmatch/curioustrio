@@ -23,14 +23,19 @@ CREATE INDEX IF NOT EXISTS household_freshness_events_user_created_idx
 ALTER TABLE household_freshness_events ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS household_freshness_events_select ON household_freshness_events;
-CREATE POLICY household_freshness_events_select
-  ON household_freshness_events
-  FOR SELECT
-  USING (
-    user_id IN (SELECT id FROM users WHERE provider_uid = auth.uid()::TEXT)
-    OR target_user_id IN (SELECT id FROM users WHERE provider_uid = auth.uid()::TEXT)
-    OR household_id IN (SELECT household_id FROM users WHERE provider_uid = auth.uid()::TEXT)
-  );
+DO $$
+BEGIN
+  IF to_regprocedure('auth.uid()') IS NOT NULL THEN
+    CREATE POLICY household_freshness_events_select
+      ON household_freshness_events
+      FOR SELECT
+      USING (
+        user_id IN (SELECT id FROM users WHERE provider_uid = auth.uid()::TEXT)
+        OR target_user_id IN (SELECT id FROM users WHERE provider_uid = auth.uid()::TEXT)
+        OR household_id IN (SELECT household_id FROM users WHERE provider_uid = auth.uid()::TEXT)
+      );
+  END IF;
+END $$;
 
 DO $$
 BEGIN

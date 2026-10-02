@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const InsightState = require('../models/insightState');
 const InsightEvent = require('../models/insightEvent');
+const InsightPortfolioSnapshot = require('../models/insightPortfolioSnapshot');
 const { buildInsightsForUser, buildInsightDebugForUser, buildInsightPreferencesForUser } = require('../services/insightBuilder');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 const { buildFeedbackDebugSummary } = require('../services/insightFeedbackSummary');
@@ -61,7 +62,7 @@ function buildCalibrationDebugResponse(debug = {}) {
     final_count: debug.final?.count || 0,
     surface_summary: debug.surface_summary || null,
     ranking_comparison: {
-      legacy_top,
+      legacy_top: legacyTop,
       threshold_top: thresholdTop,
       newly_dropped_from_legacy_top: legacyTop.filter((legacy) => !thresholdTop.some((next) => next.id === legacy.id)),
       newly_added_to_threshold_top: thresholdTop.filter((next) => !legacyTop.some((legacy) => legacy.id === next.id)),
@@ -127,11 +128,35 @@ router.get('/', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
-    const insights = await attachInsightForecastsBestEffort(
-      user.id,
-      (await buildInsightsForUser({ user, limit })).map(attachInsightAction)
-    );
+    const [snapshot, sourceFingerprint] = await Promise.all([
+      InsightPortfolioSnapshot.findByUser(user.id),
+      InsightPortfolioSnapshot.sourceFingerprint(user.id),
+    ]);
+    const snapshotIsCurrent = InsightPortfolioSnapshot.matchesFingerprint(snapshot, sourceFingerprint);
+    let insights = snapshotIsCurrent && Array.isArray(snapshot?.insights)
+      ? snapshot.insights.slice(0, limit)
+      : null;
+    let livePortfolio = null;
+    if (!insights) {
+      livePortfolio = await attachInsightForecastsBestEffort(
+        user.id,
+        (await buildInsightsForUser({ user, limit: 25 })).map(attachInsightAction)
+      );
+      insights = livePortfolio.slice(0, limit);
+      res.setHeader('x-adlo-insight-source', 'live');
+    } else {
+      res.setHeader('x-adlo-insight-source', 'projection');
+    }
     await recordInsightExposuresBestEffort(user.id, insights, limit);
+    if (livePortfolio) {
+      const refreshedFingerprint = await InsightPortfolioSnapshot.sourceFingerprint(user.id);
+      await InsightPortfolioSnapshot.upsert(
+        user.id,
+        livePortfolio,
+        { reason: 'cold_read' },
+        refreshedFingerprint
+      );
+    }
     res.json(insights);
   } catch (err) {
     next(err);
@@ -203,6 +228,7 @@ router.post('/seen', async (req, res, next) => {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => `${id}`.trim()).filter(Boolean) : [];
     if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
     await InsightState.markSeen(user.id, ids);
+    await InsightPortfolioSnapshot.invalidate(user.id);
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -261,6 +287,7 @@ router.post('/:id/dismiss', async (req, res, next) => {
       event_type: 'dismissed',
       metadata,
     }]);
+    await InsightPortfolioSnapshot.invalidate(user.id);
     res.status(204).send();
   } catch (err) {
     next(err);

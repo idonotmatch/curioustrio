@@ -1,10 +1,17 @@
 const db = require('../db');
+const InsightPortfolioSnapshot = require('../models/insightPortfolioSnapshot');
+const UserSummarySnapshot = require('../models/userSummarySnapshot');
+const { buildSummaryBundle } = require('./summaryBundleService');
 const { buildInsightsForUser } = require('./insightBuilder');
 const { attachInsightAction } = require('./insightAction');
 const {
   attachInsightForecasts,
   evaluateDueForecastOutcomes,
 } = require('./insightForecastService');
+const {
+  DOMAINS,
+  emitFreshnessEvent,
+} = require('./freshnessEvents');
 
 const pendingRefreshes = new Map();
 const DEFAULT_DEBOUNCE_MS = Number(process.env.PROJECTION_REFRESH_DEBOUNCE_MS || 750);
@@ -132,11 +139,48 @@ async function refreshProjectionNow({
       persistSnapshots: true,
       sourceEvent,
     });
+    const insightSourceFingerprint = await InsightPortfolioSnapshot.sourceFingerprint(user.id);
+    await InsightPortfolioSnapshot.upsert(user.id, withForecasts, sourceEvent, insightSourceFingerprint);
+    const summaryPeriod = period || new Date().toISOString().slice(0, 7);
+    const summaryStartDay = Math.max(1, Math.min(Number(user.budget_start_day) || 1, 28));
+    try {
+      const summaryPayload = await buildSummaryBundle({
+        user,
+        period: summaryPeriod,
+        startDay: summaryStartDay,
+      });
+      await UserSummarySnapshot.upsert({
+        userId: user.id,
+        householdId: user.household_id,
+        period: summaryPeriod,
+        startDay: summaryStartDay,
+        payload: summaryPayload,
+      });
+    } catch (summaryErr) {
+      console.error('[projection refresh] summary warm failed:', {
+        user_id: user.id,
+        message: summaryErr?.message || String(summaryErr || 'unknown_error'),
+      });
+    }
     const forecastCount = countForecasts(withForecasts);
     await completeRefreshEvent(eventId, {
       status: 'completed',
       forecastCount,
       snapshotCount: forecastCount,
+    });
+    emitFreshnessEvent(user, {
+      eventType: 'projection_refreshed',
+      domains: [DOMAINS.insights, DOMAINS.forecastMovement],
+      entityType: 'projection_refresh',
+      entityId: eventId,
+      metadata: {
+        reason,
+        scope: effectiveScope,
+        period,
+        forecast_count: forecastCount,
+        snapshot_count: forecastCount,
+      },
+      privateOnly: effectiveScope !== 'household',
     });
     return {
       forecast_count: forecastCount,
@@ -161,6 +205,12 @@ function pendingKey(user, options = {}) {
 function requestProjectionRefresh(options = {}) {
   const { user } = options;
   if (!user?.id) return null;
+  InsightPortfolioSnapshot.invalidate(user.id).catch((err) => {
+    console.error('[projection refresh] snapshot invalidation failed:', {
+      user_id: user.id,
+      message: err?.message || String(err || 'unknown_error'),
+    });
+  });
   const key = pendingKey(user, options);
   const existing = pendingRefreshes.get(key);
   if (existing) clearTimeout(existing.timer);

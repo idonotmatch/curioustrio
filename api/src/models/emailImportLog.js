@@ -767,6 +767,65 @@ async function listQualitySignalsByUser(userId, days = 30) {
   }
 }
 
+async function listQualitySignalsBySender(userId, senderDomain, days = 90) {
+  const safeDays = Math.max(1, Math.min(Number(days) || 90, 365));
+  const safeDomain = `${senderDomain || ''}`.trim().toLowerCase();
+  try {
+    const result = await db.query(
+      `SELECT l.message_id,
+              l.subject,
+              l.from_address,
+              l.sender_domain,
+              l.subject_pattern,
+              l.imported_at,
+              l.status,
+              l.structured_item_block_level,
+              l.deterministic_item_count,
+              f.review_action,
+              f.review_changed_fields,
+              f.review_edit_count,
+              f.reviewed_at
+       FROM email_import_log l
+       LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
+       WHERE l.user_id = $1
+         AND l.imported_at >= NOW() - ($2::text || ' days')::interval
+         AND l.status = 'imported'
+         AND (
+           l.sender_domain = $3
+           OR (l.sender_domain IS NULL AND LOWER(l.from_address) LIKE ('%@' || $3 || '%'))
+         )
+       ORDER BY l.imported_at DESC`,
+      [userId, safeDays, safeDomain]
+    );
+    return result.rows;
+  } catch (err) {
+    if (!isMissingFeedbackTableError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT l.message_id,
+              l.subject,
+              l.from_address,
+              NULL::text AS sender_domain,
+              NULL::text AS subject_pattern,
+              l.imported_at,
+              l.status,
+              NULL::text AS structured_item_block_level,
+              NULL::int AS deterministic_item_count,
+              NULL::text AS review_action,
+              '[]'::jsonb AS review_changed_fields,
+              0::int AS review_edit_count,
+              NULL::timestamptz AS reviewed_at
+       FROM email_import_log l
+       WHERE l.user_id = $1
+         AND l.imported_at >= NOW() - ($2::text || ' days')::interval
+         AND l.status = 'imported'
+         AND LOWER(l.from_address) LIKE ('%@' || $3 || '%')
+       ORDER BY l.imported_at DESC`,
+      [userId, safeDays, safeDomain]
+    );
+    return fallback.rows;
+  }
+}
+
 async function listDecisionFeedbackByUser(userId, days = 30) {
   const safeDays = Math.max(1, Math.min(Number(days) || 30, 365));
   try {
@@ -790,6 +849,40 @@ async function listDecisionFeedbackByUser(userId, days = 30) {
          AND user_feedback IS NOT NULL
        ORDER BY imported_at DESC`,
       [userId, safeDays]
+    );
+    return fallback.rows;
+  }
+}
+
+async function listDecisionFeedbackBySender(userId, senderDomain, days = 90) {
+  const safeDays = Math.max(1, Math.min(Number(days) || 90, 365));
+  const safeDomain = `${senderDomain || ''}`.trim().toLowerCase();
+  try {
+    const result = await db.query(
+      `SELECT from_address, sender_domain, subject, subject_pattern, status, user_feedback
+       FROM email_import_log
+       WHERE user_id = $1
+         AND imported_at >= NOW() - ($2::text || ' days')::interval
+         AND user_feedback IS NOT NULL
+         AND (
+           sender_domain = $3
+           OR (sender_domain IS NULL AND LOWER(from_address) LIKE ('%@' || $3 || '%'))
+         )
+       ORDER BY imported_at DESC`,
+      [userId, safeDays, safeDomain]
+    );
+    return result.rows;
+  } catch (err) {
+    if (!isMissingMinimalLedgerError(err)) throw err;
+    const fallback = await db.query(
+      `SELECT from_address, NULL::text AS sender_domain, subject, NULL::text AS subject_pattern, status, user_feedback
+       FROM email_import_log
+       WHERE user_id = $1
+         AND imported_at >= NOW() - ($2::text || ' days')::interval
+         AND user_feedback IS NOT NULL
+         AND LOWER(from_address) LIKE ('%@' || $3 || '%')
+       ORDER BY imported_at DESC`,
+      [userId, safeDays, safeDomain]
     );
     return fallback.rows;
   }
@@ -916,7 +1009,9 @@ module.exports = {
   markRetryFailed,
   summarizeByUser,
   listQualitySignalsByUser,
+  listQualitySignalsBySender,
   listDecisionFeedbackByUser,
+  listDecisionFeedbackBySender,
   listTemplateSignalsByUser,
   pruneOldRows,
   sanitizeSnippet,

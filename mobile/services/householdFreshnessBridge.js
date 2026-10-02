@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { loadCurrentUserCache, saveCurrentUserCache } from './currentUserCache';
 import { markFreshnessStale } from './freshnessRegistry';
 
-const POLL_INTERVAL_MS = 6000;
+const POLL_INTERVAL_MS = 90 * 1000;
 const START_LOOKBACK_MS = 30 * 1000;
 
 function eventDomains(event = {}) {
@@ -46,6 +46,7 @@ export function startHouseholdFreshnessBridge() {
   let pollTimer = null;
   let householdChannel = null;
   let userChannel = null;
+  let realtimeHealthy = false;
   const seenIds = new Set();
 
   function stopChannel(channel) {
@@ -64,6 +65,7 @@ export function startHouseholdFreshnessBridge() {
 
   async function poll() {
     if (stopped || AppState.currentState !== 'active') return;
+    if (realtimeHealthy) return;
     try {
       const data = await api.get(`/freshness/events?since=${encodeURIComponent(latestCreatedAt)}&limit=100`);
       const events = Array.isArray(data?.events) ? data.events : [];
@@ -89,6 +91,7 @@ export function startHouseholdFreshnessBridge() {
 
   function subscribeToRealtime() {
     stopRealtime();
+    realtimeHealthy = false;
     if (!user?.id) return;
 
     const handlePayload = (payload) => {
@@ -105,27 +108,11 @@ export function startHouseholdFreshnessBridge() {
         event: 'INSERT',
         schema: 'public',
         table: 'household_freshness_events',
-        filter: `target_user_id=eq.${user.id}`,
       }, handlePayload)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'household_freshness_events',
-        filter: `user_id=eq.${user.id}`,
-      }, handlePayload)
-      .subscribe();
-
-    if (user.household_id) {
-      householdChannel = supabase
-        .channel(`freshness:household:${user.household_id}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'household_freshness_events',
-          filter: `household_id=eq.${user.household_id}`,
-        }, handlePayload)
-        .subscribe();
-    }
+      .subscribe((status) => {
+        realtimeHealthy = status === 'SUBSCRIBED';
+        if (!realtimeHealthy) poll();
+      });
   }
 
   async function start() {

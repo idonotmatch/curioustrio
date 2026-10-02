@@ -23,7 +23,11 @@ const { assignCategory } = require('./categoryAssigner');
 const { resolveProductMatch } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
-const { getSenderImportQuality, recommendReviewMode } = require('./gmailImportQualityService');
+const {
+  getSenderImportQuality,
+  recommendReviewMode,
+} = require('./gmailImportQualityService');
+const { extractSenderDomain, extractSubjectPattern } = require('./gmailImportFingerprint');
 const { requestProjectionRefresh } = require('./projectionRefreshService');
 const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { getItemHistoryByGroupKey } = require('./itemHistoryService');
@@ -260,6 +264,7 @@ async function resolveEmailLocation({ merchant = '', subject = '', from = '', bo
 async function processMessageImport(user, msgId, {
   categories,
   todayDate,
+  qualityCache = null,
   allowExistingRetry = false,
   forceReview = false,
   existingLog = null,
@@ -280,7 +285,13 @@ async function processMessageImport(user, msgId, {
     msgFrom = from;
     msgSnippet = snippet;
     const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
-    const senderQuality = await getSenderImportQuality(user.id, from, subject);
+    const qualityKey = `${extractSenderDomain(from)}:${extractSubjectPattern(subject, from)}`;
+    let qualityPromise = qualityCache?.get(qualityKey);
+    if (!qualityPromise) {
+      qualityPromise = getSenderImportQuality(user.id, from, subject);
+      qualityCache?.set(qualityKey, qualityPromise);
+    }
+    const senderQuality = await qualityPromise;
     const softenSkipBehavior = forceReview || senderQuality?.sender_preference?.force_review || shouldSoftenSkipBehavior(senderQuality);
     const templateQuality = senderQuality?.template_quality || {};
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
@@ -568,9 +579,15 @@ async function importForUser(user) {
 
   let imported = 0, skipped = 0, failed = 0;
   const outcomes = createOutcomes();
+  const qualityCache = new Map();
 
   for (const msg of messages) {
-    const result = await processMessageImport(user, msg.id, { categories, todayDate, outcomes });
+    const result = await processMessageImport(user, msg.id, {
+      categories,
+      todayDate,
+      outcomes,
+      qualityCache,
+    });
     imported += result.imported;
     skipped += result.skipped;
     failed += result.failed;
@@ -606,7 +623,11 @@ async function importForUser(user) {
   return { imported, skipped, failed, outcomes };
 }
 
-async function recoverImportLog(user, log, { forceReview = false, outcomes = createOutcomes() } = {}) {
+async function recoverImportLog(user, log, {
+  forceReview = false,
+  outcomes = createOutcomes(),
+  qualityCache = null,
+} = {}) {
   // Serialize recovery across API instances, then re-read to make repeated taps idempotent.
   const client = await db.pool.connect();
   try {
@@ -637,6 +658,7 @@ async function recoverImportLog(user, log, { forceReview = false, outcomes = cre
       forceReview,
       existingLog: current,
       outcomes,
+      qualityCache,
     });
   } finally {
     try { await client.query('ROLLBACK'); } finally { client.release(); }
@@ -705,9 +727,10 @@ async function retryFailedImportsForUser(user, { limit = 10 } = {}) {
   const failedLogs = await EmailImportLog.listFailedByUser(user.id, limit);
   let imported = 0, skipped = 0, failed = 0;
   const outcomes = createOutcomes();
+  const qualityCache = new Map();
 
   for (const log of failedLogs) {
-    const result = await retryFailedImportLog(user, log, { outcomes });
+    const result = await retryFailedImportLog(user, log, { outcomes, qualityCache });
     imported += result.imported;
     skipped += result.skipped;
     failed += result.failed;
