@@ -14,6 +14,9 @@
   "name": "curious-trio",
   "description": "Curious Trio is currently pre-launch. We're building a service aimed at changing the way people approach shopping online.# curioustrio",
   "version": "1.0.0",
+  "engines": {
+    "node": "24.x"
+  },
   "main": "scipt.js",
   "scripts": {
     "dev": "next dev",
