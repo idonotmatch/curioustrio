@@ -13,6 +13,8 @@ const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
 let cachedJwt = null;
 let jwtExpiry = 0;
 const searchCache = new Map();
+const inFlightSearches = new Map();
+const MAX_CACHE_ENTRIES = 500;
 
 class MapkitSearchUnavailableError extends Error {
   constructor(message = 'Place search unavailable', details = null) {
@@ -58,15 +60,38 @@ function metersToDegrees(meters, lat) {
   return { latDeg, lngDeg };
 }
 
-function mapResult(top, query) {
-  const place_name = top.displayLines?.[0] || query;
-  const address = top.displayLines?.slice(1).join(', ') || '';
+function distanceMeters(originLat, originLng, latitude, longitude) {
+  if (![originLat, originLng, latitude, longitude].every(Number.isFinite)) return null;
+  const toRadians = (value) => value * Math.PI / 180;
+  const earthRadius = 6371000;
+  const latDelta = toRadians(latitude - originLat);
+  const lngDelta = toRadians(longitude - originLng);
+  const a = Math.sin(latDelta / 2) ** 2
+    + Math.cos(toRadians(originLat)) * Math.cos(toRadians(latitude)) * Math.sin(lngDelta / 2) ** 2;
+  return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function mapResult(top, query, { originLat = null, originLng = null, strategy = 'unknown' } = {}) {
+  const place_name = top.name || top.displayLines?.[0] || query;
+  const address = Array.isArray(top.formattedAddressLines)
+    ? top.formattedAddressLines.join(', ')
+    : top.displayLines?.slice(1).join(', ') || '';
   const { latitude, longitude } = top.coordinate || {};
   const mapkit_stable_id = latitude != null && longitude != null
     ? `${latitude.toFixed(4)},${longitude.toFixed(4)}`
     : null;
 
-  return { place_name, address, mapkit_stable_id };
+  return {
+    place_name,
+    address,
+    mapkit_stable_id,
+    provider: 'apple_maps',
+    provider_place_id: top.id || top.muid || null,
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
+    distance_meters: distanceMeters(originLat, originLng, latitude, longitude),
+    search_strategy: strategy,
+  };
 }
 
 function cacheKey({ query, lat, lng, radiusMeters, limit }) {
@@ -92,21 +117,21 @@ function readCachedResults(key) {
 
 function writeCachedResults(key, value) {
   if (!enrichmentCacheEnabled()) return;
+  if (searchCache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = searchCache.keys().next().value;
+    if (oldestKey) searchCache.delete(oldestKey);
+  }
   searchCache.set(key, {
     value,
     expiresAt: Date.now() + enrichmentCacheTtlMs(),
   });
 }
 
-async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5) {
+async function runPlaceSearch(query, lat = null, lng = null, radiusMeters = 500, limit = 5, options = {}) {
   const normalizedQuery = `${query || ''}`.trim();
-  const key = cacheKey({ query: normalizedQuery, lat, lng, radiusMeters, limit });
-  const cached = readCachedResults(key);
-  if (cached) return cached;
-
   const token = getSignedJwt();
   let hadOperationalFailure = false;
-  async function searchOnce({ useLocationBias = false, includePoiFilter = false }) {
+  async function searchOnce({ useLocationBias = false, includePoiFilter = false, strategy = 'unknown' }) {
     const url = new URL(MAPKIT_SEARCH_URL);
     url.searchParams.set('q', normalizedQuery);
     if (useLocationBias && lat != null && lng != null) {
@@ -123,11 +148,14 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     }
     url.searchParams.set('lang', 'en-US');
 
+    const controller = new AbortController();
     const res = await withTimeout(fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
     }), {
       service: 'mapkit_search',
       timeoutMs: mapkitTimeoutMs(),
+      onTimeout: () => controller.abort(),
     });
     if (!res.ok) {
       hadOperationalFailure = true;
@@ -167,19 +195,29 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     const results = Array.isArray(data.results) ? data.results : [];
     if (!results.length) return [];
 
-    return results.slice(0, limit).map((result) => mapResult(result, normalizedQuery));
+    return results.slice(0, limit).map((result) => mapResult(result, normalizedQuery, {
+      originLat: lat,
+      originLng: lng,
+      strategy,
+    }));
   }
 
-  // Try the tightest/highest-quality match first, but fall back progressively.
-  // Manual search should not fail just because the user is not physically near
-  // the searched location or because the query resolves better as an address
-  // than a POI.
-  const strategies = [
-    { useLocationBias: true, includePoiFilter: true },
-    { useLocationBias: true, includePoiFilter: false },
-    { useLocationBias: false, includePoiFilter: true },
-    { useLocationBias: false, includePoiFilter: false },
-  ];
+  const hasLocationBias = lat != null && lng != null;
+  const automatic = options.intent === 'auto';
+  const strategies = hasLocationBias
+    ? automatic
+      ? [
+          { useLocationBias: true, includePoiFilter: true, strategy: 'nearby_poi' },
+          { useLocationBias: true, includePoiFilter: false, strategy: 'nearby_any' },
+        ]
+      : [
+          { useLocationBias: true, includePoiFilter: true, strategy: 'nearby_poi' },
+          { useLocationBias: false, includePoiFilter: false, strategy: 'broad_any' },
+        ]
+    : [
+        { useLocationBias: false, includePoiFilter: true, strategy: 'poi' },
+        { useLocationBias: false, includePoiFilter: false, strategy: 'broad_any' },
+      ];
 
   for (const strategy of strategies) {
     let results = [];
@@ -194,7 +232,6 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
       continue;
     }
     if (results.length) {
-      writeCachedResults(key, results);
       return results;
     }
   }
@@ -203,12 +240,28 @@ async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, l
     throw new MapkitSearchUnavailableError('Place search unavailable', `MapKit search failed for query "${normalizedQuery}"`);
   }
 
-  writeCachedResults(key, []);
   return [];
 }
 
-async function searchPlace(query, lat = null, lng = null, radiusMeters = 500) {
-  const results = await searchPlaces(query, lat, lng, radiusMeters, 1);
+async function searchPlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5, options = {}) {
+  const normalizedQuery = `${query || ''}`.trim();
+  const key = `${cacheKey({ query: normalizedQuery, lat, lng, radiusMeters, limit })}:${options.intent || 'manual'}`;
+  const cached = readCachedResults(key);
+  if (cached) return cached;
+  if (inFlightSearches.has(key)) return inFlightSearches.get(key);
+
+  const pending = runPlaceSearch(normalizedQuery, lat, lng, radiusMeters, limit, options)
+    .then((results) => {
+      if (results.length) writeCachedResults(key, results);
+      return results;
+    })
+    .finally(() => inFlightSearches.delete(key));
+  inFlightSearches.set(key, pending);
+  return pending;
+}
+
+async function searchPlace(query, lat = null, lng = null, radiusMeters = 500, options = {}) {
+  const results = await searchPlaces(query, lat, lng, radiusMeters, 1, options);
   return results[0] || null;
 }
 

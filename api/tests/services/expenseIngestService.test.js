@@ -212,9 +212,10 @@ describe('expenseIngestService', () => {
     expect(result.body.amount).toBe(19.84);
     const payload = IngestAttemptLog.create.mock.calls[0][0];
     expect(payload.metadata.retry_strategy).toBe('fallback_only');
+    expect(payload.metadata.model_call_count).toBe(2);
   });
 
-  it('uses a contextual primary-only retry when priors are available', async () => {
+  it('uses a contextual primary-only retry when the merchant is uncertain and priors are available', async () => {
     process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
     parseReceiptDetailed
       .mockResolvedValueOnce({
@@ -228,7 +229,7 @@ describe('expenseIngestService', () => {
           card_label: null,
           card_last4: null,
           parse_status: 'partial',
-          review_fields: ['items'],
+          review_fields: ['merchant'],
         },
         raw: { merchant: 'Whole Foods' },
         diagnostics: {
@@ -279,5 +280,35 @@ describe('expenseIngestService', () => {
     const payload = IngestAttemptLog.create.mock.calls[0][0];
     expect(payload.metadata.retry_strategy).toBe('contextual_primary_only');
     expect(payload.metadata.context_retry_attempted).toBe(true);
+    expect(payload.metadata.model_call_count).toBe(2);
+  });
+
+  it('does not resend the image when only optional line items need review', async () => {
+    process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
+    parseReceiptDetailed.mockResolvedValueOnce({
+      parsed: {
+        merchant: 'Corner Cafe',
+        amount: 12.5,
+        date: '2026-04-27',
+        items: null,
+        parse_status: 'partial',
+        review_fields: ['items'],
+      },
+      raw: { merchant: 'Corner Cafe' },
+      diagnostics: { model_call_count: 1 },
+    });
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-04-27',
+    });
+
+    expect(parseReceiptDetailed).toHaveBeenCalledTimes(1);
+    expect(buildReceiptParsingContext).not.toHaveBeenCalled();
+    expect(result.body.amount).toBe(12.5);
+    const payload = IngestAttemptLog.create.mock.calls[0][0];
+    expect(payload.metadata.retry_strategy).toBe('none');
+    expect(payload.metadata.model_call_count).toBe(1);
   });
 });

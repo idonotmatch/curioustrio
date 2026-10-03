@@ -17,11 +17,12 @@ class VendorTimeoutError extends Error {
   }
 }
 
-function withTimeout(promise, { service, timeoutMs }) {
+function withTimeout(promise, { service, timeoutMs, onTimeout = null }) {
   if (!vendorTimeoutsEnabled() || !timeoutMs) return promise;
   let timeoutHandle = null;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutHandle = setTimeout(() => {
+      if (typeof onTimeout === 'function') onTimeout();
       reject(new VendorTimeoutError(`${service} timed out after ${timeoutMs}ms`, service, timeoutMs));
     }, timeoutMs);
   });
@@ -37,14 +38,18 @@ function withTimeout(promise, { service, timeoutMs }) {
  * @returns {Promise<string|null>} The response text, or null if empty
  */
 async function complete({ system, messages, maxTokens = 512 }) {
+  const controller = new AbortController();
   const response = await withTimeout(client.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: maxTokens,
     system,
     messages,
+  }, {
+    signal: controller.signal,
   }), {
     service: 'anthropic_text',
     timeoutMs: textModelTimeoutMs(),
+    onTimeout: () => controller.abort(),
   });
   return response.content?.[0]?.text?.trim() || null;
 }
@@ -54,7 +59,15 @@ async function complete({ system, messages, maxTokens = 512 }) {
  * @param {{ system: string, imageBase64: string, mediaType?: string, text: string, maxTokens?: number }} opts
  * @returns {Promise<string|null>}
  */
-async function completeWithImage({ system, imageBase64, mediaType = 'image/jpeg', text, maxTokens = 512 }) {
+async function completeWithImageDetailed({
+  system,
+  imageBase64,
+  mediaType = 'image/jpeg',
+  text,
+  maxTokens = 512,
+  outputSchema = null,
+}) {
+  const controller = new AbortController();
   const response = await withTimeout(client.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: maxTokens,
@@ -66,11 +79,45 @@ async function completeWithImage({ system, imageBase64, mediaType = 'image/jpeg'
         { type: 'text', text },
       ],
     }],
+    ...(outputSchema ? {
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: outputSchema,
+        },
+      },
+    } : {}),
+  }, {
+    signal: controller.signal,
   }), {
     service: 'anthropic_image',
     timeoutMs: imageModelTimeoutMs(),
+    onTimeout: () => controller.abort(),
   });
-  return response.content?.[0]?.text?.trim() || null;
+  const textBlock = response.content?.find((block) => block?.type === 'text')
+    || response.content?.find((block) => typeof block?.text === 'string');
+  return {
+    text: textBlock?.text?.trim() || null,
+    model: response.model || DEFAULT_MODEL,
+    stop_reason: response.stop_reason || null,
+    usage: {
+      input_tokens: Number(response.usage?.input_tokens) || 0,
+      output_tokens: Number(response.usage?.output_tokens) || 0,
+      cache_creation_input_tokens: Number(response.usage?.cache_creation_input_tokens) || 0,
+      cache_read_input_tokens: Number(response.usage?.cache_read_input_tokens) || 0,
+    },
+  };
 }
 
-module.exports = { complete, completeWithImage, VendorTimeoutError, withTimeout };
+async function completeWithImage(options) {
+  const result = await completeWithImageDetailed(options);
+  return result.text;
+}
+
+module.exports = {
+  complete,
+  completeWithImage,
+  completeWithImageDetailed,
+  VendorTimeoutError,
+  withTimeout,
+};

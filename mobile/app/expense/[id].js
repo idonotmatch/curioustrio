@@ -175,6 +175,7 @@ export default function ExpenseDetailScreen() {
   const itemReviewContext = Array.isArray(expense.item_review_context) ? expense.item_review_context : [];
   const { approvePendingExpense, dismissPendingExpense } = usePendingExpenseReviewActions({
     expenseId: id,
+    expense,
     router,
     setActioning,
     setShowDismissReasonSheet,
@@ -552,7 +553,11 @@ export default function ExpenseDetailScreen() {
             />
           ) : (expense.place_name || expense.address) ? (
             (() => {
-              const coords = expense.mapkit_stable_id?.split(',').map(Number);
+              const persistedCoords = [Number(expense.location_latitude), Number(expense.location_longitude)];
+              const legacyCoords = expense.mapkit_stable_id?.split(',').map(Number);
+              const coords = expense.location_latitude != null && expense.location_longitude != null
+                ? persistedCoords
+                : legacyCoords;
               const hasCoords = coords?.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1]);
               const locationLabel = expense.place_name || expense.address;
               const mapsUrl = hasCoords
@@ -621,6 +626,10 @@ export default function ExpenseDetailScreen() {
         isQuickCheckReview={isQuickCheckReview}
         deleting={deleting}
         handleDelete={handleDelete}
+        onReviewDuplicate={(flag) => router.push({
+          pathname: '/duplicate-review',
+          params: { expense_id: expense.id, flag_id: flag?.id || '' },
+        })}
       />
 
       <RecurringExpenseModal
@@ -1165,6 +1174,8 @@ const styles = StyleSheet.create({
   dupSection: { margin: 20, padding: 12, backgroundColor: colors.warningMuted, borderRadius: 8, borderWidth: 1, borderColor: colors.warningMuted },
   dupTitle: { color: colors.warning, fontWeight: '600', fontSize: 13, marginBottom: 4 },
   dupItem: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
+  dupReviewBtn: { marginTop: 10, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: colors.warning, paddingHorizontal: 12 },
+  dupReviewBtnText: { color: colors.textInverse, fontSize: 13, fontWeight: '700' },
 
   saveBtn: { margin: 20, marginBottom: 8, backgroundColor: colors.text, borderRadius: 10, padding: 14, alignItems: 'center' },
   saveBtnText: { color: colors.textInverse, fontWeight: '600', fontSize: 15 },

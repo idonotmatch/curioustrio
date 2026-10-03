@@ -22,6 +22,14 @@ function buildParsedSnapshot(parsed = {}) {
     payment_method: parsed?.payment_method || null,
     card_label: parsed?.card_label || null,
     card_last4: parsed?.card_last4 || null,
+    currency: parsed?.currency || null,
+    subtotal: parsed?.subtotal ?? null,
+    tax: parsed?.tax ?? null,
+    tip: parsed?.tip ?? null,
+    fees: parsed?.fees ?? null,
+    discounts: parsed?.discounts ?? null,
+    transaction_id_present: Boolean(parsed?.transaction_id),
+    store_number_present: Boolean(parsed?.store_number),
     category_id: parsed?.category_id || null,
     category_source: parsed?.category_source || null,
     place_name: parsed?.place_name || null,
@@ -51,6 +59,13 @@ function stripVerboseFields(metadata = {}) {
   return cloned;
 }
 
+function stripRawModelOutput(metadata = {}) {
+  const cloned = { ...(metadata || {}) };
+  delete cloned.raw_text_preview;
+  delete cloned.fallback_raw_text_preview;
+  return cloned;
+}
+
 function finalizeIngestMetadata({
   status,
   metadata = {},
@@ -59,7 +74,7 @@ function finalizeIngestMetadata({
 }) {
   const shouldKeepParsedSnapshot = status !== 'parsed' || shouldKeepParsedSnapshotForSuccess();
   const baseMetadata = {
-    ...(metadata || {}),
+    ...stripRawModelOutput(metadata),
     metadata_schema_version: 3,
     correction_learning_mode: correctionLearningMode(),
   };

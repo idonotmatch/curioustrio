@@ -57,7 +57,7 @@ describe('GET /places/search', () => {
       .query({ q: 'Target' });
 
     expect(res.status).toBe(200);
-    expect(searchPlaces).toHaveBeenCalledWith('Target', null, null, 500);
+    expect(searchPlaces).toHaveBeenCalledWith('Target', null, null, 500, 5, { intent: 'manual' });
     expect(res.body.result.place_name).toBe('Target');
   });
 

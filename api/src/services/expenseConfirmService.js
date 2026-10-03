@@ -5,6 +5,8 @@ const ExpenseItem = require('../models/expenseItem');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
 const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../models/receiptLineCorrection');
+const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
+const DuplicateFlag = require('../models/duplicateFlag');
 const detectDuplicates = require('./duplicateDetector');
 const { resolveProductMatch } = require('./productResolver');
 const { assignCategory } = require('./categoryAssigner');
@@ -27,6 +29,7 @@ function validateConfirmExpensePayload(payload = {}) {
     suggested_category_id,
     exclude_from_budget,
     budget_exclusion_reason,
+    idempotency_key,
   } = payload;
 
   if (!amount || !date || !source) {
@@ -45,12 +48,32 @@ function validateConfirmExpensePayload(payload = {}) {
     return { error: 'suggested_category_id must be a valid UUID', reason: 'invalid_suggested_category_id' };
   }
 
+  if (idempotency_key !== undefined && idempotency_key !== null) {
+    const normalizedKey = `${idempotency_key}`.trim();
+    if (!normalizedKey || normalizedKey.length > 128 || !/^[a-zA-Z0-9._:-]+$/.test(normalizedKey)) {
+      return { error: 'idempotency_key is invalid', reason: 'invalid_idempotency_key' };
+    }
+  }
+
   const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(budget_exclusion_reason);
   if (exclude_from_budget && !normalizedBudgetExclusionReason) {
     return {
       error: 'budget_exclusion_reason required when exclude_from_budget is true',
       reason: 'missing_budget_exclusion_reason',
     };
+  }
+
+  const latitude = payload.location_latitude;
+  const longitude = payload.location_longitude;
+  const confidence = payload.location_confidence;
+  if (latitude != null && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) {
+    return { error: 'location_latitude must be between -90 and 90', reason: 'invalid_location_latitude' };
+  }
+  if (longitude != null && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) {
+    return { error: 'location_longitude must be between -180 and 180', reason: 'invalid_location_longitude' };
+  }
+  if (confidence != null && (!Number.isFinite(Number(confidence)) || Number(confidence) < 0 || Number(confidence) > 1)) {
+    return { error: 'location_confidence must be between 0 and 1', reason: 'invalid_location_confidence' };
   }
 
   return {
@@ -80,11 +103,10 @@ function shouldResolveDeferredLocation(payload = {}) {
 function buildDeferredLocationQuery(payload = {}) {
   const primary = `${payload.place_name || payload.merchant || ''}`.trim();
   const address = `${payload.address || ''}`.trim();
-  if (!primary && !address) return null;
-  if (address && address.toLowerCase() !== primary.toLowerCase()) {
-    return [primary, address].filter(Boolean).join(' ');
-  }
-  return primary || address;
+  const storeNumber = `${payload.receipt_details?.store_number || ''}`.trim();
+  if (address) return [primary, storeNumber ? `Store ${storeNumber}` : null, address].filter(Boolean).join(' ');
+  if (primary && storeNumber) return `${primary} Store ${storeNumber}`;
+  return null;
 }
 
 async function resolveDeferredCategoryOnConfirm({ user, payload }) {
@@ -136,7 +158,7 @@ async function resolveDeferredLocationOnConfirm({ payload }) {
   }
 
   try {
-    const matchedLocation = await searchPlace(query);
+    const matchedLocation = await searchPlace(query, null, null, 500, { intent: 'receipt' });
     if (!matchedLocation) {
       return {
         ...payload,
@@ -148,6 +170,11 @@ async function resolveDeferredLocationOnConfirm({ payload }) {
       place_name: matchedLocation.place_name || payload.place_name || null,
       address: matchedLocation.address || payload.address || null,
       mapkit_stable_id: matchedLocation.mapkit_stable_id || payload.mapkit_stable_id || null,
+      location_provider_id: matchedLocation.provider_place_id || payload.location_provider_id || null,
+      location_latitude: matchedLocation.latitude ?? payload.location_latitude ?? null,
+      location_longitude: matchedLocation.longitude ?? payload.location_longitude ?? null,
+      location_source: 'receipt',
+      location_confidence: matchedLocation.mapkit_stable_id ? 0.95 : 0.5,
       location_status: matchedLocation.mapkit_stable_id ? 'enriched' : 'missing',
     };
   } catch {
@@ -329,13 +356,20 @@ async function applyDeferredExpenseEnrichment({ user, expense, originalPayload, 
     }
   }
 
-  if (shouldResolveDeferredLocation(originalPayload) && resolvedPayload.mapkit_stable_id) {
+  if (shouldResolveDeferredLocation(originalPayload)) {
     const updatedLocationExpense = await Expense.applyDeferredLocation(expense.id, user.id, {
       originalPlaceName: originalPayload.place_name || null,
       originalAddress: originalPayload.address || null,
       placeName: resolvedPayload.place_name || null,
       address: resolvedPayload.address || null,
       mapkitStableId: resolvedPayload.mapkit_stable_id || null,
+      locationProviderId: resolvedPayload.location_provider_id || null,
+      locationLatitude: resolvedPayload.location_latitude ?? null,
+      locationLongitude: resolvedPayload.location_longitude ?? null,
+      locationSource: resolvedPayload.location_source || null,
+      locationStatus: resolvedPayload.location_status || null,
+      locationConfidence: resolvedPayload.location_confidence ?? null,
+      locationUserOwned: Boolean(resolvedPayload.location_user_owned),
     });
     if (updatedLocationExpense) {
       nextExpense = updatedLocationExpense;
@@ -386,6 +420,7 @@ async function runPostConfirmSideEffects({
   expense,
   items = [],
   originalParsedItems = [],
+  precomputedDuplicateFlags = null,
 }) {
   const resolvedPayload = await resolveDeferredConfirmPayload({ user, payload });
   const enrichedExpense = await applyDeferredExpenseEnrichment({
@@ -451,7 +486,9 @@ async function runPostConfirmSideEffects({
     console.error('Category decision log failed (non-fatal):', categoryDecisionErr.message);
   }
 
-  const duplicateFlags = await detectDuplicateFlags(enrichedExpense);
+  const duplicateFlags = Array.isArray(precomputedDuplicateFlags)
+    ? precomputedDuplicateFlags
+    : await detectDuplicateFlags(enrichedExpense);
   return { expense: enrichedExpense, duplicate_flags: duplicateFlags };
 }
 
@@ -463,7 +500,7 @@ async function createConfirmedExpense({
   queuePostConfirm = queuePostConfirmSideEffects,
 }) {
   const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(payload.budget_exclusion_reason);
-  const expense = await Expense.create({
+  const createdExpense = await Expense.create({
     userId: user.id,
     householdId: user?.household_id,
     merchant: payload.merchant,
@@ -477,6 +514,13 @@ async function createConfirmedExpense({
     placeName: payload.place_name,
     address: payload.address,
     mapkitStableId: payload.mapkit_stable_id,
+    locationProviderId: payload.location_provider_id || null,
+    locationLatitude: payload.location_latitude ?? null,
+    locationLongitude: payload.location_longitude ?? null,
+    locationSource: payload.location_source || null,
+    locationStatus: payload.location_status || null,
+    locationConfidence: payload.location_confidence ?? null,
+    locationUserOwned: Boolean(payload.location_user_owned),
     linkedExpenseId: payload.linked_expense_id,
     paymentMethod: payload.payment_method,
     cardLast4: payload.card_last4,
@@ -487,11 +531,36 @@ async function createConfirmedExpense({
     categorySource: payload.category_source || null,
     categoryConfidence: payload.category_confidence ?? null,
     categoryReasoning: payload.category_reasoning || null,
+    idempotencyKey: payload.idempotency_key || null,
   });
+
+  const idempotentReplay = createdExpense?._idempotent_replay === true;
+  const { _idempotent_replay: ignoredReplayMarker, ...expense } = createdExpense;
+  if (idempotentReplay) {
+    const duplicateFlags = await DuplicateFlag.findByExpenseId(expense.id, {
+      userId: user.id,
+      pendingOnly: true,
+    });
+    return { expense, duplicate_flags: duplicateFlags, idempotent_replay: true };
+  }
 
   const createdItems = Array.isArray(payload.items) && payload.items.length > 0
     ? await ExpenseItem.createBulk(expense.id, payload.items)
     : [];
+
+  const receiptDetails = payload.source === 'camera' && payload.receipt_details
+    ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details)
+    : null;
+
+  let duplicateFlags = [];
+  try {
+    duplicateFlags = await detectDuplicateFlags({
+      ...expense,
+      receipt_details: receiptDetails || payload.receipt_details || null,
+    });
+  } catch (err) {
+    console.error('Duplicate detection failed (non-fatal):', err?.message || err);
+  }
 
   if (deferPostConfirmSideEffects) {
     queuePostConfirm(() => runPostConfirmSideEffects({
@@ -500,8 +569,9 @@ async function createConfirmedExpense({
       expense,
       items: createdItems,
       originalParsedItems,
+      precomputedDuplicateFlags: duplicateFlags,
     }));
-    return { expense, duplicate_flags: [] };
+    return { expense, duplicate_flags: duplicateFlags };
   }
 
   return runPostConfirmSideEffects({
@@ -510,6 +580,7 @@ async function createConfirmedExpense({
     expense,
     items: createdItems,
     originalParsedItems,
+    precomputedDuplicateFlags: duplicateFlags,
   });
 }
 

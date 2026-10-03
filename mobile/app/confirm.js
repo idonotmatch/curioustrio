@@ -3,7 +3,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { getCoords } from '../services/locationService';
 import { api } from '../services/api';
 import { queueConfirmedExpenseClientWork } from '../services/confirmClientWork';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
@@ -19,6 +18,7 @@ import {
   updateEditableExpenseItem,
 } from '../services/itemEditing';
 import { colors } from '../theme/tokens';
+const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
 
 function parseConfirmData(value) {
   try {
@@ -88,7 +88,7 @@ export default function ConfirmScreen() {
   const [catSuggestion, setCatSuggestion] = useState(null);
   const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const autoLocationAttemptRef = useRef('');
+  const confirmRequestKeyRef = useRef(createExpenseIdempotencyKey('confirm'));
   const [items, setItems] = useState(
     Array.isArray(parsed?.items) && parsed.items.length > 0
       ? parsed.items.map((it) => createEditableExpenseItem(it))
@@ -97,7 +97,6 @@ export default function ConfirmScreen() {
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
   const hasReviewHint = reviewFields.length > 0;
   const fieldConfidence = expense?.field_confidence || {};
-  const parsedHasLocation = !!(parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id);
 
   useEffect(() => {
     setExpense(parsed);
@@ -133,10 +132,17 @@ export default function ConfirmScreen() {
             place_name: parsed.place_name || parsed.merchant || '',
             address: parsed.address || null,
             mapkit_stable_id: parsed.mapkit_stable_id || null,
+            provider_place_id: parsed.location_provider_id || parsed.provider_place_id || null,
+            latitude: parsed.location_latitude ?? parsed.latitude ?? null,
+            longitude: parsed.location_longitude ?? parsed.longitude ?? null,
+            source: parsed.location_source || (parsed.source === 'camera' ? 'receipt' : null),
+            location_status: parsed.location_status || null,
+            location_confidence: parsed.location_confidence ?? null,
+            location_user_owned: Boolean(parsed.location_user_owned),
           }
         : null
     );
-    autoLocationAttemptRef.current = '';
+    confirmRequestKeyRef.current = createExpenseIdempotencyKey('confirm');
   }, [payloadKey, dataParam, parsed]);
 
   useEffect(() => {
@@ -224,36 +230,6 @@ export default function ConfirmScreen() {
       setSavedCardMatchNote(null);
     }
   }, [paymentMethod, selectedSavedCard, selectedSavedCardKey]);
-
-  useEffect(() => {
-    const merchantQuery = merchant.trim();
-    if (!merchantQuery) return;
-    if (parsedHasLocation) return;
-    if (locationData?.mapkit_stable_id || locationData?.place_name || locationData?.address) return;
-    const normalizedQuery = merchantQuery.toLowerCase();
-    if (autoLocationAttemptRef.current === normalizedQuery) return;
-
-    async function autoPopulateLocation() {
-      autoLocationAttemptRef.current = normalizedQuery;
-      try {
-        const coords = await getCoords();
-        const params = new URLSearchParams({ q: merchantQuery });
-        if (coords?.latitude != null && coords?.longitude != null) {
-          params.set('lat', String(coords.latitude));
-          params.set('lng', String(coords.longitude));
-        }
-        const result = await api.get(`/places/search?${params.toString()}`);
-        if (result?.result) {
-          setLocationUserOwned(false);
-          setLocationData(result.result);
-        }
-      } catch {
-        // Non-fatal — location stays unpopulated, user can add manually
-      }
-    }
-
-    autoPopulateLocation();
-  }, [merchant, parsedHasLocation, locationData?.mapkit_stable_id, locationData?.place_name, locationData?.address]);
 
   const isCameraSource = parsed.source === 'camera';
   const cardsForMethod = savedCards.filter(c => c.payment_method === paymentMethod);
@@ -421,6 +397,7 @@ export default function ConfirmScreen() {
       }
 
       const result = await api.post('/expenses/confirm', {
+        idempotency_key: confirmRequestKeyRef.current,
         merchant: merchant.trim() || null,
         description: description.trim() || null,
         amount: expense.amount,
@@ -431,7 +408,9 @@ export default function ConfirmScreen() {
         category_confidence: parsed?.category_confidence ?? null,
         category_reasoning: parsed?.category_reasoning || null,
         category_status: parsed?.category_status || (expense.category_id ? 'assigned' : null),
-        location_status: parsed?.location_status || null,
+        location_status: locationData?.location_status
+          || (locationUserOwned && !locationData ? 'cleared' : parsed?.location_status)
+          || null,
         category_user_owned: categoryUserOwned,
         location_user_owned: locationUserOwned,
         source: isRefund ? 'refund' : (parsed?.source || 'manual'),
@@ -439,6 +418,13 @@ export default function ConfirmScreen() {
         place_name: locationData?.place_name,
         address: locationData?.address,
         mapkit_stable_id: locationData?.mapkit_stable_id,
+        location_provider_id: locationData?.provider_place_id || null,
+        location_latitude: locationData?.latitude ?? null,
+        location_longitude: locationData?.longitude ?? null,
+        location_source: locationData?.source
+          || (locationUserOwned && !locationData ? 'user_cleared' : parsed?.location_source)
+          || null,
+        location_confidence: locationData?.location_confidence ?? parsed?.location_confidence ?? null,
         payment_method: paymentMethod,
         card_last4: cardLast4 || null,
         card_label: cardLabel || null,
@@ -451,6 +437,22 @@ export default function ConfirmScreen() {
           card_label: parsed?.card_label || null,
           card_last4: parsed?.card_last4 || null,
         },
+        receipt_details: parsed?.source === 'camera' ? {
+          currency: parsed?.currency || null,
+          subtotal: parsed?.subtotal ?? null,
+          tax: parsed?.tax ?? null,
+          tip: parsed?.tip ?? null,
+          fees: parsed?.fees ?? null,
+          discounts: parsed?.discounts ?? null,
+          transaction_id: parsed?.transaction_id || null,
+          purchase_time: parsed?.purchase_time || null,
+          store_number: parsed?.store_number || null,
+          validation: {
+            ...(parsed?.receipt_validation || {}),
+            uncertain_fields: parsed?.uncertain_fields || [],
+            field_confidence: parsed?.field_confidence || {},
+          },
+        } : undefined,
         original_parsed_items: parsed?.source === 'camera' && Array.isArray(parsed?.items)
           ? parsed.items.map((it) => ({
               description: it?.description || '',

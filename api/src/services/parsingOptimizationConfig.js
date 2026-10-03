@@ -64,7 +64,7 @@ module.exports = {
     return readMode('PARSING_RECEIPT_FAMILY_STRATEGIES_MODE', ['off', 'shadow', 'enabled'], 'shadow');
   },
   enrichmentCacheEnabled() {
-    return boolFlag('PARSING_ENRICHMENT_CACHE', false);
+    return boolFlag('PARSING_ENRICHMENT_CACHE', true);
   },
   enrichmentCacheTtlMs() {
     return timeoutMs('PARSING_ENRICHMENT_CACHE_TTL_MS', 10 * 60 * 1000);

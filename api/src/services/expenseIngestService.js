@@ -39,7 +39,7 @@ function buildParsedPaymentSnapshot(parsed = {}) {
   };
 }
 
-function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
+function shouldRetryReceipt(parsedResult, merchantHint = null) {
   if (!parsedResult) return false;
   if (!parsedResult.parsed) {
     return Boolean(merchantHint)
@@ -47,7 +47,48 @@ function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
   }
   const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
   return parsedResult.parsed.parse_status === 'partial'
-    && reviewFields.some((field) => ['merchant', 'items'].includes(field));
+    && reviewFields.some((field) => ['merchant', 'amount'].includes(field));
+}
+
+function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
+  if (!merchantHint || !parsedResult?.parsed) return false;
+  const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
+  return reviewFields.includes('merchant');
+}
+
+function createModelMetrics() {
+  return {
+    model_call_count: 0,
+    model_input_tokens: 0,
+    model_output_tokens: 0,
+    model_cache_creation_input_tokens: 0,
+    model_cache_read_input_tokens: 0,
+    model_names: [],
+    model_stop_reasons: [],
+  };
+}
+
+function addModelMetrics(metrics, diagnostics = {}) {
+  metrics.model_call_count += Number(diagnostics.model_call_count) || 0;
+  metrics.model_input_tokens += Number(diagnostics.model_input_tokens) || 0;
+  metrics.model_output_tokens += Number(diagnostics.model_output_tokens) || 0;
+  metrics.model_cache_creation_input_tokens += Number(diagnostics.model_cache_creation_input_tokens) || 0;
+  metrics.model_cache_read_input_tokens += Number(diagnostics.model_cache_read_input_tokens) || 0;
+  if (diagnostics.model_name && !metrics.model_names.includes(diagnostics.model_name)) {
+    metrics.model_names.push(diagnostics.model_name);
+  }
+  if (diagnostics.model_stop_reason) metrics.model_stop_reasons.push(diagnostics.model_stop_reason);
+}
+
+function applyModelMetrics(parsedResult, metrics) {
+  if (!parsedResult) return parsedResult;
+  return {
+    ...parsedResult,
+    diagnostics: {
+      ...(parsedResult.diagnostics || {}),
+      ...metrics,
+    },
+  };
 }
 
 function summarizeReceiptOutcome(parsedResult) {
@@ -218,6 +259,7 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
 async function scanReceiptInput({ user, imageBase64, todayDate }) {
   const scanStartedAt = Date.now();
   const useSingleRetryPolicy = receiptRetryPolicyMode() === 'single';
+  const modelMetrics = createModelMetrics();
   let parsedResult;
   let initialParseDurationMs = 0;
   try {
@@ -225,6 +267,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
       passMode: useSingleRetryPolicy ? 'primary_only' : 'full',
     });
+    addModelMetrics(modelMetrics, parsedResult?.diagnostics);
     initialParseDurationMs = Date.now() - initialParseStartedAt;
   } catch (err) {
     await IngestAttemptLog.create({
@@ -250,8 +293,10 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
 
   if (useSingleRetryPolicy) {
     const firstPassPrimaryOnly = parsedResult;
-    const needsRetry = shouldRetryReceiptWithContext(firstPassPrimaryOnly, merchantHint);
-    if (user?.household_id && needsRetry) {
+    const needsRetry = shouldRetryReceipt(firstPassPrimaryOnly, merchantHint);
+    const shouldUseContextRetry = user?.household_id
+      && shouldRetryReceiptWithContext(firstPassPrimaryOnly, merchantHint);
+    if (shouldUseContextRetry) {
       const contextLookupStartedAt = Date.now();
       const context = await buildReceiptParsingContext({
         householdId: user.household_id,
@@ -271,6 +316,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
             passMode: 'primary_only',
             familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
           });
+          addModelMetrics(modelMetrics, contextualResult?.diagnostics);
           contextRetryDurationMs = Date.now() - contextRetryStartedAt;
           const contextualParsed = contextualResult?.parsed || null;
           const currentParsed = parsedResult?.parsed || null;
@@ -309,23 +355,25 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         }
       } else {
         contextRetrySkippedReason = context.prior_count <= 0 ? 'no_priors' : 'low_value_priors';
-        if (!parsedResult?.parsed) {
+        if (needsRetry || !parsedResult?.parsed) {
           retryStrategy = 'fallback_only';
           const fallbackStartedAt = Date.now();
           parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
             passMode: 'fallback_only',
             familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
           });
+          addModelMetrics(modelMetrics, parsedResult?.diagnostics);
           contextRetryDurationMs = Date.now() - fallbackStartedAt;
         }
       }
-    } else if (!parsedResult?.parsed) {
+    } else if (needsRetry || !parsedResult?.parsed) {
       retryStrategy = 'fallback_only';
       const fallbackStartedAt = Date.now();
       parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
         passMode: 'fallback_only',
         familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
       });
+      addModelMetrics(modelMetrics, parsedResult?.diagnostics);
       contextRetryDurationMs = Date.now() - fallbackStartedAt;
       contextRetrySkippedReason = merchantHint ? 'fallback_without_context' : 'fallback_without_merchant_hint';
     } else {
@@ -347,6 +395,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       try {
         const contextRetryStartedAt = Date.now();
         const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, { priors: context.priors });
+        addModelMetrics(modelMetrics, contextualResult?.diagnostics);
         contextRetryDurationMs = Date.now() - contextRetryStartedAt;
         const contextualParsed = contextualResult?.parsed || null;
         const currentParsed = parsedResult?.parsed || null;
@@ -390,6 +439,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     contextRetrySkippedReason = merchantHint ? 'not_eligible' : 'no_merchant_hint';
   }
 
+  parsedResult = applyModelMetrics(parsedResult, modelMetrics);
   const finalOutcome = summarizeReceiptOutcome(parsedResult);
   const outcomeComparison = compareReceiptOutcomes(firstPassOutcome, finalOutcome);
   const totalScanDurationMs = Date.now() - scanStartedAt;
@@ -462,7 +512,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         ...parsed,
         category_id: assignment.category_id,
         category_source: assignment.source,
-        place_name: matchedLocation?.place_name || parsed.merchant || null,
+        place_name: matchedLocation?.place_name || ((parsed.store_address || parsed.store_number) ? parsed.merchant : null),
         address: matchedLocation?.address || parsed.store_address || null,
         mapkit_stable_id: matchedLocation?.mapkit_stable_id || null,
       },
@@ -500,9 +550,14 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       parsed_payment_snapshot: buildParsedPaymentSnapshot(parsed),
       source: 'camera',
       ...buildCategoryResponseFields(assignment, matchedCategory),
-      place_name: matchedLocation?.place_name || parsed.merchant || null,
+      place_name: matchedLocation?.place_name || ((parsed.store_address || parsed.store_number) ? parsed.merchant : null),
       address: matchedLocation?.address || parsed.store_address || null,
       mapkit_stable_id: matchedLocation?.mapkit_stable_id || null,
+      location_provider_id: matchedLocation?.provider_place_id || null,
+      location_latitude: matchedLocation?.latitude ?? null,
+      location_longitude: matchedLocation?.longitude ?? null,
+      location_source: 'receipt',
+      location_confidence: matchedLocation ? 0.95 : (parsed.store_address ? 0.75 : 0.25),
       location_status: locationEnrichmentStatus,
     },
   };

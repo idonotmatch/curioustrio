@@ -10,33 +10,34 @@
     "test": "npm run test:palette && npm run test:smoke && npm run test:logic",
     "test:palette": "node scripts/verify-color-tokens.js",
     "test:smoke": "node scripts/verify-mobile-smoke.js",
-    "test:logic": "node scripts/test-auth-boot-routing.js && node scripts/test-api-config.js && node scripts/test-email-auth.js && node scripts/test-password-recovery.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js && node scripts/test-insight-trend-visual.js && node scripts/test-onboarding-flow.js && node scripts/test-provenance-presentation.js"
+    "test:logic": "node scripts/test-auth-boot-routing.js && node scripts/test-api-config.js && node scripts/test-cache-policy.js && node scripts/test-email-auth.js && node scripts/test-expense-idempotency.js && node scripts/test-password-recovery.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js && node scripts/test-insight-text.js && node scripts/test-insight-trend-visual.js && node scripts/test-summary-insight-change.js && node scripts/test-onboarding-flow.js && node scripts/test-provenance-presentation.js && node scripts/test-import-recovery-presentation.js"
   },
   "dependencies": {
-    "@expo/metro-runtime": "^55.0.9",
+    "@expo/metro-runtime": "~55.0.11",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "^8.6.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@supabase/supabase-js": "^2.99.3",
-    "expo": "^55.0.9",
-    "expo-apple-authentication": "^55.0.11",
-    "expo-constants": "^55.0.11",
-    "expo-font": "^55.0.6",
-    "expo-image-manipulator": "^55.0.13",
-    "expo-image-picker": "^55.0.16",
-    "expo-linking": "^55.0.11",
-    "expo-location": "^55.1.6",
-    "expo-media-library": "^55.0.12",
-    "expo-notifications": "^55.0.16",
-    "expo-router": "^55.0.10",
-    "expo-secure-store": "^55.0.11",
-    "expo-status-bar": "^55.0.5",
-    "expo-updates": "^55.0.18",
-    "expo-web-browser": "^55.0.12",
+    "expo": "~55.0.27",
+    "expo-apple-authentication": "~55.0.14",
+    "expo-build-properties": "~55.0.15",
+    "expo-constants": "~55.0.16",
+    "expo-font": "~55.0.8",
+    "expo-image-manipulator": "~55.0.18",
+    "expo-image-picker": "~55.0.21",
+    "expo-linking": "~55.0.16",
+    "expo-location": "~55.1.11",
+    "expo-media-library": "~55.0.18",
+    "expo-notifications": "~55.0.24",
+    "expo-router": "~55.0.16",
+    "expo-secure-store": "~55.0.15",
+    "expo-status-bar": "~55.0.6",
+    "expo-updates": "~55.0.25",
+    "expo-web-browser": "~55.0.17",
     "react": "19.2.0",
     "react-dom": "^19.2.0",
-    "react-native": "^0.83.4",
+    "react-native": "^0.83.6",
     "react-native-gesture-handler": "^2.30.0",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
@@ -48,7 +49,9 @@
   },
   "expo": {
     "install": {
-      "exclude": ["jest"]
+      "exclude": [
+        "jest"
+      ]
     }
   }
 }

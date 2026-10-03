@@ -65,14 +65,6 @@ it('returns null when no results found', async () => {
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({ results: [] }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
     });
 
   const result = await searchPlace('Nonexistent Place', 37.775, -122.419);
@@ -82,18 +74,12 @@ it('returns null when no results found', async () => {
 it('returns null when fetch fails', async () => {
   fetch
     .mockResolvedValueOnce({ ok: false })
-    .mockResolvedValueOnce({ ok: false })
-    .mockResolvedValueOnce({ ok: false })
     .mockResolvedValueOnce({ ok: false });
   await expect(searchPlace('Test', 37.775, -122.419)).rejects.toBeInstanceOf(MapkitSearchUnavailableError);
 });
 
 it('falls back to broader search when local POI search misses', async () => {
   fetch
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    })
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({ results: [] }),
@@ -111,7 +97,7 @@ it('falls back to broader search when local POI search misses', async () => {
   const result = await searchPlace('Target', 37.775, -122.419);
   expect(result).not.toBeNull();
   expect(result.place_name).toBe('Target');
-  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(fetch).toHaveBeenCalledTimes(2);
 });
 
 it('throws an unavailable error when Apple Maps credentials are missing', async () => {
@@ -119,5 +105,5 @@ it('throws an unavailable error when Apple Maps credentials are missing', async 
   delete process.env.APPLE_MAPS_TEAM_ID;
   delete process.env.APPLE_MAPS_PRIVATE_KEY;
 
-  await expect(searchPlace('Target', 37.775, -122.419)).rejects.toBeInstanceOf(MapkitSearchUnavailableError);
+  await expect(searchPlace('Credentials Missing Place', 37.775, -122.419)).rejects.toBeInstanceOf(MapkitSearchUnavailableError);
 });

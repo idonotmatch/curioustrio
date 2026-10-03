@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -20,6 +20,7 @@ import {
   shouldSuggestLocationFromMerchant,
 } from '../services/manualAddSuggestions';
 import { colors, radius } from '../theme/tokens';
+const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
 
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
@@ -42,6 +43,7 @@ function moneyInput(value = '') {
 }
 
 export default function ManualAddScreen() {
+  const confirmRequestKeyRef = useRef(createExpenseIdempotencyKey('manual'));
   const router = useRouter();
   const draft = useMemo(() => createManualExpenseDraft(), []);
   const { categories, loading: categoriesLoading } = useCategories();
@@ -60,7 +62,6 @@ export default function ManualAddScreen() {
   const [excludeFromBudget, setExcludeFromBudget] = useState(false);
   const [budgetExclusionReason, setBudgetExclusionReason] = useState(null);
   const [locationData, setLocationData] = useState(null);
-  const [locationSource, setLocationSource] = useState('empty');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState('');
@@ -108,7 +109,7 @@ export default function ManualAddScreen() {
       return undefined;
     }
 
-    if (normalizedMerchant === lastSuggestedMerchant && suggestedLocation) return undefined;
+    if (normalizedMerchant === lastSuggestedMerchant) return undefined;
 
     let cancelled = false;
     const timeout = setTimeout(async () => {
@@ -121,6 +122,7 @@ export default function ManualAddScreen() {
           coords = null;
         }
         const params = new URLSearchParams({ q: merchant.trim() });
+        params.set('intent', 'auto');
         if (coords?.latitude && coords?.longitude) {
           params.set('lat', String(coords.latitude));
           params.set('lng', String(coords.longitude));
@@ -186,8 +188,13 @@ export default function ManualAddScreen() {
 
   function acceptSuggestedLocation() {
     if (!suggestedLocation?.value) return;
-    setLocationData(suggestedLocation.value);
-    setLocationSource('merchant_suggestion');
+    setLocationData({
+      ...suggestedLocation.value,
+      source: 'merchant_suggestion',
+      location_status: 'suggested',
+      location_confidence: suggestedLocation.confidence,
+      location_user_owned: true,
+    });
     setSuggestedLocation(null);
     setDismissedMerchantSuggestion('');
   }
@@ -200,7 +207,6 @@ export default function ManualAddScreen() {
 
   function handleLocationChange(nextLocation) {
     setLocationData(nextLocation);
-    setLocationSource(nextLocation ? 'manual_search' : 'empty');
     setSuggestedLocation(null);
     setDismissedMerchantSuggestion('');
   }
@@ -234,6 +240,7 @@ export default function ManualAddScreen() {
     try {
       setSaving(true);
       const result = await api.post('/expenses/confirm', {
+        idempotency_key: confirmRequestKeyRef.current,
         merchant: merchant.trim(),
         description: notes.trim() || null,
         amount: Number(amount),
@@ -244,6 +251,13 @@ export default function ManualAddScreen() {
         place_name: locationData?.place_name || null,
         address: locationData?.address || null,
         mapkit_stable_id: locationData?.mapkit_stable_id || null,
+        location_provider_id: locationData?.provider_place_id || null,
+        location_latitude: locationData?.latitude ?? null,
+        location_longitude: locationData?.longitude ?? null,
+        location_source: locationData?.source || null,
+        location_status: locationData?.location_status || (locationData ? 'enriched' : 'missing'),
+        location_confidence: locationData?.location_confidence ?? null,
+        location_user_owned: Boolean(locationData?.location_user_owned || locationData),
         payment_method: paymentMethod,
         card_last4: cardLast4.trim() || null,
         card_label: cardLabel.trim() || null,
@@ -308,23 +322,6 @@ export default function ManualAddScreen() {
             </View>
 
             <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>Location</Text>
-              <LocationPicker onLocation={handleLocationChange} locationData={locationData} merchant={merchant} />
-              {!locationData && suggestingLocation ? (
-                <Text style={styles.locationSuggestionStatus}>Looking for a nearby match...</Text>
-              ) : null}
-              {!locationData && suggestedLocation?.value ? (
-                <SmartSuggestionCard
-                  eyebrow="Suggested location"
-                  title={suggestedLocation.value.place_name}
-                  body={suggestedLocation.value.address || ''}
-                  onDismiss={dismissSuggestedLocation}
-                  onAccept={acceptSuggestedLocation}
-                />
-              ) : null}
-            </View>
-
-            <View style={styles.fieldBlock}>
               <Text style={styles.fieldLabel}>Amount</Text>
               <TextInput
                 style={styles.primaryInput}
@@ -349,6 +346,23 @@ export default function ManualAddScreen() {
                 placeholderTextColor={colors.textDisabled}
                 autoCorrect={false}
               />
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Location</Text>
+              <LocationPicker onLocation={handleLocationChange} locationData={locationData} merchant={merchant} />
+              {!locationData && suggestingLocation ? (
+                <Text style={styles.locationSuggestionStatus}>Looking for a nearby match...</Text>
+              ) : null}
+              {!locationData && suggestedLocation?.value ? (
+                <SmartSuggestionCard
+                  eyebrow="Suggested location"
+                  title={suggestedLocation.value.place_name}
+                  body={suggestedLocation.value.address || ''}
+                  onDismiss={dismissSuggestedLocation}
+                  onAccept={acceptSuggestedLocation}
+                />
+              ) : null}
             </View>
 
             <View style={styles.fieldBlock}>

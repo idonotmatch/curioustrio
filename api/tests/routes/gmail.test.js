@@ -1069,7 +1069,7 @@ $1.61 promotions applied`,
     expect(res.body.outcomes.imported_pending_review).toBe(1);
   });
 
-  it('skips likely duplicate expenses even when the Gmail message id is different', async () => {
+  it('imports likely duplicates for explicit review even when the Gmail message id is different', async () => {
     await db.query(
       `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
        VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
@@ -1095,9 +1095,18 @@ $1.61 promotions applied`,
 
     const res = await request(app).post('/gmail/import');
     expect(res.status).toBe(200);
-    expect(res.body.imported).toBe(0);
-    expect(res.body.skipped).toBe(1);
-    expect(res.body.outcomes.skipped_reasons.duplicate_expense).toBe(1);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+    const duplicateFlags = await db.query(
+      `SELECT df.*
+       FROM duplicate_flags df
+       JOIN expenses imported ON imported.id IN (df.expense_id_a, df.expense_id_b)
+       WHERE imported.user_id = $1 AND imported.notes = 'Order #123'`,
+      [userId]
+    );
+    expect(duplicateFlags.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'pending', confidence: 'exact' }),
+    ]));
   });
 
   it('clamps parsed future dates to the email received date', async () => {

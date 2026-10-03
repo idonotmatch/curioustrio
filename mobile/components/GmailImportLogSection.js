@@ -26,7 +26,7 @@ function logOutcomeText(entry = {}, formatLogDetail) {
   if (detail) return detail;
   if (entry.skip_reason === 'classifier_uncertain') return 'Skipped because the email looked purchase-related but did not have a readable final total.';
   if (entry.skip_reason === 'missing_amount') return 'Skipped because no readable amount was found.';
-  if (entry.skip_reason === 'duplicate_expense') return 'Skipped because it matched an existing expense.';
+  if (entry.skip_reason === 'duplicate_expense') return 'Previously skipped as a possible duplicate. Review it to compare both expenses.';
   if (`${entry.skip_reason || ''}`.startsWith('template_skip_')) return 'Filtered as a recurring non-charge email template.';
   if (entry.status === 'failed') return entry.skip_reason ? `Failed: ${entry.skip_reason}` : 'Import failed before this email could be processed.';
   return null;

@@ -375,6 +375,27 @@ export default function SummaryScreen() {
     router,
   ]);
 
+  const handleActionInsight = useCallback((insight, cardAction) => {
+    if (!insight?.id || openingInsightId) return;
+    if (!cardAction?.route) {
+      handlePressInsight(insight);
+      return;
+    }
+    lockInsightNavigation(insight.id);
+    if (!(__DEV__ && insights.length === 0)) {
+      logEvents([{
+        insight_id: insight.id,
+        event_type: 'acted',
+        metadata: {
+          ...insightEventMetadata(insight),
+          action_label: cardAction.label || null,
+          action_target: typeof cardAction.route === 'string' ? cardAction.route : cardAction.route.pathname,
+        },
+      }]).catch(() => {});
+    }
+    router.push(cardAction.route);
+  }, [handlePressInsight, insights.length, lockInsightNavigation, logEvents, openingInsightId, router]);
+
   const spent = Number(displayPersonalBudget?.total?.spent || 0);
   const householdSpent = Number(displayHouseholdBudget?.total?.spent || 0);
   const limit = displayPersonalBudget?.total?.limit ?? 0;
@@ -502,6 +523,7 @@ export default function SummaryScreen() {
         hasMultipleInsights={hasMultipleInsights}
         insightCardWidth={insightCardWidth}
         handlePressInsight={handlePressInsight}
+        handleActionInsight={handleActionInsight}
         handleDismissInsight={handleDismissInsight}
         openingInsightId={openingInsightId}
         title="What matters now"

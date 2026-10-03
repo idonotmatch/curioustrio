@@ -112,8 +112,8 @@ function buildInsightAction(insight) {
     return {
       next_step_type: 'review_insight_detail',
       reason: 'Early signal',
-      title: 'Read the signal in context',
-      body: 'This is an early read, so the most useful next step is understanding the pattern before reacting too hard.',
+      title: 'Check what changed',
+      body: 'Look at the supporting expenses before changing plans.',
       cta: 'Review evidence',
       route: {
         pathname: '/insight-detail',

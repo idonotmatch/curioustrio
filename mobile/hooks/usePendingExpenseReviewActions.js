@@ -1,11 +1,12 @@
 import { Alert } from 'react-native';
 import { api } from '../services/api';
-import { removePendingExpense } from './usePendingExpenses';
+import { removePendingExpense, restorePendingExpense } from './usePendingExpenses';
 import { removeExpenseFromCachedLists, removeExpenseSnapshot, patchExpenseInCachedLists, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 
 export function usePendingExpenseReviewActions({
   expenseId,
+  expense,
   router,
   setActioning,
   setShowDismissReasonSheet,
@@ -15,8 +16,10 @@ export function usePendingExpenseReviewActions({
 }) {
   async function approvePendingExpense() {
     setActioning(true);
+    let persistedExpense = null;
+    let didOptimisticallyLeave = false;
     try {
-      const persistedExpense = await persistReviewControlsIfNeeded();
+      persistedExpense = await persistReviewControlsIfNeeded();
       if (!persistedExpense) {
         setActioning(false);
         return;
@@ -26,33 +29,44 @@ export function usePendingExpenseReviewActions({
         : isQuickCheckReview
           ? 'quick_check'
           : 'full_review';
-      const approved = await api.post(`/expenses/${expenseId}/approve`, { review_context: reviewContext });
-      if (approved?.id) {
-        await saveExpenseSnapshot(approved);
-        await patchExpenseInCachedLists(approved);
-      }
-      await invalidateExpenseMutationCaches();
       removePendingExpense(expenseId);
       router.back();
+      didOptimisticallyLeave = true;
+      const approved = await api.post(`/expenses/${expenseId}/approve`, { review_context: reviewContext });
+      if (approved?.id) {
+        Promise.all([
+          saveExpenseSnapshot(approved),
+          patchExpenseInCachedLists(approved),
+          invalidateExpenseMutationCaches(),
+        ]).catch(() => {});
+      } else {
+        invalidateExpenseMutationCaches().catch(() => {});
+      }
     } catch (e) {
+      restorePendingExpense(persistedExpense || expense);
       Alert.alert('Error', e.message);
-      setActioning(false);
+      if (!didOptimisticallyLeave) setActioning(false);
     }
   }
 
   async function dismissPendingExpense(dismissalReason) {
+    let didOptimisticallyLeave = false;
     setActioning(true);
+    setShowDismissReasonSheet(false);
+    removePendingExpense(expenseId);
+    router.back();
+    didOptimisticallyLeave = true;
     try {
       await api.post(`/expenses/${expenseId}/dismiss`, { dismissal_reason: dismissalReason });
-      await removeExpenseFromCachedLists(expenseId);
-      await removeExpenseSnapshot(expenseId);
-      await invalidateExpenseMutationCaches();
-      removePendingExpense(expenseId);
-      setShowDismissReasonSheet(false);
-      router.back();
+      Promise.all([
+        removeExpenseFromCachedLists(expenseId),
+        removeExpenseSnapshot(expenseId),
+        invalidateExpenseMutationCaches(),
+      ]).catch(() => {});
     } catch (e) {
+      restorePendingExpense(expense);
       Alert.alert('Error', e.message);
-      setActioning(false);
+      if (!didOptimisticallyLeave) setActioning(false);
     }
   }
 

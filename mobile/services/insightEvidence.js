@@ -86,20 +86,24 @@ function scoreEvidenceRow(expense, mode, metadata = {}) {
 
 export function selectInsightEvidence(rows = [], mode, metadata = {}, limit = 5) {
   if (!Array.isArray(rows) || !mode) return [];
+  const maxRows = Math.max(1, Number(limit) || 5);
+  const best = [];
 
-  return rows
-    .map((expense, index) => ({
-      expense,
-      index,
-      score: scoreEvidenceRow(expense, mode, metadata),
-    }))
-    .filter((entry) => Number.isFinite(entry.score))
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return stableTieBreaker(a.expense, b.expense) || a.index - b.index;
-    })
-    .slice(0, limit)
-    .map((entry) => entry.expense);
+  function compareEntries(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return stableTieBreaker(a.expense, b.expense) || a.index - b.index;
+  }
+
+  rows.forEach((expense, index) => {
+    const score = scoreEvidenceRow(expense, mode, metadata);
+    if (!Number.isFinite(score)) return;
+
+    best.push({ expense, index, score });
+    best.sort(compareEntries);
+    if (best.length > maxRows) best.pop();
+  });
+
+  return best.map((entry) => entry.expense);
 }
 
 export { normalizeMerchant, isUnknownMerchantValue };

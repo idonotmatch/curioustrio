@@ -518,6 +518,7 @@ function AppNavigator() {
         <Stack.Screen name="insight-diagnostics" options={{ title: 'Insight Diagnostics', headerBackTitle: 'Settings' }} />
       ) : null}
       <Stack.Screen name="review-queue" options={{ title: 'Pending actions', headerBackTitle: 'Activity' }} />
+      <Stack.Screen name="duplicate-review" options={{ title: 'Possible duplicate', headerBackTitle: 'Back' }} />
       <Stack.Screen name="payment-methods" options={{ title: 'Saved Card Labels', headerBackTitle: 'Settings' }} />
       <Stack.Screen name="expense/[id]" options={{ title: '', headerBackTitle: 'Activity' }} />
       <Stack.Screen name="scenario-check" options={{ title: 'Scenario Check', headerBackTitle: 'Summary' }} />

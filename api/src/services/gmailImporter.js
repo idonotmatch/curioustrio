@@ -33,6 +33,7 @@ const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { getItemHistoryByGroupKey } = require('./itemHistoryService');
 const { pushNotificationsEnabled } = require('./pushPreferences');
 const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
+const detectDuplicates = require('./duplicateDetector');
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -398,26 +399,6 @@ async function processMessageImport(user, msgId, {
       importedAsPendingReview = true;
     }
 
-    const duplicateCandidates = await Expense.findPotentialDuplicates({
-      householdId: user.household_id,
-      merchant: parsed.merchant,
-      amount: parsed.amount,
-      date: parsed.date,
-    });
-    if (duplicateCandidates.length > 0) {
-      await EmailImportLog.upsertResult({
-        userId: user.id,
-        messageId: msgId,
-        status: 'skipped',
-        subject,
-        fromAddress: from,
-        skipReason: 'duplicate_expense',
-        snippet,
-      });
-      increment(outcomes.skipped_reasons, 'duplicate_expense');
-      return { imported: 0, skipped: 1, failed: 0, reason: 'duplicate_expense' };
-    }
-
     const categoryAssignment = await assignCategory({
       merchant: parsed.merchant,
       description: parsed.description,
@@ -477,12 +458,13 @@ async function processMessageImport(user, msgId, {
       };
     }
 
-    const reviewMode = forceReview ? 'full_review' : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
+    let reviewMode = forceReview ? 'full_review' : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
 
-    const expense = await Expense.create({
+    let expense = await Expense.create({
       userId: user.id,
       householdId: user.household_id,
       merchant: parsed.merchant,
+      description: parsed.description || null,
       amount: parsed.amount,
       date: parsed.date,
       categoryId: category_id,
@@ -503,6 +485,17 @@ async function processMessageImport(user, msgId, {
       reviewSource: 'gmail',
     });
     createdExpense = expense;
+
+    const duplicateFlags = await detectDuplicates(expense);
+    if (duplicateFlags.length > 0 && reviewMode !== 'full_review') {
+      reviewMode = 'full_review';
+      expense = await Expense.updateReviewMetadata(expense.id, user.id, {
+        reviewRequired: true,
+        reviewMode,
+        reviewSource: 'gmail',
+      }) || expense;
+      createdExpense = expense;
+    }
 
     if (itemsWithProducts.length > 0) {
       await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
@@ -547,7 +540,7 @@ async function processMessageImport(user, msgId, {
         review_mode: reviewMode || null,
       },
     });
-    return { imported: 1, skipped: 0, failed: 0, expense };
+    return { imported: 1, skipped: 0, failed: 0, expense, duplicate_flags: duplicateFlags };
   } catch (e) {
     const failureReason = summarizeImportFailure(e);
     console.error('[gmail import] message failed', {
@@ -567,6 +560,32 @@ async function processMessageImport(user, msgId, {
   }
 }
 
+async function processMessageImportWithLock(user, msgId, options = {}) {
+  const client = await db.pool.connect();
+  let locked = false;
+  try {
+    const lock = await client.query(
+      'SELECT pg_try_advisory_lock(hashtext($1), hashtext($2)) AS locked',
+      [user.id, msgId]
+    );
+    locked = lock.rows[0]?.locked === true;
+    if (!locked) {
+      if (options.outcomes) options.outcomes.skipped_existing++;
+      return { imported: 0, skipped: 1, failed: 0, reason: 'processing' };
+    }
+    return await processMessageImport(user, msgId, options);
+  } finally {
+    if (locked) {
+      try {
+        await client.query('SELECT pg_advisory_unlock(hashtext($1), hashtext($2))', [user.id, msgId]);
+      } catch (err) {
+        console.error('[gmail import] message lock release failed', { message: err?.message || String(err) });
+      }
+    }
+    client.release();
+  }
+}
+
 /**
  * Run a Gmail import for a single user.
  * Returns { imported, skipped, failed, outcomes }.
@@ -582,7 +601,7 @@ async function importForUser(user) {
   const qualityCache = new Map();
 
   for (const msg of messages) {
-    const result = await processMessageImport(user, msg.id, {
+    const result = await processMessageImportWithLock(user, msg.id, {
       categories,
       todayDate,
       outcomes,

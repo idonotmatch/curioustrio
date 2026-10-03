@@ -44,6 +44,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
           params.set('lat', String(coords.latitude));
           params.set('lng', String(coords.longitude));
         }
+        params.set('intent', 'manual');
         const lookup = await api.get(`/places/search?${params.toString()}`);
         if (!cancelled) {
           setSearchResults(Array.isArray(lookup?.results) ? lookup.results : (lookup?.result ? [lookup.result] : []));
@@ -78,7 +79,13 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   }
 
   function selectLocation(result) {
-    onLocation({ ...result, source: 'search', location_status: 'enriched' });
+    onLocation({
+      ...result,
+      source: 'search',
+      location_status: 'enriched',
+      location_confidence: 1,
+      location_user_owned: true,
+    });
     setStatus(locationStatusPresentation({ source: 'search' }));
     endSearch();
   }
@@ -87,19 +94,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     setLoading(true);
     setStatus(locationStatusPresentation({ status: 'deferred' }));
     try {
-      let result = null;
-      if (merchant?.trim()) {
-        const coords = await getCoords({ requestIfNeeded: true, throwOnDenied: true });
-        if (coords) {
-          const lookup = await api.get(
-            `/places/search?q=${encodeURIComponent(merchant)}&lat=${coords.latitude}&lng=${coords.longitude}`
-          );
-          result = lookup?.result ? { ...lookup.result, source: 'search', location_status: 'enriched' } : null;
-        }
-      }
-      if (!result) {
-        result = await getLocation({ requestIfNeeded: true, throwOnDenied: true, throwOnFailure: true });
-      }
+      const result = await getLocation({ requestIfNeeded: true, throwOnDenied: true, throwOnFailure: true });
       if (result) {
         onLocation(result);
         setStatus(locationStatusPresentation(result));

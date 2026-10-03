@@ -1,10 +1,11 @@
-import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, Text, FlatList, StyleSheet, RefreshControl, Pressable } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionNotice } from '../components/ActionNotice';
 import { DismissReasonSheet } from '../components/DismissReasonSheet';
-import { usePendingExpenses, removePendingExpense } from '../hooks/usePendingExpenses';
+import { SkippedImportsList } from '../components/SkippedImportsList';
+import { usePendingExpenses, removePendingExpense, restorePendingExpense } from '../hooks/usePendingExpenses';
 import { ReviewQueueItem, reviewQueueGroup } from '../components/ReviewQueueItem';
 import { api } from '../services/api';
 import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
@@ -55,12 +56,30 @@ export default function ReviewQueueScreen() {
   const router = useRouter();
   const { expenses, loading, error, refresh, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
+  const [reviewTab, setReviewTab] = useState('pending');
   const [notice, setNotice] = useState('');
   const [dismissingId, setDismissingId] = useState(null);
+  const [actioningIds, setActioningIds] = useState(() => new Set());
+  const actioningIdsRef = useRef(new Set());
   const reviewModeCounts = summarizeReviewModes(displayExpenses);
   const queueRows = buildQueueRows(displayExpenses);
   const totalActions = displayExpenses.length;
   const hasSecondarySummary = reviewModeCounts.quickCheck > 0 || reviewModeCounts.itemsFirst > 0;
+
+  function openReviewEntry(entry) {
+    const duplicateFlag = Array.isArray(entry?.duplicate_flags) ? entry.duplicate_flags[0] : null;
+    if (duplicateFlag?.id) {
+      router.push({
+        pathname: '/duplicate-review',
+        params: { expense_id: entry.id, flag_id: duplicateFlag.id },
+      });
+      return;
+    }
+    router.push({
+      pathname: '/expense/[id]',
+      params: { id: entry.id, expense: JSON.stringify(entry) },
+    });
+  }
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
   useEffect(() => {
@@ -74,11 +93,30 @@ export default function ReviewQueueScreen() {
     removePendingExpense(id);
   };
 
+  const restore = (expense) => {
+    if (!expense?.id) return;
+    setDisplayExpenses((prev) => (
+      prev.some((item) => item.id === expense.id) ? prev : [expense, ...prev]
+    ));
+    restorePendingExpense(expense);
+  };
+
+  const setActioning = (id, value) => {
+    if (!id) return;
+    const next = new Set(actioningIdsRef.current);
+    if (value) next.add(id);
+    else next.delete(id);
+    actioningIdsRef.current = next;
+    setActioningIds(next);
+  };
+
   function requestDismiss(id) {
     setDismissingId(id);
   }
 
   async function dismiss(id, dismissalReason) {
+    if (actioningIdsRef.current.has(id)) return;
+    const dismissed = displayExpenses.find((entry) => entry.id === id);
     if (isUsingMockData) {
       resolveMockExpense(id);
       remove(id);
@@ -86,48 +124,73 @@ export default function ReviewQueueScreen() {
       setNotice('Dismissed from pending actions');
       return;
     }
+    setActioning(id, true);
+    remove(id);
+    setDismissingId(null);
+    setNotice('Dismissed from pending actions');
     try {
       await api.post(`/expenses/${id}/dismiss`, { dismissal_reason: dismissalReason });
-      await removeExpenseFromCachedLists(id);
-      await removeExpenseSnapshot(id);
-      await invalidateExpenseMutationCaches();
-      remove(id);
-      setDismissingId(null);
-      setNotice('Dismissed from pending actions');
+      Promise.all([
+        removeExpenseFromCachedLists(id),
+        removeExpenseSnapshot(id),
+        invalidateExpenseMutationCaches(),
+      ]).catch(() => {});
     } catch {
-      // ignore
+      restore(dismissed);
+      setNotice('Could not dismiss. Try again.');
+    } finally {
+      setActioning(id, false);
     }
   }
 
   async function approve(id) {
+    if (actioningIdsRef.current.has(id)) return;
+    const item = displayExpenses.find((entry) => entry.id === id);
     if (isUsingMockData) {
       resolveMockExpense(id);
       remove(id);
       setNotice('Approved and moved into your expenses');
       return;
     }
+    setActioning(id, true);
+    remove(id);
+    setNotice('Approved and moved into your expenses');
     try {
-      const item = displayExpenses.find((entry) => entry.id === id);
       const reviewContext = item?.gmail_review_hint?.review_mode === 'quick_check'
         ? 'quick_check'
         : null;
       const approved = await api.post(`/expenses/${id}/approve`, reviewContext ? { review_context: reviewContext } : {});
       if (approved?.id) {
-        await saveExpenseSnapshot(approved);
-        await patchExpenseInCachedLists(approved);
+        Promise.all([
+          saveExpenseSnapshot(approved),
+          patchExpenseInCachedLists(approved),
+          invalidateExpenseMutationCaches(),
+        ]).catch(() => {});
       }
-      await invalidateExpenseMutationCaches();
-      remove(id);
-      setNotice('Approved and moved into your expenses');
     } catch {
-      // ignore
+      restore(item);
+      setNotice('Could not approve. Try again.');
+    } finally {
+      setActioning(id, false);
     }
   }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.container}>
-        <FlatList
+        <View style={styles.reviewTabs} accessibilityRole="tablist">
+          {[{ key: 'pending', label: 'Pending' }, { key: 'skipped', label: 'Skipped' }].map((tab) => (
+            <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: reviewTab === tab.key }}
+              onPress={() => setReviewTab(tab.key)} style={[styles.reviewTab, reviewTab === tab.key && styles.reviewTabActive]}>
+              <Text style={[styles.reviewTabText, reviewTab === tab.key && styles.reviewTabTextActive]}>{tab.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {reviewTab === 'skipped' ? (
+          <SkippedImportsList isUsingMockData={isUsingMockData} onRecovered={() => {
+            Promise.all([refresh(), invalidateExpenseMutationCaches()]).catch(() => {});
+          }} />
+        ) : <FlatList
           data={queueRows}
           keyExtractor={(item) => item.key}
           renderItem={({ item }) => (
@@ -139,19 +202,14 @@ export default function ReviewQueueScreen() {
             ) : (
               <ReviewQueueItem
                 item={item.expense}
-                onOpen={(entry) => router.push({
-                  pathname: '/expense/[id]',
-                  params: {
-                    id: entry.id,
-                    expense: JSON.stringify(entry),
-                  },
-                })}
+                disabled={actioningIds.has(item.expense.id)}
+                onOpen={openReviewEntry}
                 onApprove={approve}
                 onDismiss={requestDismiss}
               />
             )
           )}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={() => refresh({ forceRefresh: true })} tintColor={colors.text} />}
           contentContainerStyle={styles.list}
           ListHeaderComponent={(
             <View style={styles.header}>
@@ -195,7 +253,7 @@ export default function ReviewQueueScreen() {
                 : <Text style={styles.empty}>Nothing needs your attention right now. New review work will land here when it needs you.</Text>
               )
           }
-        />
+        />}
         <ActionNotice message={notice} />
         <DismissReasonSheet
           visible={!!dismissingId}
@@ -210,6 +268,11 @@ export default function ReviewQueueScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
+  reviewTabs: { flexDirection: 'row', marginHorizontal: 16, marginVertical: 12, backgroundColor: colors.surface, borderRadius: 8, padding: 3 },
+  reviewTab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', padding: 10, borderRadius: 6 },
+  reviewTabActive: { backgroundColor: colors.surfacePressed },
+  reviewTabText: { color: colors.textSubtle, fontSize: 14, fontWeight: '600' },
+  reviewTabTextActive: { color: colors.text },
   list: { paddingHorizontal: 16, paddingBottom: 16 },
   header: {
     paddingTop: 4,

@@ -1300,7 +1300,8 @@ describe('insightBuilder orchestration', () => {
     expect(resolved[0].metadata.consolidated_from[0].scope_origin).toBe('personal');
     expect(resolved[0].metadata.consolidated_from[1].scope_origin).toBe('household');
     expect(resolved[0].title).toBe('Shopping is showing up in your spending and rolling into the household');
-    expect(resolved[0].body).toContain('starts with your pattern');
+    expect(resolved[0].body).toContain('household view points in the same direction');
+    expect(resolved[0].body).not.toContain('starts with your pattern');
   });
 
   it('does not consolidate unrelated personal and household cards', () => {

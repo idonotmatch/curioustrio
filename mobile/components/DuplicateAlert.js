@@ -7,7 +7,7 @@ const CONFIDENCE_LABEL = {
   uncertain: 'Uncertain',
 };
 
-export function DuplicateAlert({ flags, onDismiss }) {
+export function DuplicateAlert({ flags, onCompare }) {
   if (!flags || flags.length === 0) return null;
 
   const topFlag = flags[0];
@@ -22,8 +22,8 @@ export function DuplicateAlert({ flags, onDismiss }) {
           <Text style={styles.badgeText}>{label}</Text>
         </View>
       </View>
-      <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
-        <Text style={styles.dismissText}>Dismiss</Text>
+      <TouchableOpacity style={styles.compareButton} onPress={onCompare}>
+        <Text style={styles.compareText}>Compare expenses</Text>
       </TouchableOpacity>
     </View>
   );
@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'capitalize',
   },
-  dismissButton: {
+  compareButton: {
     alignSelf: 'flex-start',
     borderWidth: 1,
     borderColor: colors.onDarkOverlayStrong,
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  dismissText: {
+  compareText: {
     color: colors.text,
     fontSize: 12,
     fontWeight: '500',

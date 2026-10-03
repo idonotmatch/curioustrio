@@ -61,6 +61,10 @@ const MIGRATION_PLAN = [
   '065_egress_optimization_indexes.sql',
   '066_insight_portfolio_snapshots.sql',
   '067_user_summary_snapshots.sql',
+  '068_duplicate_review_workflow.sql',
+  '069_expense_merge_audit.sql',
+  '070_expense_receipt_details.sql',
+  '071_expense_location_provenance.sql',
 ];
 
 module.exports = {

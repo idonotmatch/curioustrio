@@ -14,6 +14,7 @@ jest.mock('../../src/services/categoryAssigner', () => ({ assignCategory: jest.f
 jest.mock('../../src/services/mapkitService', () => ({ searchPlace: jest.fn() }));
 jest.mock('../../src/services/freshnessEvents', () => ({ emitExpenseFreshnessEvent: jest.fn() }));
 jest.mock('../../src/services/projectionRefreshService', () => ({ requestProjectionRefresh: jest.fn() }));
+jest.mock('../../src/services/duplicateDetector', () => jest.fn());
 
 const db = require('../../src/db');
 const Log = require('../../src/models/emailImportLog');
@@ -24,6 +25,7 @@ const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals } = require
 const { getSenderImportQuality, recommendReviewMode } = require('../../src/services/gmailImportQualityService');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { emitExpenseFreshnessEvent } = require('../../src/services/freshnessEvents');
+const detectDuplicates = require('../../src/services/duplicateDetector');
 const { reviewSkippedImportLog, retryFailedImportLog } = require('../../src/services/gmailImporter');
 
 const user = { id: 'user-1', household_id: 'household-1' };
@@ -44,6 +46,7 @@ beforeEach(() => {
   parseEmailExpense.mockResolvedValue({ merchant: 'Shop', amount: 12, date: '2026-09-20', items: [] });
   Expense.findPotentialDuplicates.mockResolvedValue([]);
   Expense.create.mockResolvedValue({ id: 'expense-1', user_id: user.id, amount: 12, status: 'pending' });
+  detectDuplicates.mockResolvedValue([]);
   assignCategory.mockResolvedValue({ category_id: null });
 });
 
@@ -56,11 +59,11 @@ it('recovers a skipped email into full pending review and records corrective fee
   expect(client.release).toHaveBeenCalled();
 });
 
-it('retains duplicate detection and does not teach from duplicate recovery', async () => {
+it('recovers a legacy duplicate skip into review without teaching classifier feedback', async () => {
   Log.findByIdForUser.mockResolvedValue({ ...log, skip_reason: 'duplicate_expense' });
-  Expense.findPotentialDuplicates.mockResolvedValue([{ id: 'existing' }]);
-  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ skipped: 1, reason: 'duplicate_expense' });
-  expect(Expense.create).not.toHaveBeenCalled();
+  detectDuplicates.mockResolvedValue([{ id: 'flag-1', confidence: 'exact' }]);
+  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ imported: 1, skipped: 0 });
+  expect(Expense.create).toHaveBeenCalled();
   expect(Log.recordLogFeedback).not.toHaveBeenCalled();
 });
 

@@ -1,4 +1,5 @@
 const {
+  choosePortfolioChange,
   chooseForecastMovementState,
   formatSignedCurrency,
 } = require('../../src/services/forecastMovementService');
@@ -66,6 +67,65 @@ describe('forecastMovementService', () => {
     expect(summary).toMatchObject({
       state: 'import_synced_no_material_change',
       cta: { target: 'gmail' },
+    });
+  });
+
+  it('surfaces a new material insight before import-only fallback', () => {
+    const portfolioChange = choosePortfolioChange({
+      latest: [
+        {
+          insight_id: 'groceries-now',
+          forecast_type: 'category_month_end',
+          entity_type: 'category',
+          entity_id: 'groceries',
+          projected_delta: 72,
+          feature_snapshot: { category_key: 'Groceries' },
+        },
+      ],
+      previous: [
+        {
+          insight_id: 'dining-before',
+          forecast_type: 'category_month_end',
+          entity_type: 'category',
+          entity_id: 'dining',
+          projected_delta: 18,
+          feature_snapshot: { category_key: 'Dining' },
+        },
+      ],
+    });
+    const summary = chooseForecastMovementState({
+      latest: { projected_delta: 105, confidence_label: 'directional' },
+      previous: { projected_delta: 101, confidence_label: 'directional' },
+      pending: { count: 0, total_amount: 0 },
+      importSummary: { imported: 2 },
+      portfolioChange,
+      hasSnapshots: true,
+    });
+
+    expect(summary).toMatchObject({
+      state: 'new_insight_detected',
+      title: 'Groceries moved into focus',
+      cta: { target: 'insights' },
+      source: 'insights',
+    });
+  });
+
+  it('detects when the top material driver changes', () => {
+    const change = choosePortfolioChange({
+      latest: [
+        { insight_id: 'groceries', forecast_type: 'category_month_end', entity_type: 'category', entity_id: 'groceries', projected_delta: 95, feature_snapshot: { category_key: 'Groceries' } },
+        { insight_id: 'dining', forecast_type: 'category_month_end', entity_type: 'category', entity_id: 'dining', projected_delta: 42, feature_snapshot: { category_key: 'Dining' } },
+      ],
+      previous: [
+        { insight_id: 'groceries', forecast_type: 'category_month_end', entity_type: 'category', entity_id: 'groceries', projected_delta: 40, feature_snapshot: { category_key: 'Groceries' } },
+        { insight_id: 'dining', forecast_type: 'category_month_end', entity_type: 'category', entity_id: 'dining', projected_delta: 90, feature_snapshot: { category_key: 'Dining' } },
+      ],
+    });
+
+    expect(change).toMatchObject({
+      type: 'top_driver_changed',
+      item: { entity_id: 'groceries' },
+      previous: { entity_id: 'dining' },
     });
   });
 

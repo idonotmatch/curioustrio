@@ -72,11 +72,14 @@ function locationStatusPresentation(location = {}) {
   const status = `${location?.location_status || location?.status || ''}`;
   if (location?.source === 'current') return { label: 'Added by you', detail: 'Using your current location.' };
   if (location?.source === 'search') return { label: 'Chosen by you', detail: 'Selected from place search.' };
+  if (location?.source === 'merchant_suggestion') return { label: 'Accepted suggestion', detail: 'Matched near your current location.' };
+  if (location?.source === 'receipt' && status === 'enriched') return { label: 'Found from receipt', detail: 'Matched using receipt location details.' };
   if (status === 'enriched') return { label: 'Found from receipt', detail: 'Matched from receipt or email location detail.' };
   if (status === 'deferred') return { label: 'Still checking', detail: 'Location lookup will finish in the background.' };
   if (status === 'failed' || status === 'lookup_failed') return { label: 'Lookup failed', detail: 'You can search manually or leave it blank.' };
   if (status === 'permission_denied') return { label: 'Location unavailable', detail: 'Permission is off. You can search manually instead.' };
-  if (status === 'no_match') return { label: 'No match found', detail: 'Try a more specific place or address.' };
+  if (status === 'no_match' || status === 'missing') return { label: 'No match found', detail: 'Try a more specific place or address.' };
+  if (status === 'cleared') return { label: 'Removed by you', detail: 'No location will be saved for this expense.' };
   return { label: 'Optional', detail: 'Add a place if it helps identify this expense later.' };
 }
 

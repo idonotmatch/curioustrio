@@ -166,6 +166,59 @@ function annotateInsightScopeLineage(insight) {
   };
 }
 
+function formatCurrency(value) {
+  const amount = Math.round(Math.abs(Number(value || 0)));
+  if (amount >= 1000) {
+    const short = amount / 1000;
+    return `$${short >= 10 ? short.toFixed(0) : short.toFixed(1)}k`;
+  }
+  return `$${amount}`;
+}
+
+function consolidatedWeeklyCopy(primary = {}) {
+  const metadata = primary.metadata || {};
+  const delta = Number(metadata.delta_amount || 0);
+  const current = Number(metadata.current_spend || 0);
+  const previous = Number(metadata.previous_spend || 0);
+  const days = Number(metadata.window_days || metadata.days || 7);
+  const lighter = delta < 0;
+
+  return {
+    title: lighter
+      ? 'Your recent spending eased, and the household view eased too'
+      : 'Your recent spending picked up, and the household view moved too',
+    body: [
+      `Your last ${days} days are about ${formatCurrency(delta)} ${lighter ? 'lower' : 'higher'} than the prior ${days}-day window.`,
+      current > 0 && previous > 0
+        ? `That puts your current read at ${formatCurrency(current)} versus ${formatCurrency(previous)} before.`
+        : null,
+      'The household view moved the same way, so this note keeps both views together.',
+    ].filter(Boolean).join(' '),
+  };
+}
+
+function consolidatedScopeCopy(primary = {}, { entityName = null } = {}) {
+  if (primary.type === 'developing_weekly_spend_change') {
+    return consolidatedWeeklyCopy(primary);
+  }
+  if (primary.entity_type === 'category' && entityName) {
+    return {
+      title: `${entityName} is showing up in your spending and rolling into the household`,
+      body: `${entityName} is the clearest personal driver, and the household view points in the same direction.`,
+    };
+  }
+  if (primary.entity_type === 'merchant' && entityName) {
+    return {
+      title: `${entityName} is repeating in your spending and the household`,
+      body: `${entityName} is repeating in your activity, and the same merchant pattern is visible in the household view.`,
+    };
+  }
+  return {
+    title: primary.title,
+    body: 'Your view and the household view are moving in the same direction, so this note keeps them together.',
+  };
+}
+
 function consolidateScopedInsightGroup(group = []) {
   if (group.length < 2) return group[0] || null;
 
@@ -187,16 +240,9 @@ function consolidateScopedInsightGroup(group = []) {
   let title = primary.title;
   let body = primary.body;
   if (hasPersonal && hasHousehold) {
-    if (primary.entity_type === 'category' && entityName) {
-      title = `${entityName} is showing up in your spending and rolling into the household`;
-      body = `${primary.body} A similar household card pointed in the same direction, so this shared read starts with your pattern and shows how it carries into the household.`;
-    } else if (primary.entity_type === 'merchant' && entityName) {
-      title = `${entityName} is repeating in your spending and the household`;
-      body = `${primary.body} A similar household merchant card was folded in so you can see how your pattern overlaps with the broader household picture.`;
-    } else {
-      title = primary.title;
-      body = `${primary.body} A similar household card was folded into this one so you can start from your own spending and then see the shared impact.`;
-    }
+    const copy = consolidatedScopeCopy(primary, { entityName });
+    title = copy.title;
+    body = copy.body;
   }
 
   const consolidatedScopes = [];

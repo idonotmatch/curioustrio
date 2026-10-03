@@ -35,6 +35,7 @@ const {
 } = require('../services/expenseReviewContext');
 const db = require('../db');
 const { buildExpensePage, decodeExpenseCursor } = require('../services/expensePagination');
+const { resolveDuplicate } = require('../services/duplicateResolutionService');
 
 router.use(authenticate);
 
@@ -234,10 +235,11 @@ router.post('/confirm', async (req, res, next) => {
       merchant, description, amount, date, category_id, source, notes,
       place_name, address,
       mapkit_stable_id, linked_expense_id,
+      location_provider_id, location_latitude, location_longitude, location_source, location_confidence,
       suggested_category_id, category_source, category_confidence, category_reasoning,
       category_status, location_status, category_user_owned, location_user_owned,
       payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
-      ingest_attempt_id, parsed_payment_snapshot,
+      ingest_attempt_id, parsed_payment_snapshot, idempotency_key, receipt_details,
     } = req.body;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
     confirmAttemptId = ingest_attempt_id || null;
@@ -253,7 +255,7 @@ router.post('/confirm', async (req, res, next) => {
       return res.status(400).json({ error: validation.error });
     }
 
-    const { expense, duplicate_flags } = await createConfirmedExpense({
+    const { expense, duplicate_flags, idempotent_replay: idempotentReplay = false } = await createConfirmedExpense({
       user,
       payload: {
         merchant,
@@ -267,6 +269,11 @@ router.post('/confirm', async (req, res, next) => {
         place_name,
         address,
         mapkit_stable_id,
+        location_provider_id,
+        location_latitude,
+        location_longitude,
+        location_source,
+        location_confidence,
         linked_expense_id,
         category_source,
         category_confidence,
@@ -284,21 +291,25 @@ router.post('/confirm', async (req, res, next) => {
         items,
         ingest_attempt_id,
         parsed_payment_snapshot,
+        receipt_details,
+        idempotency_key,
       },
       originalParsedItems,
     });
-    requestProjectionRefresh({
-      user,
-      reason: 'expense_confirmed',
-      expense,
-      metadata: { source: source || 'manual' },
-    });
-    await emitExpenseFreshnessEvent(user, expense, {
-      eventType: 'expense_confirmed',
-      metadata: { source: source || 'manual' },
-    });
+    if (!idempotentReplay) {
+      requestProjectionRefresh({
+        user,
+        reason: 'expense_confirmed',
+        expense,
+        metadata: { source: source || 'manual' },
+      });
+      await emitExpenseFreshnessEvent(user, expense, {
+        eventType: 'expense_confirmed',
+        metadata: { source: source || 'manual' },
+      });
+    }
 
-    res.status(201).json({ expense, duplicate_flags });
+    res.status(idempotentReplay ? 200 : 201).json({ expense, duplicate_flags, idempotent_replay: idempotentReplay });
   } catch (err) {
     await markConfirmFailure('server_error', err.message);
     next(err);
@@ -490,6 +501,43 @@ router.post('/:id/approve', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/:id/duplicates/:flagId/resolve', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    if (!UUID_RE.test(req.params.id) || !UUID_RE.test(req.params.flagId)) {
+      return res.status(400).json({ error: 'Invalid expense or duplicate flag id' });
+    }
+    const result = await resolveDuplicate({
+      user,
+      expenseId: req.params.id,
+      flagId: req.params.flagId,
+      action: req.body?.action,
+    });
+    if (!result.idempotent_replay) {
+      requestProjectionRefresh({
+        user,
+        reason: 'duplicate_resolved',
+        expense: result.expense,
+        metadata: { action: result.action, duplicate_flag_id: req.params.flagId },
+      });
+      await emitExpenseFreshnessEvent(user, result.expense, {
+        eventType: 'duplicate_resolved',
+        includePending: true,
+        includeGmail: true,
+        metadata: { action: result.action, duplicate_flag_id: req.params.flagId },
+      });
+    }
+    res.json({
+      ...result,
+      expense: await attachExpenseReviewContext(result.expense, user.id, {
+        includeItems: true,
+        includeCategoryReasoning: true,
+      }),
+    });
+  } catch (err) { next(err); }
+});
+
 // Delete an expense
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
@@ -549,7 +597,9 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const { merchant, amount, date, category_id, notes,
             payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
-            place_name, address, mapkit_stable_id } = req.body;
+            place_name, address, mapkit_stable_id,
+            location_provider_id, location_latitude, location_longitude, location_source,
+            location_status, location_confidence, location_user_owned } = req.body;
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }
@@ -558,6 +608,15 @@ router.patch('/:id', async (req, res, next) => {
       if (itemList.some(it => !it.description || typeof it.description !== 'string' || it.description.trim() === '')) {
         return res.status(400).json({ error: 'Each item must have a non-empty description' });
       }
+    }
+    if (location_latitude != null && (!Number.isFinite(Number(location_latitude)) || Number(location_latitude) < -90 || Number(location_latitude) > 90)) {
+      return res.status(400).json({ error: 'location_latitude must be between -90 and 90' });
+    }
+    if (location_longitude != null && (!Number.isFinite(Number(location_longitude)) || Number(location_longitude) < -180 || Number(location_longitude) > 180)) {
+      return res.status(400).json({ error: 'location_longitude must be between -180 and 180' });
+    }
+    if (location_confidence != null && (!Number.isFinite(Number(location_confidence)) || Number(location_confidence) < 0 || Number(location_confidence) > 1)) {
+      return res.status(400).json({ error: 'location_confidence must be between 0 and 1' });
     }
     const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(budget_exclusion_reason);
     if (exclude_from_budget === true && !normalizedBudgetExclusionReason) {
@@ -600,6 +659,13 @@ router.patch('/:id', async (req, res, next) => {
       placeName: place_name,
       address,
       mapkitStableId: mapkit_stable_id,
+      locationProviderId: location_provider_id,
+      locationLatitude: location_latitude,
+      locationLongitude: location_longitude,
+      locationSource: location_source,
+      locationStatus: location_status,
+      locationConfidence: location_confidence,
+      locationUserOwned: location_user_owned,
     });
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
     const categoryChanged = category_id !== undefined && `${originalExpense.category_id || ''}` !== `${expense.category_id || ''}`;

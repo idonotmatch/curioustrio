@@ -55,11 +55,18 @@ export function applyExpenseToState(record, setters) {
   setters.setBudgetExclusionReason(record.budget_exclusion_reason || null);
   setters.setItems(record.items || []);
   setters.setLocationData(
-    record.place_name || record.address || record.mapkit_stable_id
+    record.place_name || record.address || record.mapkit_stable_id || record.location_latitude != null
       ? {
           place_name: record.place_name || '',
           address: record.address || null,
           mapkit_stable_id: record.mapkit_stable_id || null,
+          provider_place_id: record.location_provider_id || null,
+          latitude: record.location_latitude ?? null,
+          longitude: record.location_longitude ?? null,
+          source: record.location_source || null,
+          status: record.location_status || null,
+          confidence: record.location_confidence ?? null,
+          location_user_owned: Boolean(record.location_user_owned),
         }
       : null
   );
@@ -121,6 +128,13 @@ export function buildExpensePatchPayload({
     place_name: locationData?.place_name || null,
     address: locationData?.address || null,
     mapkit_stable_id: locationData?.mapkit_stable_id || null,
+    location_provider_id: locationData?.provider_place_id || null,
+    location_latitude: locationData?.latitude ?? null,
+    location_longitude: locationData?.longitude ?? null,
+    location_source: locationData?.source || (locationData ? 'manual_edit' : 'user_cleared'),
+    location_status: locationData?.status || (locationData ? 'enriched' : 'cleared'),
+    location_confidence: locationData?.confidence ?? (locationData ? 1 : null),
+    location_user_owned: true,
     items: itemsEdits
       .filter((it) => it.description.trim())
       .map((it) => normalizeExpenseItemPayload(it)),

@@ -114,10 +114,10 @@ async function fetchPendingExpensesBase(userId) {
   return result.rows;
 }
 
-async function attachDuplicateFlagsBestEffort(expense) {
+async function attachDuplicateFlagsBestEffort(expense, userId) {
   if (!expense?.id) return { ...expense, duplicate_flags: [] };
   try {
-    const duplicateFlags = await DuplicateFlag.findByExpenseId(expense.id);
+    const duplicateFlags = await DuplicateFlag.findByExpenseId(expense.id, { userId, pendingOnly: true });
     return { ...expense, duplicate_flags: duplicateFlags };
   } catch (err) {
     console.error('[expenseReviewContext] duplicate flag lookup failed:', {
@@ -236,7 +236,7 @@ async function attachCategoryReasoningBestEffort(expense) {
 }
 
 async function attachExpenseReviewContext(expense, userId, { includeItems = false, includeCategoryReasoning = false } = {}) {
-  let enrichedExpense = await attachDuplicateFlagsBestEffort(expense);
+  let enrichedExpense = await attachDuplicateFlagsBestEffort(expense, userId);
   if (includeItems) {
     enrichedExpense = await attachItemsBestEffort(enrichedExpense);
     try {

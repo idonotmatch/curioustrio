@@ -15,6 +15,7 @@ export function ExpenseDetailActions({
   isQuickCheckReview,
   deleting,
   handleDelete,
+  onReviewDuplicate,
 }) {
   return (
     <>
@@ -26,6 +27,9 @@ export function ExpenseDetailActions({
               Confidence: {flag.confidence} · {flag.status}
             </Text>
           ))}
+          <TouchableOpacity style={styles.dupReviewBtn} onPress={() => onReviewDuplicate?.(expense.duplicate_flags[0])}>
+            <Text style={styles.dupReviewBtnText}>Compare expenses</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
 
@@ -35,7 +39,7 @@ export function ExpenseDetailActions({
         </TouchableOpacity>
       ) : null}
 
-      {!editing && expense?.status === 'pending' ? (
+      {!editing && expense?.status === 'pending' && !expense?.duplicate_flags?.length ? (
         <View style={styles.pendingActions}>
           <TouchableOpacity
             style={[styles.approveBtn, actioning && { opacity: 0.5 }]}

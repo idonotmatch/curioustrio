@@ -5,6 +5,7 @@ jest.mock('../../src/models/expenseItem');
 jest.mock('../../src/models/ingestAttemptLog');
 jest.mock('../../src/models/categoryDecisionEvent');
 jest.mock('../../src/models/receiptLineCorrection');
+jest.mock('../../src/models/duplicateFlag');
 jest.mock('../../src/services/duplicateDetector');
 jest.mock('../../src/services/productResolver');
 jest.mock('../../src/services/categoryAssigner');
@@ -17,6 +18,7 @@ const ExpenseItem = require('../../src/models/expenseItem');
 const IngestAttemptLog = require('../../src/models/ingestAttemptLog');
 const CategoryDecisionEvent = require('../../src/models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../../src/models/receiptLineCorrection');
+const DuplicateFlag = require('../../src/models/duplicateFlag');
 const detectDuplicates = require('../../src/services/duplicateDetector');
 const { resolveProductMatch } = require('../../src/services/productResolver');
 const { assignCategory } = require('../../src/services/categoryAssigner');
@@ -40,6 +42,7 @@ describe('expenseConfirmService deferred enrichment', () => {
     IngestAttemptLog.markConfirmed.mockReset();
     CategoryDecisionEvent.create.mockReset();
     ReceiptLineCorrection.upsert.mockReset();
+    DuplicateFlag.findByExpenseId.mockReset();
     detectDuplicates.mockReset();
     resolveProductMatch.mockReset();
     assignCategory.mockReset();
@@ -114,6 +117,7 @@ describe('expenseConfirmService deferred enrichment', () => {
     IngestAttemptLog.markConfirmed.mockResolvedValue(undefined);
     CategoryDecisionEvent.create.mockResolvedValue(undefined);
     ReceiptLineCorrection.upsert.mockResolvedValue(undefined);
+    DuplicateFlag.findByExpenseId.mockResolvedValue([]);
     detectDuplicates.mockResolvedValue([]);
     resolveProductMatch.mockResolvedValue(null);
     assignCategory.mockResolvedValue({
@@ -210,6 +214,37 @@ describe('expenseConfirmService deferred enrichment', () => {
     expect(result.duplicate_flags).toEqual([]);
   });
 
+  it('returns the original expense without repeating side effects on an idempotent replay', async () => {
+    Expense.create.mockResolvedValueOnce({
+      id: 'expense-existing',
+      user_id: 'user-1',
+      household_id: 'hh-1',
+      merchant: 'Target',
+      amount: '20.00',
+      date: '2026-09-02',
+      source: 'manual',
+      status: 'confirmed',
+      _idempotent_replay: true,
+    });
+    DuplicateFlag.findByExpenseId.mockResolvedValueOnce([{ id: 'flag-1' }]);
+    const queuePostConfirm = jest.fn();
+
+    const result = await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Target', amount: 20, date: '2026-09-02', source: 'manual', idempotency_key: 'manual:stable-key',
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm,
+    });
+
+    expect(result).toMatchObject({ idempotent_replay: true, expense: { id: 'expense-existing' }, duplicate_flags: [{ id: 'flag-1' }] });
+    expect(result.expense).not.toHaveProperty('_idempotent_replay');
+    expect(ExpenseItem.createBulk).not.toHaveBeenCalled();
+    expect(detectDuplicates).not.toHaveBeenCalled();
+    expect(queuePostConfirm).not.toHaveBeenCalled();
+  });
+
   it('passes quantity and unit price through when confirming itemized expenses', async () => {
     await createConfirmedExpense({
       user: { id: 'user-1', household_id: 'hh-1' },
@@ -261,7 +296,7 @@ describe('expenseConfirmService deferred enrichment', () => {
       deferPostConfirmSideEffects: false,
     });
 
-    expect(searchPlace).toHaveBeenCalledWith('Whole Foods 123 Main St');
+    expect(searchPlace).toHaveBeenCalledWith('Whole Foods 123 Main St', null, null, 500, { intent: 'receipt' });
     expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({
       placeName: 'Whole Foods',
       address: '123 Main St',
@@ -299,6 +334,28 @@ describe('expenseConfirmService deferred enrichment', () => {
     expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({
       placeName: 'My custom place',
       address: '789 User Way',
+      mapkitStableId: null,
+    }));
+  });
+
+  it('does not guess a receipt branch from merchant name alone', async () => {
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Whole Foods',
+        amount: 19.84,
+        date: '2026-04-27',
+        source: 'camera',
+        category_id: 'cat-1',
+        location_status: 'deferred',
+        location_user_owned: false,
+      },
+      deferPostConfirmSideEffects: false,
+    });
+
+    expect(searchPlace).not.toHaveBeenCalled();
+    expect(Expense.applyDeferredLocation).toHaveBeenCalledWith('expense-1', 'user-1', expect.objectContaining({
+      locationStatus: 'missing',
       mapkitStableId: null,
     }));
   });

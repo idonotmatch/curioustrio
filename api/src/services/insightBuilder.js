@@ -750,7 +750,7 @@ function buildProjectionInsights(projection, scope) {
       id: `projection_one_off:${scopeLabel}:${projection.month}:${topExpense.id || topExpense.merchant}`,
       type: 'one_off_expense_skewing_projection',
       title: 'One unusual purchase is making the forecast look heavier',
-      body: `${topExpense.merchant} is contributing a meaningful share of this month’s projected overage, so your baseline spend is more normal than the all-in forecast suggests.`,
+      body: `${topExpense.merchant} is contributing a meaningful share of this month's projected overage, so your baseline spend is more normal than the all-in forecast suggests.`,
       severity: unusualSpendShare >= 0.55 ? 'high' : 'medium',
       entity_type: 'expense',
       entity_id: topExpense.id || `${scopeLabel}:${projection.month}:${topExpense.merchant}`,

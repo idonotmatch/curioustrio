@@ -21,6 +21,7 @@ import { loadInsightDetailSnapshot, saveInsightDetailSnapshot } from '../service
 import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from '../components/InsightTrendVisual';
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
+const { normalizeDisplayText } = require('../services/text');
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -30,9 +31,9 @@ const FEEDBACK_REASONS = [
 ];
 
 function formatLabel(value) {
-  return `${value || ''}`
+  return normalizeDisplayText(`${value || ''}`
     .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/\b\w/g, (char) => char.toUpperCase()));
 }
 
 function firstParam(value, fallback = '') {
@@ -46,7 +47,7 @@ function formatValue(value) {
     if (Number.isInteger(value)) return `${value}`;
     return `${Number(value).toFixed(1)}`;
   }
-  return `${value}`;
+  return normalizeDisplayText(`${value}`);
 }
 
 function formatCurrency(value) {
@@ -122,16 +123,16 @@ function transparencySummary(metadata = {}) {
   }
   if (metadata.category_trust_score != null) {
     const score = Number(metadata.category_trust_score || 0);
-    if (score >= 0.9) parts.push('Strong category signal');
-    else if (score >= 0.75) parts.push('Solid category signal');
-    else if (score >= 0.55) parts.push('Mixed category signal');
-    else parts.push('Weak category signal');
+    if (score >= 0.9) parts.push('Strong category match');
+    else if (score >= 0.75) parts.push('Solid category match');
+    else if (score >= 0.55) parts.push('Mixed category quality');
+    else parts.push('Weak category quality');
   }
   if (metadata.category_name) parts.push(metadata.category_name);
   else if (metadata.merchant_name) parts.push(metadata.merchant_name);
 
-  if (!parts.length) return 'Scoring context and hierarchy for this card.';
-  return parts.slice(0, 4).join(' • ');
+  if (!parts.length) return 'Details behind this note.';
+  return parts.slice(0, 4).join(' / ');
 }
 
 function categorySignalCopy(metadata = {}) {
@@ -141,19 +142,25 @@ function categorySignalCopy(metadata = {}) {
   const lowConfidenceCount = Number(metadata.category_low_confidence_count || 0);
 
   if (trustScore >= 0.9) {
-    return `This card is leaning on strong category history${trustedCount > 0 ? ` across ${trustedCount} trusted expense${trustedCount === 1 ? '' : 's'}` : ''}.`;
+    return `Category history is strong${trustedCount > 0 ? ` across ${trustedCount} trusted expense${trustedCount === 1 ? '' : 's'}` : ''}.`;
   }
   if (trustScore >= 0.75) {
-    return `Most of the supporting expenses were categorized with stable signals${trustedCount > 0 ? ` (${trustedCount} trusted)` : ''}.`;
+    return `Most supporting expenses have stable categories${trustedCount > 0 ? ` (${trustedCount} trusted)` : ''}.`;
   }
   if (trustScore >= 0.55) {
-    return `This is directionally useful, but some of the supporting expenses still have mixed category quality${lowConfidenceCount > 0 ? ` (${lowConfidenceCount} low-confidence)` : ''}.`;
+    return `Some supporting expenses still have mixed category quality${lowConfidenceCount > 0 ? ` (${lowConfidenceCount} low-confidence)` : ''}.`;
   }
-  return `This pattern is built on weak category quality right now${lowConfidenceCount > 0 ? ` (${lowConfidenceCount} low-confidence)` : ''}, so it should be treated as a softer read.`;
+  return `Category quality is weak right now${lowConfidenceCount > 0 ? ` (${lowConfidenceCount} low-confidence)` : ''}, so treat this as a softer note.`;
 }
 
 function whatChangedCopy(metadata = {}, body = '') {
-  const headline = body || 'This signal stands out in your recent activity.';
+  const hasCombinedScope = metadata.scope_relationship === 'personal_household_overlap';
+  let headline = body || 'Recent activity moved enough to stand out.';
+  if (hasCombinedScope && metadata.current_spend != null && metadata.previous_spend != null) {
+    const delta = Number(metadata.delta_amount || 0);
+    const days = Number(metadata.window_days || metadata.days || 7);
+    headline = `Your last ${days} days are about ${formatCurrency(delta)} ${delta < 0 ? 'lower' : 'higher'} than the prior ${days}-day window, and the household view moved the same way.`;
+  }
   const facts = [];
   if (metadata.category_name && metadata.current_spend_to_date != null) {
     facts.push(`${metadata.category_name} is at ${formatCurrency(metadata.current_spend_to_date)}`);
@@ -174,7 +181,7 @@ function whatChangedCopy(metadata = {}, body = '') {
 
   return {
     headline,
-    facts: facts.slice(0, 3).join(' • ') || null,
+    facts: facts.slice(0, 3).join(' / ') || null,
   };
 }
 
@@ -237,38 +244,38 @@ function insightFamily(insightType, metadata = {}) {
 function whyItMattersCopy(insightType, metadata = {}) {
   const family = insightFamily(insightType, metadata);
   if (metadata.scope_relationship === 'personal_household_overlap') {
-    return 'Your own spending is affecting the shared picture too, so even a personal change can shift what the household month feels like.';
+    return 'Your view and the household view are moving in the same direction, so one combined note is enough here.';
   }
   if (family === 'budget') {
     return metadata.scope === 'household'
-      ? 'This changes how much room the household has left this month, which makes it more useful to notice now than at the end.'
-      : 'This changes how much room you have left this month, so it is worth noticing while there is still time to steer it.';
+      ? 'The household has less room to work with this month, so the timing matters.'
+      : 'You have less room to work with this month, while there is still time to adjust.';
   }
   if (family === 'category') {
-    return 'A category-level change usually tells you where the month is bending, not just that spending is up or down overall.';
+    return 'The shift is concentrated enough that this category can explain more than the overall total alone.';
   }
   if (family === 'merchant') {
-    return 'Merchant patterns are useful because they often show routine behavior early, before it turns into a bigger monthly result.';
+    return 'Repeated visits to the same merchant can turn into a monthly pattern before the total looks obvious.';
   }
   if (family === 'one_off') {
-    return 'A one-off can make the month look more pressured than it really is, so separating it from the lasting pattern helps you react more appropriately.';
+    return 'A single larger purchase can make the month look tighter than the underlying routine actually is.';
   }
   if (family === 'recurring') {
-    return 'Repeated purchases are where small timing or price changes quietly add up, so these reads can matter even when each individual purchase feels ordinary.';
+    return 'Small timing or price changes on repeat purchases can add up before any one purchase feels unusual.';
   }
   if (family === 'setup') {
-    return 'This is less about a finished conclusion and more about helping Adlo get to sharper reads faster.';
+    return 'A little more setup will make future cards more specific.';
   }
   if (`${insightType}`.startsWith('early_')) {
-    return 'This is meant to catch a direction early, while there is still time to adjust before it becomes a bigger pattern.';
+    return 'The direction is still early, but there is time to adjust before it becomes a bigger pattern.';
   }
   if (`${insightType}`.startsWith('developing_')) {
-    return 'This pattern is forming, but it is still early enough to steer with a small change.';
+    return 'The pattern is forming, but a small change can still steer it.';
   }
   if (metadata.scope === 'household') {
-    return 'This affects the shared budget, so it is useful for planning together instead of reacting later.';
+    return 'The shared budget is affected, so it is better to notice before the month closes.';
   }
-  return 'This is a useful pressure point because it changes how your month is trending right now.';
+  return 'The month is moving enough here to be worth a closer look.';
 }
 
 function nextStepCopy(descriptor, primaryAction) {
@@ -303,9 +310,9 @@ function consolidatedCopy(metadata = {}) {
   if (metadata.scope_relationship !== 'personal_household_overlap') return null;
   const foldedCount = Array.isArray(metadata.related_insight_ids) ? metadata.related_insight_ids.length : 0;
   if (foldedCount > 0) {
-    return 'A similar household card was folded into this one, so you can start from your own spending pattern and then see how it carries into the shared picture.';
+    return 'Your view and the household view are moving in the same direction.';
   }
-  return 'This card starts with your personal signal and layers in the overlapping household impact.';
+  return 'The household view overlaps with your personal pattern.';
 }
 
 function consolidatedRows(metadata = {}) {
@@ -394,7 +401,7 @@ function evidenceProofRows({ metadata = {}, supportRows = [], merchantComparison
     addRow('Usual baseline', formatCurrency(metadata.previous_spend));
   }
   if (consolidationRows.length > 0) {
-    addRow('Combined signals', `${consolidationRows.length} folded signal${consolidationRows.length === 1 ? '' : 's'}`);
+    addRow('Combined views', `${consolidationRows.length + 1} views`);
   }
   if (evidenceMode && !rows.length) {
     addRow('Evidence type', evidenceTitle(evidenceMode, metadata));
@@ -429,8 +436,8 @@ export default function InsightDetailScreen() {
   const navPayload = useMemo(() => consumeNavigationPayload(payloadKey, null), [payloadKey]);
   const insightId = firstParam(params.insight_id);
   const insightType = firstParam(params.insight_type);
-  const title = firstParam(params.title, 'Insight detail');
-  const body = firstParam(params.body);
+  const title = normalizeDisplayText(firstParam(params.title, 'Insight detail'));
+  const body = normalizeDisplayText(firstParam(params.body));
   const severity = firstParam(params.severity, 'low');
   const entityType = firstParam(params.entity_type);
   const entityId = firstParam(params.entity_id);
@@ -492,8 +499,8 @@ export default function InsightDetailScreen() {
   const insight = useMemo(() => ({
     id: `${insightId}`,
     type: `${remoteInsight?.type || insightType}`,
-    title: `${remoteInsight?.title || title}`,
-    body: `${remoteInsight?.body || body}`,
+    title: normalizeDisplayText(remoteInsight?.title || title),
+    body: normalizeDisplayText(remoteInsight?.body || body),
     severity: `${remoteInsight?.severity || severity}`,
     entity_type: `${remoteInsight?.entity_type || entityType}`,
     entity_id: `${remoteInsight?.entity_id || entityId}`,

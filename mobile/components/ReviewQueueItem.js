@@ -178,10 +178,12 @@ export function ReviewQueueItem({
   onApprove,
   onDismiss,
   variant = 'full',
+  disabled = false,
 }) {
   const mode = reviewModePresentation(item.gmail_review_hint);
   const source = pendingSourcePresentation(item);
   const quickCheck = isQuickCheckPending(item);
+  const hasDuplicateFlags = Array.isArray(item?.duplicate_flags) && item.duplicate_flags.length > 0;
   const isPreview = variant === 'preview';
   const subject = reviewSubject(item);
   const itemCount = extractedItemCount(item);
@@ -196,17 +198,36 @@ export function ReviewQueueItem({
   const rowTitle = subject
     ? (item.merchant || item.description || subject || '—')
     : reviewHeadline(item);
-  const primaryAction = quickCheck && ctaLabel === 'Confirm' ? () => onApprove(item.id) : () => onOpen(item);
+  const primaryAction = () => {
+    if (disabled) return;
+    if (quickCheck && ctaLabel === 'Confirm') onApprove(item.id);
+    else onOpen(item);
+  };
 
   const renderLeftActions = () => (
-    <TouchableOpacity style={styles.approveAction} onPress={() => onApprove(item.id)}>
-      <Ionicons name="checkmark" size={isPreview ? 16 : 20} color={colors.text} />
-      <Text style={styles.actionLabel}>{isPreview ? 'Approve' : mode.approveLabel}</Text>
+    <TouchableOpacity
+      style={[styles.approveAction, disabled ? styles.actionDisabled : null]}
+      onPress={() => {
+        if (!disabled) {
+          if (hasDuplicateFlags) onOpen(item);
+          else onApprove(item.id);
+        }
+      }}
+      disabled={disabled}
+    >
+      <Ionicons name={hasDuplicateFlags ? 'git-compare-outline' : 'checkmark'} size={isPreview ? 16 : 20} color={colors.text} />
+      <Text style={styles.actionLabel}>{hasDuplicateFlags ? 'Compare' : isPreview ? 'Approve' : mode.approveLabel}</Text>
     </TouchableOpacity>
   );
 
   const renderRightActions = () => (
-    <TouchableOpacity style={styles.dismissAction} onPress={() => onDismiss(item.id)}>
+    <TouchableOpacity
+      style={[styles.dismissAction, disabled ? styles.actionDisabled : null]}
+      onPress={() => {
+        if (!disabled) onDismiss(item.id);
+      }}
+      disabled={disabled}
+    >
       <Ionicons name="trash-outline" size={isPreview ? 16 : 20} color={colors.text} />
       <Text style={styles.actionLabel}>Dismiss</Text>
     </TouchableOpacity>
@@ -220,7 +241,14 @@ export function ReviewQueueItem({
         overshootLeft={false}
         overshootRight={false}
       >
-        <TouchableOpacity style={isPreview ? styles.previewRow : styles.row} onPress={() => onOpen(item)} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={isPreview ? styles.previewRow : styles.row}
+          onPress={() => {
+            if (!disabled) onOpen(item);
+          }}
+          activeOpacity={0.85}
+          disabled={disabled}
+        >
           <View style={isPreview ? styles.previewRowMain : styles.rowMain}>
             <Text style={isPreview ? styles.previewMerchant : styles.merchant} numberOfLines={1}>
               {rowTitle}
@@ -248,12 +276,13 @@ export function ReviewQueueItem({
             <Text style={isPreview ? styles.previewAmount : styles.amount}>${Number(item.amount).toFixed(2)}</Text>
             {!isPreview ? (
               <TouchableOpacity
-                style={styles.confirmChip}
+                style={[styles.confirmChip, disabled ? styles.actionDisabled : null]}
                 onPress={(event) => {
                   event.stopPropagation?.();
                   primaryAction();
                 }}
                 activeOpacity={0.82}
+                disabled={disabled}
               >
                 <Text style={styles.confirmChipText}>{ctaLabel}</Text>
               </TouchableOpacity>
@@ -262,7 +291,12 @@ export function ReviewQueueItem({
         </TouchableOpacity>
       </Swipeable>
       {!isPreview && item.duplicate_flags?.length > 0 ? (
-        <DuplicateAlert flags={item.duplicate_flags} onDismiss={() => onDismiss(item.id)} />
+        <DuplicateAlert
+          flags={item.duplicate_flags}
+          onCompare={() => {
+            if (!disabled) onOpen(item);
+          }}
+        />
       ) : null}
     </View>
   );
@@ -370,4 +404,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.surface,
   },
   actionLabel: { color: colors.text, fontSize: 12, fontWeight: '600' },
+  actionDisabled: { opacity: 0.55 },
 });

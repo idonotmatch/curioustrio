@@ -1,10 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-const { sanitizeExpenseCollection } = require('./storageSanitizers');
+const {
+  sanitizeExpenseCollection,
+  sanitizeInsightSnapshot,
+} = require('./storageSanitizers');
 
 const SUMMARY_SNAPSHOT_PREFIX = 'cache:summary-snapshot';
 const MAX_RECENT_EXPENSES = 8;
 const MAX_PENDING_EXPENSES = 8;
 const MAX_WATCHED_PLANS = 5;
+const MAX_INSIGHTS = 5;
 
 function snapshotKey(month, startDay) {
   return `${SUMMARY_SNAPSHOT_PREFIX}:${month || 'current'}:${startDay || 'default'}`;
@@ -66,6 +70,14 @@ function sanitizeForecastMovement(summary = null) {
   };
 }
 
+function sanitizeInsights(insights = []) {
+  if (!Array.isArray(insights)) return [];
+  return insights
+    .slice(0, MAX_INSIGHTS)
+    .map((insight) => sanitizeInsightSnapshot(insight))
+    .filter(Boolean);
+}
+
 export async function loadSummarySnapshot(month, startDay) {
   try {
     const raw = await AsyncStorage.getItem(snapshotKey(month, startDay));
@@ -91,6 +103,7 @@ export async function saveSummarySnapshot(month, startDay, data = {}) {
       gmail_import_summary: sanitizeGmailSummary(data.gmailImportSummary),
       watched_plans: sanitizeWatchedPlans(data.watchedPlans || []),
       forecast_movement: sanitizeForecastMovement(data.forecastMovement),
+      insights: sanitizeInsights(data.insights || []),
     };
     await AsyncStorage.setItem(snapshotKey(month, startDay), JSON.stringify({ data: snapshot, ts: Date.now() }));
     return snapshot;

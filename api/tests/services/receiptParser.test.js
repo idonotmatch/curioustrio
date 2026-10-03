@@ -50,6 +50,60 @@ describe('parseReceipt', () => {
     expect(result.store_number).toBe('104');
   });
 
+  it('normalizes richer receipt totals and item metadata', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 12.84,
+      date: '2026-03-21',
+      currency: 'usd',
+      subtotal: 12,
+      tax: 0.84,
+      tip: null,
+      fees: null,
+      discounts: 2,
+      transaction_id: 'TX-1042',
+      purchase_time: '14:35',
+      items: [{
+        description: 'Sparkling water',
+        amount: 12,
+        quantity: 2,
+        unit_price: 6,
+        item_type: 'product',
+        brand: 'Acme',
+        product_size: '12 oz',
+      }],
+      uncertain_fields: [],
+    }, '2026-03-21');
+
+    expect(result).toMatchObject({
+      currency: 'USD',
+      subtotal: 12,
+      tax: 0.84,
+      transaction_id: 'TX-1042',
+      purchase_time: '14:35',
+      receipt_validation: {
+        total_components_match: true,
+        item_sum_matches_subtotal: true,
+      },
+    });
+    expect(result.items[0]).toMatchObject({ quantity: 2, unit_price: 6, brand: 'Acme' });
+  });
+
+  it('marks the amount for review when printed totals do not reconcile', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 20,
+      date: '2026-03-21',
+      subtotal: 12,
+      tax: 0.84,
+      items: [{ description: 'Groceries', amount: 12, item_type: 'product' }],
+    }, '2026-03-21');
+
+    expect(result.receipt_validation.issues).toContain('total_components_mismatch');
+    expect(result.review_fields).toContain('amount');
+    expect(result.field_confidence.amount).toBe('medium');
+  });
+
   it('returns null when Claude returns "null"', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();
@@ -157,6 +211,9 @@ describe('parseReceipt', () => {
     const instance = new Anthropic();
     instance.messages.create.mockClear();
     instance.messages.create.mockResolvedValueOnce({
+      model: 'claude-haiku-4-5-20251001',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 900, output_tokens: 120 },
       content: [{
         text: '{"merchant":"Whole Foods","amount":19.84,"date":"2026-04-27","notes":null,"items":[{"description":"Lasagne","amount":5.37}]}'
       }]
@@ -167,7 +224,12 @@ describe('parseReceipt', () => {
     expect(result.parsed.amount).toBe(19.84);
     expect(result.diagnostics.pass_mode).toBe('primary_only');
     expect(result.diagnostics.model_call_count).toBe(1);
+    expect(result.diagnostics.model_input_tokens).toBe(900);
+    expect(result.diagnostics.model_output_tokens).toBe(120);
     expect(instance.messages.create).toHaveBeenCalledTimes(1);
+    expect(instance.messages.create.mock.calls[0][0]).toMatchObject({
+      output_config: { format: { type: 'json_schema' } },
+    });
   });
 
   it('supports fallback-only receipt parsing as the second retry strategy', async () => {

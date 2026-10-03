@@ -59,6 +59,10 @@ function driverName(snapshot = {}) {
     || 'the month view';
 }
 
+function changeDriverName(change = {}) {
+  return driverName(change.item || change.latest || change.previous || {});
+}
+
 function stateResponse({
   state,
   tone = 'neutral',
@@ -79,12 +83,57 @@ function stateResponse({
   };
 }
 
+function responseForPortfolioChange(change = {}) {
+  if (!change?.type) return null;
+  const name = changeDriverName(change);
+
+  if (change.type === 'new_insight') {
+    const delta = num(change.item?.projected_delta ?? change.item?.projected_value);
+    return stateResponse({
+      state: 'new_insight_detected',
+      tone: delta > 0 ? 'warning' : 'info',
+      title: `${name} moved into focus`,
+      body: delta != null
+        ? `${formatSignedCurrency(delta)} versus the usual month-end pace.`
+        : 'A new driver moved into the current month.',
+      metric: delta != null ? { label: 'Change', value: delta, display: formatSignedCurrency(delta) } : null,
+      cta: { label: 'Review insight', target: 'insights' },
+      source: 'insights',
+    });
+  }
+
+  if (change.type === 'resolved_insight') {
+    return stateResponse({
+      state: 'insight_resolved',
+      tone: 'positive',
+      title: `${name} fell out of focus`,
+      body: 'That driver no longer looks material in the current month view.',
+      cta: { label: 'See current cards', target: 'insights' },
+      source: 'insights',
+    });
+  }
+
+  if (change.type === 'top_driver_changed') {
+    return stateResponse({
+      state: 'top_driver_changed',
+      tone: 'info',
+      title: `${name} is now the top driver`,
+      body: 'The leading signal changed even though the overall month view stayed close.',
+      cta: { label: 'Review drivers', target: 'insights' },
+      source: 'insights',
+    });
+  }
+
+  return null;
+}
+
 function chooseForecastMovementState({
   latest = null,
   previous = null,
   pending = {},
   importSummary = {},
   refreshEvent = null,
+  portfolioChange = null,
   hasSnapshots = false,
 } = {}) {
   const pendingCount = Number(pending.count || 0);
@@ -180,6 +229,9 @@ function chooseForecastMovementState({
     });
   }
 
+  const portfolioResponse = responseForPortfolioChange(portfolioChange);
+  if (portfolioResponse) return portfolioResponse;
+
   if (Number(importSummary.imported || 0) > 0 || importSummary.last_imported_at || importSummary.last_synced_at) {
     return stateResponse({
       state: 'import_synced_no_material_change',
@@ -274,6 +326,107 @@ async function getSnapshotPair(userId, { scope = 'personal', period = null } = {
   };
 }
 
+function movementValue(snapshot = {}) {
+  return num(snapshot.projected_delta ?? snapshot.projected_value) ?? 0;
+}
+
+function snapshotKey(snapshot = {}) {
+  const entityKey = [
+    snapshot.forecast_type,
+    snapshot.entity_type,
+    snapshot.entity_id,
+  ].filter(Boolean).join(':');
+  return entityKey || snapshot.insight_id || '';
+}
+
+function isMaterialSnapshot(snapshot = {}) {
+  return Math.abs(movementValue(snapshot)) >= MATERIAL_DELTA;
+}
+
+function sortByMagnitudeDesc(a, b) {
+  return Math.abs(movementValue(b)) - Math.abs(movementValue(a));
+}
+
+function topMaterialSnapshot(items = []) {
+  return [...items].filter(isMaterialSnapshot).sort(sortByMagnitudeDesc)[0] || null;
+}
+
+function choosePortfolioChange({ latest = [], previous = [] } = {}) {
+  if (!latest.length || !previous.length) return null;
+  const previousByKey = new Map(previous.map((item) => [snapshotKey(item), item]).filter(([key]) => key));
+  const latestByKey = new Map(latest.map((item) => [snapshotKey(item), item]).filter(([key]) => key));
+  const newItems = latest.filter((item) => !previousByKey.has(snapshotKey(item)) && isMaterialSnapshot(item));
+  const resolvedItems = previous.filter((item) => !latestByKey.has(snapshotKey(item)) && isMaterialSnapshot(item));
+  const latestTop = topMaterialSnapshot(latest);
+  const previousTop = topMaterialSnapshot(previous);
+
+  if (newItems.length) {
+    return { type: 'new_insight', item: newItems.sort(sortByMagnitudeDesc)[0] };
+  }
+  if (resolvedItems.length) {
+    return { type: 'resolved_insight', item: resolvedItems.sort(sortByMagnitudeDesc)[0] };
+  }
+  if (latestTop && previousTop && snapshotKey(latestTop) !== snapshotKey(previousTop)) {
+    return { type: 'top_driver_changed', item: latestTop, previous: previousTop };
+  }
+  return null;
+}
+
+async function getRecentRefreshWindows(userId, { scope = 'personal', period = null } = {}) {
+  const params = [userId];
+  const filters = [`user_id = $1`, `status = 'completed'`, `snapshot_count > 0`];
+  if (scope) {
+    params.push(scope);
+    filters.push(`scope = $${params.length}`);
+  }
+  if (period) {
+    params.push(period);
+    filters.push(`period = $${params.length}`);
+  }
+  const result = await db.query(
+    `SELECT id, reason, scope, period, created_at, completed_at
+     FROM projection_refresh_events
+     WHERE ${filters.join(' AND ')}
+     ORDER BY completed_at DESC NULLS LAST, created_at DESC
+     LIMIT 2`,
+    params
+  );
+  return result.rows || [];
+}
+
+async function getSnapshotsForRefreshWindow(userId, refreshWindow) {
+  if (!refreshWindow?.created_at) return [];
+  const result = await db.query(
+    `SELECT insight_id, forecast_type, scope, period, entity_type, entity_id,
+            projected_value, projected_delta, confidence_label, feature_snapshot, shape, created_at
+     FROM insight_forecast_snapshots
+     WHERE user_id = $1
+       AND created_at >= $2
+       AND created_at <= COALESCE($3, $2 + INTERVAL '5 minutes') + INTERVAL '5 seconds'
+       AND ($4::text IS NULL OR scope = $4)
+       AND ($5::text IS NULL OR period = $5)
+     ORDER BY created_at DESC`,
+    [
+      userId,
+      refreshWindow.created_at,
+      refreshWindow.completed_at,
+      refreshWindow.scope || null,
+      refreshWindow.period || null,
+    ]
+  );
+  return result.rows || [];
+}
+
+async function getPortfolioChange(userId, { scope = 'personal', period = null } = {}) {
+  const windows = await getRecentRefreshWindows(userId, { scope, period });
+  if (windows.length < 2) return null;
+  const [latest, previous] = await Promise.all([
+    getSnapshotsForRefreshWindow(userId, windows[0]),
+    getSnapshotsForRefreshWindow(userId, windows[1]),
+  ]);
+  return choosePortfolioChange({ latest, previous });
+}
+
 async function getPendingSummary(user, scope = 'personal') {
   const params = [];
   const filters = [`status = 'pending'`];
@@ -324,11 +477,12 @@ async function buildForecastMovementSummary({ user, scope = 'personal', period =
   const effectiveScope = scope === 'household' && user.household_id ? 'household' : 'personal';
 
   try {
-    const [snapshots, pending, importSummary, refreshEvent] = await Promise.all([
+    const [snapshots, pending, importSummary, refreshEvent, portfolioChange] = await Promise.all([
       getSnapshotPair(user.id, { scope: effectiveScope, period }),
       getPendingSummary(user, effectiveScope),
       EmailImportLog.summarizeByUser(user.id, 7).catch(() => ({})),
       getLatestRefreshEvent(user.id, { scope: effectiveScope, period }),
+      getPortfolioChange(user.id, { scope: effectiveScope, period }).catch(() => null),
     ]);
 
     return {
@@ -341,6 +495,7 @@ async function buildForecastMovementSummary({ user, scope = 'personal', period =
         pending,
         importSummary,
         refreshEvent,
+        portfolioChange,
         hasSnapshots: snapshots.hasSnapshots,
       }),
     };
@@ -357,6 +512,7 @@ async function buildForecastMovementSummary({ user, scope = 'personal', period =
 
 module.exports = {
   buildForecastMovementSummary,
+  choosePortfolioChange,
   chooseForecastMovementState,
   formatCurrency,
   formatSignedCurrency,

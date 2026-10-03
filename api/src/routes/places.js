@@ -25,12 +25,20 @@ router.get('/search', async (req, res, next) => {
     if (lat !== undefined || lng !== undefined) {
       parsedLat = parseFloat(lat);
       parsedLng = parseFloat(lng);
-      if (isNaN(parsedLat) || isNaN(parsedLng)) {
+      if (
+        isNaN(parsedLat)
+        || isNaN(parsedLng)
+        || parsedLat < -90
+        || parsedLat > 90
+        || parsedLng < -180
+        || parsedLng > 180
+      ) {
         return res.status(400).json({ error: 'lat and lng must be numbers' });
       }
     }
     const radiusMeters = radius ? Math.min(Math.max(parseInt(radius), 100), 5000) : 500;
-    const results = await searchPlaces(q, parsedLat, parsedLng, radiusMeters);
+    const intent = req.query.intent === 'auto' ? 'auto' : 'manual';
+    const results = await searchPlaces(q, parsedLat, parsedLng, radiusMeters, 5, { intent });
     res.json({ result: results[0] || null, results });
     } catch (err) {
       if (err instanceof MapkitSearchUnavailableError || err?.name === 'MapkitSearchUnavailableError') {

@@ -100,10 +100,13 @@ function sanitizeDuplicateFlags(flags = []) {
     .filter((flag) => flag && typeof flag === 'object')
     .map((flag) => ({
       id: flag.id || null,
-      duplicate_expense_id: flag.duplicate_expense_id || null,
+      expense_id_a: flag.expense_id_a || null,
+      expense_id_b: flag.expense_id_b || null,
       reason: flag.reason || null,
       status: flag.status || null,
       confidence: isPresent(flag.confidence) ? flag.confidence : null,
+      score: isPresent(flag.score) ? Number(flag.score) : null,
+      match_reasons: Array.isArray(flag.match_reasons) ? flag.match_reasons.slice(0, 6) : [],
       created_at: flag.created_at || null,
     }));
 }

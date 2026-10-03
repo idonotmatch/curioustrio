@@ -16,6 +16,11 @@ function isMissingCategoryProvenanceError(err) {
   return err?.code === '42703' && /category_(source|confidence|reasoning)/i.test(`${err?.message || ''}`);
 }
 
+function isMissingLocationProvenanceError(err) {
+  return err?.code === '42703'
+    && /location_(provider_id|latitude|longitude|source|status|confidence|user_owned)/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -30,6 +35,13 @@ async function create({
   placeName = null,
   address = null,
   mapkitStableId,
+  locationProviderId = null,
+  locationLatitude = null,
+  locationLongitude = null,
+  locationSource = null,
+  locationStatus = null,
+  locationConfidence = null,
+  locationUserOwned = false,
   linkedExpenseId = null,
   paymentMethod = 'unknown',
   cardLast4 = null,
@@ -43,32 +55,51 @@ async function create({
   reviewRequired = false,
   reviewMode = null,
   reviewSource = null,
+  idempotencyKey = null,
 }) {
   try {
     const result = await db.query(
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
-         place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
+         place_name, address, mapkit_stable_id,
+         location_provider_id, location_latitude, location_longitude, location_source,
+         location_status, location_confidence, location_user_owned,
+         linked_expense_id, payment_method, card_last4, card_label,
          is_private, exclude_from_budget, budget_exclusion_reason,
          category_source, category_confidence, category_reasoning,
-         review_required, review_mode, review_source
+         review_required, review_mode, review_source, idempotency_key
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+       ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+       DO NOTHING
+       RETURNING *`,
       [
         userId, householdId, merchant, description, amount, date, categoryId, source, status, notes,
-        placeName, address, mapkitStableId, linkedExpenseId, paymentMethod, cardLast4, cardLabel,
+        placeName, address, mapkitStableId,
+        locationProviderId, locationLatitude, locationLongitude, locationSource,
+        locationStatus, locationConfidence, locationUserOwned,
+        linkedExpenseId, paymentMethod, cardLast4, cardLabel,
         isPrivate, excludeFromBudget, budgetExclusionReason,
         categorySource, categoryConfidence, categoryReasoning ? JSON.stringify(categoryReasoning) : null,
-        reviewRequired, reviewMode, reviewSource,
+        reviewRequired, reviewMode, reviewSource, idempotencyKey,
       ]
     );
-    return result.rows[0];
+    if (result.rows[0]) return result.rows[0];
+    if (idempotencyKey) {
+      const existing = await db.query(
+        `SELECT * FROM expenses WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1`,
+        [userId, idempotencyKey]
+      );
+      if (existing.rows[0]) return { ...existing.rows[0], _idempotent_replay: true };
+    }
+    throw new Error('Expense insert did not return a row');
   } catch (err) {
     if (
       !isMissingExpenseReviewMetadataError(err)
       && !isMissingExcludeFromBudgetError(err)
       && !isMissingBudgetExclusionReasonError(err)
       && !isMissingCategoryProvenanceError(err)
+      && !isMissingLocationProvenanceError(err)
     ) throw err;
     const fallback = await db.query(
       `INSERT INTO expenses (
@@ -184,8 +215,16 @@ async function updateReviewMetadata(id, userId, {
   }
 }
 
-async function findPotentialDuplicates({ householdId, merchant, amount, date, excludeId }) {
-  const params = [householdId, merchant, amount, date];
+async function findPotentialDuplicates({ householdId, userId, merchant, amount, date, excludeId }) {
+  if (!householdId && !userId) return [];
+  const scopeColumn = householdId ? 'household_id' : 'user_id';
+  const scopeId = householdId || userId;
+  const params = [scopeId, merchant, amount, date];
+  let privacyClause = '';
+  if (householdId && userId) {
+    params.push(userId);
+    privacyClause = `AND (is_private = FALSE OR user_id = $${params.length})`;
+  }
   let excludeClause = '';
   if (excludeId) {
     params.push(excludeId);
@@ -193,11 +232,13 @@ async function findPotentialDuplicates({ householdId, merchant, amount, date, ex
   }
   const result = await db.query(
     `SELECT * FROM expenses
-     WHERE household_id = $1
-       AND LOWER(merchant) = LOWER($2)
+     WHERE ${scopeColumn} = $1
+       AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER(COALESCE($2, '')), '[^a-z0-9]+', '', 'g')
        AND ABS(amount - $3) <= 1.00
        AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
        AND status IN ('pending', 'confirmed')
+       ${privacyClause}
        ${excludeClause}`,
     params
   );
@@ -247,8 +288,16 @@ async function findTreatmentCandidates({ userId, merchant, categoryId = null, ex
   return result.rows;
 }
 
-async function findByMapkitStableId({ householdId, mapkitStableId, amount, date, excludeId }) {
-  const params = [householdId, mapkitStableId, amount, date];
+async function findByMapkitStableId({ householdId, userId, mapkitStableId, amount, date, excludeId }) {
+  if (!householdId && !userId) return [];
+  const scopeColumn = householdId ? 'household_id' : 'user_id';
+  const scopeId = householdId || userId;
+  const params = [scopeId, mapkitStableId, amount, date];
+  let privacyClause = '';
+  if (householdId && userId) {
+    params.push(userId);
+    privacyClause = `AND (is_private = FALSE OR user_id = $${params.length})`;
+  }
   let excludeClause = '';
   if (excludeId) {
     params.push(excludeId);
@@ -256,12 +305,13 @@ async function findByMapkitStableId({ householdId, mapkitStableId, amount, date,
   }
   const result = await db.query(
     `SELECT * FROM expenses
-     WHERE household_id = $1
+     WHERE ${scopeColumn} = $1
        AND mapkit_stable_id = $2
        AND mapkit_stable_id IS NOT NULL
        AND ABS(amount - $3) <= 1.00
        AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
        AND status IN ('pending', 'confirmed')
+       ${privacyClause}
        ${excludeClause}`,
     params
   );
@@ -345,6 +395,8 @@ async function update(id, userId, {
   paymentMethod, cardLast4, cardLabel, isPrivate, excludeFromBudget, budgetExclusionReason,
   categorySource, categoryConfidence, categoryReasoning,
   placeName, address, mapkitStableId,
+  locationProviderId, locationLatitude, locationLongitude, locationSource,
+  locationStatus, locationConfidence, locationUserOwned,
 } = {}) {
   const hasMerchant = merchant !== undefined;
   const hasAmount = amount !== undefined;
@@ -363,6 +415,13 @@ async function update(id, userId, {
   const hasPlaceName = placeName !== undefined;
   const hasAddress = address !== undefined;
   const hasMapkitStableId = mapkitStableId !== undefined;
+  const hasLocationProviderId = locationProviderId !== undefined;
+  const hasLocationLatitude = locationLatitude !== undefined;
+  const hasLocationLongitude = locationLongitude !== undefined;
+  const hasLocationSource = locationSource !== undefined;
+  const hasLocationStatus = locationStatus !== undefined;
+  const hasLocationConfidence = locationConfidence !== undefined;
+  const hasLocationUserOwned = locationUserOwned !== undefined;
   try {
     const result = await db.query(
       `UPDATE expenses SET
@@ -382,7 +441,14 @@ async function update(id, userId, {
          category_reasoning = CASE WHEN $29 THEN $30 ELSE category_reasoning END,
          place_name = CASE WHEN $31 THEN $32 ELSE place_name END,
          address = CASE WHEN $33 THEN $34 ELSE address END,
-         mapkit_stable_id = CASE WHEN $35 THEN $36 ELSE mapkit_stable_id END
+         mapkit_stable_id = CASE WHEN $35 THEN $36 ELSE mapkit_stable_id END,
+         location_provider_id = CASE WHEN $37 THEN $38 ELSE location_provider_id END,
+         location_latitude = CASE WHEN $39 THEN $40 ELSE location_latitude END,
+         location_longitude = CASE WHEN $41 THEN $42 ELSE location_longitude END,
+         location_source = CASE WHEN $43 THEN $44 ELSE location_source END,
+         location_status = CASE WHEN $45 THEN $46 ELSE location_status END,
+         location_confidence = CASE WHEN $47 THEN $48 ELSE location_confidence END,
+         location_user_owned = CASE WHEN $49 THEN $50 ELSE location_user_owned END
        WHERE id = $1 AND user_id = $2 RETURNING *`,
       [
         id, userId,
@@ -403,6 +469,13 @@ async function update(id, userId, {
         hasPlaceName, placeName,
         hasAddress, address,
         hasMapkitStableId, mapkitStableId,
+        hasLocationProviderId, locationProviderId,
+        hasLocationLatitude, locationLatitude,
+        hasLocationLongitude, locationLongitude,
+        hasLocationSource, locationSource,
+        hasLocationStatus, locationStatus,
+        hasLocationConfidence, locationConfidence,
+        hasLocationUserOwned, locationUserOwned,
       ]
     );
     return result.rows[0] || null;
@@ -411,6 +484,7 @@ async function update(id, userId, {
       !isMissingExcludeFromBudgetError(err)
       && !isMissingBudgetExclusionReasonError(err)
       && !isMissingCategoryProvenanceError(err)
+      && !isMissingLocationProvenanceError(err)
     ) throw err;
     const fallback = await db.query(
       `UPDATE expenses SET
@@ -505,32 +579,72 @@ async function applyDeferredLocation(id, userId, {
   placeName = null,
   address = null,
   mapkitStableId = null,
+  locationProviderId = null,
+  locationLatitude = null,
+  locationLongitude = null,
+  locationSource = null,
+  locationStatus = null,
+  locationConfidence = null,
+  locationUserOwned = false,
 } = {}) {
   if (!id || !userId) return null;
-  if (placeName == null && address == null && mapkitStableId == null) return null;
+  if (placeName == null && address == null && mapkitStableId == null && locationStatus == null) return null;
 
-  const result = await db.query(
-    `UPDATE expenses
-     SET place_name = $5,
-         address = $6,
-         mapkit_stable_id = $7
-     WHERE id = $1
-       AND user_id = $2
-       AND mapkit_stable_id IS NULL
-       AND COALESCE(place_name, '') = COALESCE($3, '')
-       AND COALESCE(address, '') = COALESCE($4, '')
-     RETURNING *`,
-    [
-      id,
-      userId,
-      originalPlaceName,
-      originalAddress,
-      placeName,
-      address,
-      mapkitStableId,
-    ]
-  );
-  return result.rows[0] || null;
+  try {
+    const result = await db.query(
+      `UPDATE expenses
+       SET place_name = $5,
+           address = $6,
+           mapkit_stable_id = $7,
+           location_provider_id = $8,
+           location_latitude = $9,
+           location_longitude = $10,
+           location_source = $11,
+           location_status = $12,
+           location_confidence = $13,
+           location_user_owned = $14
+       WHERE id = $1
+         AND user_id = $2
+         AND mapkit_stable_id IS NULL
+         AND COALESCE(place_name, '') = COALESCE($3, '')
+         AND COALESCE(address, '') = COALESCE($4, '')
+       RETURNING *`,
+      [
+        id,
+        userId,
+        originalPlaceName,
+        originalAddress,
+        placeName,
+        address,
+        mapkitStableId,
+        locationProviderId,
+        locationLatitude,
+        locationLongitude,
+        locationSource,
+        locationStatus,
+        locationConfidence,
+        locationUserOwned,
+      ]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (!isMissingLocationProvenanceError(err)) throw err;
+    if (placeName == null && address == null && mapkitStableId == null) return null;
+    const fallback = await db.query(
+      `UPDATE expenses
+       SET place_name = $5,
+           address = $6,
+           mapkit_stable_id = $7
+       WHERE id = $1
+         AND user_id = $2
+         AND mapkit_stable_id IS NULL
+         AND COALESCE(place_name, '') = COALESCE($3, '')
+         AND COALESCE(address, '') = COALESCE($4, '')
+       RETURNING *`,
+      [id, userId, originalPlaceName, originalAddress, placeName, address, mapkitStableId]
+    );
+    return fallback.rows[0] || null;
+  }
 }
 
 module.exports = {

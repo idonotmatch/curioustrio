@@ -170,30 +170,30 @@ function addRow(rows, label, value) {
 function stageLabelForInsightType(type, maturity = '') {
   const cleanMaturity = `${maturity || ''}`.trim();
   if (cleanMaturity === 'early' || type.startsWith('early_')) {
-    return { label: 'Early read', detail: 'More directional than final' };
+    return { label: 'Early pattern', detail: 'Still taking shape' };
   }
   if (cleanMaturity === 'developing' || type.startsWith('developing_')) {
-    return { label: 'Pattern forming', detail: 'Useful before it hardens' };
+    return { label: 'Pattern forming', detail: 'Still possible to steer' };
   }
   if (cleanMaturity === 'mature') {
-    return { label: 'Clear signal', detail: 'Built on steadier history' };
+    return { label: 'Steadier history', detail: 'Built on repeated activity' };
   }
-  return { label: 'Worth a look', detail: 'Current signal' };
+  return { label: 'Worth a look', detail: 'Current activity changed' };
 }
 
 function strengthLabelForInsight(confidence = '') {
   const cleanConfidence = `${confidence || ''}`.trim();
   switch (cleanConfidence) {
     case 'observed':
-      return { label: 'Observed signal', detail: 'Tied to repeated activity' };
+      return { label: 'Observed pattern', detail: 'Tied to repeated activity' };
     case 'comparative':
-      return { label: 'Strong signal', detail: 'Grounded in a comparison to your usual pattern' };
+      return { label: 'Strong comparison', detail: 'Compared with your usual pattern' };
     case 'descriptive':
-      return { label: 'Directional signal', detail: 'Useful, but still taking shape' };
+      return { label: 'Directional', detail: 'Still taking shape' };
     case 'directional':
-      return { label: 'Directional signal', detail: 'Useful for a first pass' };
+      return { label: 'Directional', detail: 'Good for a first pass' };
     case 'low':
-      return { label: 'Soft signal', detail: 'Treat this as a prompt to look closer' };
+      return { label: 'Soft pattern', detail: 'Treat this as a prompt to look closer' };
     default:
       return { label: '', detail: '' };
   }
@@ -500,7 +500,7 @@ export function getInsightTechnicalSummary(insight, context = {}) {
   if (scope) parts.push(scope);
   if (history) parts.push(`Using ${history}`);
   if (categoryQuality) parts.push(categoryQuality);
-  return parts.filter(Boolean).slice(0, 4).join(' • ');
+  return parts.filter(Boolean).slice(0, 4).join(' / ');
 }
 
 export function getInsightTechnicalRows(insight, context = {}) {
@@ -530,6 +530,21 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
   const descriptor = getInsightActionDescriptor({ type: insightType, metadata: { scope, month, category_key: categoryKey, ...metadata } }, { trend, insightType, categoryKey, metadata });
 
   switch (`${insightType || ''}`) {
+    case 'usage_start_logging':
+    case 'usage_building_history':
+      return {
+        title: insightType === 'usage_start_logging' ? 'Add the first signal' : 'Keep building the pattern',
+        body: 'Add another expense so future insights can compare a stronger history.',
+        cta: 'Add expense',
+        route: '/(tabs)/add',
+      };
+    case 'usage_set_budget':
+      return {
+        title: 'Add a budget target',
+        body: 'A budget gives spending changes a useful reference point.',
+        cta: 'Set budget',
+        route: '/budget-period',
+      };
     case 'early_budget_pace':
     case 'early_top_category':
     case 'early_repeated_merchant':
@@ -540,14 +555,14 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
     case 'developing_repeated_merchant':
       return {
         title: 'Use this as a directional read',
-        body: 'This is early, but it already points to where your spending is moving and what is worth watching next.',
+        body: 'Spending is starting to move here. Check the details before changing plans.',
         cta: null,
         route: null,
       };
     case 'early_cleanup':
       return {
         title: 'Clean up the inputs first',
-        body: 'Categorizing these expenses is the fastest way to make the next insight cards more specific and more useful.',
+        body: 'Categorizing these expenses will make future cards more specific.',
         cta: 'Open categories',
         route: {
           pathname: '/categories',
@@ -583,7 +598,7 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
       }
       return {
         title: 'Read the budget context first',
-        body: 'This is worth understanding first, even if it is not big enough yet to justify a planning scenario.',
+        body: 'Check the budget impact before turning this into a plan.',
         cta: null,
         route: null,
       };
@@ -637,4 +652,24 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
     default:
       return null;
   }
+}
+
+export function getInsightCardAction(insight, context = {}) {
+  const metadata = insight?.metadata || context.metadata || {};
+  const descriptor = getInsightActionDescriptor(insight, context);
+  const primaryAction = getPrimaryActionForInsight({
+    insightType: insight?.type || context.insightType,
+    scope: metadata.scope || context.scope || 'personal',
+    month: metadata.month || context.month || '',
+    categoryKey: metadata.category_key || context.categoryKey || '',
+    metadata,
+    trend: context.trend || null,
+  });
+  const directRoute = insight?.action?.route || primaryAction?.route || null;
+
+  return {
+    label: primaryAction?.cta || descriptor.label,
+    reason: primaryAction?.title || descriptor.reason,
+    route: directRoute,
+  };
 }

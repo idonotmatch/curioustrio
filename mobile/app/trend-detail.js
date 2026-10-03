@@ -266,36 +266,36 @@ function whyItMattersCopy({ insightType, trend, categoryKey, scope }) {
 
   switch (`${insightType || ''}`) {
     case 'spend_pace_ahead':
-      return 'This matters because the month is tightening faster than usual, which means the remaining room can disappear earlier than you expect.';
+      return 'The month is tightening faster than usual, so the remaining room can disappear earlier than expected.';
     case 'spend_pace_behind':
-      return 'This matters because you may have more room than usual right now, but it is worth checking whether that room is broad-based or just coming from one gap in spending.';
+      return 'There may be more room than usual right now. Check whether it is broad-based or coming from one gap in spending.';
     case 'budget_too_low':
-      return 'This matters because the issue may not just be this month. If the same target keeps failing, the budget itself may need to move.';
+      return 'The issue may not just be this month. If the same target keeps failing, the budget itself may need to move.';
     case 'budget_too_high':
-      return 'This matters because a budget that is consistently too loose can make the app less useful for planning and less honest about real pressure.';
+      return 'A budget that is consistently too loose can hide real pressure and make planning less accurate.';
     case 'top_category_driver':
       return highlightedDriver
         ? `${highlightedDriver.category_name} is doing enough of the work that understanding this one category may explain most of the overall shift.`
-        : 'This matters because one category appears to be doing more of the work than the rest.';
+        : 'One category appears to be doing more of the work than the rest.';
     case 'one_offs_driving_variance':
     case 'one_off_expense_skewing_projection':
-      return 'This matters because the month may look worse than your true baseline. If the pressure is mostly one-off, you should not treat it like a lasting behavior change.';
+      return 'The month may look worse than your true baseline. If the pressure is mostly one-off, it should not be treated like a lasting behavior change.';
     case 'projected_month_end_over_budget':
-      return 'This matters because the current pace is enough to change the likely month-end outcome, not just create a temporary mid-month wobble.';
+      return 'The current pace is enough to change the likely month-end outcome, not just create a temporary mid-month wobble.';
     case 'projected_month_end_under_budget':
-      return 'This matters because the remaining room may be real enough to plan with, instead of waiting and guessing later in the month.';
+      return 'The remaining room may be real enough to plan with instead of waiting and guessing later in the month.';
     case 'projected_category_surge':
       return highlightedCategoryProjection
         ? `${highlightedCategoryProjection.category_name} is large enough to affect the overall month shape if it keeps tracking this way.`
-        : 'This matters because a single category may be shaping the forecast more than the rest of the budget.';
+        : 'A single category may be shaping the forecast more than the rest of the budget.';
     case 'projected_category_under_baseline':
       return highlightedCategoryProjection
         ? `${highlightedCategoryProjection.category_name} is leaving more room than usual, which may create flexibility elsewhere if that holds.`
-        : 'This matters because one category may be creating more room than usual in the period.';
+        : 'One category may be creating more room than usual in the period.';
     case 'recurring_cost_pressure':
-      return `This matters because repeated price increases can quietly become part of your normal ${`${scope}` === 'household' ? 'shared' : 'monthly'} pressure if they keep showing up.`;
+      return `Repeated price increases can quietly become part of your normal ${`${scope}` === 'household' ? 'shared' : 'monthly'} pressure if they keep showing up.`;
     default:
-      return 'This matters because it changes how your period is likely to feel by the time the month closes.';
+      return 'The period is moving enough to change how the month may close.';
   }
 }
 

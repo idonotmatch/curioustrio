@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { InsightCard } from './InsightCard';
 
-export function SummaryInsightsRail({
+function SummaryInsightsRailBase({
   styles,
   displayInsights,
   loading = false,
@@ -11,6 +11,7 @@ export function SummaryInsightsRail({
   hasMultipleInsights,
   insightCardWidth,
   handlePressInsight,
+  handleActionInsight,
   handleDismissInsight,
   openingInsightId,
   title = 'Insights',
@@ -20,18 +21,27 @@ export function SummaryInsightsRail({
   if (!(displayInsights.length > 0 || insightsError || loading)) return null;
   const snapInterval = insightCardWidth + 12;
   const activeIndex = Math.max(0, Math.min(currentIndex, Math.max(displayInsights.length - 1, 0)));
+  const handleScroll = useCallback((event) => {
+    if (!hasMultipleInsights) return;
+    const offsetX = Number(event?.nativeEvent?.contentOffset?.x || 0);
+    const nextIndex = Math.max(0, Math.min(
+      displayInsights.length - 1,
+      Math.round(offsetX / snapInterval)
+    ));
+    setCurrentIndex((current) => (nextIndex !== current ? nextIndex : current));
+  }, [displayInsights.length, hasMultipleInsights, snapInterval]);
 
   return (
     <View style={styles.insightsSection}>
       <View style={styles.insightsHeading}>
         <Text style={styles.sectionLabel}>{title}</Text>
         {displayInsights.length > 1 ? (
-          <Text style={styles.insightsHint}>{`${activeIndex + 1} of ${displayInsights.length} · ${hint || 'Swipe for more'}`}</Text>
+          <Text style={styles.insightsHint}>{`${activeIndex + 1} of ${displayInsights.length} | ${hint || 'Swipe for more'}`}</Text>
         ) : null}
       </View>
       {insightsError ? (
         <TouchableOpacity style={styles.insightsErrorCard} onPress={refreshInsights} activeOpacity={0.85}>
-          <Text style={styles.insightsErrorTitle}>Couldn’t load insights</Text>
+          <Text style={styles.insightsErrorTitle}>Could not load insights</Text>
           <Text style={styles.insightsErrorBody}>{insightsError}</Text>
           <Text style={styles.insightsErrorAction}>Tap to retry</Text>
         </TouchableOpacity>
@@ -58,15 +68,7 @@ export function SummaryInsightsRail({
         snapToAlignment="start"
         decelerationRate={hasMultipleInsights ? 'fast' : 'normal'}
         disableIntervalMomentum={hasMultipleInsights}
-        onScroll={(event) => {
-          if (!hasMultipleInsights) return;
-          const offsetX = Number(event?.nativeEvent?.contentOffset?.x || 0);
-          const nextIndex = Math.max(0, Math.min(
-            displayInsights.length - 1,
-            Math.round(offsetX / snapInterval)
-          ));
-          if (nextIndex !== currentIndex) setCurrentIndex(nextIndex);
-        }}
+        onScroll={handleScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.insightsRail,
@@ -79,6 +81,7 @@ export function SummaryInsightsRail({
             insight={insight}
             width={insightCardWidth}
             onPress={handlePressInsight}
+            onAction={handleActionInsight}
             onDismiss={handleDismissInsight}
             disabled={Boolean(openingInsightId)}
             emphasis={displayInsights[0]?.id === insight.id ? 'primary' : 'default'}
@@ -102,3 +105,5 @@ export function SummaryInsightsRail({
     </View>
   );
 }
+
+export const SummaryInsightsRail = memo(SummaryInsightsRailBase);

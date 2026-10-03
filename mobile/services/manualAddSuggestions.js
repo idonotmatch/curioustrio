@@ -76,9 +76,14 @@ export function scoreLocationCandidate(merchant, candidate) {
   const merchantNorm = normalizeMerchant(merchant);
   const placeNorm = normalizeMerchant(candidate?.place_name || '');
   if (!merchantNorm || !placeNorm) return 0;
-  if (merchantNorm === placeNorm) return 1;
-  if (placeNorm.includes(merchantNorm) || merchantNorm.includes(placeNorm)) return 0.9;
-  return overlapScore(merchantNorm, placeNorm);
+  const distance = Number(candidate?.distance_meters);
+  if (Number.isFinite(distance) && distance > 5000) return 0;
+  let score = 0;
+  if (merchantNorm === placeNorm) score = 1;
+  else if (placeNorm.includes(merchantNorm) || merchantNorm.includes(placeNorm)) score = 0.9;
+  else score = overlapScore(merchantNorm, placeNorm);
+  if (Number.isFinite(distance) && distance > 2000) score *= 0.75;
+  return score;
 }
 
 export function shouldSuggestLocationFromMerchant({

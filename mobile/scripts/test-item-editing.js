@@ -59,6 +59,7 @@ function run() {
       amount: 5.37,
       quantity: 3,
       unit_price: 1.79,
+      item_type: null,
       upc: null,
       sku: null,
       brand: null,

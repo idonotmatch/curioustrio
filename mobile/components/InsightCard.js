@@ -1,17 +1,20 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { memo, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from './InsightTrendVisual';
 import {
-  getInsightActionDescriptor,
+  getInsightCardAction,
   getInsightPrimaryMetric,
   getInsightScopeLabel,
+  getInsightSupportRows,
 } from '../services/insightPresentation';
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
+const { normalizeDisplayText } = require('../services/text');
 
-const INSIGHT_CARD_MIN_HEIGHT = 164;
+const INSIGHT_CARD_MIN_HEIGHT = 252;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
-const INSIGHT_SUMMARY_BODY_LINES = 2;
+const INSIGHT_SUMMARY_BODY_LINES = 3;
 
 function pluralVerb(label, singular, plural) {
   return `${label || ''}`.trim().toLowerCase().endsWith('s') ? plural : singular;
@@ -38,8 +41,7 @@ function insightRoleLabel(insight) {
   return 'Review';
 }
 
-function insightActionLabel(insight) {
-  const descriptor = getInsightActionDescriptor(insight);
+function insightActionLabel(insight, descriptor) {
   const label = descriptor.label;
   if (`${label}`.toLowerCase() === 'open detail') {
     const type = `${insight?.type || ''}`;
@@ -144,7 +146,9 @@ function insightDisplayBody(insight) {
     return `${categoryName} is tracking above its usual month-end shape.${householdCarry}`;
   }
   if (type === 'developing_weekly_spend_change') {
-    return `The last 7 days are running heavier than the prior week.${householdCarry}`;
+    const delta = Number(metadata.delta_amount || 0);
+    const direction = delta < 0 ? 'lighter' : 'heavier';
+    return `The last 7 days are running ${direction} than the prior week.${householdCarry}`;
   }
   if (type === 'one_off_expense_skewing_projection' || type === 'one_offs_driving_variance') {
     const merchant = metadata.largest_expense?.merchant || metadata.top_unusual_expense?.merchant;
@@ -153,16 +157,25 @@ function insightDisplayBody(insight) {
   return insight?.body || '';
 }
 
-export function InsightCard({ insight, width, onPress, onDismiss, disabled = false, emphasis = 'default' }) {
-  const tone = insightToneStyles(insight);
-  const primaryMetric = getInsightPrimaryMetric(insight);
-  const showPrimaryMetric = shouldShowPrimaryMetric(insight, primaryMetric);
+function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disabled = false, emphasis = 'default' }) {
+  const tone = useMemo(() => insightToneStyles(insight), [insight]);
+  const primaryMetric = useMemo(() => getInsightPrimaryMetric(insight), [insight]);
+  const showPrimaryMetric = useMemo(() => shouldShowPrimaryMetric(insight, primaryMetric), [insight, primaryMetric]);
   const isPrimary = emphasis === 'primary';
-  const scopeLabel = getInsightScopeLabel(insight);
-  const roleLabel = insightRoleLabel(insight);
-  const trendVisual = getInsightTrendVisual(insight);
-  const displayTitle = insightDisplayTitle(insight);
-  const displayBody = insightDisplayBody(insight);
+  const scopeLabel = useMemo(() => getInsightScopeLabel(insight), [insight]);
+  const roleLabel = useMemo(() => insightRoleLabel(insight), [insight]);
+  const trendVisual = useMemo(() => getInsightTrendVisual(insight), [insight]);
+  const displayTitle = useMemo(() => normalizeDisplayText(insightDisplayTitle(insight)), [insight]);
+  const displayBody = useMemo(() => normalizeDisplayText(insightDisplayBody(insight)), [insight]);
+  const actionDescriptor = useMemo(() => getInsightCardAction(insight), [insight]);
+  const actionLabel = useMemo(() => normalizeDisplayText(insightActionLabel(insight, actionDescriptor)), [actionDescriptor, insight]);
+  const actionReason = useMemo(() => normalizeDisplayText(actionDescriptor.reason), [actionDescriptor]);
+  const evidenceRows = useMemo(() => getInsightSupportRows(insight, { limit: 2 })
+    .map((row) => ({
+      label: normalizeDisplayText(row.label),
+      value: normalizeDisplayText(row.value),
+    }))
+    .filter((row) => row.label && row.value), [insight]);
 
   return (
     <TouchableOpacity
@@ -215,15 +228,44 @@ export function InsightCard({ insight, width, onPress, onDismiss, disabled = fal
         <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
       </View>
       {trendVisual ? <InsightTrendVisual visual={trendVisual} compact /> : null}
-      <View style={styles.insightFooter}>
-        <Text style={styles.insightActionLabel} numberOfLines={1}>{insightActionLabel(insight)}</Text>
+      {evidenceRows.length > 0 ? (
+        <View style={styles.evidenceBlock}>
+          <Text style={styles.evidenceEyebrow}>Based on</Text>
+          <View style={styles.evidenceRows}>
+            {evidenceRows.map((row) => (
+              <View key={`${row.label}:${row.value}`} style={styles.evidenceRow}>
+                <Text style={styles.evidenceLabel} numberOfLines={1}>{row.label}</Text>
+                <Text style={styles.evidenceValue} numberOfLines={1}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+      <TouchableOpacity
+        style={styles.insightFooter}
+        activeOpacity={0.76}
+        accessibilityRole="button"
+        accessibilityLabel={`${actionLabel}: ${actionReason}`}
+        onPress={(event) => {
+          event?.stopPropagation?.();
+          if (onAction) onAction(insight, actionDescriptor);
+          else onPress?.(insight);
+        }}
+      >
+        <View style={styles.insightActionCopy}>
+          <Text style={styles.insightActionEyebrow}>Next step</Text>
+          <Text style={styles.insightActionLabel} numberOfLines={1}>{actionLabel}</Text>
+          {actionReason ? <Text style={styles.insightActionReason} numberOfLines={1}>{actionReason}</Text> : null}
+        </View>
         <View style={styles.insightCTA}>
           <Ionicons name="chevron-forward" size={14} color={colors.text} />
         </View>
-      </View>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
+
+export const InsightCard = memo(InsightCardBase);
 
 const styles = StyleSheet.create({
   insightCard: {
@@ -237,7 +279,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   insightCardPrimary: {
-    minHeight: 184,
+    minHeight: 272,
     paddingHorizontal: 17,
     paddingVertical: 14,
     borderColor: colors.infoBorder,
@@ -316,6 +358,24 @@ const styles = StyleSheet.create({
   insightContent: { flex: 1, justifyContent: 'flex-start', marginTop: 8 },
   insightBody: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
   insightBodyPrimary: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  evidenceBlock: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    paddingTop: 10,
+    gap: 7,
+  },
+  evidenceEyebrow: {
+    color: colors.textDisabled,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  evidenceRows: { gap: 6 },
+  evidenceRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
+  evidenceLabel: { color: colors.textSubtle, fontSize: 11, flex: 1 },
+  evidenceValue: { color: colors.text, fontSize: 12, fontWeight: '700', textAlign: 'right', flexShrink: 1 },
   insightFooter: {
     marginTop: 12,
     flexDirection: 'row',
@@ -323,7 +383,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  insightActionLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '700', flex: 1 },
+  insightActionCopy: { flex: 1, gap: 2 },
+  insightActionEyebrow: { fontSize: 10, color: colors.textDisabled, textTransform: 'uppercase', fontWeight: '700', letterSpacing: 0.4 },
+  insightActionLabel: { fontSize: 13, color: colors.text, fontWeight: '700' },
+  insightActionReason: { fontSize: 11, color: colors.textSubtle },
   insightCTA: {
     width: 26,
     height: 26,
