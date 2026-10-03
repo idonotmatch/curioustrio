@@ -116,6 +116,15 @@ async function attachInsightForecastsBestEffort(userId, insights, options = {}) 
 
 async function findInsightByIdForUser(user, insightId) {
   if (!user?.id || !insightId) return null;
+  const [snapshot, sourceFingerprint] = await Promise.all([
+    InsightPortfolioSnapshot.findByUser(user.id),
+    InsightPortfolioSnapshot.sourceFingerprint(user.id),
+  ]);
+  if (InsightPortfolioSnapshot.matchesFingerprint(snapshot, sourceFingerprint)) {
+    const cached = (Array.isArray(snapshot?.insights) ? snapshot.insights : [])
+      .find((insight) => `${insight?.id}` === `${insightId}`);
+    if (cached) return cached;
+  }
   const insights = await attachInsightForecastsBestEffort(
     user.id,
     (await buildInsightsForUser({ user, limit: 50 })).map(attachInsightAction)

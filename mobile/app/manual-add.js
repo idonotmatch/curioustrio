@@ -190,7 +190,7 @@ export default function ManualAddScreen() {
     if (!suggestedLocation?.value) return;
     setLocationData({
       ...suggestedLocation.value,
-      source: 'merchant_suggestion',
+      source: suggestedLocation.value.search_strategy === 'user_history' ? 'history' : 'merchant_suggestion',
       location_status: 'suggested',
       location_confidence: suggestedLocation.confidence,
       location_user_owned: true,

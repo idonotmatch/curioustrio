@@ -71,6 +71,8 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
   let currentConfirmed = false;
   let mergeSummary = null;
   let flag;
+  let mergeEventId = null;
+  let transferredItemIds = [];
 
   try {
     await client.query('BEGIN');
@@ -177,6 +179,7 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
           [counterpart.id, current.id]
         );
         transferredItems = transferred.rowCount || transferred.rows.length;
+        transferredItemIds = transferred.rows.map((row) => row.id).filter(Boolean);
       }
 
       const dismissed = await client.query(
@@ -226,13 +229,25 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
            AND (expense_id_a = $3 OR expense_id_b = $3)`,
         [flag.id, user.id, current.id]
       );
-      await client.query(
+      const mergeEvent = await client.query(
         `INSERT INTO expense_merge_events (
            user_id, surviving_expense_id, merged_expense_id, duplicate_flag_id,
-           field_sources, imported_items_count
-         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
-        [user.id, counterpart.id, current.id, flag.id, JSON.stringify(mergeSummary.field_sources), mergeSummary.imported_items_count]
+           field_sources, imported_items_count, survivor_before, merged_before, transferred_item_ids
+         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9::jsonb)
+         RETURNING id`,
+        [
+          user.id,
+          counterpart.id,
+          current.id,
+          flag.id,
+          JSON.stringify(mergeSummary.field_sources),
+          mergeSummary.imported_items_count,
+          JSON.stringify(expenseResult.rows.find((row) => row.id === counterpart.id)),
+          JSON.stringify(expenseResult.rows.find((row) => row.id === current.id)),
+          JSON.stringify(transferredItemIds),
+        ]
       );
+      mergeEventId = mergeEvent.rows[0]?.id || null;
     }
 
     if (action === 'keep_existing') {
@@ -327,9 +342,101 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
       ? current.id
       : action === 'keep_new' ? counterpart.id : null,
     surviving_expense_id: action === 'merge_existing' ? counterpart.id : refreshedExpense.id,
-    merge_summary: action === 'merge_existing' ? mergeSummary : null,
+    merge_summary: action === 'merge_existing' ? {
+      ...mergeSummary,
+      event_id: mergeEventId,
+      can_undo: Boolean(mergeEventId),
+      undo_expires_at: mergeEventId ? new Date(Date.now() + (10 * 60 * 1000)).toISOString() : null,
+    } : null,
     idempotent_replay: false,
   };
 }
 
-module.exports = { resolveDuplicate, ACTION_STATUS, buildMergeFieldSources };
+async function undoDuplicateMerge({ user, mergeEventId }) {
+  if (!user?.id || !mergeEventId) throw httpError(400, 'Merge event is required');
+  const client = await db.pool.connect();
+  let restoredExpenseId = null;
+  try {
+    await client.query('BEGIN');
+    const eventResult = await client.query(
+      `SELECT * FROM expense_merge_events
+       WHERE id = $1 AND user_id = $2
+       FOR UPDATE`,
+      [mergeEventId, user.id]
+    );
+    const event = eventResult.rows[0];
+    if (!event) throw httpError(404, 'Merge history not found');
+    if (event.undone_at) {
+      await client.query('COMMIT');
+      return { undone: true, idempotent_replay: true, restored_expense_id: event.merged_expense_id };
+    }
+    if (Date.now() - new Date(event.created_at).getTime() > 10 * 60 * 1000) {
+      throw httpError(409, 'This merge can no longer be undone automatically');
+    }
+    const survivorBefore = event.survivor_before || {};
+    const mergedBefore = event.merged_before || {};
+    if (!event.surviving_expense_id || !event.merged_expense_id || !survivorBefore.id || !mergedBefore.id) {
+      throw httpError(409, 'This merge does not contain enough recovery data');
+    }
+
+    const restoreExpense = async (id, snapshot) => client.query(
+      `UPDATE expenses SET
+         description = $3, category_id = $4, notes = $5,
+         place_name = $6, address = $7, mapkit_stable_id = $8,
+         location_provider_id = $9, location_latitude = $10, location_longitude = $11,
+         location_source = $12, location_status = $13, location_confidence = $14,
+         location_user_owned = $15, payment_method = $16, card_last4 = $17,
+         card_label = $18, category_source = $19, category_confidence = $20,
+         category_reasoning = $21, status = $22, review_required = $23,
+         linked_expense_id = $24
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [
+        id, user.id, snapshot.description ?? null, snapshot.category_id ?? null, snapshot.notes ?? null,
+        snapshot.place_name ?? null, snapshot.address ?? null, snapshot.mapkit_stable_id ?? null,
+        snapshot.location_provider_id ?? null, snapshot.location_latitude ?? null, snapshot.location_longitude ?? null,
+        snapshot.location_source ?? null, snapshot.location_status ?? null, snapshot.location_confidence ?? null,
+        Boolean(snapshot.location_user_owned), snapshot.payment_method ?? null, snapshot.card_last4 ?? null,
+        snapshot.card_label ?? null, snapshot.category_source ?? null, snapshot.category_confidence ?? null,
+        snapshot.category_reasoning ? JSON.stringify(snapshot.category_reasoning) : null,
+        snapshot.status, Boolean(snapshot.review_required), snapshot.linked_expense_id ?? null,
+      ]
+    );
+
+    await restoreExpense(event.surviving_expense_id, survivorBefore);
+    const restored = await restoreExpense(event.merged_expense_id, mergedBefore);
+    if (!restored.rows[0]) throw httpError(409, 'Could not restore the imported expense');
+    restoredExpenseId = event.merged_expense_id;
+
+    const itemIds = Array.isArray(event.transferred_item_ids) ? event.transferred_item_ids.filter(Boolean) : [];
+    if (itemIds.length) {
+      await client.query(
+        `UPDATE expense_items SET expense_id = $1
+         WHERE expense_id = $2 AND id = ANY($3::uuid[])`,
+        [event.merged_expense_id, event.surviving_expense_id, itemIds]
+      );
+    }
+    await client.query(
+      'UPDATE email_import_log SET expense_id = $1 WHERE expense_id = $2 AND user_id = $3',
+      [event.merged_expense_id, event.surviving_expense_id, user.id]
+    );
+    if (event.duplicate_flag_id) {
+      await client.query(
+        `UPDATE duplicate_flags
+         SET status = 'pending', resolved_by = NULL, resolved_at = NULL
+         WHERE id = $1`,
+        [event.duplicate_flag_id]
+      );
+    }
+    await client.query('UPDATE expense_merge_events SET undone_at = NOW() WHERE id = $1', [event.id]);
+    await client.query('COMMIT');
+    return { undone: true, idempotent_replay: false, restored_expense_id: restoredExpenseId };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { resolveDuplicate, undoDuplicateMerge, ACTION_STATUS, buildMergeFieldSources };

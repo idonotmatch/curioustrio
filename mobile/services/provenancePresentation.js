@@ -72,6 +72,7 @@ function locationStatusPresentation(location = {}) {
   const status = `${location?.location_status || location?.status || ''}`;
   if (location?.source === 'current') return { label: 'Added by you', detail: 'Using your current location.' };
   if (location?.source === 'search') return { label: 'Chosen by you', detail: 'Selected from place search.' };
+  if (location?.source === 'history') return { label: 'Used before', detail: 'Matched to a place you previously confirmed.' };
   if (location?.source === 'merchant_suggestion') return { label: 'Accepted suggestion', detail: 'Matched near your current location.' };
   if (location?.source === 'receipt' && status === 'enriched') return { label: 'Found from receipt', detail: 'Matched using receipt location details.' };
   if (status === 'enriched') return { label: 'Found from receipt', detail: 'Matched from receipt or email location detail.' };

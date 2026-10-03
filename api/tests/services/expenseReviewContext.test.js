@@ -72,6 +72,19 @@ describe('expenseReviewContext', () => {
     );
   });
 
+  it('uses keyset pagination for pending review rows', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+    const cursor = { date: '2026-09-12', created_at: '2026-09-12T13:00:00.000Z', id: '00000000-0000-4000-8000-000000000123' };
+
+    await fetchPendingExpensesBase('user-1', { limit: 26, cursor });
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('(e.date, e.created_at, e.id) < ($2::date, $3::timestamptz, $4::uuid)'),
+      ['user-1', cursor.date, cursor.created_at, cursor.id, 26]
+    );
+    expect(db.query.mock.calls[0][0]).toContain('LIMIT $5');
+  });
+
   it('attaches Gmail review context with treatment suggestion, duplicate flags, and items', async () => {
     const expense = {
       id: 'expense-1',

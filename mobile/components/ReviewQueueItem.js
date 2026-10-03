@@ -179,6 +179,9 @@ export function ReviewQueueItem({
   onDismiss,
   variant = 'full',
   disabled = false,
+  selectionMode = false,
+  selected = false,
+  onToggleSelection,
 }) {
   const mode = reviewModePresentation(item.gmail_review_hint);
   const source = pendingSourcePresentation(item);
@@ -236,6 +239,7 @@ export function ReviewQueueItem({
   return (
     <View>
       <Swipeable
+        enabled={!selectionMode}
         renderLeftActions={renderLeftActions}
         renderRightActions={renderRightActions}
         overshootLeft={false}
@@ -244,11 +248,18 @@ export function ReviewQueueItem({
         <TouchableOpacity
           style={isPreview ? styles.previewRow : styles.row}
           onPress={() => {
-            if (!disabled) onOpen(item);
+            if (disabled) return;
+            if (selectionMode) onToggleSelection?.(item);
+            else onOpen(item);
           }}
           activeOpacity={0.85}
           disabled={disabled}
         >
+          {selectionMode ? (
+            <View style={[styles.selectionControl, selected && styles.selectionControlSelected]}>
+              {selected ? <Ionicons name="checkmark" size={15} color={colors.textInverse} /> : null}
+            </View>
+          ) : null}
           <View style={isPreview ? styles.previewRowMain : styles.rowMain}>
             <Text style={isPreview ? styles.previewMerchant : styles.merchant} numberOfLines={1}>
               {rowTitle}
@@ -274,7 +285,7 @@ export function ReviewQueueItem({
           </View>
           <View style={isPreview ? styles.previewRowRight : styles.rowRight}>
             <Text style={isPreview ? styles.previewAmount : styles.amount}>${Number(item.amount).toFixed(2)}</Text>
-            {!isPreview ? (
+            {!isPreview && !selectionMode ? (
               <TouchableOpacity
                 style={[styles.confirmChip, disabled ? styles.actionDisabled : null]}
                 onPress={(event) => {
@@ -310,6 +321,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.surface,
   },
   rowMain: { flex: 1, minWidth: 0, marginRight: 12 },
+  selectionControl: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  selectionControlSelected: { backgroundColor: colors.text, borderColor: colors.text },
   merchant: { fontSize: 15, color: colors.text, fontWeight: '500' },
   date: { fontSize: 13, color: colors.textDisabled, marginTop: 2 },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 2 },

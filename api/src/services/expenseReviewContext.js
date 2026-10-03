@@ -97,7 +97,18 @@ async function attachGmailReviewHint(expense, userId, { compact = false, emailLo
   };
 }
 
-async function fetchPendingExpensesBase(userId) {
+async function fetchPendingExpensesBase(userId, { limit = null, cursor = null } = {}) {
+  const params = [userId];
+  let cursorClause = '';
+  if (cursor?.date && cursor?.created_at && cursor?.id) {
+    params.push(cursor.date, cursor.created_at, cursor.id);
+    cursorClause = `AND (e.date, e.created_at, e.id) < ($2::date, $3::timestamptz, $4::uuid)`;
+  }
+  let limitClause = '';
+  if (Number.isFinite(Number(limit)) && Number(limit) > 0) {
+    params.push(Math.min(Number(limit), 51));
+    limitClause = `LIMIT $${params.length}`;
+  }
   const result = await db.query(
     `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
             (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count,
@@ -121,8 +132,10 @@ async function fetchPendingExpensesBase(userId) {
        LIMIT 1
      ) l ON TRUE
      WHERE e.user_id = $1 AND e.status = 'pending'
-     ORDER BY e.date DESC, e.created_at DESC`,
-    [userId]
+     ${cursorClause}
+     ORDER BY e.date DESC, e.created_at DESC, e.id DESC
+     ${limitClause}`,
+    params
   );
   return result.rows;
 }

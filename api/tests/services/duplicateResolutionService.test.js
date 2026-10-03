@@ -14,7 +14,7 @@ const {
   handleApprovedExpenseReview,
   handleDismissedExpenseReview,
 } = require('../../src/services/expenseEmailReviewService');
-const { resolveDuplicate, buildMergeFieldSources } = require('../../src/services/duplicateResolutionService');
+const { resolveDuplicate, undoDuplicateMerge, buildMergeFieldSources } = require('../../src/services/duplicateResolutionService');
 
 const user = { id: 'user-1', household_id: 'household-1' };
 const current = { id: 'expense-new', user_id: user.id, household_id: user.household_id, source: 'email', status: 'pending', is_private: false };
@@ -87,7 +87,7 @@ it('does not let a user replace another household member private expense', async
 it('keeps a new pending expense in review while another duplicate match remains', async () => {
   const client = { release: jest.fn() };
   client.query = jest.fn(async (sql) => {
-    if (sql === 'BEGIN' || sql === 'COMMIT') return { rows: [] };
+    if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
     if (sql.includes('SELECT * FROM duplicate_flags')) return { rows: [flag] };
     if (sql.includes('SELECT * FROM expenses')) return { rows: [current, existing] };
     if (sql.includes("UPDATE expenses SET status = 'dismissed'")) return { rows: [{ ...existing, status: 'dismissed' }] };
@@ -154,7 +154,7 @@ it('merges imported evidence into a manual survivor without replacing manual cho
   };
   const client = { release: jest.fn() };
   client.query = jest.fn(async (sql) => {
-    if (sql === 'BEGIN' || sql === 'COMMIT') return { rows: [] };
+    if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
     if (sql.includes('SELECT * FROM duplicate_flags')) return { rows: [flag] };
     if (sql.includes('SELECT * FROM expenses')) return { rows: [imported, manual] };
     if (sql.includes('SELECT expense_id, COUNT(*)')) return { rows: [{ expense_id: imported.id, count: 3 }] };
@@ -166,7 +166,7 @@ it('merges imported evidence into a manual survivor without replacing manual cho
     if (sql.includes('UPDATE email_import_log')) return { rows: [], rowCount: 1 };
     if (sql.includes('SET status = $2')) return { rows: [{ ...flag, status: 'merged' }] };
     if (sql.includes("SET status = 'merged'")) return { rows: [] };
-    if (sql.includes('INSERT INTO expense_merge_events')) return { rows: [], rowCount: 1 };
+    if (sql.includes('INSERT INTO expense_merge_events')) return { rows: [{ id: 'merge-event-1' }], rowCount: 1 };
     throw new Error(`Unexpected query: ${sql}`);
   });
   db.pool.connect.mockResolvedValue(client);
@@ -189,4 +189,41 @@ it('merges imported evidence into a manual survivor without replacing manual cho
     'UPDATE email_import_log SET expense_id = $1 WHERE expense_id = $2 AND user_id = $3',
     [manual.id, imported.id, user.id]
   );
+});
+
+it('undoes a recent merge and moves only transferred receipt items back', async () => {
+  const mergeEvent = {
+    id: 'merge-event-1',
+    user_id: user.id,
+    surviving_expense_id: existing.id,
+    merged_expense_id: current.id,
+    duplicate_flag_id: flag.id,
+    survivor_before: existing,
+    merged_before: current,
+    transferred_item_ids: ['00000000-0000-4000-8000-000000000001'],
+    created_at: new Date().toISOString(),
+    undone_at: null,
+  };
+  const client = { release: jest.fn() };
+  client.query = jest.fn(async (sql) => {
+    if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
+    if (sql.includes('FROM expense_merge_events')) return { rows: [mergeEvent] };
+    if (sql.includes('UPDATE expenses SET')) return { rows: [{ ...current, status: 'pending' }] };
+    if (sql.includes('UPDATE expense_items SET expense_id')) return { rows: [], rowCount: 1 };
+    if (sql.includes('UPDATE email_import_log')) return { rows: [], rowCount: 1 };
+    if (sql.includes('UPDATE duplicate_flags')) return { rows: [], rowCount: 1 };
+    if (sql.includes('UPDATE expense_merge_events')) return { rows: [], rowCount: 1 };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  db.pool.connect.mockResolvedValue(client);
+
+  await expect(undoDuplicateMerge({ user, mergeEventId: mergeEvent.id })).resolves.toMatchObject({
+    undone: true,
+    restored_expense_id: current.id,
+  });
+  expect(client.query).toHaveBeenCalledWith(
+    expect.stringContaining('id = ANY($3::uuid[])'),
+    [current.id, existing.id, mergeEvent.transferred_item_ids]
+  );
+  expect(client.query).toHaveBeenCalledWith('COMMIT');
 });

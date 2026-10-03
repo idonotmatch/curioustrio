@@ -66,6 +66,7 @@ const MIGRATION_PLAN = [
   '070_expense_receipt_details.sql',
   '071_expense_location_provenance.sql',
   '072_stability_speed_indexes.sql',
+  '073_merge_undo_audit.sql',
 ];
 
 module.exports = {

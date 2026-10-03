@@ -323,10 +323,12 @@ export default function SummaryScreen() {
       });
       return;
     }
-    saveInsightDetailSnapshot(insight, { preloadEvidence: [] }).catch(() => {});
+    const preloadedEvidence = buildPreloadedInsightEvidence(insight, expenses, householdExpenses);
+    saveInsightDetailSnapshot(insight, { preloadEvidence: preloadedEvidence }).catch(() => {});
     const payloadKey = stashNavigationPayload({
       metadata: insight.metadata || {},
-      preloadEvidence: [],
+      action: insight.action || null,
+      preloadEvidence: preloadedEvidence,
     }, 'insight-detail');
     router.push({
       pathname: '/insight-detail',
@@ -338,6 +340,7 @@ export default function SummaryScreen() {
         severity: insight.severity || 'low',
         entity_type: insight.entity_type || '',
         entity_id: insight.entity_id || '',
+        action: insight.action ? JSON.stringify(insight.action) : '',
         payload_key: payloadKey,
       },
     });

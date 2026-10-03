@@ -35,7 +35,7 @@ const {
 } = require('../services/expenseReviewContext');
 const db = require('../db');
 const { buildExpensePage, decodeExpenseCursor } = require('../services/expensePagination');
-const { resolveDuplicate } = require('../services/duplicateResolutionService');
+const { resolveDuplicate, undoDuplicateMerge } = require('../services/duplicateResolutionService');
 
 router.use(authenticate);
 
@@ -384,8 +384,89 @@ router.get('/pending', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const baseExpenses = await fetchPendingExpensesBase(user.id);
-    res.json(await attachExpensesReviewContext(baseExpenses, user.id, { compact: true }));
+    const paginated = req.query.paginated === '1' || req.query.paginated === 'true';
+    const pageSize = Math.max(1, Math.min(Number(req.query.limit) || 25, 50));
+    const cursor = req.query.cursor ? decodeExpenseCursor(req.query.cursor) : null;
+    if (req.query.cursor && !cursor) return res.status(400).json({ error: 'cursor is invalid' });
+    const baseExpenses = await fetchPendingExpensesBase(user.id, paginated ? { limit: pageSize + 1, cursor } : {});
+    if (!paginated) return res.json(await attachExpensesReviewContext(baseExpenses, user.id, { compact: true }));
+    const page = buildExpensePage(baseExpenses, pageSize);
+    const items = await attachExpensesReviewContext(page.items, user.id, { compact: true });
+    res.json({ items, next_cursor: page.next_cursor });
+  } catch (err) { next(err); }
+});
+
+router.post('/pending/batch', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const action = `${req.body?.action || ''}`;
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map((id) => `${id}`.trim()))];
+    if (!['approve', 'dismiss'].includes(action)) return res.status(400).json({ error: 'action must be approve or dismiss' });
+    if (!ids.length || ids.length > 50 || ids.some((id) => !UUID_RE.test(id))) {
+      return res.status(400).json({ error: 'ids must contain between 1 and 50 valid expense ids' });
+    }
+    const dismissalReason = action === 'dismiss' ? `${req.body?.dismissal_reason || ''}`.trim() : null;
+    const reviewContexts = req.body?.review_contexts && typeof req.body.review_contexts === 'object'
+      ? req.body.review_contexts
+      : {};
+    if (action === 'dismiss' && !dismissalReason) return res.status(400).json({ error: 'dismissal_reason is required' });
+
+    const result = await db.query(
+      `UPDATE expenses e
+       SET status = $3
+       WHERE e.user_id = $1
+         AND e.id = ANY($2::uuid[])
+         AND e.status = 'pending'
+         AND ($3 <> 'confirmed' OR NOT EXISTS (
+           SELECT 1 FROM duplicate_flags f
+           WHERE f.status = 'pending' AND (f.expense_id_a = e.id OR f.expense_id_b = e.id)
+         ))
+       RETURNING e.*`,
+      [user.id, ids, action === 'approve' ? 'confirmed' : 'dismissed']
+    );
+    const reviewed = await Promise.all(result.rows.map(async (expense) => {
+      try {
+        if (action === 'approve') {
+          const context = ['quick_check', 'full_review'].includes(reviewContexts[expense.id])
+            ? reviewContexts[expense.id]
+            : 'full_review';
+          return await handleApprovedExpenseReview(expense, user.id, context);
+        }
+        return await handleDismissedExpenseReview(expense, user.id, dismissalReason);
+      } catch (reviewErr) {
+        console.error('[expenses/pending/batch] review feedback failed:', {
+          expense_id: expense.id,
+          action,
+          message: reviewErr?.message || String(reviewErr || 'unknown_error'),
+        });
+        return expense;
+      }
+    }));
+    const processedIds = reviewed.map((expense) => expense.id);
+    const failedIds = ids.filter((id) => !processedIds.includes(id));
+    if (action === 'approve' && reviewed[0]) {
+      requestProjectionRefresh({
+        user,
+        reason: 'pending_expense_batch_approved',
+        expense: reviewed[0],
+        metadata: { count: reviewed.length, source: 'batch_review' },
+      });
+    }
+    if (reviewed[0]) {
+      await emitExpenseFreshnessEvent(user, reviewed[0], {
+        eventType: action === 'approve' ? 'pending_expense_batch_approved' : 'pending_expense_batch_dismissed',
+        includePending: true,
+        includeGmail: true,
+        metadata: { count: reviewed.length, source: 'batch_review' },
+      });
+    }
+    res.json({
+      action,
+      processed_ids: processedIds,
+      failed_ids: failedIds,
+      processed_count: processedIds.length,
+    });
   } catch (err) { next(err); }
 });
 
@@ -549,6 +630,22 @@ router.post('/:id/duplicates/:flagId/resolve', async (req, res, next) => {
         includeCategoryReasoning: true,
       }),
     });
+  } catch (err) { next(err); }
+});
+
+router.post('/merges/:mergeEventId/undo', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    if (!UUID_RE.test(req.params.mergeEventId)) return res.status(400).json({ error: 'Invalid merge event id' });
+    const result = await undoDuplicateMerge({ user, mergeEventId: req.params.mergeEventId });
+    await emitExpenseFreshnessEvent(user, { id: result.restored_expense_id, user_id: user.id }, {
+      eventType: 'duplicate_merge_undone',
+      includePending: true,
+      includeGmail: true,
+      metadata: { merge_event_id: req.params.mergeEventId },
+    });
+    res.json(result);
   } catch (err) { next(err); }
 });
 

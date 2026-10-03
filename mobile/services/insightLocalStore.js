@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { sanitizeInsightSnapshot } = require('./storageSanitizers');
+const { sanitizeExpenseCollection } = require('./storageSanitizers');
 const { scopedCacheKey } = require('./cacheIdentity');
 
 function keyForInsight(insightId) {
@@ -22,7 +23,7 @@ export async function saveInsightDetailSnapshot(insight = {}, extras = {}) {
   const payload = {
     insight: sanitizedInsight,
     extras: {
-      preloadEvidence: [],
+      preloadEvidence: sanitizeExpenseCollection(extras?.preloadEvidence || []).slice(0, 8),
     },
     saved_at: Date.now(),
   };
@@ -42,7 +43,9 @@ export async function loadInsightDetailSnapshot(insightId) {
     const sanitized = parsed && typeof parsed === 'object'
       ? {
         insight: sanitizeInsightSnapshot(parsed.insight || {}),
-        extras: { preloadEvidence: [] },
+        extras: {
+          preloadEvidence: sanitizeExpenseCollection(parsed?.extras?.preloadEvidence || []).slice(0, 8),
+        },
         saved_at: Number(parsed.saved_at || 0) || Date.now(),
       }
       : null;

@@ -333,6 +333,31 @@ export function getInsightScopeLabel(insight, context = {}) {
   return insight?.entity_type === 'item' ? 'Household' : 'You';
 }
 
+export function getInsightTimeframeLabel(insight, context = {}) {
+  const type = `${insight?.type || context.insightType || ''}`;
+  const metadata = insight?.metadata || context.metadata || {};
+  if (type.includes('weekly') || type.startsWith('developing_')) return 'Last 7 days';
+  if (type.startsWith('early_')) return 'This period';
+  if (type.startsWith('item_') || type.startsWith('recurring_') || type === 'buy_soon_better_price') {
+    return 'Recent purchases';
+  }
+  const month = `${metadata.month || ''}`;
+  if (/^\d{4}-\d{2}$/.test(month)) {
+    const date = new Date(`${month}-01T12:00:00`);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  }
+  return 'Current period';
+}
+
+export function getInsightConfidenceLabel(insight, context = {}) {
+  const metadata = insight?.metadata || context.metadata || {};
+  const confidence = `${metadata.confidence || ''}`.trim();
+  const history = Number(metadata.historical_period_count || metadata.occurrence_count || 0);
+  if (confidence === 'observed' || confidence === 'comparative' || history >= 4) return 'Strong signal';
+  if (confidence === 'low' || metadata.maturity === 'early' || `${insight?.type || ''}`.startsWith('early_')) return 'Early signal';
+  return 'Directional';
+}
+
 export function getInsightStageDescriptor(insight, context = {}) {
   const type = `${insight?.type || context.insightType || ''}`;
   const metadata = insight?.metadata || context.metadata || {};

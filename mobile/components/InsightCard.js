@@ -5,9 +5,11 @@ import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from './InsightTrendVisual';
 import {
   getInsightCardAction,
+  getInsightConfidenceLabel,
   getInsightPrimaryMetric,
   getInsightScopeLabel,
   getInsightSupportRows,
+  getInsightTimeframeLabel,
 } from '../services/insightPresentation';
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 const { normalizeDisplayText } = require('../services/text');
@@ -163,6 +165,8 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
   const showPrimaryMetric = useMemo(() => shouldShowPrimaryMetric(insight, primaryMetric), [insight, primaryMetric]);
   const isPrimary = emphasis === 'primary';
   const scopeLabel = useMemo(() => getInsightScopeLabel(insight), [insight]);
+  const timeframeLabel = useMemo(() => getInsightTimeframeLabel(insight), [insight]);
+  const confidenceLabel = useMemo(() => getInsightConfidenceLabel(insight), [insight]);
   const roleLabel = useMemo(() => insightRoleLabel(insight), [insight]);
   const trendVisual = useMemo(() => getInsightTrendVisual(insight), [insight]);
   const displayTitle = useMemo(() => normalizeDisplayText(insightDisplayTitle(insight)), [insight]);
@@ -216,6 +220,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
             <Ionicons name="close" size={15} color={colors.textDisabled} />
           </TouchableOpacity>
         </View>
+        <Text style={styles.insightContext} numberOfLines={1}>{timeframeLabel} · {confidenceLabel}</Text>
         <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{displayTitle}</Text>
         {showPrimaryMetric ? (
           <View style={[styles.insightMetricPanel, isPrimary && styles.insightMetricPanelPrimary]}>
@@ -322,6 +327,7 @@ const styles = StyleSheet.create({
   insightRoleTextSetup: { color: colors.warning },
   insightRoleTextLearning: { color: colors.success },
   insightRoleTextExplain: { color: colors.text },
+  insightContext: { color: colors.textSubtle, fontSize: 11, lineHeight: 15 },
   insightTitle: { fontSize: 16, color: colors.text, fontWeight: '600', lineHeight: 21 },
   insightTitlePrimary: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   insightMetricPanel: {

@@ -57,6 +57,25 @@ function ExpenseComparison({ label, expense, accent = false }) {
   );
 }
 
+function hasValue(value, { unknown = false } = {}) {
+  if (value == null || `${value}`.trim() === '') return false;
+  return !unknown || value !== 'unknown';
+}
+
+function mergePreviewRows(existing = {}, imported = {}) {
+  const location = existing.place_name || existing.address;
+  const importedLocation = imported.place_name || imported.address;
+  return [
+    { label: 'Amount and date', value: `$${Math.abs(Number(existing.amount || 0)).toFixed(2)} · ${formatDate(existing.date)}`, source: 'Manual' },
+    { label: 'Category', value: existing.category_name || 'Unassigned', source: 'Manual' },
+    { label: 'Notes', value: existing.notes || imported.notes || 'None', source: existing.notes ? 'Manual' : imported.notes ? 'Import fills blank' : 'No change' },
+    { label: 'Payment', value: paymentLabel(existing) || paymentLabel(imported) || 'Unknown', source: hasValue(existing.payment_method, { unknown: true }) ? 'Manual' : hasValue(imported.payment_method, { unknown: true }) ? 'Import fills blank' : 'No change' },
+    { label: 'Location', value: location || importedLocation || 'None', source: location ? 'Manual' : importedLocation ? 'Import fills blank' : 'No change' },
+    { label: 'Receipt items', value: Number(existing.item_count || 0) > 0 ? `${existing.item_count} manual items` : Number(imported.item_count || 0) > 0 ? `${imported.item_count} imported items` : 'None', source: Number(existing.item_count || 0) > 0 ? 'Manual' : Number(imported.item_count || 0) > 0 ? 'Import fills blank' : 'No change' },
+    { label: 'Privacy and budget', value: `${existing.is_private ? 'Private' : 'Shared'} · ${existing.exclude_from_budget ? 'Track only' : 'Counts toward budget'}`, source: 'Manual' },
+  ];
+}
+
 export default function DuplicateReviewScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -66,6 +85,7 @@ export default function DuplicateReviewScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actioning, setActioning] = useState('');
+  const [mergeResult, setMergeResult] = useState(null);
 
   async function load() {
     if (!expenseId) {
@@ -100,11 +120,30 @@ export default function DuplicateReviewScreen() {
     if (!flag?.id || actioning) return;
     setActioning(action);
     try {
-      await api.post(`/expenses/${expenseId}/duplicates/${flag.id}/resolve`, { action });
+      const result = await api.post(`/expenses/${expenseId}/duplicates/${flag.id}/resolve`, { action });
       await invalidateExpenseMutationCaches();
+      if (action === 'merge_existing' && result?.merge_summary?.event_id) {
+        setMergeResult(result);
+        setActioning('');
+        return;
+      }
       router.replace('/review-queue');
     } catch (err) {
       Alert.alert('Could not save decision', err?.message || 'Please try again.');
+      setActioning('');
+    }
+  }
+
+  async function undoMerge() {
+    const mergeEventId = mergeResult?.merge_summary?.event_id;
+    if (!mergeEventId || actioning) return;
+    setActioning('undo');
+    try {
+      await api.post(`/expenses/merges/${mergeEventId}/undo`, {});
+      await invalidateExpenseMutationCaches();
+      router.replace('/review-queue');
+    } catch (err) {
+      Alert.alert('Could not undo merge', err?.message || 'Please try again.');
       setActioning('');
     }
   }
@@ -129,6 +168,24 @@ export default function DuplicateReviewScreen() {
             <Text style={styles.retryText}>Try again</Text>
           </TouchableOpacity>
         ) : null}
+      </SafeAreaView>
+    );
+  }
+
+
+  if (mergeResult) {
+    return (
+      <SafeAreaView style={styles.center} edges={['bottom']}>
+        <Ionicons name="checkmark-circle-outline" size={36} color={colors.success} />
+        <Text style={styles.emptyTitle}>Expenses merged</Text>
+        <Text style={styles.emptyBody}>The manual expense stayed in place and blank details were filled from the import.</Text>
+        <TouchableOpacity style={[styles.primaryButton, styles.resultButton]} onPress={() => router.replace({ pathname: '/expense/[id]', params: { id: mergeResult.surviving_expense_id } })}>
+          <Text style={styles.primaryText}>View merged expense</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.textButton} disabled={Boolean(actioning)} onPress={undoMerge}>
+          {actioning === 'undo' ? <ActivityIndicator color={colors.textMuted} /> : <Text style={styles.textButtonLabel}>Undo merge</Text>}
+        </TouchableOpacity>
+        <Text style={styles.undoNote}>Undo is available here for 10 minutes.</Text>
       </SafeAreaView>
     );
   }
@@ -158,9 +215,18 @@ export default function DuplicateReviewScreen() {
               <Ionicons name="layers-outline" size={18} color={colors.success} />
               <Text style={styles.mergePreviewTitle}>Merge preview</Text>
             </View>
-            <Text style={styles.mergePreviewBody}>
-              Your manual amount, date, category, notes, privacy, and budget choices stay. Blank payment and location details can be filled from the import.
-            </Text>
+            <Text style={styles.mergePreviewBody}>The manual expense survives. The import only fills fields that are blank.</Text>
+            <View style={styles.mergeFieldList}>
+              {mergePreviewRows(counterpart, expense).map((row) => (
+                <View key={row.label} style={styles.mergeFieldRow}>
+                  <View style={styles.mergeFieldCopy}>
+                    <Text style={styles.mergeFieldLabel}>{row.label}</Text>
+                    <Text style={styles.mergeFieldValue} numberOfLines={2}>{row.value}</Text>
+                  </View>
+                  <Text style={[styles.mergeFieldSource, row.source === 'Import fills blank' && styles.mergeFieldSourceImported]}>{row.source}</Text>
+                </View>
+              ))}
+            </View>
             {Number(counterpart.item_count || 0) === 0 && Number(expense.item_count || 0) > 0 ? (
               <Text style={styles.mergePreviewAccent}>
                 {expense.item_count} imported item{Number(expense.item_count) === 1 ? '' : 's'} will be added.
@@ -262,6 +328,13 @@ const styles = StyleSheet.create({
   mergePreviewBody: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: 9 },
   mergePreviewAccent: { color: colors.success, fontSize: 12, lineHeight: 18, fontWeight: '600', marginTop: 8 },
   mergePreviewMuted: { color: colors.textSubtle, fontSize: 12, lineHeight: 18, marginTop: 8 },
+  mergeFieldList: { marginTop: 12, borderTopWidth: 1, borderTopColor: colors.successBorder },
+  mergeFieldRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.successBorder },
+  mergeFieldCopy: { flex: 1, minWidth: 0 },
+  mergeFieldLabel: { color: colors.textSubtle, fontSize: 11, marginBottom: 2 },
+  mergeFieldValue: { color: colors.text, fontSize: 13, lineHeight: 17, fontWeight: '600' },
+  mergeFieldSource: { color: colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', maxWidth: 92, textAlign: 'right' },
+  mergeFieldSourceImported: { color: colors.success },
   actions: { paddingHorizontal: 20, gap: 10 },
   primaryButton: { minHeight: 50, borderRadius: radius.sm, backgroundColor: colors.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primaryText: { color: colors.textInverse, fontSize: 15, fontWeight: '700' },
@@ -274,4 +347,6 @@ const styles = StyleSheet.create({
   emptyBody: { color: colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 7 },
   retryButton: { marginTop: 18, paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.sm, backgroundColor: colors.surfaceRaised, borderWidth: 1, borderColor: colors.border },
   retryText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  resultButton: { alignSelf: 'stretch', marginTop: 22 },
+  undoNote: { color: colors.textDisabled, fontSize: 12, marginTop: 4 },
 });

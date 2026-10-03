@@ -147,6 +147,8 @@ export function buildPreloadedCategoryExpenses(insight, personalExpenses = [], h
 
 export function buildPreloadedInsightEvidence(insight, personalExpenses = [], householdExpenses = []) {
   const metadata = insight?.metadata || {};
+  if (metadata.largest_expense?.id) return [metadata.largest_expense];
+  if (metadata.top_unusual_expense?.id) return [metadata.top_unusual_expense];
   const month = `${metadata.month || ''}`.trim();
   if (!month) return [];
 
@@ -160,6 +162,8 @@ export function buildPreloadedInsightEvidence(insight, personalExpenses = [], ho
       ? 'category'
       : (metadata.merchant_key || metadata.merchant_name)
         ? 'merchant'
-        : null;
+        : `${insight?.type || ''}`.includes('one_off')
+          ? 'largest_expense'
+          : null;
   return selectInsightEvidence(monthRows, mode, metadata, 5);
 }

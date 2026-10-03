@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { normalizeLocationData } from './locationData';
 
 const COORD_CACHE_MS = 2 * 60 * 1000;
 let cachedCoords = null;
@@ -67,7 +68,7 @@ export async function getLocation(options = {}) {
   const address = addressParts.join(', ');
   const mapkit_stable_id = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
 
-  return {
+  return normalizeLocationData({
     place_name,
     address,
     mapkit_stable_id,
@@ -76,8 +77,8 @@ export async function getLocation(options = {}) {
     latitude,
     longitude,
     source: 'current',
-    location_status: 'enriched',
-    location_confidence: 1,
+    status: 'enriched',
+    confidence: 1,
     location_user_owned: true,
-  };
+  });
 }

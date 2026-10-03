@@ -7,6 +7,7 @@ import {
   createEditableExpenseItem,
   normalizeExpenseItemPayload,
 } from './itemEditing';
+import { locationApiFields, normalizeLocationData } from './locationData';
 
 export const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
 
@@ -56,7 +57,7 @@ export function applyExpenseToState(record, setters) {
   setters.setItems(record.items || []);
   setters.setLocationData(
     record.place_name || record.address || record.mapkit_stable_id || record.location_latitude != null
-      ? {
+      ? normalizeLocationData({
           place_name: record.place_name || '',
           address: record.address || null,
           mapkit_stable_id: record.mapkit_stable_id || null,
@@ -67,7 +68,7 @@ export function applyExpenseToState(record, setters) {
           status: record.location_status || null,
           confidence: record.location_confidence ?? null,
           location_user_owned: Boolean(record.location_user_owned),
-        }
+        })
       : null
   );
   setters.setItemsEdits((record.items || []).map((it) => ({
@@ -113,6 +114,7 @@ export function buildExpensePatchPayload({
   locationData,
   itemsEdits,
 }) {
+  const locationFields = locationApiFields(locationData, { cleared: !locationData });
   return {
     merchant,
     amount: parseFloat(amount),
@@ -125,16 +127,7 @@ export function buildExpensePatchPayload({
     is_private: isPrivate,
     exclude_from_budget: excludeFromBudget,
     budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
-    place_name: locationData?.place_name || null,
-    address: locationData?.address || null,
-    mapkit_stable_id: locationData?.mapkit_stable_id || null,
-    location_provider_id: locationData?.provider_place_id || null,
-    location_latitude: locationData?.latitude ?? null,
-    location_longitude: locationData?.longitude ?? null,
-    location_source: locationData?.source || (locationData ? 'manual_edit' : 'user_cleared'),
-    location_status: locationData?.status || (locationData ? 'enriched' : 'cleared'),
-    location_confidence: locationData?.confidence ?? (locationData ? 1 : null),
-    location_user_owned: true,
+    ...locationFields,
     items: itemsEdits
       .filter((it) => it.description.trim())
       .map((it) => normalizeExpenseItemPayload(it)),

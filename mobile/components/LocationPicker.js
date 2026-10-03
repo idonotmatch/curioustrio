@@ -1,9 +1,11 @@
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput } from 'react-native';
 import { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { getCoords, getLocation } from '../services/locationService';
 import { api } from '../services/api';
 import { colors } from '../theme/tokens';
 import { locationStatusPresentation } from '../services/provenancePresentation';
+import { normalizeLocationData } from '../services/locationData';
 
 export function LocationPicker({ onLocation, locationData, merchant }) {
   const [loading, setLoading] = useState(false);
@@ -79,14 +81,14 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   }
 
   function selectLocation(result) {
-    onLocation({
+    onLocation(normalizeLocationData({
       ...result,
-      source: 'search',
-      location_status: 'enriched',
-      location_confidence: 1,
+      source: result.source || (result.search_strategy === 'user_history' ? 'history' : 'search'),
+      status: 'enriched',
+      confidence: result.confidence ?? 1,
       location_user_owned: true,
-    });
-    setStatus(locationStatusPresentation({ source: 'search' }));
+    }));
+    setStatus(locationStatusPresentation({ source: result.search_strategy === 'user_history' ? 'history' : 'search' }));
     endSearch();
   }
 
@@ -114,8 +116,8 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
         <>
           <View style={styles.row}>
             <Text style={styles.label}>LOCATION</Text>
-            <TouchableOpacity onPress={() => onLocation(null)}>
-              <Text style={styles.clear}>✕ clear</Text>
+            <TouchableOpacity onPress={() => onLocation(null)} accessibilityRole="button" accessibilityLabel="Clear location">
+              <Ionicons name="close" size={16} color={colors.textDisabled} />
             </TouchableOpacity>
           </View>
           <Text style={styles.placeName}>{locationData.place_name}</Text>
@@ -177,7 +179,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
                     <TouchableOpacity key={key} style={styles.resultCard} onPress={() => selectLocation(result)}>
                       <Text style={styles.placeName}>{result.place_name}</Text>
                       {result.address ? <Text style={styles.address}>{result.address}</Text> : null}
-                      <Text style={styles.statusText}>Place search result</Text>
+                      <Text style={styles.statusText}>{result.search_strategy === 'user_history' ? 'Used by you before' : 'Place search result'}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -201,7 +203,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   actionRow: { flexDirection: 'row', gap: 8 },
   label: { fontSize: 10, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1 },
-  clear: { fontSize: 11, color: colors.textDisabled },
   placeName: { color: colors.text, fontSize: 14 },
   address: { color: colors.textDisabled, fontSize: 12, marginTop: 2 },
   statusText: { color: colors.textSubtle, fontSize: 11, marginTop: 6, lineHeight: 15 },
