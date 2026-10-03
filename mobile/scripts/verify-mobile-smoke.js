@@ -100,4 +100,14 @@ for (const relativePath of filesToCheck) {
   });
 }
 
+const rootLayoutSource = fs.readFileSync(path.join(projectRoot, 'app/_layout.js'), 'utf8');
+if (rootLayoutSource.includes("require('../assets/splash-icon.png')")) {
+  throw new Error('[mobile-smoke] app/_layout.js must not render a second JavaScript splash logo');
+}
+for (const marker of ['initialSessionPromiseRef', 'initialUserCachePromiseRef']) {
+  if (!rootLayoutSource.includes(marker)) {
+    throw new Error(`[mobile-smoke] app/_layout.js is missing launch prewarm marker: ${marker}`);
+  }
+}
+
 process.stdout.write('[mobile-smoke] syntax checks passed\n');

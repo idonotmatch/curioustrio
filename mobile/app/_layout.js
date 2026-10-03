@@ -2,7 +2,7 @@ import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-rout
 import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState, Image, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -80,6 +80,8 @@ function AppNavigator() {
   const rootNavigationState = useRootNavigationState();
   const [bootstrapped, setBootstrapped] = useState(false);
   const [authLinkReady, setAuthLinkReady] = useState(false);
+  const initialSessionPromiseRef = useRef(null);
+  const initialUserCachePromiseRef = useRef(null);
   const resolvingSessionRef = useRef(false);
   const routedSessionIdRef = useRef(null);
   const gmailSyncInFlightRef = useRef(false);
@@ -292,10 +294,9 @@ function AppNavigator() {
         return;
       }
 
-      const cachedUser = await resolveWithTimeout(
-        loadCurrentUserCache(),
-        AUTH_BOOT_CACHE_TIMEOUT_MS,
-        null
+      const cachedUser = await (
+        initialUserCachePromiseRef.current
+        || resolveWithTimeout(loadCurrentUserCache(), AUTH_BOOT_CACHE_TIMEOUT_MS, null)
       );
       const safeCachedUser = cachedUser?.auth_user_id === session.user.id ? cachedUser : null;
       const shouldReplaceAuthEntry = isAuthEntryPath(pathname);
@@ -354,7 +355,10 @@ function AppNavigator() {
       }
     });
 
-    resolveWithTimeout(supabase.auth.getSession(), AUTH_BOOT_SYNC_TIMEOUT_MS, null)
+    const initialSessionPromise = initialSessionPromiseRef.current
+      || resolveWithTimeout(supabase.auth.getSession(), AUTH_BOOT_SYNC_TIMEOUT_MS, null);
+
+    initialSessionPromise
       .then((result) => {
         if (!active || bootstrapped) return;
         const session = result?.data?.session || null;
@@ -411,6 +415,17 @@ function AppNavigator() {
     let active = true;
 
     async function bootstrapAuthLinks() {
+      initialSessionPromiseRef.current = resolveWithTimeout(
+        supabase.auth.getSession(),
+        AUTH_BOOT_SYNC_TIMEOUT_MS,
+        null
+      ).catch(() => null);
+      initialUserCachePromiseRef.current = resolveWithTimeout(
+        loadCurrentUserCache(),
+        AUTH_BOOT_CACHE_TIMEOUT_MS,
+        null
+      ).catch(() => null);
+
       try {
         const initialUrl = await resolveWithTimeout(
           Linking.getInitialURL(),
@@ -475,17 +490,7 @@ function AppNavigator() {
   }, [bootstrapped]);
 
   if (!bootstrapped) {
-    return (
-      <View style={styles.splashContainer}>
-        <View style={styles.splashImageFrame}>
-          <Image
-            source={require('../assets/splash-icon.png')}
-            style={styles.splashImage}
-            resizeMode="contain"
-          />
-        </View>
-      </View>
-    );
+    return <View style={styles.bootContainer} />;
   }
 
   return (
@@ -542,21 +547,8 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  splashContainer: {
+  bootContainer: {
     flex: 1,
     backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splashImageFrame: {
-    width: '72%',
-    maxWidth: 320,
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splashImage: {
-    width: '100%',
-    height: '100%',
   },
 });
