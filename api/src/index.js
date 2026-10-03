@@ -43,6 +43,19 @@ app.use((req, res, next) => {
   const requestId = req.headers['x-request-id'] || crypto.randomUUID();
   req.requestId = `${requestId}`;
   res.setHeader('x-request-id', req.requestId);
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= 1000 || res.statusCode >= 500) {
+      console.warn('[http] slow or failed request', {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        duration_ms: durationMs,
+        request_id: req.requestId,
+      });
+    }
+  });
   next();
 });
 

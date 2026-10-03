@@ -366,12 +366,26 @@ router.get('/household', async (req, res, next) => {
 });
 
 // List pending expenses for the authenticated user
+router.get('/pending/count', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const result = await db.query(
+      `SELECT COUNT(*)::int AS count
+       FROM expenses
+       WHERE user_id = $1 AND status = 'pending'`,
+      [user.id]
+    );
+    res.json({ count: Number(result.rows[0]?.count || 0) });
+  } catch (err) { next(err); }
+});
+
 router.get('/pending', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const baseExpenses = await fetchPendingExpensesBase(user.id);
-    res.json(await attachExpensesReviewContext(baseExpenses, user.id));
+    res.json(await attachExpensesReviewContext(baseExpenses, user.id, { compact: true }));
   } catch (err) { next(err); }
 });
 

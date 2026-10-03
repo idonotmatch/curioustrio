@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { sanitizeInsightSnapshot } = require('./storageSanitizers');
+const { scopedCacheKey } = require('./cacheIdentity');
 
 function keyForInsight(insightId) {
-  return `cache:insight-detail:${insightId}`;
+  return scopedCacheKey(`cache:insight-detail:${insightId}`);
 }
 
 function isSamePayload(a, b) {

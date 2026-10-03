@@ -3,6 +3,7 @@ const {
   sanitizeExpenseCollection,
   sanitizeInsightSnapshot,
 } = require('./storageSanitizers');
+const { scopedCacheKey } = require('./cacheIdentity');
 
 const SUMMARY_SNAPSHOT_PREFIX = 'cache:summary-snapshot';
 const MAX_RECENT_EXPENSES = 8;
@@ -11,7 +12,7 @@ const MAX_WATCHED_PLANS = 5;
 const MAX_INSIGHTS = 5;
 
 function snapshotKey(month, startDay) {
-  return `${SUMMARY_SNAPSHOT_PREFIX}:${month || 'current'}:${startDay || 'default'}`;
+  return scopedCacheKey(`${SUMMARY_SNAPSHOT_PREFIX}:${month || 'current'}:${startDay || 'default'}`);
 }
 
 function sanitizeBudget(budget = null) {

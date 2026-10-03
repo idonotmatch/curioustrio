@@ -1540,6 +1540,7 @@ async function inferOutcomeEventsBestEffort(user, events = []) {
 
 async function buildInsights({ user, limit = 10 }) {
   const insightSets = [];
+  let personalProjectionForFallback = null;
   let recurringSignals = [];
   let householdWatchCandidates = [];
   const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
@@ -1697,12 +1698,15 @@ async function buildInsights({ user, limit = 10 }) {
       }]);
     }
 
-    const personalTrend = await analyzeSpendingTrend({ user, scope: 'personal' });
+    const [personalTrend, personalProjection, personalBudgetSettings, personalRollingActivity] = await Promise.all([
+      analyzeSpendingTrend({ user, scope: 'personal' }),
+      analyzeSpendProjection({ user, scope: 'personal' }),
+      BudgetSetting.findByUser(user.id),
+      analyzeRollingActivity({ user, scope: 'personal' }),
+    ]);
     insightSets.push(buildTrendInsights(personalTrend, 'personal'));
-    const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
-    const personalBudgetSettings = await BudgetSetting.findByUser(user.id);
+    personalProjectionForFallback = personalProjection;
     const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
-    const personalRollingActivity = await analyzeRollingActivity({ user, scope: 'personal' });
     insightSets.push(buildEarlyUsageInsights({
       projection: personalProjection,
       budgetLimit: personalBudgetLimit,
@@ -1718,12 +1722,14 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   if (user?.household_id && hasMultipleHouseholdMembers) {
-    const householdTrend = await analyzeSpendingTrend({ user, scope: 'household' });
+    const [householdTrend, householdProjection, householdBudgetSettings, householdRollingActivity] = await Promise.all([
+      analyzeSpendingTrend({ user, scope: 'household' }),
+      analyzeSpendProjection({ user, scope: 'household' }),
+      BudgetSetting.findByHousehold(user.household_id),
+      analyzeRollingActivity({ user, scope: 'household' }),
+    ]);
     insightSets.push(buildTrendInsights(householdTrend, 'household'));
-    const householdProjection = await analyzeSpendProjection({ user, scope: 'household' });
-    const householdBudgetSettings = await BudgetSetting.findByHousehold(user.household_id);
     const householdBudgetLimit = householdBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
-    const householdRollingActivity = await analyzeRollingActivity({ user, scope: 'household' });
     insightSets.push(buildEarlyUsageInsights({
       projection: householdProjection,
       budgetLimit: householdBudgetLimit,
@@ -1749,7 +1755,7 @@ async function buildInsights({ user, limit = 10 }) {
   );
 
   if (deduped.length === 0 && user?.id) {
-    const personalProjection = await analyzeSpendProjection({ user, scope: 'personal' });
+    const personalProjection = personalProjectionForFallback || await analyzeSpendProjection({ user, scope: 'personal' });
     const personalBudgetSettings = await BudgetSetting.findByUser(user.id);
     const personalBudgetLimit = personalBudgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
     deduped = buildUsageFallbackInsights({

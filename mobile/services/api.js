@@ -12,6 +12,8 @@ const EXPLICIT_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL || ''}`.trim() || n
 const LOCAL_BASE_URLS = ['http://127.0.0.1:3001', 'http://127.0.0.1:3002'];
 let activeBaseUrl = EXPLICIT_BASE_URL;
 const inFlightGets = new Map();
+const DEFAULT_GET_TIMEOUT_MS = 20000;
+const DEFAULT_MUTATION_TIMEOUT_MS = 45000;
 
 function deriveExpoHostBaseUrls() {
   return [
@@ -56,9 +58,17 @@ async function request(path, options = {}, tokenOverride) {
   }
 
   for (const baseUrl of candidateBaseUrls()) {
+    const timeoutMs = Math.max(
+      1000,
+      Number(options.timeoutMs || (options.method ? DEFAULT_MUTATION_TIMEOUT_MS : DEFAULT_GET_TIMEOUT_MS))
+    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(`${baseUrl}${path}`, {
         ...options,
+        timeoutMs: undefined,
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -75,27 +85,45 @@ async function request(path, options = {}, tokenOverride) {
         // a truly expired token. Supabase handles token refresh natively via
         // autoRefreshToken; a forced signOut here would cause a login loop.
         const enriched = new Error(error.error || `HTTP ${res.status}`);
-        Object.assign(enriched, error);
+        Object.assign(enriched, error, {
+          status: res.status,
+          retryAfter: res.headers.get('retry-after') || null,
+          requestId: res.headers.get('x-request-id') || null,
+        });
         throw enriched;
       }
 
       if (res.status === 204) return null;
       return res.json();
     } catch (err) {
+      clearTimeout(timeout);
       if (err?.code === 'network_error' || err instanceof TypeError) {
         lastNetworkError = err;
         continue;
       }
+      if (err?.name === 'AbortError') {
+        const timeoutError = new Error(`Request timed out after ${timeoutMs}ms`);
+        timeoutError.code = 'request_timeout';
+        timeoutError.status = 408;
+        timeoutError.cause = err;
+        lastNetworkError = timeoutError;
+        continue;
+      }
       throw err;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   const targets = candidateBaseUrls().join(' or ');
-  const message = __DEV__
+  const message = lastNetworkError?.code === 'request_timeout'
+    ? lastNetworkError.message
+    : __DEV__
     ? `Could not reach the API at ${targets}. Make sure the local server is running.`
     : `Could not reach the API at ${targets}. Please check the app's API configuration.`;
   const enriched = new Error(message);
-  enriched.code = 'network_error';
+  enriched.code = lastNetworkError?.code || 'network_error';
+  enriched.status = lastNetworkError?.status || null;
   enriched.cause = lastNetworkError;
   throw enriched;
 }
@@ -109,7 +137,18 @@ export const api = {
     const existing = inFlightGets.get(key);
     if (existing) return existing;
 
-    const pending = request(path, {}, resolvedToken)
+    const run = async () => {
+      try {
+        return await request(path, {}, resolvedToken);
+      } catch (err) {
+        if (err?.status !== 429) throw err;
+        const retryAfterSeconds = Number.parseFloat(err.retryAfter);
+        const delayMs = Math.min(3000, Math.max(500, Number.isFinite(retryAfterSeconds) ? retryAfterSeconds * 1000 : 1000));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return request(path, {}, resolvedToken);
+      }
+    };
+    const pending = run()
       .finally(() => inFlightGets.delete(key));
     inFlightGets.set(key, pending);
     return pending;

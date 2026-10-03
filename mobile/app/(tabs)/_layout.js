@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePendingExpenses } from '../../hooks/usePendingExpenses';
+import { usePendingExpenseCount } from '../../hooks/usePendingExpenseCount';
 import { useMonth, currentPeriod } from '../../contexts/MonthContext';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
@@ -17,12 +17,7 @@ function ActivityIcon({ focused }) {
 }
 
 function PendingIcon({ focused }) {
-  const { expenses, refresh } = usePendingExpenses();
-  const count = expenses?.length ?? 0;
-
-  useEffect(() => {
-    if (focused) refresh();
-  }, [focused]);
+  const { count } = usePendingExpenseCount();
   return (
     <View>
       <Ionicons name={focused ? 'time' : 'time-outline'} size={22} color={focused ? colors.accent : colors.textDisabled} />

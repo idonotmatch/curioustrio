@@ -5,6 +5,11 @@ const {
   sanitizeExpenseItems,
   sanitizeExpenseSnapshot,
 } = require('./storageSanitizers');
+const {
+  scopedCacheKey,
+  isActiveUserCacheKey,
+  cacheKeyForDisplay,
+} = require('./cacheIdentity');
 
 const DETAIL_PREFIX = 'cache:expense-detail:';
 const ITEM_PREFIX = 'cache:expense-items:';
@@ -67,11 +72,11 @@ function isSamePayload(a, b) {
 }
 
 export function expenseDetailKey(id) {
-  return `${DETAIL_PREFIX}${id}`;
+  return scopedCacheKey(`${DETAIL_PREFIX}${id}`);
 }
 
 export function expenseItemsKey(id) {
-  return `${ITEM_PREFIX}${id}`;
+  return scopedCacheKey(`${ITEM_PREFIX}${id}`);
 }
 
 export async function saveExpenseItemsSnapshot(id, items) {
@@ -200,7 +205,7 @@ export async function findExpenseSnapshotInCaches(id) {
   const direct = await loadExpenseSnapshot(id);
   if (direct) return direct;
 
-  const directKeys = ['cache:expenses:pending'];
+  const directKeys = [scopedCacheKey('cache:expenses:pending')];
   for (const key of directKeys) {
     try {
       const raw = await AsyncStorage.getItem(key);
@@ -251,11 +256,11 @@ export { mergeExpenseData };
 async function listCacheKeys() {
   try {
     const keys = await AsyncStorage.getAllKeys();
-    return keys.filter((key) =>
-      key === 'cache:expenses:pending'
-      || key.startsWith('cache:expenses:')
-      || key.startsWith('cache:household-expenses:')
-    );
+    return keys.filter((key) => isActiveUserCacheKey(key) && (
+      cacheKeyForDisplay(key) === 'cache:expenses:pending'
+      || cacheKeyForDisplay(key).startsWith('cache:expenses:')
+      || cacheKeyForDisplay(key).startsWith('cache:household-expenses:')
+    ));
   } catch {
     return [];
   }
@@ -276,19 +281,20 @@ function cacheAllowsExpense(key, expense) {
     return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
   }
 
-  if (key === 'cache:expenses:pending') {
+  const displayKey = cacheKeyForDisplay(key);
+  if (displayKey === 'cache:expenses:pending') {
     return expense?.status === 'pending';
   }
 
-  if (key.startsWith('cache:expenses:')) {
-    const [, , scopedMonth, scopedStartDay] = key.split(':');
+  if (displayKey.startsWith('cache:expenses:')) {
+    const [, , scopedMonth, scopedStartDay] = displayKey.split(':');
     const startDay = Number(scopedStartDay) || 1;
     const periodMonth = periodMonthForDate(startDay);
     return scopedMonth === 'all' || (periodMonth && scopedMonth === periodMonth);
   }
 
-  if (key.startsWith('cache:household-expenses:')) {
-    const [, , scopedMonth, scopedStartDay] = key.split(':');
+  if (displayKey.startsWith('cache:household-expenses:')) {
+    const [, , scopedMonth, scopedStartDay] = displayKey.split(':');
     const startDay = Number(scopedStartDay) || 1;
     const periodMonth = periodMonthForDate(startDay);
     return scopedMonth === 'all' || (periodMonth && scopedMonth === periodMonth);

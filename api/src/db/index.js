@@ -14,6 +14,10 @@ if (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://')) {
 const pool = new Pool({
   connectionString: dbUrl,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  max: Math.max(2, Number(process.env.DB_POOL_MAX || 8)),
+  connectionTimeoutMillis: Math.max(1000, Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000)),
+  idleTimeoutMillis: Math.max(1000, Number(process.env.DB_IDLE_TIMEOUT_MS || 30000)),
+  statement_timeout: Math.max(5000, Number(process.env.DB_STATEMENT_TIMEOUT_MS || 30000)),
 });
 
 // Default global categories — seeded once on first startup if the table is empty.

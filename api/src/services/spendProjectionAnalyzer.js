@@ -1384,19 +1384,20 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
     toExclusive: dateOnly(addDays(bounds.fromDate, dayIndex)),
   });
 
-  const activityByMonth = {};
-  for (let i = 1; i <= 6; i++) {
-    const historicalMonth = shiftPeriod(targetMonth, -i);
-    const historicalBounds = periodBounds(historicalMonth, startDay);
-    const activity = await periodActivity({
-      scope: effectiveScope,
-      householdId: user.household_id,
-      userId: user.id,
-      from: historicalBounds.from,
-      toExclusive: historicalBounds.to,
-    });
-    activityByMonth[historicalMonth] = activity;
-  }
+  const historicalActivity = await Promise.all(
+    Array.from({ length: 6 }, (_, index) => {
+      const historicalMonth = shiftPeriod(targetMonth, -(index + 1));
+      const historicalBounds = periodBounds(historicalMonth, startDay);
+      return periodActivity({
+        scope: effectiveScope,
+        householdId: user.household_id,
+        userId: user.id,
+        from: historicalBounds.from,
+        toExclusive: historicalBounds.to,
+      }).then((activity) => [historicalMonth, activity]);
+    })
+  );
+  const activityByMonth = Object.fromEntries(historicalActivity);
 
   const historicalPeriods = getCompletedHistoricalPeriods({
     targetMonth,

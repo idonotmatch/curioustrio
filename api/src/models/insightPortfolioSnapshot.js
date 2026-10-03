@@ -46,7 +46,7 @@ async function sourceFingerprint(userId) {
        ),
        'events', (
          SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(created_at), 'epoch'::timestamptz))
-         FROM insight_events WHERE user_id = $1
+         FROM insight_events WHERE user_id = $1 AND event_type <> 'shown'
        ),
        'state', (
          SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(updated_at), 'epoch'::timestamptz))

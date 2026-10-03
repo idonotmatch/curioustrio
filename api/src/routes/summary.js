@@ -6,6 +6,30 @@ const { buildSummaryBundle } = require('../services/summaryBundleService');
 
 const router = express.Router();
 router.use(authenticate);
+const SUMMARY_MAX_AGE_MS = Math.max(30000, Number(process.env.SUMMARY_SNAPSHOT_MAX_AGE_MS || 300000));
+const refreshesInFlight = new Map();
+
+function isFreshSnapshot(snapshot) {
+  const generatedAt = Date.parse(snapshot?.generated_at || '');
+  return Number.isFinite(generatedAt) && Date.now() - generatedAt < SUMMARY_MAX_AGE_MS;
+}
+
+function refreshSnapshotInBackground(key, { user, period, startDay }) {
+  if (refreshesInFlight.has(key)) return;
+  const work = buildSummaryBundle({ user, period, startDay })
+    .then((payload) => UserSummarySnapshot.upsert({
+      userId: user.id,
+      householdId: user.household_id,
+      period,
+      startDay,
+      payload,
+    }))
+    .catch((err) => {
+      console.error('[summary] background refresh failed:', err?.message || err);
+    })
+    .finally(() => refreshesInFlight.delete(key));
+  refreshesInFlight.set(key, work);
+}
 
 router.get('/', async (req, res, next) => {
   try {
@@ -21,8 +45,15 @@ router.get('/', async (req, res, next) => {
     }
 
     const snapshot = await UserSummarySnapshot.find(user.id, period, requestedStartDay);
-    if (snapshot?.payload) {
+    if (snapshot?.payload && isFreshSnapshot(snapshot)) {
       res.setHeader('x-adlo-summary-source', 'projection');
+      return res.json(snapshot.payload);
+    }
+
+    if (snapshot?.payload) {
+      const key = `${user.id}:${period}:${requestedStartDay}`;
+      refreshSnapshotInBackground(key, { user, period, startDay: requestedStartDay });
+      res.setHeader('x-adlo-summary-source', 'stale-projection');
       return res.json(snapshot.payload);
     }
 

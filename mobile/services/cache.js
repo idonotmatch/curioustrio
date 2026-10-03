@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 const { isCacheFresh } = require('./cachePolicy');
+const {
+  scopedCacheKey,
+  isActiveUserCacheKey,
+} = require('./cacheIdentity');
 
 const DEFAULT_MAX_AGE_MS = 30 * 1000;
 
@@ -25,11 +29,12 @@ export async function loadWithCache(key, fetcher, onData, onError, {
   maxAgeMs = DEFAULT_MAX_AGE_MS,
   forceRefresh = false,
 } = {}) {
+  const storageKey = scopedCacheKey(key);
   let served = false;
   let cacheIsFresh = false;
 
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await AsyncStorage.getItem(storageKey);
     if (raw) {
       const { data, ts } = JSON.parse(raw);
       const normalized = normalizeCacheData(data, serialize);
@@ -37,7 +42,7 @@ export async function loadWithCache(key, fetcher, onData, onError, {
       served = true;
       cacheIsFresh = isCacheFresh(ts, maxAgeMs);
       if (normalized !== data) {
-        AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+        AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
       }
     }
   } catch {
@@ -50,7 +55,7 @@ export async function loadWithCache(key, fetcher, onData, onError, {
     const fresh = await fetcher();
     onData(fresh);
     const normalized = normalizeCacheData(fresh, serialize);
-    AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+    AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
   } catch (err) {
     if (!served && onError) onError(err);
   }
@@ -69,16 +74,17 @@ export async function loadCacheOnly(key, fetcher, onData, onError, {
   serialize,
   forceRefresh = false,
 } = {}) {
+  const storageKey = scopedCacheKey(key);
   let served = false;
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await AsyncStorage.getItem(storageKey);
     if (raw) {
       const { data } = JSON.parse(raw);
       const normalized = normalizeCacheData(data, serialize);
       onData(normalized);
       served = true;
       if (normalized !== data) {
-        AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+        AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
       }
       if (!forceRefresh) return; // cache hit — skip network entirely
     }
@@ -90,7 +96,7 @@ export async function loadCacheOnly(key, fetcher, onData, onError, {
     const fresh = await fetcher();
     onData(fresh);
     const normalized = normalizeCacheData(fresh, serialize);
-    AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+    AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
   } catch (err) {
     if (!served && onError) onError(err);
   }
@@ -104,21 +110,22 @@ export async function loadCacheOnly(key, fetcher, onData, onError, {
  * 4. Only call onError if both network and cache miss/fail.
  */
 export async function loadFreshWithCacheFallback(key, fetcher, onData, onError, { serialize } = {}) {
+  const storageKey = scopedCacheKey(key);
   try {
     const fresh = await fetcher();
     onData(fresh);
     const normalized = normalizeCacheData(fresh, serialize);
-    AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+    AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
     return;
   } catch (networkErr) {
     try {
-      const raw = await AsyncStorage.getItem(key);
+      const raw = await AsyncStorage.getItem(storageKey);
       if (raw) {
         const { data } = JSON.parse(raw);
         const normalized = normalizeCacheData(data, serialize);
         onData(normalized);
         if (normalized !== data) {
-          AsyncStorage.setItem(key, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+          AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
         }
         return;
       }
@@ -132,7 +139,9 @@ export async function loadFreshWithCacheFallback(key, fetcher, onData, onError, 
 
 /** Remove a single cache entry (e.g. after a mutation). */
 export async function invalidateCache(key) {
-  try { await AsyncStorage.removeItem(key); } catch {}
+  try {
+    await AsyncStorage.multiRemove([key, scopedCacheKey(key)]);
+  } catch {}
 }
 
 /** Remove all cache entries whose key starts with a given prefix. */
@@ -143,3 +152,5 @@ export async function invalidateCacheByPrefix(prefix) {
     if (matching.length) await AsyncStorage.multiRemove(matching);
   } catch {}
 }
+
+export { isActiveUserCacheKey };

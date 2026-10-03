@@ -11,6 +11,7 @@ function canonicalPair(expenseIdA, expenseIdB) {
 function mapDuplicateFlag(row) {
   if (!row) return null;
   const {
+    target_expense_id,
     duplicate_id,
     duplicate_merchant,
     duplicate_description,
@@ -107,6 +108,52 @@ async function findByExpenseId(expenseId, { userId = null, pendingOnly = true } 
   }
 }
 
+async function findByExpenseIds(expenseIds = [], { userId = null, pendingOnly = true } = {}) {
+  const ids = [...new Set((Array.isArray(expenseIds) ? expenseIds : []).filter(Boolean))];
+  const empty = new Map(ids.map((id) => [`${id}`, []]));
+  if (!ids.length) return empty;
+  try {
+    const result = await db.query(
+      `SELECT targets.expense_id AS target_expense_id,
+              df.*,
+              other.id AS duplicate_id,
+              other.merchant AS duplicate_merchant,
+              other.description AS duplicate_description,
+              other.amount AS duplicate_amount,
+              other.date AS duplicate_date,
+              other.source AS duplicate_source,
+              other.status AS duplicate_status,
+              category.name AS duplicate_category_name,
+              other.payment_method AS duplicate_payment_method,
+              other.card_last4 AS duplicate_card_last4,
+              other.card_label AS duplicate_card_label,
+              other.place_name AS duplicate_place_name,
+              other.address AS duplicate_address,
+              (SELECT COUNT(*) FROM expense_items WHERE expense_id = other.id)::int AS duplicate_item_count,
+              (other.user_id = $2) AS duplicate_owned_by_viewer
+       FROM unnest($1::uuid[]) AS targets(expense_id)
+       JOIN duplicate_flags df
+         ON df.expense_id_a = targets.expense_id OR df.expense_id_b = targets.expense_id
+       JOIN expenses other
+         ON other.id = CASE WHEN df.expense_id_a = targets.expense_id THEN df.expense_id_b ELSE df.expense_id_a END
+       LEFT JOIN categories category ON category.id = other.category_id
+       WHERE ($3::boolean = FALSE OR df.status = 'pending')
+         AND ($2::uuid IS NULL OR other.is_private = FALSE OR other.user_id = $2)
+       ORDER BY df.created_at DESC`,
+      [ids, userId, pendingOnly]
+    );
+    for (const row of result.rows) {
+      const targetId = `${row.target_expense_id}`;
+      if (!empty.has(targetId)) empty.set(targetId, []);
+      empty.get(targetId).push(mapDuplicateFlag(row));
+    }
+    return empty;
+  } catch (err) {
+    if (!isMissingDuplicateFlagsTableError(err)) throw err;
+    return empty;
+  }
+}
+
 async function updateStatus(id, { status, resolvedBy }) {
   const result = await db.query(
     `UPDATE duplicate_flags
@@ -123,4 +170,4 @@ async function findById(id) {
   return result.rows[0] || null;
 }
 
-module.exports = { create, findByExpenseId, findById, updateStatus };
+module.exports = { create, findByExpenseId, findByExpenseIds, findById, updateStatus };

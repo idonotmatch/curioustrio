@@ -41,7 +41,10 @@ async function personalBudgetTotal(userId, from, to) {
            AND date >= $2 AND date < $3
        ), 0) AS spent
      FROM expenses
-     WHERE user_id = $1`,
+     WHERE user_id = $1
+       AND status = 'confirmed'
+       AND exclude_from_budget = FALSE
+       AND date >= $2 AND date < $3`,
     [userId, from, to]
   );
   return budgetPayload(result.rows[0], from, to);

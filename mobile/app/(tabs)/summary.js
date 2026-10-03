@@ -58,7 +58,7 @@ export default function SummaryScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
   const [summarySnapshot, setSummarySnapshot] = useState(null);
-  const { summary, loading: summaryLoading, refresh: refreshSummary } = useSummaryBundle(currentMonthStr, startDay);
+  const { summary, loading: summaryLoading } = useSummaryBundle(currentMonthStr, startDay);
   const household = summary?.household || null;
   const memberCount = Number(summary?.member_count || 0);
   const isMultiMember = memberCount > 1;
@@ -100,7 +100,6 @@ export default function SummaryScreen() {
   const insightCardWidth = displayInsights.length <= 1
     ? Math.max(0, windowWidth - 40)
     : Math.max(280, windowWidth - 88);
-  const loggedShownInsightIds = useRef(new Set());
   const insightNavigationResetRef = useRef(null);
   const [openingInsightId, setOpeningInsightId] = useState('');
   const [showWelcomeAddCard, setShowWelcomeAddCard] = useState(params.welcome === 'add_expense');
@@ -124,13 +123,7 @@ export default function SummaryScreen() {
 
   useFocusEffect(useCallback(() => {
     releaseInsightNavigationLock();
-    refreshSummary();
-    refreshInsights({ reason: 'summary_focus' });
-  }, [
-    refreshSummary,
-    refreshInsights,
-    releaseInsightNavigationLock,
-  ]));
+  }, [releaseInsightNavigationLock]));
 
   useEffect(() => {
     let active = true;
@@ -196,22 +189,6 @@ export default function SummaryScreen() {
       .map((insight) => insight.id);
     if (unseenIds.length) markSeen(unseenIds);
   }, [insights, markSeen]);
-
-  useEffect(() => {
-    if (__DEV__ && insights.length === 0) return;
-    const idsToLog = displayInsights
-      .map((insight) => insight.id)
-      .filter((id) => id && !loggedShownInsightIds.current.has(id));
-    if (!idsToLog.length) return;
-    idsToLog.forEach((id) => loggedShownInsightIds.current.add(id));
-    logEvents(displayInsights
-      .filter((insight) => idsToLog.includes(insight.id))
-      .map((insight) => ({
-      insight_id: insight.id,
-      event_type: 'shown',
-      metadata: insightEventMetadata(insight),
-    })));
-  }, [displayInsights, insights.length, logEvents]);
 
   useEffect(() => {
     if (params.welcome === 'add_expense') {

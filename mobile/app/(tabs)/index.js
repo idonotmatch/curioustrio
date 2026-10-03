@@ -1,7 +1,6 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useFocusEffect } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useExpenses } from '../../hooks/useExpenses';
@@ -176,7 +175,7 @@ export default function FeedScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showSortPicker, setShowSortPicker] = useState(false);
   const { expenses: myExpenses, loading: myLoading, loadingMore: myLoadingMore, hasMore: myHasMore, error: myError, refresh: refreshMine, loadMore: loadMoreMine } = useExpenses(selectedMonth, transactionStartDay);
-  const { expenses: householdExpenses, loading: householdLoading, loadingMore: householdLoadingMore, hasMore: householdHasMore, error: householdError, refresh: refreshHouseholdExpenses, loadMore: loadMoreHousehold } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember });
+  const { expenses: householdExpenses, loading: householdLoading, loadingMore: householdLoadingMore, hasMore: householdHasMore, error: householdError, refresh: refreshHouseholdExpenses, loadMore: loadMoreHousehold } = useHouseholdExpenses(selectedMonth, transactionStartDay, { enabled: isMultiMember && mode === 'household' });
   const { budget: personalBudget, error: personalBudgetError, refresh: refreshPersonalBudget } = useBudget(selectedMonth, 'personal', { startDayOverride: transactionStartDay });
   const { budget: householdBudget, error: householdBudgetError, refresh: refreshHouseholdBudget } = useBudget(selectedMonth, 'household', { startDayOverride: transactionStartDay, enabled: isMultiMember });
   const { categories } = useCategories();
@@ -202,24 +201,22 @@ export default function FeedScreen() {
     refreshInFlightRef.current = true;
     setRefreshing(true);
     try {
+      const activeExpenseRefresh = mode === 'mine'
+        ? refreshMine({ forceRefresh: true })
+        : refreshHouseholdExpenses({ forceRefresh: true });
+      const activeBudgetRefresh = mode === 'mine'
+        ? refreshPersonalBudget({ forceRefresh: true })
+        : refreshHouseholdBudget({ forceRefresh: true });
       await Promise.all([
-        refreshMine({ forceRefresh: true }),
-        isMultiMember ? refreshHouseholdExpenses({ forceRefresh: true }) : Promise.resolve(),
-        refreshPersonalBudget({ forceRefresh: true }),
-        isMultiMember ? refreshHouseholdBudget({ forceRefresh: true }) : Promise.resolve(),
-        Promise.resolve(refreshHousehold({ forceRefresh: true })),
+        activeExpenseRefresh,
+        activeBudgetRefresh,
+        isMultiMember ? refreshHousehold({ forceRefresh: true }) : Promise.resolve(),
       ]);
     } finally {
       refreshInFlightRef.current = false;
       setRefreshing(false);
     }
-  }, [refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshHousehold, isMultiMember]);
-
-  useFocusEffect(useCallback(() => {
-    if (isMultiMember) refreshHouseholdExpenses();
-    if (isMultiMember) refreshHouseholdBudget();
-    refreshPersonalBudget();
-  }, [refreshHouseholdExpenses, refreshHouseholdBudget, refreshPersonalBudget, isMultiMember]));
+  }, [mode, refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshHousehold, isMultiMember]);
 
   const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
 

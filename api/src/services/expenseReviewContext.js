@@ -15,9 +15,9 @@ function decodeEmailField(value) {
   return decoded || null;
 }
 
-async function attachGmailReviewHint(expense, userId) {
+async function attachGmailReviewHint(expense, userId, { compact = false, emailLog = null } = {}) {
   if (!expense || expense.source !== 'email') return expense;
-  const log = await EmailImportLog.findByExpenseId(expense.id);
+  const log = emailLog || await EmailImportLog.findByExpenseId(expense.id);
   if (!log?.message_id) {
     return {
       ...expense,
@@ -28,9 +28,15 @@ async function attachGmailReviewHint(expense, userId) {
     };
   }
 
-  let senderQuality = { level: 'unknown', sender_domain: null, metrics: null, item_reliability: null, top_changed_fields: [] };
+  let senderQuality = {
+    level: 'unknown',
+    sender_domain: log?.sender_domain || null,
+    metrics: null,
+    item_reliability: null,
+    top_changed_fields: [],
+  };
   const senderIdentity = log?.from_address || log?.sender_domain || null;
-  if (senderIdentity) {
+  if (senderIdentity && !compact) {
     try {
       senderQuality = await getSenderImportQuality(userId, senderIdentity, log.subject || '');
     } catch (err) {
@@ -48,7 +54,7 @@ async function attachGmailReviewHint(expense, userId) {
   let treatmentSuggestion = null;
   let categoryExplanation = null;
   try {
-    treatmentSuggestion = await buildExpenseTreatmentSuggestion(expense, userId);
+    if (!compact) treatmentSuggestion = await buildExpenseTreatmentSuggestion(expense, userId);
   } catch (err) {
     console.error('[expenseReviewContext] treatment suggestion failed:', {
       expense_id: expense?.id || null,
@@ -57,7 +63,7 @@ async function attachGmailReviewHint(expense, userId) {
   }
 
   try {
-    if (expense?.category_id) {
+    if (!compact && expense?.category_id) {
       const categories = await Category.findByHousehold(expense?.household_id || null);
       categoryExplanation = await explainAssignedCategory({
         householdId: expense?.household_id || null,
@@ -95,13 +101,20 @@ async function fetchPendingExpensesBase(userId) {
   const result = await db.query(
     `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
             (SELECT COUNT(*) FROM expense_items WHERE expense_id = e.id)::int AS item_count,
+            l.message_id AS email_message_id,
+            l.imported_at AS email_imported_at,
+            l.review_action AS email_review_action,
+            l.review_edit_count AS email_review_edit_count,
+            l.sender_domain AS email_sender_domain,
+            l.subject_pattern AS email_subject_pattern,
             l.subject AS email_subject,
             l.from_address AS email_from_address,
             l.snippet AS email_snippet
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      LEFT JOIN LATERAL (
-       SELECT subject, from_address, snippet
+       SELECT message_id, imported_at, review_action, review_edit_count,
+              sender_domain, subject_pattern, subject, from_address, snippet
        FROM email_import_log
        WHERE expense_id = e.id
        ORDER BY imported_at DESC
@@ -235,8 +248,15 @@ async function attachCategoryReasoningBestEffort(expense) {
   }
 }
 
-async function attachExpenseReviewContext(expense, userId, { includeItems = false, includeCategoryReasoning = false } = {}) {
-  let enrichedExpense = await attachDuplicateFlagsBestEffort(expense, userId);
+async function attachExpenseReviewContext(expense, userId, {
+  includeItems = false,
+  includeCategoryReasoning = false,
+  compact = false,
+  duplicateFlags,
+} = {}) {
+  let enrichedExpense = duplicateFlags
+    ? { ...expense, duplicate_flags: duplicateFlags }
+    : await attachDuplicateFlagsBestEffort(expense, userId);
   if (includeItems) {
     enrichedExpense = await attachItemsBestEffort(enrichedExpense);
     try {
@@ -253,7 +273,30 @@ async function attachExpenseReviewContext(expense, userId, { includeItems = fals
     enrichedExpense = await attachCategoryReasoningBestEffort(enrichedExpense);
   }
   try {
-    return await attachGmailReviewHint(enrichedExpense, userId);
+    const emailLog = enrichedExpense.email_message_id
+      ? {
+        message_id: enrichedExpense.email_message_id,
+        imported_at: enrichedExpense.email_imported_at,
+        review_action: enrichedExpense.email_review_action,
+        review_edit_count: enrichedExpense.email_review_edit_count,
+        sender_domain: enrichedExpense.email_sender_domain,
+        subject_pattern: enrichedExpense.email_subject_pattern,
+        subject: enrichedExpense.email_subject,
+        from_address: enrichedExpense.email_from_address,
+        snippet: enrichedExpense.email_snippet,
+      }
+      : null;
+    const result = await attachGmailReviewHint(enrichedExpense, userId, { compact, emailLog });
+    const {
+      email_message_id,
+      email_imported_at,
+      email_review_action,
+      email_review_edit_count,
+      email_sender_domain,
+      email_subject_pattern,
+      ...cleanExpense
+    } = result;
+    return cleanExpense;
   } catch (err) {
     console.error('[expenseReviewContext] gmail hint attach failed:', {
       expense_id: enrichedExpense?.id || null,
@@ -263,9 +306,29 @@ async function attachExpenseReviewContext(expense, userId, { includeItems = fals
   }
 }
 
-async function attachExpensesReviewContext(expenses = [], userId, { includeItems = false, includeCategoryReasoning = false } = {}) {
+async function attachExpensesReviewContext(expenses = [], userId, {
+  includeItems = false,
+  includeCategoryReasoning = false,
+  compact = false,
+} = {}) {
+  let duplicateMap = new Map();
+  if (typeof DuplicateFlag.findByExpenseIds === 'function') {
+    try {
+      duplicateMap = await DuplicateFlag.findByExpenseIds(expenses.map((expense) => expense?.id).filter(Boolean), {
+        userId,
+        pendingOnly: true,
+      });
+    } catch (err) {
+      console.error('[expenseReviewContext] bulk duplicate lookup failed:', err?.message || err);
+    }
+  }
   const results = await Promise.allSettled(
-    expenses.map((expense) => attachExpenseReviewContext(expense, userId, { includeItems, includeCategoryReasoning }))
+    expenses.map((expense) => attachExpenseReviewContext(expense, userId, {
+      includeItems,
+      includeCategoryReasoning,
+      compact,
+      duplicateFlags: duplicateMap.get(`${expense?.id}`),
+    }))
   );
   return results.map((result, index) => {
     if (result.status === 'fulfilled') return result.value;

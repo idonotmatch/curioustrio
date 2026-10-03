@@ -1,6 +1,9 @@
 import { NativeModules } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { supabase } from './supabase';
+import { invalidateCacheByPrefix } from '../services/cache';
+import { invalidateCurrentUserCache } from '../services/currentUserCache';
+import { clearActiveCacheUserId } from '../services/cacheIdentity';
 
 let googleSigninModule = null;
 let googleConfigured = false;
@@ -149,6 +152,11 @@ export async function signInWithApple() {
 }
 
 export async function signOut() {
+  await Promise.all([
+    invalidateCacheByPrefix('cache:'),
+    invalidateCurrentUserCache(),
+  ]);
+  clearActiveCacheUserId();
   await supabase.auth.signOut();
   try {
     const mod = getGoogleSigninModule();

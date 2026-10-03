@@ -15,6 +15,9 @@ import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffe
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { startHouseholdFreshnessBridge } from '../services/householdFreshnessBridge';
 import { captureException } from '../services/observability';
+import { setActiveCacheUserId, clearActiveCacheUserId } from '../services/cacheIdentity';
+import { invalidateCacheByPrefix } from '../services/cache';
+import { resetPendingExpenseStore } from '../hooks/usePendingExpenses';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 import { colors } from '../theme/tokens';
 const {
@@ -66,6 +69,26 @@ function parseNotificationMetadata(value) {
   return {};
 }
 
+function foregroundDomainsForPath(pathname = '') {
+  const path = `${pathname}`;
+  const domains = [FRESHNESS_DOMAINS.household];
+  if (path.includes('summary') || path === '/') {
+    domains.push(
+      FRESHNESS_DOMAINS.expenses,
+      FRESHNESS_DOMAINS.householdExpenses,
+      FRESHNESS_DOMAINS.budget,
+      FRESHNESS_DOMAINS.insights,
+      FRESHNESS_DOMAINS.forecastMovement,
+      FRESHNESS_DOMAINS.watchedPlans,
+    );
+  } else if (path.includes('pending') || path.includes('review-queue')) {
+    domains.push(FRESHNESS_DOMAINS.pendingExpenses, FRESHNESS_DOMAINS.gmailImport);
+  } else if (path.includes('index') || path.includes('expenses')) {
+    domains.push(FRESHNESS_DOMAINS.expenses, FRESHNESS_DOMAINS.budget);
+  }
+  return [...new Set(domains)];
+}
+
 const RECURRING_PUSH_INSIGHT_TYPES = new Set([
   'recurring_repurchase_due',
   'recurring_price_spike',
@@ -80,6 +103,7 @@ function AppNavigator() {
   const rootNavigationState = useRootNavigationState();
   const [bootstrapped, setBootstrapped] = useState(false);
   const [authLinkReady, setAuthLinkReady] = useState(false);
+  const pathnameRef = useRef(pathname);
   const initialSessionPromiseRef = useRef(null);
   const initialUserCachePromiseRef = useRef(null);
   const resolvingSessionRef = useRef(false);
@@ -88,6 +112,10 @@ function AppNavigator() {
   const lastGmailAutoSyncAttemptRef = useRef(0);
   const gmailAutoSyncTimerRef = useRef(null);
   const lastHandledNotificationRef = useRef(null);
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
   const pendingNotificationResponseRef = useRef(null);
   const hasOnboardingRoute = rootNavigationState?.routeNames?.includes('onboarding') === true;
 
@@ -287,6 +315,10 @@ function AppNavigator() {
     }
 
     async function routeAuthenticatedSession(session) {
+      const cacheIdentity = setActiveCacheUserId(session.user.id);
+      if (cacheIdentity.changed && cacheIdentity.previousUserId) {
+        resetPendingExpenseStore();
+      }
       const routeKey = `${session.user.id}:${session.access_token ? session.access_token.slice(-12) : 'no-token'}`;
       const alreadyRoutedSession = routedSessionIdRef.current === routeKey;
       if (alreadyRoutedSession && bootstrapped && !isAuthEntryPath(pathname)) {
@@ -349,6 +381,9 @@ function AppNavigator() {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        resetPendingExpenseStore();
+        clearActiveCacheUserId();
+        invalidateCacheByPrefix('cache:').catch(() => {});
         endPasswordRecovery();
         router.replace('/login');
         setBootstrapped(true);
@@ -392,16 +427,7 @@ function AppNavigator() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          markFreshnessStale([
-            FRESHNESS_DOMAINS.expenses,
-            FRESHNESS_DOMAINS.householdExpenses,
-            FRESHNESS_DOMAINS.budget,
-            FRESHNESS_DOMAINS.pendingExpenses,
-            FRESHNESS_DOMAINS.insights,
-            FRESHNESS_DOMAINS.forecastMovement,
-            FRESHNESS_DOMAINS.gmailImport,
-            FRESHNESS_DOMAINS.household,
-          ], { reason: 'app_foreground', delayMs: 800 });
+          markFreshnessStale(foregroundDomainsForPath(pathnameRef.current), { reason: 'app_foreground', delayMs: 800 });
           maybeAutoSyncGmail(session.access_token);
         }
       } catch {

@@ -43,6 +43,11 @@ export function removePendingExpense(id) {
   publishPendingExpenses(sharedPendingExpenses.filter((expense) => expense.id !== id));
 }
 
+export function resetPendingExpenseStore() {
+  optimisticallyRemovedPendingIds.clear();
+  publishPendingExpenses([]);
+}
+
 export function restorePendingExpense(expense) {
   if (!expense?.id) return;
   optimisticallyRemovedPendingIds.delete(expense.id);
