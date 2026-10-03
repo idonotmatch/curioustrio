@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { invalidateCacheByPrefix, loadWithCache } from '../services/cache';
 import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
 import { useFreshnessRefresh } from './useFreshnessRefresh';
+const { normalizeInsightForDisplay } = require('../services/text');
 
 function buildInsightSuppressionKey(insight = {}) {
   const metadata = insight?.metadata || {};
@@ -76,7 +77,8 @@ export function useInsights(limit = 5, options = {}) {
             if (freezeFirstPaint && !initialRefreshCompletedRef.current && deliveryCount > 1) {
               return;
             }
-            const filtered = filterSuppressedInsights(data || [], dismissedSuppressions);
+            const normalized = Array.isArray(data) ? data.map(normalizeInsightForDisplay) : [];
+            const filtered = filterSuppressedInsights(normalized, dismissedSuppressions);
             setInsights(filtered.slice(0, limit));
             setLoading(false);
             setError(null);

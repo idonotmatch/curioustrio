@@ -72,6 +72,7 @@ const filesToCheck = [
   'services/scenarioCheckPresentation.js',
   'services/summarySnapshot.js',
   'hooks/useSummaryBundle.js',
+  'hooks/useInsights.js',
   'hooks/useExpenses.js',
   'hooks/useHouseholdExpenses.js',
   'scripts/test-auth-boot-routing.js',

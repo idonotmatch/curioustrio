@@ -21,7 +21,7 @@ import { loadInsightDetailSnapshot, saveInsightDetailSnapshot } from '../service
 import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from '../components/InsightTrendVisual';
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
-const { normalizeDisplayText } = require('../services/text');
+const { normalizeDisplayText, normalizeInsightForDisplay } = require('../services/text');
 
 const FEEDBACK_REASONS = [
   { key: 'wrong_timing', label: 'Wrong timing' },
@@ -472,8 +472,9 @@ export default function InsightDetailScreen() {
     api.get(`/insights/${encodeURIComponent(insightId)}`)
       .then((freshInsight) => {
         if (cancelled || !freshInsight) return;
-        setRemoteInsight(freshInsight);
-        saveInsightDetailSnapshot(freshInsight, { preloadEvidence: [] }).catch(() => {});
+        const normalizedInsight = normalizeInsightForDisplay(freshInsight);
+        setRemoteInsight(normalizedInsight);
+        saveInsightDetailSnapshot(normalizedInsight, { preloadEvidence: [] }).catch(() => {});
       })
       .catch(() => {
         if (!cancelled) setRemoteInsight(null);
