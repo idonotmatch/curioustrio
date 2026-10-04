@@ -1,6 +1,7 @@
 const {
   canDeleteExpense,
   canViewExpense,
+  householdExpenseVisibilitySql,
 } = require('../../src/services/expenseAccessPolicy');
 
 describe('expenseAccessPolicy', () => {
@@ -34,5 +35,14 @@ describe('expenseAccessPolicy', () => {
 
     expect(canViewExpense(outsider, sharedExpense)).toBe(false);
     expect(canDeleteExpense(householdMember, sharedExpense)).toBe(false);
+  });
+
+  it('builds the same owner-or-shared rule for aggregate queries', () => {
+    expect(householdExpenseVisibilitySql(4)).toBe(
+      '(COALESCE(e.is_private, FALSE) = FALSE OR e.user_id = $4)'
+    );
+    expect(householdExpenseVisibilitySql(2, { alias: 'expenses' })).toBe(
+      '(COALESCE(expenses.is_private, FALSE) = FALSE OR expenses.user_id = $2)'
+    );
   });
 });

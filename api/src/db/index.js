@@ -18,6 +18,17 @@ const pool = new Pool({
   connectionTimeoutMillis: Math.max(1000, Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000)),
   idleTimeoutMillis: Math.max(1000, Number(process.env.DB_IDLE_TIMEOUT_MS || 30000)),
   statement_timeout: Math.max(5000, Number(process.env.DB_STATEMENT_TIMEOUT_MS || 30000)),
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
+});
+
+// node-postgres emits idle-client failures on the pool itself. Without a
+// listener, a transient database disconnect can terminate the API process.
+pool.on('error', (err) => {
+  console.error('[db] idle client error:', {
+    message: err?.message || String(err || 'unknown_error'),
+    code: err?.code || null,
+  });
 });
 
 // Default global categories — seeded once on first startup if the table is empty.

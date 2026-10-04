@@ -53,10 +53,15 @@ async function findByExpenseId(userId, expenseId) {
   return result.rows[0] || null;
 }
 
-async function findByHousehold(householdId) {
+async function findByHousehold(householdId, requesterUserId = null) {
   const result = await db.query(
-    `SELECT * FROM recurring_preferences WHERE household_id = $1 ORDER BY updated_at DESC`,
-    [householdId]
+    `SELECT rp.*
+     FROM recurring_preferences rp
+     JOIN expenses e ON e.id = rp.expense_id
+     WHERE rp.household_id = $1
+       AND (COALESCE(e.is_private, FALSE) = FALSE OR e.user_id = $2)
+     ORDER BY rp.updated_at DESC`,
+    [householdId, requesterUserId]
   );
   return result.rows;
 }

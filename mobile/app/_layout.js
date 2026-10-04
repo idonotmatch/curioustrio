@@ -2,7 +2,7 @@ import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-rout
 import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState, StyleSheet, View } from 'react-native';
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -572,9 +572,69 @@ export default function RootLayout() {
   );
 }
 
+export function ErrorBoundary({ error, retry }) {
+  useEffect(() => {
+    captureException(error, { area: 'root_error_boundary' });
+  }, [error]);
+
+  return (
+    <View style={styles.errorContainer}>
+      <Text style={styles.errorTitle}>Something went wrong</Text>
+      <Text style={styles.errorBody}>Your data is safe. Try loading the app again.</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Try loading the app again"
+        onPress={retry}
+        style={({ pressed }) => [styles.errorButton, pressed && styles.errorButtonPressed]}
+      >
+        <Text style={styles.errorButtonText}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   bootContainer: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: colors.background,
+  },
+  errorTitle: {
+    color: colors.text,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  errorBody: {
+    marginTop: 8,
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  errorButton: {
+    marginTop: 20,
+    minHeight: 44,
+    minWidth: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    backgroundColor: colors.accent,
+  },
+  errorButtonPressed: {
+    backgroundColor: colors.accentPressed,
+  },
+  errorButtonText: {
+    color: colors.textInverse,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

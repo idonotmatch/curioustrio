@@ -1,4 +1,9 @@
-const { detectRecurringItemSignals, detectRecurringWatchCandidates } = require('./recurringDetector');
+const {
+  detectRecurringItems,
+  detectRecurringItemSignals,
+  detectRecurringWatchCandidates,
+  loadRecurringItemOccurrences,
+} = require('./recurringDetector');
 const { listItemHistorySummaries } = require('./itemHistoryService');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
@@ -394,6 +399,7 @@ async function loadItemHistoryInsightsBestEffort(ownerId, {
   scope = 'household',
   minOccurrences = 3,
   limit = 8,
+  requesterUserId = null,
 } = {}) {
   if (!ownerId) return [];
   try {
@@ -401,6 +407,7 @@ async function loadItemHistoryInsightsBestEffort(ownerId, {
       scope,
       minOccurrences,
       limit,
+      requesterUserId,
     });
     return buildItemHistoryInsights(histories, scope);
   } catch (err) {
@@ -1543,20 +1550,38 @@ async function buildInsights({ user, limit = 10 }) {
   let personalProjectionForFallback = null;
   let recurringSignals = [];
   let householdWatchCandidates = [];
-  const householdMembers = user?.household_id ? await Household.findMembers(user.household_id) : [];
+  const [householdMembers, timingPreferences] = await Promise.all([
+    user?.household_id ? Household.findMembers(user.household_id) : Promise.resolve([]),
+    loadTimingPreferences(user?.id),
+  ]);
   const hasMultipleHouseholdMembers = householdMembers.length > 1;
-  const timingPreferences = await loadTimingPreferences(user?.id);
 
   if (user?.household_id) {
-    insightSets.push(await loadItemHistoryInsightsBestEffort(user.household_id, {
-      scope: 'household',
-      minOccurrences: 3,
-      limit: 8,
-    }));
+    const recurringOptions = { requesterUserId: user.id };
+    const [itemHistoryInsights, occurrenceGroups] = await Promise.all([
+      loadItemHistoryInsightsBestEffort(user.household_id, {
+        scope: 'household',
+        minOccurrences: 3,
+        limit: 8,
+        requesterUserId: user.id,
+      }),
+      loadRecurringItemOccurrences(user.household_id, recurringOptions),
+    ]);
+    insightSets.push(itemHistoryInsights);
 
-    recurringSignals = await detectRecurringItemSignals(user.household_id);
+    recurringSignals = await detectRecurringItemSignals(user.household_id, {
+      ...recurringOptions,
+      occurrenceGroups,
+    });
     insightSets.push(recurringSignals.map((signal) => toInsight(signal, 'household')));
-    const watchCandidates = await detectRecurringWatchCandidates(user.household_id);
+    const recurringItems = await detectRecurringItems(user.household_id, {
+      ...recurringOptions,
+      occurrenceGroups,
+    });
+    const watchCandidates = await detectRecurringWatchCandidates(user.household_id, {
+      ...recurringOptions,
+      recurringItems,
+    });
     householdWatchCandidates = watchCandidates;
     insightSets.push(
       watchCandidates
@@ -1565,7 +1590,10 @@ async function buildInsights({ user, limit = 10 }) {
         .map((candidate) => toRepurchaseDueInsight(candidate, 'household'))
     );
 
-    const watchOpportunities = await findObservationOpportunities(user.household_id);
+    const watchOpportunities = await findObservationOpportunities(user.household_id, {
+      ...recurringOptions,
+      candidates: watchCandidates,
+    });
     insightSets.push(
       watchOpportunities
         .slice(0, 3)
@@ -1625,22 +1653,40 @@ async function buildInsights({ user, limit = 10 }) {
   }
 
   if (user?.id) {
-    insightSets.push(await loadItemHistoryInsightsBestEffort(user.id, {
-      scope: 'personal',
-      minOccurrences: 3,
-      limit: 8,
-    }));
+    const recurringOptions = { scope: 'personal' };
+    const [itemHistoryInsights, occurrenceGroups] = await Promise.all([
+      loadItemHistoryInsightsBestEffort(user.id, {
+        scope: 'personal',
+        minOccurrences: 3,
+        limit: 8,
+      }),
+      loadRecurringItemOccurrences(user.id, recurringOptions),
+    ]);
+    insightSets.push(itemHistoryInsights);
 
-    const personalRecurringSignals = await detectRecurringItemSignals(user.id, { scope: 'personal' });
+    const personalRecurringSignals = await detectRecurringItemSignals(user.id, {
+      ...recurringOptions,
+      occurrenceGroups,
+    });
     insightSets.push(personalRecurringSignals.map((signal) => toInsight(signal, 'personal')));
-    const personalWatchCandidates = await detectRecurringWatchCandidates(user.id, { scope: 'personal' });
+    const recurringItems = await detectRecurringItems(user.id, {
+      ...recurringOptions,
+      occurrenceGroups,
+    });
+    const personalWatchCandidates = await detectRecurringWatchCandidates(user.id, {
+      ...recurringOptions,
+      recurringItems,
+    });
     insightSets.push(
       personalWatchCandidates
         .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
         .slice(0, 3)
         .map((candidate) => toRepurchaseDueInsight(candidate, 'personal'))
     );
-    const personalWatchOpportunities = await findObservationOpportunities(user.id, { scope: 'personal' });
+    const personalWatchOpportunities = await findObservationOpportunities(user.id, {
+      ...recurringOptions,
+      candidates: personalWatchCandidates,
+    });
     insightSets.push(
       personalWatchOpportunities
         .slice(0, 3)

@@ -48,6 +48,9 @@ describe('summaryBundleService', () => {
     });
     expect(Expense.findByUser).toHaveBeenCalledWith('user-1', expect.objectContaining({ limit: SUMMARY_EXPENSE_LIMIT }));
     expect(Expense.findByHousehold).toHaveBeenCalledWith('household-1', expect.objectContaining({ limit: SUMMARY_EXPENSE_LIMIT }));
+    const householdBudgetCall = db.query.mock.calls.find(([sql]) => sql.includes('JOIN users u'));
+    expect(householdBudgetCall[0]).toContain('(COALESCE(e.is_private, FALSE) = FALSE OR e.user_id = $4)');
+    expect(householdBudgetCall[1]).toEqual(['household-1', '2026-10-01', '2026-11-01', 'user-1']);
   });
 
   it('computes custom budget period bounds', () => {

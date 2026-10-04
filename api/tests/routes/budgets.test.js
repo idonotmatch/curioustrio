@@ -50,6 +50,7 @@ afterAll(async () => {
 afterEach(async () => {
   await db.query(`DELETE FROM budget_settings WHERE user_id IN ($1, $2)`, [soloUserId, member1Id]);
   await db.query(`DELETE FROM expenses WHERE user_id IN ($1, $2)`, [soloUserId, member1Id]);
+  await db.query(`UPDATE users SET household_id = NULL WHERE id = $1`, [soloUserId]);
 });
 
 describe('GET /budgets — solo user', () => {
@@ -172,5 +173,34 @@ describe('GET /budgets by_parent', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('by_parent');
     expect(Array.isArray(res.body.by_parent)).toBe(true);
+  });
+});
+
+describe('GET /budgets household privacy', () => {
+  it('includes the requester private spend but excludes another member private spend', async () => {
+    await db.query(`UPDATE users SET household_id = $1 WHERE id = $2`, [householdId, soloUserId]);
+    await db.query(
+      `INSERT INTO budget_settings (user_id, category_id, monthly_limit)
+       VALUES ($1, NULL, 500), ($2, NULL, 300)`,
+      [soloUserId, member1Id]
+    );
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, category_id, amount, date, source, status, is_private)
+       VALUES
+         ($1, $3, $4, 75, $5, 'manual', 'confirmed', FALSE),
+         ($1, $3, $4, 25, $5, 'manual', 'confirmed', TRUE),
+         ($2, $3, $4, 50, $5, 'manual', 'confirmed', FALSE),
+         ($2, $3, $4, 500, $5, 'manual', 'confirmed', TRUE)`,
+      [soloUserId, member1Id, householdId, categoryId, `${thisMonth}-15`]
+    );
+
+    const res = await request(app).get(`/budgets?month=${thisMonth}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.total.spent).toBe(150);
+    expect(res.body.by_parent).toEqual(expect.arrayContaining([
+      expect.objectContaining({ spent: 150 }),
+    ]));
   });
 });

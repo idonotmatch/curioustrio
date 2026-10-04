@@ -6,6 +6,7 @@ const Household = require('../models/household');
 const BudgetSetting = require('../models/budgetSetting');
 const { requestProjectionRefresh } = require('../services/projectionRefreshService');
 const { emitBudgetFreshnessEvent } = require('../services/freshnessEvents');
+const { householdExpenseVisibilitySql } = require('../services/expenseAccessPolicy');
 const db = require('../db');
 
 router.use(authenticate);
@@ -71,11 +72,13 @@ router.get('/', async (req, res, next) => {
       const spendResult = await queryBudgetRelevant(
         `SELECT category_id, SUM(amount) as spent FROM expenses
          WHERE (household_id = $1 OR user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND ${householdExpenseVisibilitySql(4, { alias: 'expenses' })}
            AND status = 'confirmed' AND exclude_from_budget = FALSE AND date >= $2 AND date < $3
          GROUP BY category_id`,
-        [user.household_id, from, to],
+        [user.household_id, from, to, user.id],
         `SELECT category_id, SUM(amount) as spent FROM expenses
          WHERE (household_id = $1 OR user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND ${householdExpenseVisibilitySql(4, { alias: 'expenses' })}
            AND status = 'confirmed' AND date >= $2 AND date < $3
          GROUP BY category_id`
       );
@@ -89,12 +92,14 @@ router.get('/', async (req, res, next) => {
         `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
          FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
          WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND ${householdExpenseVisibilitySql(4)}
            AND e.status = 'confirmed' AND e.exclude_from_budget = FALSE AND e.date >= $2 AND e.date < $3
          GROUP BY group_id`,
-        [user.household_id, from, to],
+        [user.household_id, from, to, user.id],
         `SELECT COALESCE(c.parent_id, e.category_id) AS group_id, SUM(e.amount) AS spent
          FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
          WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+           AND ${householdExpenseVisibilitySql(4)}
            AND e.status = 'confirmed' AND e.date >= $2 AND e.date < $3
          GROUP BY group_id`
       );

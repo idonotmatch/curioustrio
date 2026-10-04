@@ -436,7 +436,7 @@ async function runPostConfirmSideEffects({
     merchant: enrichedExpense.merchant || resolvedPayload.merchant,
   });
 
-  if (resolvedPayload.source === 'camera' && resolvedItems.length > 0) {
+  if (resolvedPayload.source === 'camera' && resolvedItems.length > 0 && resolvedPayload.is_private !== true) {
     await captureReceiptLineCorrections({
       householdId: user?.household_id,
       merchant: enrichedExpense.merchant || resolvedPayload.merchant,

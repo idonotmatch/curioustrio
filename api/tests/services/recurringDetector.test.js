@@ -59,12 +59,12 @@ afterEach(async () => {
   await db.query(`DELETE FROM products WHERE merchant IN ('Target') OR name IN ('Pampers Pure')`);
 });
 
-async function insertExpense(merchant, amount, date, userId = testUserId) {
+async function insertExpense(merchant, amount, date, userId = testUserId, isPrivate = false) {
   const result = await db.query(
-    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
-     VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed')
+    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, is_private)
+     VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed', $6)
      RETURNING id`,
-    [userId, testHouseholdId, merchant, amount, date]
+    [userId, testHouseholdId, merchant, amount, date, isPrivate]
   );
   return result.rows[0].id;
 }
@@ -169,6 +169,24 @@ describe('detectRecurring', () => {
 
     const candidates = await detectRecurring(testHouseholdId);
     expect(candidates.find((candidate) => candidate.merchant === 'business saas')).toBeFalsy();
+  });
+
+  it('shows private recurring merchants only to their owner', async () => {
+    const today = new Date();
+    const dates = [60, 30, 1].map((daysAgo) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    });
+    for (const date of dates) {
+      await insertExpense('Private Membership', 19.99, date, otherUserId, true);
+    }
+
+    const memberView = await detectRecurring(testHouseholdId, { requesterUserId: testUserId });
+    const ownerView = await detectRecurring(testHouseholdId, { requesterUserId: otherUserId });
+
+    expect(memberView.find((candidate) => candidate.merchant === 'private membership')).toBeFalsy();
+    expect(ownerView.find((candidate) => candidate.merchant === 'private membership')).toBeTruthy();
   });
 });
 

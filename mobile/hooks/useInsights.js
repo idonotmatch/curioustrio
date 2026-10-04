@@ -47,7 +47,7 @@ export function useInsights(limit = 5, options = {}) {
   const initialRefreshCompletedRef = useRef(false);
   const refreshInFlightRef = useRef(null);
   const lastRefreshStartedAtRef = useRef(0);
-  const cacheKey = `cache:insights:v2:${limit}:${fetchLimit}`;
+  const cacheKey = `cache:insights:v3:${limit}:${fetchLimit}`;
 
   const refresh = useCallback(async (context = {}) => {
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
@@ -69,7 +69,7 @@ export function useInsights(limit = 5, options = {}) {
       setError(null);
       let deliveryCount = 0;
       try {
-        await loadWithCache(
+        return await loadWithCache(
           cacheKey,
           () => api.get(`/insights?limit=${fetchLimit}`),
           (data) => {

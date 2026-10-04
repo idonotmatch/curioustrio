@@ -45,6 +45,7 @@ describe('GET /recurring/watch-opportunities', () => {
     expect(findObservationOpportunities).toHaveBeenCalledWith('household-1', {
       windowDays: 5,
       freshnessHours: 72,
+      requesterUserId: 'user-1',
     });
     expect(res.body).toHaveLength(1);
     expect(res.body[0].signal).toBe('buy_soon_better_price');

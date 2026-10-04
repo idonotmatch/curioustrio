@@ -225,7 +225,7 @@ async function attachItemHistoryBestEffort(expense, userId) {
 
   const results = await Promise.allSettled(
     uniqueCandidates.map(({ item, group_key }) => (
-      getItemHistoryByGroupKey(ownerId, group_key, { scope, lookbackDays: 180 })
+      getItemHistoryByGroupKey(ownerId, group_key, { scope, lookbackDays: 180, requesterUserId: userId })
         .then((history) => buildItemReviewHistorySummary(item, history))
     ))
   );

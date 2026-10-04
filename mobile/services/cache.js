@@ -49,15 +49,19 @@ export async function loadWithCache(key, fetcher, onData, onError, {
     // cache read failure is non-fatal
   }
 
-  if (served && cacheIsFresh && !forceRefresh) return;
+  if (served && cacheIsFresh && !forceRefresh) {
+    return { refreshSucceeded: true, source: 'cache', networkAttempted: false };
+  }
 
   try {
     const fresh = await fetcher();
     onData(fresh);
     const normalized = normalizeCacheData(fresh, serialize);
     AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+    return { refreshSucceeded: true, source: 'network', networkAttempted: true };
   } catch (err) {
     if (!served && onError) onError(err);
+    return { refreshSucceeded: false, source: served ? 'cache' : null, networkAttempted: true };
   }
 }
 
@@ -86,7 +90,9 @@ export async function loadCacheOnly(key, fetcher, onData, onError, {
       if (normalized !== data) {
         AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
       }
-      if (!forceRefresh) return; // cache hit — skip network entirely
+      if (!forceRefresh) {
+        return { refreshSucceeded: true, source: 'cache', networkAttempted: false };
+      }
     }
   } catch {
     // cache read failure is non-fatal — fall through to network
@@ -97,8 +103,10 @@ export async function loadCacheOnly(key, fetcher, onData, onError, {
     onData(fresh);
     const normalized = normalizeCacheData(fresh, serialize);
     AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
+    return { refreshSucceeded: true, source: 'network', networkAttempted: true };
   } catch (err) {
     if (!served && onError) onError(err);
+    return { refreshSucceeded: false, source: served ? 'cache' : null, networkAttempted: true };
   }
 }
 
@@ -116,7 +124,7 @@ export async function loadFreshWithCacheFallback(key, fetcher, onData, onError, 
     onData(fresh);
     const normalized = normalizeCacheData(fresh, serialize);
     AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
-    return;
+    return { refreshSucceeded: true, source: 'network', networkAttempted: true };
   } catch (networkErr) {
     try {
       const raw = await AsyncStorage.getItem(storageKey);
@@ -127,13 +135,14 @@ export async function loadFreshWithCacheFallback(key, fetcher, onData, onError, 
         if (normalized !== data) {
           AsyncStorage.setItem(storageKey, JSON.stringify({ data: normalized, ts: Date.now() })).catch(() => {});
         }
-        return;
+        return { refreshSucceeded: false, source: 'cache', networkAttempted: true };
       }
     } catch {
       // cache read failure is non-fatal
     }
 
     if (onError) onError(networkErr);
+    return { refreshSucceeded: false, source: null, networkAttempted: true };
   }
 }
 
@@ -146,9 +155,16 @@ export async function invalidateCache(key) {
 
 /** Remove all cache entries whose key starts with a given prefix. */
 export async function invalidateCacheByPrefix(prefix) {
+  return invalidateCacheByPrefixes([prefix]);
+}
+
+/** Remove all cache entries matching any of the supplied prefixes in one scan. */
+export async function invalidateCacheByPrefixes(prefixes = []) {
   try {
+    const normalizedPrefixes = [...new Set(prefixes.map((prefix) => `${prefix || ''}`).filter(Boolean))];
+    if (!normalizedPrefixes.length) return;
     const keys = await AsyncStorage.getAllKeys();
-    const matching = keys.filter(k => k.startsWith(prefix));
+    const matching = keys.filter((key) => normalizedPrefixes.some((prefix) => key.startsWith(prefix)));
     if (matching.length) await AsyncStorage.multiRemove(matching);
   } catch {}
 }

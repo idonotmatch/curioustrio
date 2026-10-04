@@ -8,7 +8,7 @@ async function countPending(householdId) {
   return parseInt(result.rows[0].count, 10);
 }
 
-async function getPending(householdId) {
+async function getPending(householdId, requesterUserId = null) {
   const result = await db.query(
     `SELECT cs.id,
             leaf.id   AS leaf_id,   leaf.name   AS leaf_name,
@@ -26,20 +26,24 @@ async function getPending(householdId) {
            SELECT DISTINCT e2.merchant
            FROM expenses e2
            WHERE e2.category_id = e.category_id
+             AND (e2.household_id = $1 OR e2.user_id IN (SELECT id FROM users WHERE household_id = $1))
+             AND (COALESCE(e2.is_private, FALSE) = FALSE OR e2.user_id = $2)
+             AND e2.status = 'confirmed'
              AND e2.merchant IS NOT NULL
              AND e2.merchant <> ''
            ORDER BY e2.merchant
            LIMIT 3
          ) AS sample_merchants
        FROM expenses e
-       WHERE e.household_id = $1
+       WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND (COALESCE(e.is_private, FALSE) = FALSE OR e.user_id = $2)
          AND e.status = 'confirmed'
          AND e.category_id IS NOT NULL
        GROUP BY e.category_id
      ) expense_counts ON expense_counts.category_id = leaf.id
      WHERE cs.household_id = $1 AND cs.status = 'pending'
      ORDER BY cs.created_at`,
-    [householdId]
+    [householdId, requesterUserId]
   );
   return result.rows.map(r => ({
     id: r.id,

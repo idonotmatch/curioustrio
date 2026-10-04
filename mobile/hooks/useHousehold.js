@@ -9,33 +9,34 @@ export function useHousehold() {
   const [household, setHousehold] = useState(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const forceRefreshRef = useRef(false);
+  const requestVersionRef = useRef(0);
 
   const refresh = useCallback((options = {}) => {
-    if (options?.forceRefresh) forceRefreshRef.current = true;
-    setRefreshKey(k => k + 1);
-  }, []);
-
-  useEffect(() => {
-    loadWithCache(
+    const requestVersion = ++requestVersionRef.current;
+    return loadWithCache(
       'cache:household',
       () => api.get('/households/me'),
       (data) => {
+        if (requestVersion !== requestVersionRef.current) return;
         setHousehold(data?.household ?? null);
         setMembers(data?.members ?? []);
         setLoading(false);
       },
       () => {
+        if (requestVersion !== requestVersionRef.current) return;
         // 404 = not in a household; other errors are non-fatal
         setHousehold(null);
         setMembers([]);
         setLoading(false);
       },
-      { forceRefresh: forceRefreshRef.current },
+      { forceRefresh: options?.forceRefresh === true },
     );
-    forceRefreshRef.current = false;
-  }, [refreshKey]);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    return () => { requestVersionRef.current += 1; };
+  }, [refresh]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.household, refresh);
 
   return { household, members, memberCount: members.length, loading, refresh };

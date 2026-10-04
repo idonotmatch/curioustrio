@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
@@ -15,8 +15,10 @@ export function useExpenses(month, startDayOverride) {
   const [error, setError] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const requestVersionRef = useRef(0);
 
   const refresh = useCallback(async (options = {}) => {
+    const requestVersion = ++requestVersionRef.current;
     setError(null);
     const params = [
       month && `month=${month}`,
@@ -24,23 +26,29 @@ export function useExpenses(month, startDayOverride) {
     ].filter(Boolean).join('&');
     const pageParams = [params, 'paginated=1', 'limit=25'].filter(Boolean).join('&');
     const url = `/expenses?${pageParams}`;
-    await loadWithCache(
+    return loadWithCache(
       `cache:expenses:v2:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => {
+        if (requestVersion !== requestVersionRef.current) return;
         const items = sanitizeExpenseCollection(data?.items || []);
         setExpenses(items);
         setNextCursor(data?.next_cursor || null);
         setLoading(false);
         saveExpenseSnapshots(items);
       },
-      (err) => { setError(err.message); setLoading(false); },
+      (err) => {
+        if (requestVersion !== requestVersionRef.current) return;
+        setError(err.message);
+        setLoading(false);
+      },
       { forceRefresh: options?.forceRefresh === true },
     );
   }, [month, startDayOverride]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
+    const requestVersion = requestVersionRef.current;
     setLoadingMore(true);
     try {
       const params = [
@@ -51,6 +59,7 @@ export function useExpenses(month, startDayOverride) {
         `cursor=${encodeURIComponent(nextCursor)}`,
       ].filter(Boolean).join('&');
       const data = await api.get(`/expenses?${params}`);
+      if (requestVersion !== requestVersionRef.current) return;
       const items = sanitizeExpenseCollection(data?.items || []);
       setExpenses((current) => {
         const seen = new Set(current.map((expense) => expense.id));
@@ -59,13 +68,18 @@ export function useExpenses(month, startDayOverride) {
       setNextCursor(data?.next_cursor || null);
       saveExpenseSnapshots(items);
     } catch (err) {
-      setError(err?.message || 'Could not load more transactions');
+      if (requestVersion === requestVersionRef.current) {
+        setError(err?.message || 'Could not load more transactions');
+      }
     } finally {
       setLoadingMore(false);
     }
   }, [loadingMore, month, nextCursor, startDayOverride]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    return () => { requestVersionRef.current += 1; };
+  }, [refresh]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.expenses, refresh);
 
   return { expenses, loading, loadingMore, hasMore: !!nextCursor, error, refresh, loadMore };

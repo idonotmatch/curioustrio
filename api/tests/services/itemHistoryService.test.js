@@ -125,10 +125,15 @@ describe('listItemHistorySummaries', () => {
       ],
     });
 
-    const results = await listItemHistorySummaries('household-1', { minOccurrences: 2 });
+    const results = await listItemHistorySummaries('household-1', {
+      minOccurrences: 2,
+      requesterUserId: 'user-1',
+    });
 
     expect(results).toHaveLength(1);
     expect(results[0].group_key).toBe('comparable:organic banana');
+    expect(db.query.mock.calls[0][0]).toContain('(COALESCE(e.is_private, FALSE) = FALSE OR e.user_id = $3)');
+    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 180, 'user-1']);
   });
 });
 
@@ -167,7 +172,9 @@ describe('getItemHistoryByGroupKey', () => {
       ],
     });
 
-    const result = await getItemHistoryByGroupKey('household-1', 'product:product-123');
+    const result = await getItemHistoryByGroupKey('household-1', 'product:product-123', {
+      requesterUserId: 'user-1',
+    });
 
     expect(result).toMatchObject({
       group_key: 'product:product-123',
@@ -180,5 +187,6 @@ describe('getItemHistoryByGroupKey', () => {
       expect.objectContaining({ id: 'expense-1' }),
       expect.objectContaining({ id: 'expense-2' }),
     ]));
+    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 180, 'user-1', 'product-123']);
   });
 });

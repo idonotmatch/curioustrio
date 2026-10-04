@@ -9,7 +9,7 @@ export function useRecurring() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (options = {}) => {
-    await loadWithCache(
+    return loadWithCache(
       'cache:recurring',
       () => api.get('/recurring'),
       (data) => { setRecurring(data || []); setLoading(false); },

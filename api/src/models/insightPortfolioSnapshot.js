@@ -28,14 +28,20 @@ async function sourceFingerprint(userId) {
        'expenses', (
          SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(e.created_at), 'epoch'::timestamptz), COALESCE(SUM(e.amount), 0))
          FROM expenses e, user_context c
-         WHERE e.user_id = $1 OR (c.household_id IS NOT NULL AND e.household_id = c.household_id)
+         WHERE e.user_id = $1
+            OR (c.household_id IS NOT NULL
+                AND e.household_id = c.household_id
+                AND COALESCE(e.is_private, FALSE) = FALSE)
        ),
        'items', (
          SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(i.created_at), 'epoch'::timestamptz))
          FROM expense_items i
          JOIN expenses e ON e.id = i.expense_id
          CROSS JOIN user_context c
-         WHERE e.user_id = $1 OR (c.household_id IS NOT NULL AND e.household_id = c.household_id)
+         WHERE e.user_id = $1
+            OR (c.household_id IS NOT NULL
+                AND e.household_id = c.household_id
+                AND COALESCE(e.is_private, FALSE) = FALSE)
        ),
        'budgets', (
          SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(bs.updated_at), 'epoch'::timestamptz), COALESCE(SUM(bs.monthly_limit), 0))

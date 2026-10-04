@@ -143,7 +143,7 @@ router.get('/suggestions', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user?.household_id) return res.json([]);
-    const suggestions = await CategorySuggestion.getPending(user.household_id);
+    const suggestions = await CategorySuggestion.getPending(user.household_id, user.id);
     res.json(suggestions);
   } catch (err) { next(err); }
 });

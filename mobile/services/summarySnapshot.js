@@ -5,7 +5,7 @@ const {
 } = require('./storageSanitizers');
 const { scopedCacheKey } = require('./cacheIdentity');
 
-const SUMMARY_SNAPSHOT_PREFIX = 'cache:summary-snapshot';
+const SUMMARY_SNAPSHOT_PREFIX = 'cache:summary-snapshot:v2';
 const MAX_RECENT_EXPENSES = 8;
 const MAX_PENDING_EXPENSES = 8;
 const MAX_WATCHED_PLANS = 5;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { saveExpenseSnapshots } from '../services/expenseLocalStore';
@@ -93,8 +93,10 @@ export function usePendingExpenses() {
   const [error, setError] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const requestVersionRef = useRef(0);
 
   const refresh = useCallback(async (options = {}) => {
+    const requestVersion = ++requestVersionRef.current;
     if (isUsingMockData) {
       setExpenses([...mockPendingExpensesState]);
       setLoading(false);
@@ -102,32 +104,41 @@ export function usePendingExpenses() {
       return;
     }
     setError(null);
-    await loadWithCache(
+    return loadWithCache(
       'cache:expenses:pending',
       () => api.get('/expenses/pending?paginated=1&limit=25'),
       (page) => {
+        if (requestVersion !== requestVersionRef.current) return;
         const data = Array.isArray(page) ? page : page?.items || [];
         publishPendingExpenses(data);
         setNextCursor(Array.isArray(page) ? null : page?.next_cursor || null);
         setLoading(false);
         saveExpenseSnapshots(data);
       },
-      (err) => { setError(err.message); setLoading(false); },
+      (err) => {
+        if (requestVersion !== requestVersionRef.current) return;
+        setError(err.message);
+        setLoading(false);
+      },
       { serialize: sanitizePendingPage, forceRefresh: options?.forceRefresh === true },
     );
   }, [isUsingMockData]);
 
   const loadMore = useCallback(async () => {
     if (isUsingMockData || !nextCursor || loadingMore) return;
+    const requestVersion = requestVersionRef.current;
     setLoadingMore(true);
     try {
       const page = await api.get(`/expenses/pending?paginated=1&limit=25&cursor=${encodeURIComponent(nextCursor)}`);
+      if (requestVersion !== requestVersionRef.current) return;
       const items = sanitizePendingPage(page).items;
       appendPendingExpenses(items);
       saveExpenseSnapshots(items);
       setNextCursor(page?.next_cursor || null);
     } catch (err) {
-      setError(err?.message || 'Could not load more review items');
+      if (requestVersion === requestVersionRef.current) {
+        setError(err?.message || 'Could not load more review items');
+      }
     } finally {
       setLoadingMore(false);
     }
@@ -150,7 +161,10 @@ export function usePendingExpenses() {
     };
   }, [isUsingMockData]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    return () => { requestVersionRef.current += 1; };
+  }, [refresh]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.pendingExpenses, refresh);
 
   return { expenses, loading, loadingMore, hasMore: Boolean(nextCursor), error, refresh, loadMore, isUsingMockData, resolveMockExpense };

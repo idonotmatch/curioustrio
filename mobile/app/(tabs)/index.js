@@ -8,6 +8,7 @@ import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { colors } from '../../theme/tokens';
@@ -168,6 +169,7 @@ export default function FeedScreen() {
   const [sortKey, setSortKey] = useState('newest');
   const { startDay } = useMonth();
   const { household, memberCount, refresh: refreshHousehold } = useHousehold();
+  const { userId: currentUserId } = useCurrentUser();
   const householdStartDay = household?.budget_start_day || 1;
   const isMultiMember = memberCount > 1;
   const transactionStartDay = isMultiMember ? householdStartDay : startDay;
@@ -218,13 +220,21 @@ export default function FeedScreen() {
     }
   }, [mode, refreshMine, refreshHouseholdExpenses, refreshPersonalBudget, refreshHouseholdBudget, refreshHousehold, isMultiMember]);
 
-  const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
+  const handleDelete = useCallback((id) => {
+    setDisplayExpenses(prev => prev.filter(e => e.id !== id));
+  }, []);
 
   const listData = displayExpenses;
 
-  const renderItem = ({ item }) => {
-    return <ExpenseItem expense={item} categories={categories} onDelete={handleDelete} showUser={mode === 'household'} />;
-  };
+  const renderItem = useCallback(({ item }) => (
+    <ExpenseItem
+      expense={item}
+      categories={categories}
+      currentUserId={currentUserId}
+      onDelete={handleDelete}
+      showUser={mode === 'household'}
+    />
+  ), [categories, currentUserId, handleDelete, mode]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

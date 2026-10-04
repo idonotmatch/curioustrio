@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { loadWithCache, loadCacheOnly } from '../services/cache';
 import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
@@ -10,8 +10,10 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
   const [budget, setBudget] = useState(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
+  const requestVersionRef = useRef(0);
 
   const refresh = useCallback(async (options = {}) => {
+    const requestVersion = ++requestVersionRef.current;
     if (!enabled) {
       setBudget(null);
       setError(null);
@@ -26,16 +28,28 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
     ].filter(Boolean).join('&');
     const url = params ? `/budgets?${params}` : '/budgets';
     const loader = cacheOnly ? loadCacheOnly : loadWithCache;
-    await loader(
+    return loader(
       `cache:budget:${month || 'all'}:${scope || 'default'}:${startDayOverride || 'default'}`,
       () => api.get(url),
-      (data) => { setBudget(data); setLoading(false); },
-      (err) => { setBudget(null); setError(err?.message || 'Could not load budget'); setLoading(false); },
+      (data) => {
+        if (requestVersion !== requestVersionRef.current) return;
+        setBudget(data);
+        setLoading(false);
+      },
+      (err) => {
+        if (requestVersion !== requestVersionRef.current) return;
+        setBudget(null);
+        setError(err?.message || 'Could not load budget');
+        setLoading(false);
+      },
       { forceRefresh: options?.forceRefresh === true },
     );
   }, [month, scope, cacheOnly, startDayOverride, enabled]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    return () => { requestVersionRef.current += 1; };
+  }, [refresh]);
   useFreshnessRefresh(FRESHNESS_DOMAINS.budget, refresh);
 
   return { budget, loading, error, refresh };

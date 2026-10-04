@@ -202,6 +202,35 @@ function pendingKey(user, options = {}) {
   return `${user?.id || 'unknown'}:${scope}:${month}`;
 }
 
+function schedulePendingRefresh(key, entry, delayMs) {
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(async () => {
+    entry.timer = null;
+    entry.running = true;
+    entry.rerun = false;
+    const runOptions = entry.options;
+    try {
+      await refreshProjectionNow(runOptions);
+    } catch (err) {
+      console.error('[projection refresh] failed:', {
+        user_id: runOptions.user.id,
+        reason: runOptions.reason || 'expense_changed',
+        message: err?.message || String(err || 'unknown_error'),
+      });
+    } finally {
+      entry.running = false;
+      if (entry.rerun) {
+        const nextDelayMs = entry.nextDelayMs;
+        entry.rerun = false;
+        entry.nextDelayMs = null;
+        schedulePendingRefresh(key, entry, nextDelayMs);
+      } else if (pendingRefreshes.get(key) === entry) {
+        pendingRefreshes.delete(key);
+      }
+    }
+  }, delayMs);
+}
+
 function requestProjectionRefresh(options = {}) {
   const { user } = options;
   if (!user?.id) return null;
@@ -212,24 +241,28 @@ function requestProjectionRefresh(options = {}) {
     });
   });
   const key = pendingKey(user, options);
-  const existing = pendingRefreshes.get(key);
-  if (existing) clearTimeout(existing.timer);
-
   const debounceMs = Math.max(0, Number(options.debounceMs ?? DEFAULT_DEBOUNCE_MS));
-  const timer = setTimeout(async () => {
-    pendingRefreshes.delete(key);
-    try {
-      await refreshProjectionNow(options);
-    } catch (err) {
-      console.error('[projection refresh] failed:', {
-        user_id: user.id,
-        reason: options.reason || 'expense_changed',
-        message: err?.message || String(err || 'unknown_error'),
-      });
+  const existing = pendingRefreshes.get(key);
+  if (existing) {
+    existing.options = options;
+    if (existing.running) {
+      existing.rerun = true;
+      existing.nextDelayMs = debounceMs;
+    } else {
+      schedulePendingRefresh(key, existing, debounceMs);
     }
-  }, debounceMs);
+    return key;
+  }
 
-  pendingRefreshes.set(key, { timer, options });
+  const entry = {
+    timer: null,
+    running: false,
+    rerun: false,
+    nextDelayMs: null,
+    options,
+  };
+  pendingRefreshes.set(key, entry);
+  schedulePendingRefresh(key, entry, debounceMs);
   return key;
 }
 

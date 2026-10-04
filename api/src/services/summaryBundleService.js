@@ -3,6 +3,7 @@ const Expense = require('../models/expense');
 const Household = require('../models/household');
 const ScenarioMemory = require('../models/scenarioMemory');
 const { decoratePlansWithTimingPreference } = require('./scenarioMemoryService');
+const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
 
 const SUMMARY_EXPENSE_LIMIT = 12;
 
@@ -50,7 +51,7 @@ async function personalBudgetTotal(userId, from, to) {
   return budgetPayload(result.rows[0], from, to);
 }
 
-async function householdBudgetTotal(householdId, from, to) {
+async function householdBudgetTotal(householdId, requesterUserId, from, to) {
   if (!householdId) return null;
   const result = await db.query(
     `SELECT
@@ -64,9 +65,10 @@ async function householdBudgetTotal(householdId, from, to) {
            AND e.date >= $2 AND e.date < $3
        ), 0) AS spent
      FROM expenses e
-     WHERE e.household_id = $1
-        OR e.user_id IN (SELECT id FROM users WHERE household_id = $1)`,
-    [householdId, from, to]
+     WHERE (e.household_id = $1
+        OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+       AND ${householdExpenseVisibilitySql(4)}`,
+    [householdId, from, to, requesterUserId]
   );
   return budgetPayload(result.rows[0], from, to);
 }
@@ -99,7 +101,7 @@ async function buildSummaryBundle({ user, period, startDay }) {
     householdContext(user),
     personalBudgetTotal(user.id, from, to),
     Expense.findByUser(user.id, { month: period, startDay, limit: SUMMARY_EXPENSE_LIMIT }),
-    householdBudgetTotal(user.household_id, from, to),
+    householdBudgetTotal(user.household_id, user.id, from, to),
     user.household_id
       ? Expense.findByHousehold(user.household_id, {
         userId: user.id,

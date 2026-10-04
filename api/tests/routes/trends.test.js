@@ -233,6 +233,26 @@ describe('GET /trends/summary', () => {
     expect(Array.isArray(res.body.projection.categories)).toBe(true);
   });
 
+  it('excludes another member private spend from household trends and projections', async () => {
+    await db.query(`UPDATE users SET household_id = $1 WHERE id = $2`, [householdId, userId]);
+    await db.query(
+      `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, is_private)
+       VALUES
+         ($1, $3, 'Owner shared', 100, '2026-04-01', 'manual', 'confirmed', FALSE),
+         ($1, $3, 'Owner private', 25, '2026-04-02', 'manual', 'confirmed', TRUE),
+         ($2, $3, 'Member shared', 50, '2026-04-03', 'manual', 'confirmed', FALSE),
+         ($2, $3, 'Member private', 500, '2026-04-04', 'manual', 'confirmed', TRUE)`,
+      [userId, householdUserId, householdId]
+    );
+
+    const res = await request(app).get('/trends/summary?scope=household&month=2026-04');
+
+    expect(res.status).toBe(200);
+    expect(res.body.pace.current_spend_to_date).toBe(175);
+    expect(res.body.projection.overall.current_spend_to_date).toBe(175);
+    expect(res.body.projection.current_activity.total_spend).toBe(175);
+  });
+
   it('ignores sparse prior months when deciding whether trend history exists', async () => {
     await db.query(
       `INSERT INTO expenses (user_id, amount, date, source, status)

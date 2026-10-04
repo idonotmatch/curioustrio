@@ -19,6 +19,16 @@ describe('InsightPortfolioSnapshot', () => {
     );
   });
 
+  it('does not fingerprint another household member private expenses', async () => {
+    db.query.mockResolvedValue({ rows: [{ fingerprint: {} }] });
+
+    await Snapshot.sourceFingerprint('user-1');
+
+    const sql = db.query.mock.calls[0][0];
+    expect(sql).toContain('COALESCE(e.is_private, FALSE) = FALSE');
+    expect(db.query.mock.calls[0][1]).toEqual(['user-1']);
+  });
+
   it('degrades cleanly before the migration is installed', async () => {
     db.query.mockRejectedValue(Object.assign(new Error('relation insight_portfolio_snapshots does not exist'), { code: '42P01' }));
     await expect(Snapshot.findByUser('user-1')).resolves.toBeNull();

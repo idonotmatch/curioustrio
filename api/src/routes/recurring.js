@@ -33,7 +33,7 @@ router.post('/detect', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
-    const candidates = await detectRecurring(user.household_id);
+    const candidates = await detectRecurring(user.household_id, { requesterUserId: user.id });
     res.json(candidates);
   } catch (err) { next(err); }
 });
@@ -42,7 +42,7 @@ router.post('/detect-items', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
-    const candidates = await detectRecurringItems(user.household_id);
+    const candidates = await detectRecurringItems(user.household_id, { requesterUserId: user.id });
     res.json(candidates);
   } catch (err) { next(err); }
 });
@@ -51,7 +51,7 @@ router.post('/detect-item-signals', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
-    const signals = await detectRecurringItemSignals(user.household_id);
+    const signals = await detectRecurringItemSignals(user.household_id, { requesterUserId: user.id });
     res.json(signals);
   } catch (err) { next(err); }
 });
@@ -67,7 +67,7 @@ router.get('/item-history', async (req, res, next) => {
       return res.status(403).json({ error: 'Must be in a household' });
     }
     const ownerId = scope === 'personal' ? user.id : user.household_id;
-    const history = await getRecurringItemHistory(ownerId, groupKey, { scope });
+    const history = await getRecurringItemHistory(ownerId, groupKey, { scope, requesterUserId: user.id });
     if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
     res.json(history);
   } catch (err) { next(err); }
@@ -78,7 +78,10 @@ router.get('/watch-candidates', async (req, res, next) => {
     const user = await getUser(req);
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
     const windowDays = Math.max(1, Math.min(Number(req.query.window_days) || 5, 30));
-    const candidates = await detectRecurringWatchCandidates(user.household_id, { windowDays });
+    const candidates = await detectRecurringWatchCandidates(user.household_id, {
+      windowDays,
+      requesterUserId: user.id,
+    });
     res.json(candidates);
   } catch (err) { next(err); }
 });
@@ -92,6 +95,7 @@ router.get('/watch-opportunities', async (req, res, next) => {
     const opportunities = await findObservationOpportunities(user.household_id, {
       windowDays,
       freshnessHours,
+      requesterUserId: user.id,
     });
     res.json(opportunities);
   } catch (err) { next(err); }

@@ -9,7 +9,7 @@ export function useCategories() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (options = {}) => {
-    await loadWithCache(
+    return loadWithCache(
       'cache:categories',
       async () => {
         const data = await api.get('/categories');

@@ -42,18 +42,46 @@ function staleDomainsForListener(listener) {
 }
 
 function scheduleListener(listener, delayMs = DEFAULT_REFRESH_DELAY_MS, reason = 'data_changed') {
+  if (listener.disposed) return;
   if (listener.timer) clearTimeout(listener.timer);
-  listener.timer = setTimeout(() => {
+  if (listener.running) {
+    listener.refreshAfterRun = true;
+    listener.nextDelayMs = delayMs;
+    listener.nextReason = reason;
+    return;
+  }
+
+  listener.timer = setTimeout(async () => {
     listener.timer = null;
+    if (listener.disposed) return;
     const domains = staleDomainsForListener(listener);
     if (!domains.length) return;
 
-    domains.forEach((domain) => listener.seenVersions.set(domain, currentVersion(domain)));
-    Promise.resolve(listener.refresh({ domains, reason, forceRefresh: true })).catch((err) => {
+    const requestedVersions = new Map(domains.map((domain) => [domain, currentVersion(domain)]));
+    listener.running = true;
+    try {
+      const outcome = await listener.refresh({ domains, reason, forceRefresh: true });
+      if (!listener.disposed && outcome?.refreshSucceeded !== false) {
+        requestedVersions.forEach((version, domain) => {
+          listener.seenVersions.set(domain, Math.max(listener.seenVersions.get(domain) || 0, version));
+        });
+      }
+    } catch (err) {
       if (__DEV__) {
         console.warn('[freshness] quiet refresh failed', err?.message || err);
       }
-    });
+    } finally {
+      listener.running = false;
+      const refreshAfterRun = listener.refreshAfterRun;
+      const nextDelayMs = listener.nextDelayMs;
+      const nextReason = listener.nextReason;
+      listener.refreshAfterRun = false;
+      listener.nextDelayMs = null;
+      listener.nextReason = null;
+      if (!listener.disposed && refreshAfterRun && staleDomainsForListener(listener).length) {
+        scheduleListener(listener, nextDelayMs, nextReason);
+      }
+    }
   }, Math.max(0, Number(delayMs) || 0));
 }
 
@@ -69,6 +97,11 @@ export function registerFreshnessHandler(domains, refresh, options = {}) {
       options.refreshIfStale ? Math.max(0, currentVersion(domain) - 1) : currentVersion(domain),
     ])),
     timer: null,
+    running: false,
+    refreshAfterRun: false,
+    nextDelayMs: null,
+    nextReason: null,
+    disposed: false,
   };
 
   normalizedDomains.forEach((domain) => addListener(domain, listener));
@@ -78,6 +111,7 @@ export function registerFreshnessHandler(domains, refresh, options = {}) {
   }
 
   return () => {
+    listener.disposed = true;
     if (listener.timer) clearTimeout(listener.timer);
     normalizedDomains.forEach((domain) => removeListener(domain, listener));
   };

@@ -359,4 +359,45 @@ describe('expenseConfirmService deferred enrichment', () => {
       mapkitStableId: null,
     }));
   });
+
+  it('learns receipt line corrections only from shared expenses', async () => {
+    ExpenseItem.createBulk.mockResolvedValue([{
+      id: 'item-1',
+      description: 'Organic Lasagne',
+      amount: 5.37,
+      product_id: null,
+    }]);
+    const basePayload = {
+      merchant: 'Whole Foods',
+      amount: 5.37,
+      date: '2026-04-27',
+      source: 'camera',
+      category_id: 'cat-1',
+      items: [{ description: 'Organic Lasagne', amount: 5.37 }],
+    };
+    const originalParsedItems = [{ description: 'ORGNIC LSGNA', amount: 5.37 }];
+
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: { ...basePayload, is_private: false },
+      originalParsedItems,
+      deferPostConfirmSideEffects: false,
+    });
+
+    expect(ReceiptLineCorrection.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      householdId: 'hh-1',
+      rawLabel: 'ORGNIC LSGNA',
+      correctedLabel: 'Organic Lasagne',
+    }));
+
+    ReceiptLineCorrection.upsert.mockClear();
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: { ...basePayload, is_private: true },
+      originalParsedItems,
+      deferPostConfirmSideEffects: false,
+    });
+
+    expect(ReceiptLineCorrection.upsert).not.toHaveBeenCalled();
+  });
 });

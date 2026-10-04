@@ -1,11 +1,10 @@
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { useState, useEffect } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { api } from '../services/api';
-import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
-import { loadExpenseItemsSnapshot, loadExpenseSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
+import { loadExpenseItemsSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { colors, mutedCategoryColor, radius, spacing } from '../theme/tokens';
 
@@ -70,9 +69,15 @@ function formatItemMeta(item = {}) {
   return [item.brand, item.product_size || item.pack_size].filter(Boolean).join(' • ') || null;
 }
 
-export function ExpenseItem({ expense, categories = [], showUser = false, onDelete, pending = false }) {
+export const ExpenseItem = memo(function ExpenseItem({
+  expense,
+  categories = [],
+  currentUserId = null,
+  showUser = false,
+  onDelete,
+  pending = false,
+}) {
   const router = useRouter();
-  const { userId: currentUserId } = useCurrentUser();
   const [localExpense, setLocalExpense] = useState(expense);
   const [itemsExpanded, setItemsExpanded] = useState(false);
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -83,37 +88,6 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
   useEffect(() => {
     setLocalExpense(expense);
   }, [expense]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function hydrateLocalItemAvailability() {
-      const snapshot = await loadExpenseSnapshot(expense?.id);
-      if (cancelled || !snapshot?.id) return;
-
-      if (Array.isArray(snapshot.items)) {
-        setLocalExpense((prev) => ({
-          ...prev,
-          items: snapshot.items,
-          item_count: snapshot.items.length,
-        }));
-        return;
-      }
-
-      if (Number(snapshot.item_count) === 0) {
-        setLocalExpense((prev) => ({
-          ...prev,
-          item_count: 0,
-          items: [],
-        }));
-      }
-    }
-
-    hydrateLocalItemAvailability();
-    return () => {
-      cancelled = true;
-    };
-  }, [expense?.id]);
 
   const isOwn = !currentUserId || String(localExpense.user_id) === String(currentUserId);
   const color = mutedCategoryColor(localExpense.category_name);
@@ -388,7 +362,7 @@ export function ExpenseItem({ expense, categories = [], showUser = false, onDele
       </View>
     </Swipeable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

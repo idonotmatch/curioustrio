@@ -1,4 +1,5 @@
 const db = require('../db');
+const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -136,9 +137,16 @@ async function loadItemHistoryRows(ownerId, {
   scope = 'household',
   lookbackDays = 180,
   groupKey = null,
+  requesterUserId = null,
 } = {}) {
   const values = [ownerId, Math.max(1, Math.min(Number(lookbackDays) || 180, 365))];
   let identityClause = '';
+  let visibilityClause = '';
+
+  if (scope === 'household') {
+    values.push(requesterUserId);
+    visibilityClause = `AND ${householdExpenseVisibilitySql(values.length)}`;
+  }
 
   if (groupKey) {
     if (`${groupKey}`.startsWith('product:')) {
@@ -170,6 +178,7 @@ async function loadItemHistoryRows(ownerId, {
     JOIN expenses e ON e.id = ei.expense_id
     LEFT JOIN products p ON p.id = ei.product_id
     WHERE ${expenseScopeClause(scope, 1)}
+      ${visibilityClause}
       AND e.status = 'confirmed'
       AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')
       AND COALESCE(ei.item_type, 'product') = 'product'
@@ -195,8 +204,9 @@ async function listItemHistorySummaries(ownerId, {
   lookbackDays = 180,
   minOccurrences = 2,
   limit = 25,
+  requesterUserId = null,
 } = {}) {
-  const rows = await loadItemHistoryRows(ownerId, { scope, lookbackDays });
+  const rows = await loadItemHistoryRows(ownerId, { scope, lookbackDays, requesterUserId });
   return summarizeHistoryRows(rows)
     .filter((entry) => entry.occurrence_count >= Math.max(1, Number(minOccurrences) || 2))
     .slice(0, Math.max(1, Math.min(Number(limit) || 25, 100)));
@@ -205,8 +215,9 @@ async function listItemHistorySummaries(ownerId, {
 async function getItemHistoryByGroupKey(ownerId, groupKey, {
   scope = 'household',
   lookbackDays = 180,
+  requesterUserId = null,
 } = {}) {
-  const rows = await loadItemHistoryRows(ownerId, { scope, lookbackDays, groupKey });
+  const rows = await loadItemHistoryRows(ownerId, { scope, lookbackDays, groupKey, requesterUserId });
   return summarizeHistoryRows(rows)[0] || null;
 }
 

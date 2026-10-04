@@ -145,6 +145,22 @@ describe('findObservationOpportunities', () => {
     });
   });
 
+  it('reuses preloaded watch candidates without rerunning recurring detection', async () => {
+    ProductPriceObservation.findRecentByIdentity.mockResolvedValueOnce([]);
+
+    await findObservationOpportunities('household-1', {
+      candidates: [{
+        group_key: 'product:abc',
+        product_id: 'abc',
+        item_name: 'Pampers Pure',
+        status: 'watching',
+      }],
+    });
+
+    expect(detectRecurringWatchCandidates).not.toHaveBeenCalled();
+    expect(ProductPriceObservation.findRecentByIdentity).toHaveBeenCalledTimes(1);
+  });
+
   it('is stricter about medium-confidence item opportunities', async () => {
     detectRecurringWatchCandidates.mockResolvedValueOnce([
       {

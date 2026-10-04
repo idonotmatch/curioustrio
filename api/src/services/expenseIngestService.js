@@ -300,6 +300,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       const contextLookupStartedAt = Date.now();
       const context = await buildReceiptParsingContext({
         householdId: user.household_id,
+        requesterUserId: user.id,
         merchantHint,
       });
       contextLookupDurationMs = Date.now() - contextLookupStartedAt;
@@ -383,6 +384,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     const contextLookupStartedAt = Date.now();
     const context = await buildReceiptParsingContext({
       householdId: user.household_id,
+      requesterUserId: user.id,
       merchantHint,
     });
     contextLookupDurationMs = Date.now() - contextLookupStartedAt;

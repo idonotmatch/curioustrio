@@ -1,5 +1,6 @@
 const db = require('../db');
 const RecurringPreference = require('../models/recurringPreference');
+const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -34,6 +35,12 @@ function recurringExpenseScopeClause(scope = 'household', paramIndex = 1) {
 
 async function loadRecurringItemOccurrences(ownerId, options = {}) {
   const scope = options.scope === 'personal' ? 'personal' : 'household';
+  const params = [ownerId];
+  let visibilityClause = '';
+  if (scope === 'household') {
+    params.push(options.requesterUserId || null);
+    visibilityClause = `AND ${householdExpenseVisibilitySql(params.length)}`;
+  }
   const result = await queryBudgetRelevant(
     `SELECT
        ei.id AS expense_item_id,
@@ -53,13 +60,14 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
      JOIN expenses e ON e.id = ei.expense_id
      LEFT JOIN products p ON p.id = ei.product_id
      WHERE ${recurringExpenseScopeClause(scope, 1)}
+       ${visibilityClause}
        AND e.status = 'confirmed'
        AND e.exclude_from_budget = FALSE
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      ORDER BY e.date ASC`,
-    [ownerId],
+    params,
     `SELECT
        ei.id AS expense_item_id,
        ei.expense_id,
@@ -78,6 +86,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
      JOIN expenses e ON e.id = ei.expense_id
      LEFT JOIN products p ON p.id = ei.product_id
      WHERE ${recurringExpenseScopeClause(scope, 1)}
+       ${visibilityClause}
        AND e.status = 'confirmed'
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
@@ -111,19 +120,21 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
   return groups;
 }
 
-async function detectRecurring(householdId) {
+async function detectRecurring(householdId, { requesterUserId = null } = {}) {
   const result = await queryBudgetRelevant(
     `SELECT LOWER(merchant) as merchant, amount, date
      FROM expenses
      WHERE household_id = $1
+       AND ${householdExpenseVisibilitySql(2, { alias: 'expenses' })}
        AND status = 'confirmed'
        AND exclude_from_budget = FALSE
        AND date >= CURRENT_DATE - INTERVAL '90 days'
      ORDER BY merchant, date`,
-    [householdId],
+    [householdId, requesterUserId],
     `SELECT LOWER(merchant) as merchant, amount, date
      FROM expenses
      WHERE household_id = $1
+       AND ${householdExpenseVisibilitySql(2, { alias: 'expenses' })}
        AND status = 'confirmed'
        AND date >= CURRENT_DATE - INTERVAL '90 days'
      ORDER BY merchant, date`
@@ -175,7 +186,9 @@ async function detectRecurring(householdId) {
 }
 
 async function detectRecurringItems(ownerId, options = {}) {
-  const groups = await loadRecurringItemOccurrences(ownerId, options);
+  const groups = options.occurrenceGroups instanceof Map
+    ? options.occurrenceGroups
+    : await loadRecurringItemOccurrences(ownerId, options);
 
   const candidates = [];
   for (const [groupKey, occurrences] of groups.entries()) {
@@ -322,7 +335,13 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
   const scope = options.scope === 'personal' ? 'personal' : 'household';
   const windowDays = Number.isFinite(options.windowDays) ? options.windowDays : 5;
   const maxOverdueDays = Number.isFinite(options.maxOverdueDays) ? options.maxOverdueDays : 7;
-  const recurringItems = await detectRecurringItems(ownerId, { scope });
+  const recurringItems = Array.isArray(options.recurringItems)
+    ? options.recurringItems
+    : await detectRecurringItems(ownerId, {
+      scope,
+      requesterUserId: options.requesterUserId || null,
+      occurrenceGroups: options.occurrenceGroups,
+    });
   const today = parseDateOnly(startOfToday().toISOString().split('T')[0]);
   const automaticCandidates = recurringItems
     .filter((item) => item.product_id || item.comparable_key)
@@ -363,7 +382,7 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
     .filter((item) => item.days_until_due <= windowDays && item.days_until_due >= -maxOverdueDays);
 
   const preferences = scope === 'household'
-    ? await RecurringPreference.findByHousehold(ownerId)
+    ? await RecurringPreference.findByHousehold(ownerId, options.requesterUserId || null)
     : [];
   const automaticByKey = new Map(
     automaticCandidates.map((candidate) => [candidate.product_id ? `product:${candidate.product_id}` : candidate.group_key, candidate])
@@ -398,8 +417,11 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
 
     if (!pref.expected_frequency_days || pref.expected_frequency_days <= 0) continue;
     const expenseResult = await db.query(
-      `SELECT date, amount FROM expenses WHERE id = $1 AND household_id = $2`,
-      [pref.expense_id, ownerId]
+      `SELECT date, amount FROM expenses
+       WHERE id = $1
+         AND household_id = $2
+         AND ${householdExpenseVisibilitySql(3, { alias: 'expenses' })}`,
+      [pref.expense_id, ownerId, options.requesterUserId || null]
     );
     const sourceExpense = expenseResult.rows[0];
     if (!sourceExpense?.date) continue;
@@ -444,7 +466,9 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
 }
 
 async function detectRecurringItemSignals(ownerId, options = {}) {
-  const groups = await loadRecurringItemOccurrences(ownerId, options);
+  const groups = options.occurrenceGroups instanceof Map
+    ? options.occurrenceGroups
+    : await loadRecurringItemOccurrences(ownerId, options);
   const signals = [];
   for (const [groupKey, history] of groups.entries()) {
     if (history.length < 3) continue;
@@ -555,4 +579,5 @@ module.exports = {
   detectRecurringItemSignals,
   getRecurringItemHistory,
   detectRecurringWatchCandidates,
+  loadRecurringItemOccurrences,
 };

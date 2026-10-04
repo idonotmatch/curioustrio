@@ -1,5 +1,6 @@
 const db = require('../db');
 const { summarizeCategoryProvenance } = require('./categoryProvenance');
+const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -365,11 +366,12 @@ async function listRollingExpenses({ user, scope = 'personal', from, toExclusive
        LEFT JOIN categories c ON e.category_id = c.id
        LEFT JOIN categories pc ON c.parent_id = pc.id
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND ${householdExpenseVisibilitySql(4)}
          AND e.status = 'confirmed'
          AND e.exclude_from_budget = FALSE
          AND e.date >= $2
          AND e.date < $3`,
-      [user.household_id, from, toExclusive],
+      [user.household_id, from, toExclusive, user.id],
       `SELECT
          e.merchant,
          COALESCE(NULLIF(TRIM(LOWER(e.merchant)), ''), 'unknown') AS merchant_key,
@@ -384,6 +386,7 @@ async function listRollingExpenses({ user, scope = 'personal', from, toExclusive
        LEFT JOIN categories c ON e.category_id = c.id
        LEFT JOIN categories pc ON c.parent_id = pc.id
        WHERE (e.household_id = $1 OR e.user_id IN (SELECT id FROM users WHERE household_id = $1))
+         AND ${householdExpenseVisibilitySql(4)}
          AND e.status = 'confirmed'
          AND e.date >= $2
          AND e.date < $3`

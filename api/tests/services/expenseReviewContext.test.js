@@ -216,7 +216,7 @@ describe('expenseReviewContext', () => {
     expect(getItemHistoryByGroupKey).toHaveBeenCalledWith(
       'user-1',
       'comparable:paper towel|brand:bounty',
-      { scope: 'personal', lookbackDays: 180 }
+      { scope: 'personal', lookbackDays: 180, requesterUserId: 'user-1' }
     );
     expect(result.item_review_context).toEqual([
       expect.objectContaining({

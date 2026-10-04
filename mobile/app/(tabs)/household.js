@@ -1,9 +1,10 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { useCategories } from '../../hooks/useCategories';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { BudgetBar } from '../../components/BudgetBar';
 import { colors } from '../../theme/tokens';
@@ -12,12 +13,25 @@ export default function HouseholdScreen() {
   const { expenses, loading, refresh } = useHouseholdExpenses();
   const { budget } = useBudget();
   const { categories } = useCategories();
+  const { userId: currentUserId } = useCurrentUser();
   const router = useRouter();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
 
-  const handleDelete = (id) => setDisplayExpenses(prev => prev.filter(e => e.id !== id));
+  const handleDelete = useCallback((id) => {
+    setDisplayExpenses(prev => prev.filter(e => e.id !== id));
+  }, []);
+
+  const renderItem = useCallback(({ item }) => (
+    <ExpenseItem
+      expense={item}
+      categories={categories}
+      currentUserId={currentUserId}
+      showUser
+      onDelete={handleDelete}
+    />
+  ), [categories, currentUserId, handleDelete]);
 
   const total = Number(budget?.total?.spent || 0);
 
@@ -33,7 +47,7 @@ export default function HouseholdScreen() {
       <FlatList
         data={displayExpenses}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <ExpenseItem expense={item} categories={categories} showUser onDelete={handleDelete} />}
+        renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
         contentContainerStyle={styles.list}
         ListEmptyComponent={

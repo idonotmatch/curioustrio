@@ -9,7 +9,7 @@ export function usePendingExpenseCount() {
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async (options = {}) => {
-    await loadWithCache(
+    return loadWithCache(
       'cache:expenses:pending-count',
       () => api.get('/expenses/pending/count'),
       (data) => {
