@@ -1,6 +1,6 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, InteractionManager, Linking, Platform
+  StyleSheet, ActivityIndicator, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -131,7 +131,7 @@ export default function ExpenseDetailScreen() {
     }
     let active = true;
     const frame = requestAnimationFrame(() => {
-      InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
         if (active) setEditDetailsReady(true);
       });
     });
@@ -1138,7 +1138,7 @@ const styles = StyleSheet.create({
   editInputFocused: { borderColor: colors.info, backgroundColor: colors.infoMuted },
   editAmount: { width: 100 },
   editInputInline: { color: colors.text, fontSize: 14, textAlign: 'right', flex: 1, padding: 4 },
-  datePicker: { marginRight: -8 },
+  datePicker: { width: 140, height: 36, marginRight: -8 },
   reviewFieldWrapActive: {
     borderWidth: 1,
     borderColor: colors.infoMuted,
