@@ -66,7 +66,12 @@ app.get('/health', (req, res) => res.json({ ok: true, request_id: req.requestId 
 app.get('/ready', async (req, res) => {
   try {
     await db.query('SELECT 1');
-    res.json({ ok: true, db: 'ready', request_id: req.requestId || null });
+    res.json({
+      ok: true,
+      db: 'ready',
+      release: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || null,
+      request_id: req.requestId || null,
+    });
   } catch (err) {
     res.status(503).json({ ok: false, db: 'unavailable', request_id: req.requestId || null });
   }

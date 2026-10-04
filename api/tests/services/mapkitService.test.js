@@ -6,6 +6,8 @@ jest.mock('node-fetch');
 const {
   searchPlace,
   searchPlaces,
+  autocompletePlaces,
+  completePlaceSuggestion,
   MapkitSearchUnavailableError,
   resetMapkitCachesForTest,
 } = require('../../src/services/mapkitService');
@@ -48,7 +50,7 @@ it('returns top place result from MapKit search', async () => {
   expect(result.mapkit_stable_id).toContain('37.');
   expect(jwt.sign).toHaveBeenCalledWith(
     expect.objectContaining({ scope: 'server_api' }),
-    'fake-key',
+    '-----BEGIN PRIVATE KEY-----\nfake-key\n-----END PRIVATE KEY-----',
     expect.objectContaining({ algorithm: 'ES256', keyid: 'test-key-id', header: { typ: 'JWT' } })
   );
 });
@@ -146,4 +148,57 @@ it('throws an unavailable error when Apple Maps rejects authorization', async ()
       message: 'Apple Maps authorization rejected',
       details: 'HTTP 401',
     });
+});
+
+it('returns Apple Maps autocomplete suggestions', async () => {
+  mockAccessToken();
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      results: [{
+        completionUrl: '/v1/search?q=Trader%20Joes&metadata=opaque',
+        displayLines: ["Trader Joe's", '1133 Metropolitan Ave, Charlotte, NC'],
+        location: { latitude: 35.208, longitude: -80.837 },
+      }],
+    }),
+  });
+
+  const results = await autocompletePlaces('trad', 35.2271, -80.8431, 5000, 5);
+  expect(results).toEqual([expect.objectContaining({
+    place_name: "Trader Joe's",
+    address: '1133 Metropolitan Ave, Charlotte, NC',
+    completion_url: '/v1/search?q=Trader%20Joes&metadata=opaque',
+    search_strategy: 'autocomplete',
+  })]);
+  expect(fetch.mock.calls[1][0]).toContain('/v1/searchAutocomplete?');
+});
+
+it('resolves an Apple Maps autocomplete completion URL', async () => {
+  mockAccessToken();
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      results: [{
+        name: "Trader Joe's",
+        formattedAddressLines: ['1133 Metropolitan Ave', 'Charlotte, NC 28204'],
+        coordinate: { latitude: 35.208, longitude: -80.837 },
+        id: 'apple-place-1',
+      }],
+    }),
+  });
+
+  const results = await completePlaceSuggestion('/v1/search?q=Trader%20Joes&metadata=opaque', 35.2271, -80.8431);
+  expect(results[0]).toEqual(expect.objectContaining({
+    place_name: "Trader Joe's",
+    provider_place_id: 'apple-place-1',
+    search_strategy: 'autocomplete_completion',
+  }));
+});
+
+it('rejects completion URLs outside Apple Maps search', async () => {
+  await expect(completePlaceSuggestion('https://example.com/v1/search?q=Target'))
+    .rejects.toMatchObject({ name: 'MapkitSearchUnavailableError' });
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
-const { searchPlaces, MapkitSearchUnavailableError } = require('../services/mapkitService');
+const {
+  searchPlaces,
+  autocompletePlaces,
+  completePlaceSuggestion,
+  MapkitSearchUnavailableError,
+} = require('../services/mapkitService');
 const { captureException } = require('../services/observability');
 const User = require('../models/user');
 const db = require('../db');
@@ -56,6 +61,62 @@ function redactPlaceSearchContext(query) {
     query_length: normalized.length || 0,
   };
 }
+
+function parseCoordinates(query = {}) {
+  if (query.lat === undefined && query.lng === undefined) return { lat: null, lng: null };
+  const lat = parseFloat(query.lat);
+  const lng = parseFloat(query.lng);
+  if (
+    Number.isNaN(lat) || Number.isNaN(lng)
+    || lat < -90 || lat > 90 || lng < -180 || lng > 180
+  ) return null;
+  return { lat, lng };
+}
+
+router.get('/autocomplete', async (req, res, next) => {
+  try {
+    const q = `${req.query.q || ''}`.trim();
+    if (q.length < 2) return res.json({ results: [] });
+    const coordinates = parseCoordinates(req.query);
+    if (!coordinates) return res.status(400).json({ error: 'lat and lng must be numbers' });
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const learned = await findLearnedPlaces(user.id, q);
+    let suggestions = [];
+    try {
+      suggestions = await autocompletePlaces(q, coordinates.lat, coordinates.lng, 5000, 5);
+    } catch (error) {
+      if (!learned.length) throw error;
+    }
+    return res.json({ results: mergePlaceResults(learned, suggestions) });
+  } catch (error) {
+    if (error instanceof MapkitSearchUnavailableError || error?.name === 'MapkitSearchUnavailableError') {
+      console.error('[places/autocomplete] unavailable', {
+        ...redactPlaceSearchContext(req.query?.q),
+        reason: error.message,
+      });
+      return res.status(503).json({ error: 'Place suggestions temporarily unavailable' });
+    }
+    return next(error);
+  }
+});
+
+router.post('/complete', async (req, res, next) => {
+  try {
+    const completionUrl = `${req.body?.completion_url || ''}`.trim();
+    if (!completionUrl) return res.status(400).json({ error: 'completion_url is required' });
+    const coordinates = parseCoordinates(req.body || {});
+    if (!coordinates) return res.status(400).json({ error: 'lat and lng must be numbers' });
+    const results = await completePlaceSuggestion(completionUrl, coordinates.lat, coordinates.lng, 5);
+    return res.json({ result: results[0] || null, results });
+  } catch (error) {
+    if (error instanceof MapkitSearchUnavailableError || error?.name === 'MapkitSearchUnavailableError') {
+      console.error('[places/complete] unavailable', { reason: error.message });
+      return res.status(503).json({ error: 'Place details temporarily unavailable' });
+    }
+    return next(error);
+  }
+});
 
 router.get('/search', async (req, res, next) => {
   try {

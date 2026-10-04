@@ -45,7 +45,9 @@ export function SummaryQuickEntry({
             : '84.50 trader joes · lunch 14 · gas 60 yesterday'}
           placeholderTextColor={colors.textDisabled}
           onSubmitEditing={handlePrimaryEntry}
-          autoCorrect={false}
+          autoCorrect
+          spellCheck
+          autoCapitalize="sentences"
           returnKeyType={entryMode === 'check' ? 'go' : 'done'}
           editable={!loading}
         />

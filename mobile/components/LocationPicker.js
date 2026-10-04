@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { getCoords, getLocation } from '../services/locationService';
 import { api } from '../services/api';
@@ -14,7 +14,9 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [searchError, setSearchError] = useState('');
+  const [resolvingKey, setResolvingKey] = useState('');
   const [status, setStatus] = useState(locationStatusPresentation(locationData || {}));
+  const lastCoordsRef = useRef(null);
 
   useEffect(() => {
     setStatus(locationStatusPresentation(locationData || {}));
@@ -23,7 +25,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   useEffect(() => {
     if (!searchMode) return undefined;
     const trimmed = query.trim();
-    if (!trimmed) {
+    if (trimmed.length < 2) {
       setSearchResults([]);
       setSearching(false);
       setSearchError('');
@@ -41,13 +43,13 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
         } catch {
           coords = null;
         }
+        lastCoordsRef.current = coords;
         const params = new URLSearchParams({ q: trimmed });
         if (coords) {
           params.set('lat', String(coords.latitude));
           params.set('lng', String(coords.longitude));
         }
-        params.set('intent', 'manual');
-        const lookup = await api.get(`/places/search?${params.toString()}`);
+        const lookup = await api.get(`/places/autocomplete?${params.toString()}`);
         if (!cancelled) {
           setSearchResults(Array.isArray(lookup?.results) ? lookup.results : (lookup?.result ? [lookup.result] : []));
           setSearchError('');
@@ -60,7 +62,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
       } finally {
         if (!cancelled) setSearching(false);
       }
-    }, 250);
+    }, 300);
 
     return () => {
       cancelled = true;
@@ -80,7 +82,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     setSearchError('');
   }
 
-  function selectLocation(result) {
+  function commitLocation(result) {
     onLocation(normalizeLocationData({
       ...result,
       source: result.source || (result.search_strategy === 'user_history' ? 'history' : 'search'),
@@ -90,6 +92,35 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     }));
     setStatus(locationStatusPresentation({ source: result.search_strategy === 'user_history' ? 'history' : 'search' }));
     endSearch();
+  }
+
+  async function selectLocation(result) {
+    const hasCoordinates = result.latitude != null
+      && result.longitude != null
+      && Number.isFinite(Number(result.latitude))
+      && Number.isFinite(Number(result.longitude));
+    if (!result.completion_url || hasCoordinates) {
+      commitLocation(result);
+      return;
+    }
+
+    const key = result.completion_url;
+    setResolvingKey(key);
+    setSearchError('');
+    try {
+      const coords = lastCoordsRef.current;
+      const payload = { completion_url: result.completion_url };
+      if (coords) {
+        payload.lat = coords.latitude;
+        payload.lng = coords.longitude;
+      }
+      const lookup = await api.post('/places/complete', payload);
+      commitLocation(lookup?.result || result);
+    } catch (error) {
+      setSearchError(error?.message || 'Could not load place details');
+    } finally {
+      setResolvingKey('');
+    }
   }
 
   function useEnteredLocation() {
@@ -178,7 +209,12 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
             onChangeText={setQuery}
             placeholder="Search for a place"
             placeholderTextColor={colors.textDisabled}
-            autoCorrect={false}
+            autoCorrect
+            spellCheck
+            autoCapitalize="words"
+            textContentType="location"
+            clearButtonMode="while-editing"
+            returnKeyType="search"
           />
           {locationData ? (
             <TouchableOpacity style={styles.searchCancel} onPress={endSearch}>
@@ -191,12 +227,20 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
             searchResults.length ? (
               <View style={styles.resultsList}>
                 {searchResults.map((result) => {
-                  const key = result.mapkit_stable_id || `${result.place_name}:${result.address}`;
+                  const key = result.completion_url || result.mapkit_stable_id || `${result.place_name}:${result.address}`;
                   return (
-                    <TouchableOpacity key={key} style={styles.resultCard} onPress={() => selectLocation(result)}>
-                      <Text style={styles.placeName}>{result.place_name}</Text>
-                      {result.address ? <Text style={styles.address}>{result.address}</Text> : null}
-                      <Text style={styles.statusText}>{result.search_strategy === 'user_history' ? 'Used by you before' : 'Place search result'}</Text>
+                    <TouchableOpacity
+                      key={key}
+                      style={styles.resultCard}
+                      onPress={() => selectLocation(result)}
+                      disabled={!!resolvingKey}
+                    >
+                      <View style={styles.resultCopy}>
+                        <Text style={styles.placeName}>{result.place_name}</Text>
+                        {result.address ? <Text style={styles.address}>{result.address}</Text> : null}
+                        <Text style={styles.statusText}>{result.search_strategy === 'user_history' ? 'Used by you before' : 'Apple Maps suggestion'}</Text>
+                      </View>
+                      {resolvingKey === key ? <ActivityIndicator size="small" color={colors.textSubtle} /> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -246,7 +290,8 @@ const styles = StyleSheet.create({
   searchInput: { backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
   searchCancel: { marginTop: 10, alignSelf: 'flex-start' },
   searchCancelText: { color: colors.textDisabled, fontSize: 12 },
-  resultCard: { marginTop: 10, backgroundColor: colors.surface, borderRadius: 8, padding: 12, borderWidth: 1, borderColor: colors.borderStrong },
+  resultCard: { marginTop: 10, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: 8, padding: 12, borderWidth: 1, borderColor: colors.borderStrong },
+  resultCopy: { flex: 1, minWidth: 0 },
   resultsList: { marginTop: 10, gap: 8 },
   emptySearch: { marginTop: 10, color: colors.textDisabled, fontSize: 12 },
   manualResult: { marginTop: 10, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.borderStrong },

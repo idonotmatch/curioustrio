@@ -1,6 +1,7 @@
 import { Platform, ScrollView, TextInput, View, Text, TouchableOpacity } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors } from '../theme/tokens';
+import { formatMoneyInput, sanitizeMoneyInput } from '../services/moneyInput';
 
 function EditableSummaryFields({
   styles,
@@ -27,7 +28,8 @@ function EditableSummaryFields({
           <TextInput
             style={styles.inlineEditAmountInput}
             value={amount}
-            onChangeText={setAmount}
+            onChangeText={(value) => setAmount(sanitizeMoneyInput(value))}
+            onBlur={() => setAmount(formatMoneyInput(amount))}
             keyboardType="decimal-pad"
             placeholder="0.00"
             placeholderTextColor={colors.textDisabled}
@@ -43,6 +45,10 @@ function EditableSummaryFields({
           onChangeText={setMerchant}
           placeholder="Merchant"
           placeholderTextColor={colors.textDisabled}
+          autoCorrect
+          spellCheck
+          autoCapitalize="words"
+          textContentType="organizationName"
         />
       </View>
 

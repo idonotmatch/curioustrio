@@ -29,7 +29,9 @@ export function NLInput({ onSubmit, loading }) {
         placeholderTextColor={colors.textDisabled}
         onSubmitEditing={handleSubmit}
         editable={!loading}
-        autoCorrect={false}
+        autoCorrect
+        spellCheck
+        autoCapitalize="sentences"
       />
       <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={loading}>
         {loading ? <ActivityIndicator color={colors.textInverse} /> : <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />}

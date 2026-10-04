@@ -8,6 +8,7 @@ import {
   normalizeExpenseItemPayload,
 } from './itemEditing';
 import { locationApiFields, normalizeLocationData } from './locationData';
+import { formatMoneyInput } from './moneyInput';
 
 export const ITEM_CACHE_FRESH_MS = 10 * 60 * 1000;
 
@@ -44,7 +45,7 @@ export function applyExpenseToState(record, setters) {
   if (!record) return;
   setters.setExpense(record);
   setters.setMerchant(record.merchant || '');
-  setters.setAmount(String(Math.abs(Number(record.amount))));
+  setters.setAmount(formatMoneyInput(record.amount));
   setters.setDate(record.date ? record.date.slice(0, 10) : '');
   setters.setNotes(record.notes || '');
   setters.setCategoryId(record.category_id || null);
@@ -84,7 +85,8 @@ export function mergeReviewMetadata(previous, next) {
 
 export async function bootstrapExpenseRecord(id, expenseParam) {
   const routeExpense = parseExpenseParam(typeof expenseParam === 'string' ? expenseParam : null);
-  const bootstrapped = routeExpense || await findExpenseSnapshotInCaches(id);
+  if (routeExpense) return routeExpense;
+  const bootstrapped = await findExpenseSnapshotInCaches(id);
   const cachedItems = await loadExpenseItemsSnapshot(id, {
     maxAgeMs: ITEM_CACHE_FRESH_MS,
     includeMeta: true,
@@ -102,6 +104,7 @@ export async function bootstrapExpenseRecord(id, expenseParam) {
 export function buildExpensePatchPayload({
   merchant,
   amount,
+  isRefund = false,
   date,
   notes,
   categoryId,
@@ -117,7 +120,7 @@ export function buildExpensePatchPayload({
   const locationFields = locationApiFields(locationData, { cleared: !locationData });
   return {
     merchant,
-    amount: parseFloat(amount),
+    amount: isRefund ? -Math.abs(parseFloat(amount)) : Math.abs(parseFloat(amount)),
     date,
     notes,
     category_id: categoryId,

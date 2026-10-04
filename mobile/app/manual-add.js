@@ -20,6 +20,7 @@ import {
   shouldSuggestLocationFromMerchant,
 } from '../services/manualAddSuggestions';
 import { colors, radius } from '../theme/tokens';
+import { sanitizeMoneyInput } from '../services/moneyInput';
 const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
 
 const TRACK_ONLY_REASONS = [
@@ -37,10 +38,6 @@ const PAYMENT_METHODS = [
   { value: 'debit', label: 'Debit' },
   { value: 'cash', label: 'Cash' },
 ];
-
-function moneyInput(value = '') {
-  return `${value || ''}`.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
-}
 
 export default function ManualAddScreen() {
   const confirmRequestKeyRef = useRef(createExpenseIdempotencyKey('manual'));
@@ -326,7 +323,7 @@ export default function ManualAddScreen() {
               <TextInput
                 style={styles.primaryInput}
                 value={amount}
-                onChangeText={(value) => setAmount(moneyInput(value))}
+                onChangeText={(value) => setAmount(sanitizeMoneyInput(value))}
                 placeholder="62.05"
                 placeholderTextColor={colors.textDisabled}
                 keyboardType="decimal-pad"
@@ -344,7 +341,10 @@ export default function ManualAddScreen() {
                 }}
                 placeholder="Amazon, lunch, hair clips..."
                 placeholderTextColor={colors.textDisabled}
-                autoCorrect={false}
+                autoCorrect
+                spellCheck
+                autoCapitalize="words"
+                textContentType="organizationName"
               />
             </View>
 

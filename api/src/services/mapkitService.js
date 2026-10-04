@@ -10,6 +10,8 @@ const { captureException } = require('./observability');
 
 const MAPKIT_TOKEN_URL = 'https://maps-api.apple.com/v1/token';
 const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
+const MAPKIT_AUTOCOMPLETE_URL = 'https://maps-api.apple.com/v1/searchAutocomplete';
+const MAPKIT_ORIGIN = 'https://maps-api.apple.com';
 
 let cachedJwt = null;
 let jwtExpiry = 0;
@@ -41,7 +43,11 @@ function getSignedJwt() {
 
   // Render env vars store the .p8 key with literal \n strings instead of
   // real newlines. jsonwebtoken requires actual newlines to parse an EC key.
-  const privateKey = APPLE_MAPS_PRIVATE_KEY.replace(/\\n/g, '\n');
+  let privateKey = `${APPLE_MAPS_PRIVATE_KEY}`.trim().replace(/\\n/g, '\n');
+  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+    const keyBody = privateKey.replace(/\s+/g, '');
+    privateKey = `-----BEGIN PRIVATE KEY-----\n${keyBody}\n-----END PRIVATE KEY-----`;
+  }
 
   const now = Math.floor(Date.now() / 1000);
   try {
@@ -72,6 +78,7 @@ async function getAccessToken() {
       onTimeout: () => controller.abort(),
     });
   } catch (error) {
+    if (error instanceof MapkitSearchUnavailableError) throw error;
     console.error('[places/search] Apple Maps token request failed', {
       error_name: error?.name || 'Error',
       is_timeout: error instanceof VendorTimeoutError,
@@ -149,6 +156,73 @@ function mapResult(top, query, { originLat = null, originLng = null, strategy = 
     distance_meters: distanceMeters(originLat, originLng, latitude, longitude),
     search_strategy: strategy,
   };
+}
+
+function mapAutocompleteResult(result, query, { originLat = null, originLng = null } = {}) {
+  const displayLines = Array.isArray(result.displayLines) ? result.displayLines : [];
+  const location = result.location || result.coordinate || {};
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+  return {
+    place_name: displayLines[0] || query,
+    address: displayLines.slice(1).join(', ') || '',
+    mapkit_stable_id: hasCoordinates ? `${latitude.toFixed(4)},${longitude.toFixed(4)}` : null,
+    provider: 'apple_maps',
+    provider_place_id: null,
+    latitude: hasCoordinates ? latitude : null,
+    longitude: hasCoordinates ? longitude : null,
+    distance_meters: hasCoordinates
+      ? distanceMeters(originLat, originLng, latitude, longitude)
+      : null,
+    search_strategy: 'autocomplete',
+    completion_url: result.completionUrl || null,
+  };
+}
+
+async function fetchMapkitJson(url, service, context = {}) {
+  const controller = new AbortController();
+  const token = await getAccessToken();
+  let response;
+  try {
+    response = await withTimeout(fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    }), {
+      service,
+      timeoutMs: mapkitTimeoutMs(),
+      onTimeout: () => controller.abort(),
+    });
+  } catch (error) {
+    console.error(`[places/${service}] Apple Maps request failed`, {
+      error_name: error?.name || 'Error',
+      is_timeout: error instanceof VendorTimeoutError,
+      ...context,
+    });
+    throw new MapkitSearchUnavailableError('Apple Maps request failed', error?.message || null);
+  }
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok || !body) {
+    console.error(`[places/${service}] Apple Maps HTTP error`, {
+      status: response.status,
+      statusText: response.statusText,
+      body_present: !!body,
+      ...context,
+    });
+    captureException(new MapkitSearchUnavailableError('Apple Maps HTTP error'), {
+      area: service,
+      status: response.status,
+      ...context,
+    });
+    throw new MapkitSearchUnavailableError('Place search unavailable', `HTTP ${response.status}`);
+  }
+  return body;
 }
 
 function cacheKey({ query, lat, lng, radiusMeters, limit }) {
@@ -322,6 +396,68 @@ async function searchPlace(query, lat = null, lng = null, radiusMeters = 500, op
   return results[0] || null;
 }
 
+async function autocompletePlaces(query, lat = null, lng = null, radiusMeters = 500, limit = 5) {
+  const normalizedQuery = `${query || ''}`.trim();
+  if (!normalizedQuery) return [];
+  const key = `autocomplete:${cacheKey({ query: normalizedQuery, lat, lng, radiusMeters, limit })}`;
+  const cached = readCachedResults(key);
+  if (cached) return cached;
+  if (inFlightSearches.has(key)) return inFlightSearches.get(key);
+
+  const pending = (async () => {
+    const url = new URL(MAPKIT_AUTOCOMPLETE_URL);
+    url.searchParams.set('q', normalizedQuery);
+    url.searchParams.set('limitToCountries', 'US');
+    url.searchParams.set('lang', 'en-US');
+    if (lat != null && lng != null) {
+      url.searchParams.set('userLocation', `${lat},${lng}`);
+      url.searchParams.set('searchLocation', `${lat},${lng}`);
+      const { latDeg, lngDeg } = metersToDegrees(radiusMeters, lat);
+      url.searchParams.set('searchRegion', `${lat + latDeg},${lng + lngDeg},${lat - latDeg},${lng - lngDeg}`);
+    }
+    const data = await fetchMapkitJson(url, 'mapkit_autocomplete', {
+      query_present: true,
+      query_length: normalizedQuery.length,
+      has_location_bias: lat != null && lng != null,
+    });
+    const results = (Array.isArray(data.results) ? data.results : [])
+      .slice(0, limit)
+      .map((result) => mapAutocompleteResult(result, normalizedQuery, {
+        originLat: lat,
+        originLng: lng,
+      }));
+    if (results.length) writeCachedResults(key, results);
+    return results;
+  })().finally(() => inFlightSearches.delete(key));
+
+  inFlightSearches.set(key, pending);
+  return pending;
+}
+
+async function completePlaceSuggestion(completionUrl, lat = null, lng = null, limit = 5) {
+  let url;
+  try {
+    url = new URL(completionUrl, MAPKIT_ORIGIN);
+  } catch {
+    throw new MapkitSearchUnavailableError('Invalid Apple Maps completion URL');
+  }
+  if (url.origin !== MAPKIT_ORIGIN || url.pathname !== '/v1/search') {
+    throw new MapkitSearchUnavailableError('Invalid Apple Maps completion URL');
+  }
+  if (!url.searchParams.get('lang')) url.searchParams.set('lang', 'en-US');
+  const data = await fetchMapkitJson(url, 'mapkit_completion', {
+    has_location_bias: lat != null && lng != null,
+  });
+  const query = url.searchParams.get('q') || '';
+  return (Array.isArray(data.results) ? data.results : [])
+    .slice(0, limit)
+    .map((result) => mapResult(result, query, {
+      originLat: lat,
+      originLng: lng,
+      strategy: 'autocomplete_completion',
+    }));
+}
+
 function resetMapkitCachesForTest() {
   cachedJwt = null;
   jwtExpiry = 0;
@@ -334,6 +470,8 @@ function resetMapkitCachesForTest() {
 module.exports = {
   searchPlace,
   searchPlaces,
+  autocompletePlaces,
+  completePlaceSuggestion,
   MapkitSearchUnavailableError,
   resetMapkitCachesForTest,
 };

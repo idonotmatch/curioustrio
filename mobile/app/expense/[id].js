@@ -1,9 +1,9 @@
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Linking, Platform
+  StyleSheet, ActivityIndicator, InteractionManager, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useCategories } from '../../hooks/useCategories';
@@ -36,6 +36,7 @@ import {
   summarizeItemSignals,
 } from '../../services/expenseDetailPresentation';
 import { fieldProvenance, sourcePresentation } from '../../services/provenancePresentation';
+import { formatMoneyInput, sanitizeMoneyInput } from '../../services/moneyInput';
 
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
@@ -120,13 +121,41 @@ export default function ExpenseDetailScreen() {
     currentUserId,
     router,
   });
+  const [editDetailsReady, setEditDetailsReady] = useState(false);
   const itemSignals = summarizeItemSignals(items);
+
+  useEffect(() => {
+    if (!editing) {
+      setEditDetailsReady(false);
+      return undefined;
+    }
+    let active = true;
+    const frame = requestAnimationFrame(() => {
+      InteractionManager.runAfterInteractions(() => {
+        if (active) setEditDetailsReady(true);
+      });
+    });
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+    };
+  }, [editing]);
 
   const reviewState = expense?.status === 'pending' && expense?.source === 'email';
   const gmailReviewHint = expense?.gmail_review_hint || null;
   const isPendingEmailReview = reviewState;
   const isItemsFirstReview = gmailReviewHint?.review_mode === 'items_first';
   const isQuickCheckReview = gmailReviewHint?.review_mode === 'quick_check';
+  const { approvePendingExpense, dismissPendingExpense } = usePendingExpenseReviewActions({
+    expenseId: id,
+    expense,
+    router,
+    setActioning,
+    setShowDismissReasonSheet,
+    persistReviewControlsIfNeeded,
+    isItemsFirstReview,
+    isQuickCheckReview,
+  });
 
   useEffect(() => {
     if (!isPendingEmailReview) return;
@@ -173,17 +202,6 @@ export default function ExpenseDetailScreen() {
   const displayIsPrivate = isPendingEmailReview ? isPrivate : (editing ? isPrivate : expense.is_private);
   const displayExcludeFromBudget = isPendingEmailReview ? excludeFromBudget : (editing ? excludeFromBudget : expense.exclude_from_budget);
   const itemReviewContext = Array.isArray(expense.item_review_context) ? expense.item_review_context : [];
-  const { approvePendingExpense, dismissPendingExpense } = usePendingExpenseReviewActions({
-    expenseId: id,
-    expense,
-    router,
-    setActioning,
-    setShowDismissReasonSheet,
-    persistReviewControlsIfNeeded,
-    isItemsFirstReview,
-    isQuickCheckReview,
-  });
-
   function activateReviewField(fieldKey) {
     setEditing(true);
     setActiveReviewField(fieldKey);
@@ -216,7 +234,13 @@ export default function ExpenseDetailScreen() {
       <Stack.Screen options={{
         title: expense.merchant,
         headerRight: editing || !canEdit ? undefined : () => (
-          <TouchableOpacity onPress={() => setEditing(true)} style={{ marginRight: 4 }}>
+          <TouchableOpacity
+            onPress={() => setEditing(true)}
+            style={styles.headerEditButton}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Edit expense"
+          >
             <Ionicons name="pencil-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         ),
@@ -226,8 +250,26 @@ export default function ExpenseDetailScreen() {
       <View style={styles.hero}>
         {editing && canEdit && !isPendingEmailReview ? (
           <View style={styles.editRow}>
-            <TextInput style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]} value={merchant} onChangeText={setMerchant} placeholderTextColor={colors.textDisabled} placeholder="Merchant" />
-            <TextInput style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textDisabled} />
+            <TextInput
+              style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]}
+              value={merchant}
+              onChangeText={setMerchant}
+              placeholderTextColor={colors.textDisabled}
+              placeholder="Merchant"
+              autoCorrect
+              spellCheck
+              autoCapitalize="words"
+              textContentType="organizationName"
+            />
+            <TextInput
+              style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]}
+              value={amount}
+              onChangeText={(value) => setAmount(sanitizeMoneyInput(value))}
+              onBlur={() => setAmount(formatMoneyInput(amount))}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={colors.textDisabled}
+            />
           </View>
         ) : (
           <>
@@ -437,7 +479,7 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {editing && canEdit && !isPendingEmailReview ? (
+      {editing && editDetailsReady && canEdit && !isPendingEmailReview ? (
         <View style={styles.editDetailsCard}>
           <Text style={styles.editDetailsTitle}>Details</Text>
           <View style={activeReviewField === 'date' ? styles.reviewFieldWrapActive : null}>
@@ -479,7 +521,7 @@ export default function ExpenseDetailScreen() {
       <View style={styles.section}>
 
         <Row label="Payment">
-          {editing ? (
+          {editing && editDetailsReady ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {['cash', 'debit', 'credit', 'unknown'].map(m => (
@@ -504,7 +546,7 @@ export default function ExpenseDetailScreen() {
           )}
         </Row>
 
-        {editing && (paymentMethod === 'debit' || paymentMethod === 'credit') && (
+        {editing && editDetailsReady && (paymentMethod === 'debit' || paymentMethod === 'credit') && (
           <Row label="Card">
             <View style={{ flexDirection: 'row', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
               <TextInput
@@ -543,9 +585,9 @@ export default function ExpenseDetailScreen() {
         ) : null}
       </View>
 
-      {showSecondaryDetails && ((editing && canEdit) || locationData || expense.place_name || expense.address) ? (
+      {showSecondaryDetails && ((editing && editDetailsReady && canEdit) || locationData || expense.place_name || expense.address) ? (
         <View style={styles.locationSection}>
-          {editing && canEdit ? (
+          {editing && editDetailsReady && canEdit ? (
             <LocationPicker
               onLocation={setLocationData}
               locationData={locationData}
@@ -577,10 +619,10 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {showSecondaryDetails && ((editing && canEdit) || expense.notes) && (
+      {showSecondaryDetails && ((editing && editDetailsReady && canEdit) || expense.notes) && (
         <View style={styles.noteCard}>
           <Text style={styles.noteCardLabel}>Notes</Text>
-          {editing && canEdit ? (
+          {editing && editDetailsReady && canEdit ? (
             <TextInput
               style={styles.noteInput}
               value={notes}
@@ -601,7 +643,7 @@ export default function ExpenseDetailScreen() {
         itemsExpanded={itemsExpanded}
         setItemsExpanded={setItemsExpanded}
         activeReviewField={activeReviewField}
-        editing={editing}
+        editing={editing && editDetailsReady}
         canEdit={canEdit}
         itemsEdits={itemsEdits}
         setItemsEdits={setItemsEdits}
@@ -668,6 +710,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   muted: { color: colors.textDisabled },
+  headerEditButton: { width: 44, height: 44, marginRight: -8, alignItems: 'center', justifyContent: 'center' },
 
   hero: { padding: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: colors.surface },
   merchant: { fontSize: 20, color: colors.text, fontWeight: '600', letterSpacing: -0.3 },

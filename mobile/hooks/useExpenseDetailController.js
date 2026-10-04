@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { api } from '../services/api';
 import { invalidateCacheByPrefix } from '../services/cache';
@@ -21,7 +21,8 @@ import {
 export function useExpenseDetailController({ id, expenseParam, currentUserId, router }) {
   const [expense, setExpense] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditingState] = useState(false);
+  const editingRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actioning, setActioning] = useState(false);
@@ -66,10 +67,19 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
     setItemsEdits,
   });
 
+  const setEditing = useCallback((value) => {
+    setEditingState((current) => {
+      const next = typeof value === 'function' ? value(current) : Boolean(value);
+      editingRef.current = next;
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     let active = true;
 
     async function load() {
+      const freshRequest = api.get(`/expenses/${id}`);
       const bootstrapped = await bootstrapExpenseRecord(id, expenseParam);
       if (active && bootstrapped) {
         applyExpenseToState(bootstrapped, setters);
@@ -77,10 +87,15 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
       }
 
       try {
-        const fresh = await api.get(`/expenses/${id}`);
+        const fresh = await freshRequest;
         if (!active) return;
         const merged = mergeReviewMetadata(bootstrapped, fresh);
-        applyExpenseToState(merged, setters);
+        if (editingRef.current) {
+          setExpense(merged);
+          setItems(Array.isArray(merged?.items) ? merged.items : []);
+        } else {
+          applyExpenseToState(merged, setters);
+        }
         setLoading(false);
         saveExpenseSnapshot(merged);
       } catch {
@@ -143,6 +158,7 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
       const updated = await api.patch(`/expenses/${id}`, buildExpensePatchPayload({
         merchant,
         amount,
+        isRefund: Number(expense?.amount) < 0,
         date,
         notes,
         categoryId,
