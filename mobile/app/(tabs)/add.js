@@ -6,6 +6,7 @@ let ImageManipulator;
 try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not available in Expo Go */ }
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
+const { receiptScanErrorPresentation } = require('../../services/receiptScanPresentation');
 import { useEffect, useRef, useState } from 'react';
 import { toLocalDateString } from '../../services/date';
 import { pushConfirmDraft } from '../../services/confirmNavigation';
@@ -99,17 +100,18 @@ export default function AddScreen() {
       pushConfirmDraft(router, { ...parsed, source: 'camera', image_uri: asset.uri });
     } catch (err) {
       const msg = err?.message || '';
-      if (msg.includes('image too large')) {
-        Alert.alert('Image too large', 'Receipt image is too large. Try a closer crop.');
-      } else if (msg.includes('Could not parse receipt')) {
+      const presentation = receiptScanErrorPresentation(err);
+      if (presentation?.canEnterManually) {
         Alert.alert(
-          'Could not read receipt',
-          "Couldn't read that receipt. Try better lighting or enter manually.",
+          presentation.title,
+          presentation.message,
           [
             { text: 'Try again', style: 'cancel' },
             { text: 'Start from scratch', onPress: startManualEntry },
           ]
         );
+      } else if (presentation) {
+        Alert.alert(presentation.title, presentation.message);
       } else if (msg.includes('Camera not available on simulator')) {
         Alert.alert('Simulator', 'Camera is not available in the simulator. Use "from camera roll" or test on a real device.');
       } else {

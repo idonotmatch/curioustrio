@@ -54,6 +54,26 @@ async function complete({ system, messages, maxTokens = 512 }) {
   return response.content?.[0]?.text?.trim() || null;
 }
 
+function isOutputSchemaValidationError(error) {
+  const message = [error?.message, error?.error?.message]
+    .filter(Boolean)
+    .join(' ');
+  const status = Number(error?.status) || (message.startsWith('400 ') ? 400 : null);
+  return status === 400
+    && /(?:output_config\.format\.schema|invalid schema)/i.test(message);
+}
+
+async function createImageCompletion(request) {
+  const controller = new AbortController();
+  return withTimeout(client.messages.create(request, {
+    signal: controller.signal,
+  }), {
+    service: 'anthropic_image',
+    timeoutMs: imageModelTimeoutMs(),
+    onTimeout: () => controller.abort(),
+  });
+}
+
 /**
  * Complete a prompt with an image attachment.
  * @param {{ system: string, imageBase64: string, mediaType?: string, text: string, maxTokens?: number }} opts
@@ -67,8 +87,7 @@ async function completeWithImageDetailed({
   maxTokens = 512,
   outputSchema = null,
 }) {
-  const controller = new AbortController();
-  const response = await withTimeout(client.messages.create({
+  const request = {
     model: DEFAULT_MODEL,
     max_tokens: maxTokens,
     system,
@@ -87,19 +106,25 @@ async function completeWithImageDetailed({
         },
       },
     } : {}),
-  }, {
-    signal: controller.signal,
-  }), {
-    service: 'anthropic_image',
-    timeoutMs: imageModelTimeoutMs(),
-    onTimeout: () => controller.abort(),
-  });
+  };
+
+  let response;
+  let schemaFallbackUsed = false;
+  try {
+    response = await createImageCompletion(request);
+  } catch (error) {
+    if (!outputSchema || !isOutputSchemaValidationError(error)) throw error;
+    const { output_config: _invalidOutputConfig, ...requestWithoutSchema } = request;
+    response = await createImageCompletion(requestWithoutSchema);
+    schemaFallbackUsed = true;
+  }
   const textBlock = response.content?.find((block) => block?.type === 'text')
     || response.content?.find((block) => typeof block?.text === 'string');
   return {
     text: textBlock?.text?.trim() || null,
     model: response.model || DEFAULT_MODEL,
     stop_reason: response.stop_reason || null,
+    schema_fallback_used: schemaFallbackUsed,
     usage: {
       input_tokens: Number(response.usage?.input_tokens) || 0,
       output_tokens: Number(response.usage?.output_tokens) || 0,
@@ -119,5 +144,6 @@ module.exports = {
   completeWithImage,
   completeWithImageDetailed,
   VendorTimeoutError,
+  isOutputSchemaValidationError,
   withTimeout,
 };

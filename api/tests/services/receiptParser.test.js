@@ -228,8 +228,57 @@ describe('parseReceipt', () => {
     expect(result.diagnostics.model_output_tokens).toBe(120);
     expect(instance.messages.create).toHaveBeenCalledTimes(1);
     expect(instance.messages.create.mock.calls[0][0]).toMatchObject({
-      output_config: { format: { type: 'json_schema' } },
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            properties: {
+              payment_method: { type: ['string', 'null'] },
+              items: {
+                items: {
+                  properties: {
+                    item_type: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
+    const schema = instance.messages.create.mock.calls[0][0].output_config.format.schema;
+    expect(schema.properties.payment_method.enum).toBeUndefined();
+    expect(schema.properties.items.items.properties.item_type.enum).toContain('');
+    expect(schema.required).toEqual(expect.arrayContaining(Object.keys(schema.properties)));
+    expect(schema.properties.items.items.required).toEqual(
+      expect.arrayContaining(Object.keys(schema.properties.items.items.properties))
+    );
+  });
+
+  it('retries without structured output when Claude rejects the schema', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockClear();
+    const schemaError = Object.assign(
+      new Error("400 output_config.format.schema: Invalid schema: Enum value 'cash' does not match declared type"),
+      { status: 400 }
+    );
+    instance.messages.create
+      .mockRejectedValueOnce(schemaError)
+      .mockResolvedValueOnce({
+        model: 'claude-haiku-4-5-20251001',
+        content: [{
+          text: '{"merchant":"Aldi","amount":18.72,"date":"2026-04-27","notes":null,"items":null}'
+        }],
+      });
+
+    const result = await parseReceiptDetailed('fakebase64data', '2026-04-27', { passMode: 'primary_only' });
+
+    expect(result.parsed.merchant).toBe('Aldi');
+    expect(result.diagnostics.structured_output_fallback_used).toBe(true);
+    expect(instance.messages.create).toHaveBeenCalledTimes(2);
+    expect(instance.messages.create.mock.calls[0][0].output_config).toBeDefined();
+    expect(instance.messages.create.mock.calls[1][0].output_config).toBeUndefined();
   });
 
   it('supports fallback-only receipt parsing as the second retry strategy', async () => {
@@ -248,6 +297,8 @@ describe('parseReceipt', () => {
     expect(result.diagnostics.pass_mode).toBe('fallback_only');
     expect(result.diagnostics.model_call_count).toBe(1);
     expect(instance.messages.create).toHaveBeenCalledTimes(1);
+    const schema = instance.messages.create.mock.calls[0][0].output_config.format.schema;
+    expect(Object.keys(schema.properties.items.items.properties)).toEqual(['description', 'amount']);
   });
 
   it('throws when imageBase64 is missing/null', async () => {

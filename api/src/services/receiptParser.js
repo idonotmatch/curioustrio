@@ -8,7 +8,7 @@ Return only the JSON object required by the response schema. Extract:
 - merchant (string)
 - amount (number): the total paid (including tax and fees)
 - date (ISO date string YYYY-MM-DD)
-- notes (string or null)
+- notes (string): use an empty string when absent
 - currency (three-letter ISO currency code or null)
 - subtotal, tax, tip, fees, discounts (number or null). Subtotal means the printed subtotal immediately before tax, tip, and fees; discounts are informational and should not be subtracted from that subtotal again.
 - transaction_id (string or null): receipt, transaction, order, or reference identifier only when clearly visible
@@ -18,10 +18,10 @@ Return only the JSON object required by the response schema. Extract:
 - card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
 - store_address (string or null): the physical store address if clearly visible on the receipt
 - store_number (string or null): the store/location number if clearly visible on the receipt
-- items (array or null): up to 30 legible rows. Include description and line-total amount. When clearly visible, also include quantity, unit_price, item_type, brand, product_size, pack_size, unit, upc, and sku. Never infer UPC or SKU. Omit subtotal and grand-total rows.
+- items (array): up to 30 legible rows, or an empty array when no rows are legible. Include description and line-total amount. For unknown numeric item fields use 0; for unknown text item fields use an empty string. When clearly visible, also include quantity, unit_price, item_type, brand, product_size, pack_size, unit, upc, and sku. Never infer UPC or SKU. Omit subtotal and grand-total rows.
 - uncertain_fields (array): any of merchant, amount, date, items, payment_method whose values are ambiguous in the image
 
-If you cannot extract a field, return null for that field. Never invent a value.
+If you cannot extract a nullable field, return null. Use the empty values described above for required non-null fields. Never invent a value.
 Do not include any text outside the JSON object.`;
 
 const FALLBACK_SYSTEM_PROMPT = `You are a receipt parser. Extract only the core purchase details from a receipt image.
@@ -29,17 +29,17 @@ Return ONLY a JSON object with these fields:
 - merchant (string or null)
 - amount (number or null): the final total paid
 - date (ISO date string YYYY-MM-DD or null)
-- notes (string or null)
+- notes (string): use an empty string when absent
 - payment_method (string or null): one of "cash", "credit", "debit", or null if not visible
 - card_label (string or null): card brand or nickname shown on the receipt when visible
 - card_last4 (string or null): the final 4 digits of the card if visible
 - store_address (string or null)
 - store_number (string or null)
-- items (array or null): simple visible line items as { "description": string, "amount": number or null }. Do not include product metadata. If items are unclear, return null.
+- items (array): simple visible line items as { "description": string, "amount": number }. Do not include product metadata. If items are unclear, return an empty array.
 - uncertain_fields (array): any of merchant, amount, date, items, payment_method whose values are ambiguous
 
 Prioritize finding the final total and merchant correctly even if items are incomplete.
-If you cannot extract a field, return null for that field. Never invent a value.
+If you cannot extract a nullable field, return null. Never invent a value.
 Do not include any text outside the JSON object.`;
 
 const NULLABLE_STRING = { type: ['string', 'null'] };
@@ -51,7 +51,7 @@ const RECEIPT_OUTPUT_SCHEMA = {
     merchant: NULLABLE_STRING,
     amount: NULLABLE_NUMBER,
     date: NULLABLE_STRING,
-    notes: NULLABLE_STRING,
+    notes: { type: 'string' },
     currency: NULLABLE_STRING,
     subtotal: NULLABLE_NUMBER,
     tax: NULLABLE_NUMBER,
@@ -60,40 +60,82 @@ const RECEIPT_OUTPUT_SCHEMA = {
     discounts: NULLABLE_NUMBER,
     transaction_id: NULLABLE_STRING,
     purchase_time: NULLABLE_STRING,
-    payment_method: { type: ['string', 'null'], enum: ['cash', 'credit', 'debit', null] },
+    payment_method: NULLABLE_STRING,
     card_label: NULLABLE_STRING,
     card_last4: NULLABLE_STRING,
     store_address: NULLABLE_STRING,
     store_number: NULLABLE_STRING,
     uncertain_fields: {
       type: 'array',
-      items: { enum: ['merchant', 'amount', 'date', 'items', 'payment_method'] },
-      maxItems: 5,
+      items: { type: 'string', enum: ['merchant', 'amount', 'date', 'items', 'payment_method'] },
     },
     items: {
-      type: ['array', 'null'],
-      maxItems: 30,
+      type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
         properties: {
           description: { type: 'string' },
-          amount: NULLABLE_NUMBER,
-          quantity: NULLABLE_NUMBER,
-          unit_price: NULLABLE_NUMBER,
-          item_type: { type: ['string', 'null'], enum: ['product', 'fee', 'tax', 'discount', 'summary', null] },
-          brand: NULLABLE_STRING,
-          product_size: NULLABLE_STRING,
-          pack_size: NULLABLE_STRING,
-          unit: NULLABLE_STRING,
-          upc: NULLABLE_STRING,
-          sku: NULLABLE_STRING,
+          amount: { type: 'number' },
+          quantity: { type: 'number' },
+          unit_price: { type: 'number' },
+          item_type: { type: 'string', enum: ['product', 'fee', 'tax', 'discount', 'summary', ''] },
+          brand: { type: 'string' },
+          product_size: { type: 'string' },
+          pack_size: { type: 'string' },
+          unit: { type: 'string' },
+          upc: { type: 'string' },
+          sku: { type: 'string' },
+        },
+        required: [
+          'description', 'amount', 'quantity', 'unit_price', 'item_type', 'brand',
+          'product_size', 'pack_size', 'unit', 'upc', 'sku',
+        ],
+      },
+    },
+  },
+  required: [
+    'merchant', 'amount', 'date', 'notes', 'currency', 'subtotal', 'tax', 'tip',
+    'fees', 'discounts', 'transaction_id', 'purchase_time', 'payment_method',
+    'card_label', 'card_last4', 'store_address', 'store_number', 'uncertain_fields',
+    'items',
+  ],
+};
+
+const FALLBACK_RECEIPT_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    merchant: NULLABLE_STRING,
+    amount: NULLABLE_NUMBER,
+    date: NULLABLE_STRING,
+    notes: { type: 'string' },
+    payment_method: NULLABLE_STRING,
+    card_label: NULLABLE_STRING,
+    card_last4: NULLABLE_STRING,
+    store_address: NULLABLE_STRING,
+    store_number: NULLABLE_STRING,
+    uncertain_fields: {
+      type: 'array',
+      items: { type: 'string', enum: ['merchant', 'amount', 'date', 'items', 'payment_method'] },
+    },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          description: { type: 'string' },
+          amount: { type: 'number' },
         },
         required: ['description', 'amount'],
       },
     },
   },
-  required: ['merchant', 'amount', 'date', 'items'],
+  required: [
+    'merchant', 'amount', 'date', 'notes', 'payment_method', 'card_label',
+    'card_last4', 'store_address', 'store_number', 'uncertain_fields', 'items',
+  ],
 };
 
 function clipTextPreview(text, max = 600) {
@@ -271,6 +313,7 @@ function modelDiagnostics(result = {}) {
   return {
     model_name: response.model || null,
     model_stop_reason: response.stop_reason || null,
+    structured_output_fallback_used: Boolean(response.schema_fallback_used),
     model_input_tokens: Number(response.usage?.input_tokens) || 0,
     model_output_tokens: Number(response.usage?.output_tokens) || 0,
     model_cache_creation_input_tokens: Number(response.usage?.cache_creation_input_tokens) || 0,
@@ -518,7 +561,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     imageBase64,
     text: buildFallbackPrompt(todayDate, priors, familyHint || familyClassification),
     maxTokens: 1200,
-    outputSchema: RECEIPT_OUTPUT_SCHEMA,
+    outputSchema: FALLBACK_RECEIPT_OUTPUT_SCHEMA,
   });
   const fallbackText = fallbackModelResult.text;
   const fallbackDurationMs = Date.now() - fallbackStartedAt;
@@ -532,6 +575,10 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
       (diagnostics.model_cache_creation_input_tokens || 0) + fallbackModelDiagnostics.model_cache_creation_input_tokens,
     model_cache_read_input_tokens:
       (diagnostics.model_cache_read_input_tokens || 0) + fallbackModelDiagnostics.model_cache_read_input_tokens,
+    structured_output_fallback_used: Boolean(
+      diagnostics.structured_output_fallback_used
+      || fallbackModelDiagnostics.structured_output_fallback_used
+    ),
   };
 
   if (!fallbackText) {
@@ -628,4 +675,6 @@ module.exports = {
   parseReceiptDetailed,
   cleanParsedReceipt,
   parseJsonWithRecovery,
+  RECEIPT_OUTPUT_SCHEMA,
+  FALLBACK_RECEIPT_OUTPUT_SCHEMA,
 };
