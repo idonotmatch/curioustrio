@@ -14,5 +14,9 @@ assert.strictEqual(
 );
 assert.deepStrictEqual(fieldProvenance({ category_source: 'manual_edit' }), [{ label: 'Category', value: 'user edit' }]);
 assert.strictEqual(locationStatusPresentation({ status: 'permission_denied' }).label, 'Location unavailable');
+assert.deepStrictEqual(
+  locationStatusPresentation({ source: 'manual_text', status: 'user_entered' }),
+  { label: 'Added by you', detail: 'Saved using the place name you entered.' }
+);
 
 process.stdout.write('[mobile-logic] provenance presentation checks passed\n');

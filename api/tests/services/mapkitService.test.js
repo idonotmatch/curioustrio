@@ -3,19 +3,34 @@ jest.mock('jsonwebtoken', () => ({
 }));
 jest.mock('node-fetch');
 
-const { searchPlace, searchPlaces, MapkitSearchUnavailableError } = require('../../src/services/mapkitService');
+const {
+  searchPlace,
+  searchPlaces,
+  MapkitSearchUnavailableError,
+  resetMapkitCachesForTest,
+} = require('../../src/services/mapkitService');
 const fetch = require('node-fetch');
+const jwt = require('jsonwebtoken');
+
+function mockAccessToken() {
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ accessToken: 'mock-access-token', expiresInSeconds: 1800 }),
+  });
+}
 
 beforeEach(() => {
   process.env.APPLE_MAPS_KEY_ID = 'test-key-id';
   process.env.APPLE_MAPS_TEAM_ID = 'test-team-id';
   process.env.APPLE_MAPS_PRIVATE_KEY = 'fake-key';
   fetch.mockReset();
-  // Reset cached JWT so getSignedJwt re-signs on each test
-  jest.resetModules();
+  jwt.sign.mockClear();
+  resetMapkitCachesForTest();
 });
 
 it('returns top place result from MapKit search', async () => {
+  mockAccessToken();
   fetch.mockResolvedValueOnce({
     ok: true,
     json: async () => ({
@@ -31,9 +46,15 @@ it('returns top place result from MapKit search', async () => {
   expect(result.place_name).toBe("Trader Joe's");
   expect(result.address).toContain('123 Main St');
   expect(result.mapkit_stable_id).toContain('37.');
+  expect(jwt.sign).toHaveBeenCalledWith(
+    expect.objectContaining({ scope: 'server_api' }),
+    'fake-key',
+    expect.objectContaining({ algorithm: 'ES256', keyid: 'test-key-id', header: { typ: 'JWT' } })
+  );
 });
 
 it('returns multiple place results from MapKit search', async () => {
+  mockAccessToken();
   fetch.mockResolvedValueOnce({
     ok: true,
     json: async () => ({
@@ -57,6 +78,7 @@ it('returns multiple place results from MapKit search', async () => {
 });
 
 it('returns null when no results found', async () => {
+  mockAccessToken();
   fetch
     .mockResolvedValueOnce({
       ok: true,
@@ -72,6 +94,7 @@ it('returns null when no results found', async () => {
 });
 
 it('returns null when fetch fails', async () => {
+  mockAccessToken();
   fetch
     .mockResolvedValueOnce({ ok: false })
     .mockResolvedValueOnce({ ok: false });
@@ -79,6 +102,7 @@ it('returns null when fetch fails', async () => {
 });
 
 it('falls back to broader search when local POI search misses', async () => {
+  mockAccessToken();
   fetch
     .mockResolvedValueOnce({
       ok: true,
@@ -97,7 +121,7 @@ it('falls back to broader search when local POI search misses', async () => {
   const result = await searchPlace('Target', 37.775, -122.419);
   expect(result).not.toBeNull();
   expect(result.place_name).toBe('Target');
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledTimes(3);
 });
 
 it('throws an unavailable error when Apple Maps credentials are missing', async () => {
@@ -106,4 +130,20 @@ it('throws an unavailable error when Apple Maps credentials are missing', async 
   delete process.env.APPLE_MAPS_PRIVATE_KEY;
 
   await expect(searchPlace('Credentials Missing Place', 37.775, -122.419)).rejects.toBeInstanceOf(MapkitSearchUnavailableError);
+});
+
+it('throws an unavailable error when Apple Maps rejects authorization', async () => {
+  fetch.mockResolvedValueOnce({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+    json: async () => ({ error: { message: 'Not Authorized' } }),
+  });
+
+  await expect(searchPlace('Authorization Failure Place', 37.775, -122.419))
+    .rejects.toMatchObject({
+      name: 'MapkitSearchUnavailableError',
+      message: 'Apple Maps authorization rejected',
+      details: 'HTTP 401',
+    });
 });

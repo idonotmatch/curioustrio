@@ -92,6 +92,23 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     endSearch();
   }
 
+  function useEnteredLocation() {
+    const placeName = query.trim();
+    if (!placeName) return;
+    const result = normalizeLocationData({
+      place_name: placeName,
+      provider: 'manual',
+      source: 'manual_text',
+      status: 'user_entered',
+      confidence: 1,
+      location_user_owned: true,
+      search_strategy: 'manual_text',
+    });
+    onLocation(result);
+    setStatus(locationStatusPresentation(result));
+    endSearch();
+  }
+
   async function handlePress() {
     setLoading(true);
     setStatus(locationStatusPresentation({ status: 'deferred' }));
@@ -185,9 +202,22 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
                 })}
               </View>
             ) : (
-              <Text style={styles.emptySearch}>
-                {searchError || 'No place match found yet.'}
-              </Text>
+              <View>
+                <Text style={styles.emptySearch}>
+                  {searchError || 'No place match found yet.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.manualResult}
+                  onPress={useEnteredLocation}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use ${query.trim()} as entered`}
+                >
+                  <Ionicons name="create-outline" size={16} color={colors.textSubtle} />
+                  <Text style={styles.manualResultText} numberOfLines={1}>
+                    Use "{query.trim()}" as entered
+                  </Text>
+                </TouchableOpacity>
+              </View>
             )
           ) : (
             <Text style={styles.emptySearch}>Start typing to search for a place.</Text>
@@ -219,6 +249,8 @@ const styles = StyleSheet.create({
   resultCard: { marginTop: 10, backgroundColor: colors.surface, borderRadius: 8, padding: 12, borderWidth: 1, borderColor: colors.borderStrong },
   resultsList: { marginTop: 10, gap: 8 },
   emptySearch: { marginTop: 10, color: colors.textDisabled, fontSize: 12 },
+  manualResult: { marginTop: 10, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.borderStrong },
+  manualResultText: { flex: 1, color: colors.textSubtle, fontSize: 13, fontWeight: '500' },
   secondaryAction: { marginTop: 10 },
   secondaryActionText: { color: colors.textDisabled, fontSize: 12 },
 });

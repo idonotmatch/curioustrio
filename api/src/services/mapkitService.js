@@ -8,10 +8,13 @@ const {
 } = require('./parsingOptimizationConfig');
 const { captureException } = require('./observability');
 
+const MAPKIT_TOKEN_URL = 'https://maps-api.apple.com/v1/token';
 const MAPKIT_SEARCH_URL = 'https://maps-api.apple.com/v1/search';
 
 let cachedJwt = null;
 let jwtExpiry = 0;
+let cachedAccessToken = null;
+let accessTokenExpiry = 0;
 const searchCache = new Map();
 const inFlightSearches = new Map();
 const MAX_CACHE_ENTRIES = 500;
@@ -43,15 +46,69 @@ function getSignedJwt() {
   const now = Math.floor(Date.now() / 1000);
   try {
     cachedJwt = jwt.sign(
-      { iss: APPLE_MAPS_TEAM_ID, iat: now, exp: now + 1800 },
+      { iss: APPLE_MAPS_TEAM_ID, iat: now, exp: now + 1800, scope: 'server_api' },
       privateKey,
-      { algorithm: 'ES256', keyid: APPLE_MAPS_KEY_ID }
+      { algorithm: 'ES256', keyid: APPLE_MAPS_KEY_ID, header: { typ: 'JWT' } }
     );
   } catch (error) {
     throw new MapkitSearchUnavailableError('Apple Maps token signing failed', error?.message || null);
   }
   jwtExpiry = Date.now() + 1800 * 1000;
   return cachedJwt;
+}
+
+async function getAccessToken() {
+  if (cachedAccessToken && Date.now() < accessTokenExpiry - 60_000) return cachedAccessToken;
+
+  const controller = new AbortController();
+  let response;
+  try {
+    response = await withTimeout(fetch(MAPKIT_TOKEN_URL, {
+      headers: { Authorization: `Bearer ${getSignedJwt()}` },
+      signal: controller.signal,
+    }), {
+      service: 'mapkit_token',
+      timeoutMs: mapkitTimeoutMs(),
+      onTimeout: () => controller.abort(),
+    });
+  } catch (error) {
+    console.error('[places/search] Apple Maps token request failed', {
+      error_name: error?.name || 'Error',
+      is_timeout: error instanceof VendorTimeoutError,
+    });
+    throw new MapkitSearchUnavailableError(
+      'Apple Maps authorization request failed',
+      error?.message || null
+    );
+  }
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+
+  if (!response.ok || !body?.accessToken) {
+    console.error('[places/search] Apple Maps authorization rejected', {
+      status: response.status,
+      statusText: response.statusText,
+      body_present: !!body,
+    });
+    captureException(new MapkitSearchUnavailableError('Apple Maps authorization rejected'), {
+      area: 'mapkit_token',
+      status: response.status,
+    });
+    throw new MapkitSearchUnavailableError(
+      'Apple Maps authorization rejected',
+      `HTTP ${response.status}`
+    );
+  }
+
+  const expiresInSeconds = Number(body.expiresInSeconds) || 1800;
+  cachedAccessToken = body.accessToken;
+  accessTokenExpiry = Date.now() + expiresInSeconds * 1000;
+  return cachedAccessToken;
 }
 
 function metersToDegrees(meters, lat) {
@@ -129,7 +186,7 @@ function writeCachedResults(key, value) {
 
 async function runPlaceSearch(query, lat = null, lng = null, radiusMeters = 500, limit = 5, options = {}) {
   const normalizedQuery = `${query || ''}`.trim();
-  const token = getSignedJwt();
+  const token = await getAccessToken();
   let hadOperationalFailure = false;
   async function searchOnce({ useLocationBias = false, includePoiFilter = false, strategy = 'unknown' }) {
     const url = new URL(MAPKIT_SEARCH_URL);
@@ -265,4 +322,18 @@ async function searchPlace(query, lat = null, lng = null, radiusMeters = 500, op
   return results[0] || null;
 }
 
-module.exports = { searchPlace, searchPlaces, MapkitSearchUnavailableError };
+function resetMapkitCachesForTest() {
+  cachedJwt = null;
+  jwtExpiry = 0;
+  cachedAccessToken = null;
+  accessTokenExpiry = 0;
+  searchCache.clear();
+  inFlightSearches.clear();
+}
+
+module.exports = {
+  searchPlace,
+  searchPlaces,
+  MapkitSearchUnavailableError,
+  resetMapkitCachesForTest,
+};
