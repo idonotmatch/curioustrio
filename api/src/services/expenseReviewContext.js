@@ -124,11 +124,14 @@ async function fetchPendingExpensesBase(userId, { limit = null, cursor = null } 
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      LEFT JOIN LATERAL (
-       SELECT message_id, imported_at, review_action, review_edit_count,
-              sender_domain, subject_pattern, subject, from_address, snippet
-       FROM email_import_log
-       WHERE expense_id = e.id
-       ORDER BY imported_at DESC
+       SELECT log.message_id, log.imported_at,
+              feedback.review_action, feedback.review_edit_count,
+              log.sender_domain, log.subject_pattern, log.subject,
+              log.from_address, log.snippet
+       FROM email_import_log log
+       LEFT JOIN email_import_feedback feedback ON feedback.expense_id = log.expense_id
+       WHERE log.expense_id = e.id
+       ORDER BY log.imported_at DESC
        LIMIT 1
      ) l ON TRUE
      WHERE e.user_id = $1 AND e.status = 'pending'

@@ -1,4 +1,6 @@
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput } from 'react-native';
+import {
+  View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, Linking, Platform,
+} from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { getCoords, getLocation } from '../services/locationService';
@@ -6,6 +8,7 @@ import { api } from '../services/api';
 import { colors } from '../theme/tokens';
 import { locationStatusPresentation } from '../services/provenancePresentation';
 import { normalizeLocationData } from '../services/locationData';
+const { buildMapsUrl, formatPlaceDistance } = require('../services/locationPresentation');
 
 export function LocationPicker({ onLocation, locationData, merchant }) {
   const [loading, setLoading] = useState(false);
@@ -158,43 +161,95 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     }
   }
 
+  async function openInMaps(location = locationData) {
+    const url = buildMapsUrl(location, Platform.OS);
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setStatus({ label: 'Map unavailable', detail: 'Could not open this location in Maps.' });
+    }
+  }
+
   return (
     <View style={styles.container}>
       {locationData ? (
-        <>
-          <View style={styles.row}>
-            <Text style={styles.label}>LOCATION</Text>
-            <TouchableOpacity onPress={() => onLocation(null)} accessibilityRole="button" accessibilityLabel="Clear location">
-              <Ionicons name="close" size={16} color={colors.textDisabled} />
+        <View style={styles.selectedPlace}>
+          <View style={styles.selectedHeader}>
+            <View style={styles.pinBadge}>
+              <Ionicons name="location" size={17} color={colors.text} />
+            </View>
+            <View style={styles.selectedCopy}>
+              <Text style={styles.label}>LOCATION</Text>
+              <Text style={styles.selectedName} numberOfLines={1}>{locationData.place_name || 'Selected place'}</Text>
+              {locationData.address ? <Text style={styles.address} numberOfLines={2}>{locationData.address}</Text> : null}
+            </View>
+            <TouchableOpacity
+              onPress={() => onLocation(null)}
+              style={styles.iconButton}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Clear location"
+            >
+              <Ionicons name="close" size={18} color={colors.textSubtle} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.placeName}>{locationData.place_name}</Text>
-          {locationData.address ? <Text style={styles.address}>{locationData.address}</Text> : null}
-          <Text style={styles.statusText}>{locationStatusPresentation(locationData).label}</Text>
-          <TouchableOpacity onPress={() => beginSearch(locationData.place_name || merchant || '')} style={styles.secondaryAction}>
-            <Text style={styles.secondaryActionText}>Search for a different place</Text>
-          </TouchableOpacity>
-        </>
+          <View style={styles.selectedMetaRow}>
+            <View style={styles.statusBadge}>
+              <Ionicons name="checkmark-circle" size={13} color={colors.success} />
+              <Text style={styles.statusBadgeText}>{locationStatusPresentation(locationData).label}</Text>
+            </View>
+            {formatPlaceDistance(locationData.distance_meters) ? (
+              <Text style={styles.distanceText}>{formatPlaceDistance(locationData.distance_meters)}</Text>
+            ) : null}
+          </View>
+          <View style={styles.selectedActions}>
+            <TouchableOpacity
+              onPress={() => beginSearch(locationData.place_name || merchant || '')}
+              style={styles.secondaryAction}
+              accessibilityRole="button"
+            >
+              <Ionicons name="search" size={15} color={colors.textMuted} />
+              <Text style={styles.secondaryActionText} numberOfLines={1}>Change</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => openInMaps()}
+              style={styles.secondaryAction}
+              accessibilityRole="link"
+              accessibilityLabel="View selected location in Maps"
+            >
+              <Ionicons name="map-outline" size={15} color={colors.textMuted} />
+              <Text style={styles.secondaryActionText} numberOfLines={1}>View in Maps</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : (
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.button} onPress={handlePress} disabled={loading}>
-            {loading
-              ? <ActivityIndicator color={colors.textSubtle} size="small" />
-              : <Text style={styles.buttonText}>Use current location</Text>
-            }
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.searchToggle, searchMode && styles.searchToggleActive]}
-            onPress={() => {
-              if (searchMode) {
-                endSearch();
-              } else {
-                beginSearch(merchant || '');
+        <View>
+          <View style={styles.locationHeading}>
+            <Ionicons name="location-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.label}>LOCATION</Text>
+          </View>
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.button} onPress={handlePress} disabled={loading}>
+              {loading
+                ? <ActivityIndicator color={colors.textSubtle} size="small" />
+                : <Ionicons name="navigate" size={17} color={colors.textMuted} />
               }
-            }}
-          >
-            <Text style={[styles.searchToggleText, searchMode && styles.searchToggleTextActive]}>Search place</Text>
-          </TouchableOpacity>
+              <Text style={styles.buttonText} numberOfLines={1}>{loading ? 'Locating…' : 'Current location'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, searchMode && styles.buttonActive]}
+              onPress={() => {
+                if (searchMode) endSearch();
+                else beginSearch(merchant || '');
+              }}
+            >
+              <Ionicons name={searchMode ? 'close' : 'search'} size={17} color={searchMode ? colors.text : colors.textMuted} />
+              <Text style={[styles.buttonText, searchMode && styles.buttonTextActive]} numberOfLines={1}>
+                {searchMode ? 'Close search' : 'Search places'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
       {!locationData ? (
@@ -203,19 +258,23 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
 
       {searchMode ? (
         <View style={styles.searchPanel}>
-          <TextInput
-            style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search for a place"
-            placeholderTextColor={colors.textDisabled}
-            autoCorrect
-            spellCheck
-            autoCapitalize="words"
-            textContentType="location"
-            clearButtonMode="while-editing"
-            returnKeyType="search"
-          />
+          <View style={styles.searchInputWrap}>
+            <Ionicons name="search" size={17} color={colors.textSubtle} />
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Merchant, place, or address"
+              placeholderTextColor={colors.textDisabled}
+              autoCorrect
+              spellCheck
+              autoCapitalize="words"
+              textContentType="location"
+              clearButtonMode="while-editing"
+              returnKeyType="search"
+              autoFocus={!query}
+            />
+          </View>
           {locationData ? (
             <TouchableOpacity style={styles.searchCancel} onPress={endSearch}>
               <Text style={styles.searchCancelText}>Cancel search</Text>
@@ -235,12 +294,27 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
                       onPress={() => selectLocation(result)}
                       disabled={!!resolvingKey}
                     >
-                      <View style={styles.resultCopy}>
-                        <Text style={styles.placeName}>{result.place_name}</Text>
-                        {result.address ? <Text style={styles.address}>{result.address}</Text> : null}
-                        <Text style={styles.statusText}>{result.search_strategy === 'user_history' ? 'Used by you before' : 'Apple Maps suggestion'}</Text>
+                      <View style={styles.resultIcon}>
+                        <Ionicons
+                          name={result.search_strategy === 'user_history' ? 'time-outline' : 'location-outline'}
+                          size={18}
+                          color={colors.textMuted}
+                        />
                       </View>
-                      {resolvingKey === key ? <ActivityIndicator size="small" color={colors.textSubtle} /> : null}
+                      <View style={styles.resultCopy}>
+                        <Text style={styles.placeName} numberOfLines={1}>{result.place_name}</Text>
+                        {result.address ? <Text style={styles.address} numberOfLines={2}>{result.address}</Text> : null}
+                        <Text style={styles.resultMeta}>
+                          {[
+                            result.search_strategy === 'user_history' ? 'Used before' : 'Apple Maps',
+                            formatPlaceDistance(result.distance_meters),
+                          ].filter(Boolean).join(' · ')}
+                        </Text>
+                      </View>
+                      {resolvingKey === key
+                        ? <ActivityIndicator size="small" color={colors.textSubtle} />
+                        : <Ionicons name="chevron-forward" size={17} color={colors.textDisabled} />
+                      }
                     </TouchableOpacity>
                   );
                 })}
@@ -273,29 +347,109 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  container: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  locationHeading: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   actionRow: { flexDirection: 'row', gap: 8 },
-  label: { fontSize: 10, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1 },
-  placeName: { color: colors.text, fontSize: 14 },
-  address: { color: colors.textDisabled, fontSize: 12, marginTop: 2 },
+  label: { fontSize: 10, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 0 },
+  selectedPlace: { gap: 10 },
+  selectedHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  pinBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.infoMuted,
+    borderWidth: 1,
+    borderColor: colors.infoBorder,
+  },
+  selectedCopy: { flex: 1, minWidth: 0 },
+  selectedName: { color: colors.text, fontSize: 15, fontWeight: '600', marginTop: 3 },
+  iconButton: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  placeName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  address: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
   statusText: { color: colors.textSubtle, fontSize: 11, marginTop: 6, lineHeight: 15 },
-  button: { flex: 1, backgroundColor: colors.surface, borderRadius: 8, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.borderStrong },
-  buttonText: { color: colors.textSubtle, fontSize: 13 },
-  searchToggle: { paddingHorizontal: 12, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surface },
-  searchToggleActive: { backgroundColor: colors.text, borderColor: colors.text },
-  searchToggleText: { color: colors.textSubtle, fontSize: 13, fontWeight: '500' },
-  searchToggleTextActive: { color: colors.textInverse },
-  searchPanel: { marginTop: 10 },
-  searchInput: { backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
+  selectedMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    minHeight: 24,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: colors.successMuted,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+  },
+  statusBadgeText: { flexShrink: 1, color: colors.success, fontSize: 11, fontWeight: '600' },
+  distanceText: { color: colors.textSubtle, fontSize: 11 },
+  button: {
+    flex: 1,
+    minHeight: 46,
+    flexDirection: 'row',
+    gap: 7,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  buttonActive: { backgroundColor: colors.surfacePressed, borderColor: colors.infoBorder },
+  buttonText: { flexShrink: 1, color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  buttonTextActive: { color: colors.text },
+  searchPanel: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+  searchInputWrap: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  searchInput: { flex: 1, color: colors.text, fontSize: 14, paddingVertical: 10 },
   searchCancel: { marginTop: 10, alignSelf: 'flex-start' },
   searchCancelText: { color: colors.textDisabled, fontSize: 12 },
-  resultCard: { marginTop: 10, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: 8, padding: 12, borderWidth: 1, borderColor: colors.borderStrong },
+  resultCard: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: colors.borderStrong },
+  resultIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutralWash },
   resultCopy: { flex: 1, minWidth: 0 },
   resultsList: { marginTop: 10, gap: 8 },
+  resultMeta: { color: colors.textSubtle, fontSize: 11, marginTop: 4 },
   emptySearch: { marginTop: 10, color: colors.textDisabled, fontSize: 12 },
   manualResult: { marginTop: 10, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.borderStrong },
   manualResultText: { flex: 1, color: colors.textSubtle, fontSize: 13, fontWeight: '500' },
-  secondaryAction: { marginTop: 10 },
-  secondaryActionText: { color: colors.textDisabled, fontSize: 12 },
+  selectedActions: { flexDirection: 'row', gap: 8 },
+  secondaryAction: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+  },
+  secondaryActionText: { flexShrink: 1, color: colors.textMuted, fontSize: 12, fontWeight: '600' },
 });

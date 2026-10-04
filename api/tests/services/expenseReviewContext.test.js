@@ -70,6 +70,10 @@ describe('expenseReviewContext', () => {
       expect.stringContaining('WHERE e.user_id = $1 AND e.status = \'pending\''),
       ['user-1']
     );
+    expect(db.query.mock.calls[0][0]).toContain(
+      'LEFT JOIN email_import_feedback feedback ON feedback.expense_id = log.expense_id'
+    );
+    expect(db.query.mock.calls[0][0]).toContain('feedback.review_action');
   });
 
   it('uses keyset pagination for pending review rows', async () => {

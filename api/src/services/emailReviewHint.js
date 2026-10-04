@@ -1,5 +1,12 @@
 const { recommendReviewMode } = require('./gmailImportQualityService');
 
+function dateOnly(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value.slice(0, 10);
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
 function deriveEmailFieldEvidence(expense, log) {
   if (!expense || !log?.message_id) return {};
 
@@ -35,9 +42,10 @@ function deriveEmailFieldEvidence(expense, log) {
   }
 
   let dateEvidence = null;
-  if (expense.date && importedDate && expense.date.slice(0, 10) === importedDate) {
+  const expenseDate = dateOnly(expense.date);
+  if (expenseDate && importedDate && expenseDate === importedDate) {
     dateEvidence = 'Date is based on when the email was received.';
-  } else if (expense.date) {
+  } else if (expenseDate) {
     dateEvidence = 'Date was extracted from the email timing details.';
   }
 
@@ -185,4 +193,5 @@ function buildEmailReviewHint(expense, log, senderQuality) {
 
 module.exports = {
   buildEmailReviewHint,
+  dateOnly,
 };
