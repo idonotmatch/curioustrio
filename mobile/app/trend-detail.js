@@ -29,6 +29,16 @@ function formatPercent(value) {
   return `${sign}${Number(value).toFixed(1)}%`;
 }
 
+function formatDriverDelta(driver = {}) {
+  const delta = Number(driver.delta_amount || 0);
+  const baseline = Math.abs(Number(driver.historical_spend_to_date_avg || 0));
+  const percent = Number(driver.delta_percent);
+  const direction = delta >= 0 ? 'above usual' : 'below usual';
+  const absoluteLabel = `${formatCurrency(Math.abs(delta))} ${direction}`;
+  const percentIsUseful = Number.isFinite(percent) && baseline >= 50 && Math.abs(percent) <= 300;
+  return percentIsUseful ? `${absoluteLabel} · ${formatPercent(percent)}` : absoluteLabel;
+}
+
 function formatShortDate(value) {
   if (!value) return '—';
   const date = new Date(value);
@@ -63,11 +73,21 @@ function titleForInsightType(type, fallbackTitle) {
   }
 }
 
-function subjectLabel(scope) {
+function hasCombinedScope(metadata = {}) {
+  const scopes = Array.isArray(metadata.consolidated_scopes) ? metadata.consolidated_scopes : [];
+  return metadata.scope_relationship === 'personal_household_overlap'
+    || (scopes.includes('personal') && scopes.includes('household'));
+}
+
+function subjectLabel(scope, metadata = {}) {
+  if (hasCombinedScope(metadata)) return 'You + household';
   return `${scope}` === 'household' ? 'Your household' : 'You';
 }
 
-function sharedContextCopy(scope) {
+function sharedContextCopy(scope, metadata = {}) {
+  if (hasCombinedScope(metadata)) {
+    return 'The calculation uses your personal budget and spending; the same pattern is also visible in the household view.';
+  }
   return `${scope}` === 'household'
     ? 'This view is using shared household spending, budget room, and recurring pressure across everyone in the household.'
     : 'This view is using only your personal spending and budget context.';
@@ -912,7 +932,7 @@ export default function TrendDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen options={{ title: titleForInsightType(`${insightType}`, title), headerBackTitle: 'Summary' }} />
+      <Stack.Screen options={{ title: 'Insight details', headerBackTitle: 'Summary' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
           <View style={styles.center}>
@@ -925,27 +945,11 @@ export default function TrendDetailScreen() {
         ) : trend ? (
           <>
             <View style={styles.hero}>
-              <Text style={styles.scopeChip}>{`${scope}` === 'household' ? 'Household' : 'You'}</Text>
+              <Text style={styles.scopeChip}>{subjectLabel(scope, insightMetadata)}</Text>
               <Text style={styles.heroTitle}>{titleForInsightType(`${insightType}`, title)}</Text>
               <Text style={styles.heroCopy}>{summaryCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
-              <Text style={styles.heroContext}>{sharedContextCopy(scope)}</Text>
+              <Text style={styles.heroContext}>{sharedContextCopy(scope, insightMetadata)}</Text>
             </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>Why it matters</Text>
-              <Text style={styles.detailCardTitle}>What deserves attention</Text>
-              <Text style={styles.metricRow}>{whyItMattersCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
-            </View>
-
-            {`${scope}` === 'household' ? (
-              <View style={styles.sharedContextCard}>
-                <Text style={styles.cardEyebrow}>Shared context</Text>
-                <Text style={styles.detailCardTitle}>How this rolls up</Text>
-                <Text style={styles.metricRow}>
-                  This insight is about the household&apos;s combined spending pattern, not just one person&apos;s activity.
-                </Text>
-              </View>
-            ) : null}
 
             {primaryAction ? (
               <View style={styles.card}>
@@ -960,6 +964,24 @@ export default function TrendDetailScreen() {
                     <Text style={styles.actionButtonText}>{primaryAction.cta}</Text>
                   </TouchableOpacity>
                 ) : null}
+              </View>
+            ) : null}
+
+            <View style={styles.card}>
+              <Text style={styles.cardEyebrow}>Why it matters</Text>
+              <Text style={styles.detailCardTitle}>What deserves attention</Text>
+              <Text style={styles.metricRow}>{whyItMattersCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
+            </View>
+
+            {(`${scope}` === 'household' || hasCombinedScope(insightMetadata)) ? (
+              <View style={styles.sharedContextCard}>
+                <Text style={styles.cardEyebrow}>Shared context</Text>
+                <Text style={styles.detailCardTitle}>How this rolls up</Text>
+                <Text style={styles.metricRow}>
+                  {hasCombinedScope(insightMetadata)
+                    ? 'This signal started in your personal view and was consolidated because it is also affecting the household pattern.'
+                    : 'This insight is about the household\'s combined spending pattern, not just one person\'s activity.'}
+                </Text>
               </View>
             ) : null}
 
@@ -1269,7 +1291,7 @@ export default function TrendDetailScreen() {
                       </Text>
                     </View>
                     <Text style={styles.driverDelta}>
-                      {formatCurrency(driver.delta_amount)} · {formatPercent(driver.delta_percent)}
+                      {formatDriverDelta(driver)}
                     </Text>
                   </View>
                 ))
@@ -1571,6 +1593,7 @@ const styles = StyleSheet.create({
   },
   cardEyebrow: { color: colors.textSubtle, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
   detailCardTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
+  cardCopy: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
   cardTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.2 },
   metricRow: { fontSize: 14, color: colors.text },
   driverRow: {

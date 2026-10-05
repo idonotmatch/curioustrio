@@ -5,6 +5,7 @@ const {
   narrativeTheme,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
+  buildProjectionInsights,
   buildItemHistoryInsights,
   USAGE_INSIGHT_THRESHOLDS,
   summarizeExpenseRows,
@@ -44,6 +45,41 @@ function buildInsight(overrides = {}) {
 describe('insightBuilder orchestration', () => {
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('adds the strongest category driver to an over-budget projection', () => {
+    const insights = buildProjectionInsights({
+      month: '2026-04',
+      overall: {
+        projected_budget_delta: 160,
+        adjusted_projected_total: 1160,
+        historical_period_count: 5,
+        confidence: 'comparative',
+      },
+      categories: [
+        {
+          category_key: 'shopping',
+          category_name: 'Shopping',
+          adjusted_projected_total: 420,
+          historical_average_total: 170,
+          historical_period_count: 5,
+        },
+        {
+          category_key: 'dining',
+          category_name: 'Dining',
+          adjusted_projected_total: 210,
+          historical_average_total: 180,
+          historical_period_count: 5,
+        },
+      ],
+    }, 'personal');
+
+    const overBudget = insights.find((insight) => insight.type === 'projected_month_end_over_budget');
+    expect(overBudget.metadata.top_driver).toEqual({
+      category_key: 'shopping',
+      category_name: 'Shopping',
+      delta_amount: 250,
+    });
   });
 
   it('classifies insights into portfolio families', () => {

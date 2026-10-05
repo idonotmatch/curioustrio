@@ -118,10 +118,10 @@ function RhythmDots({ count = 3, activeIndex = null, tone }) {
   );
 }
 
-export function InsightTrendVisual({ visual, compact = false }) {
+export function InsightTrendVisual({ visual, compact = false, showProjection = true, showValue = true }) {
   if (!visual) return null;
   const tone = visual.tone || 'neutral';
-  const showValueChip = Boolean(visual.value && visual.value !== visual.projection?.value);
+  const showValueChip = Boolean(showValue && visual.value && visual.value !== visual.projection?.value);
 
   return (
     <View style={[styles.container, compact && styles.containerCompact]}>
@@ -138,7 +138,7 @@ export function InsightTrendVisual({ visual, compact = false }) {
         {visual.variant === 'spark' ? <SparkLine points={visual.points} tone={tone} /> : null}
         {visual.variant === 'rhythm' ? <RhythmDots count={visual.count} activeIndex={visual.activeIndex} tone={tone} /> : null}
       </View>
-      {visual.projection ? (
+      {showProjection && visual.projection ? (
         <View style={styles.projectionRow}>
           <Text style={styles.projectionLabel} numberOfLines={1}>{visual.projection.label}</Text>
           <Text style={styles.projectionValue} numberOfLines={1}>{visual.projection.value}</Text>

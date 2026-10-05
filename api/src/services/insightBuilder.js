@@ -683,6 +683,22 @@ function buildProjectionInsights(projection, scope) {
   const unusualSpendShare = Number(overall.unusual_spend_share || 0);
   const unusualSpendToDate = Number(overall.unusual_spend_to_date || 0);
   const historicalPeriodCount = Number(overall.historical_period_count || 0);
+  const categoryProjectionDeltas = (projection?.categories || [])
+    .filter((category) => Number(category.historical_period_count || 0) >= 3)
+    .map((category) => {
+      const adjusted = Number(category.adjusted_projected_total || 0);
+      const historicalAverage = Number(category.historical_average_total || 0);
+      const deltaAmount = adjusted - historicalAverage;
+      return {
+        ...category,
+        delta_amount: deltaAmount,
+        delta_percent: historicalAverage > 0 ? (deltaAmount / historicalAverage) * 100 : 0,
+        historical_average_total: historicalAverage,
+      };
+    })
+    .filter((category) => Number(category.adjusted_projected_total || 0) > 0);
+  const topCategoryProjection = [...categoryProjectionDeltas]
+    .sort((a, b) => Number(b.delta_amount || 0) - Number(a.delta_amount || 0))[0];
 
   if (
     historicalPeriodCount >= 3 &&
@@ -707,6 +723,13 @@ function buildProjectionInsights(projection, scope) {
         projected_budget_delta: projectedBudgetDelta,
         confidence: overall.confidence,
         historical_period_count: historicalPeriodCount,
+        top_driver: topCategoryProjection && Number(topCategoryProjection.delta_amount || 0) > 0
+          ? {
+            category_key: topCategoryProjection.category_key,
+            category_name: topCategoryProjection.category_name,
+            delta_amount: Number(topCategoryProjection.delta_amount || 0),
+          }
+          : null,
         maturity: 'mature',
         continuity_key: `budget_pace:${scopeLabel}:${projection.month}`,
       },
@@ -778,23 +801,6 @@ function buildProjectionInsights(projection, scope) {
     });
   }
 
-  const topCategoryProjection = (projection?.categories || [])
-    .filter((category) => Number(category.historical_period_count || 0) >= 3)
-    .map((category) => {
-      const adjusted = Number(category.adjusted_projected_total || 0);
-      const historicalAverage = Number(category.historical_average_total || 0);
-      const deltaAmount = adjusted - historicalAverage;
-      const deltaPercent = historicalAverage > 0 ? (deltaAmount / historicalAverage) * 100 : 0;
-      return {
-        ...category,
-        delta_amount: deltaAmount,
-        delta_percent: deltaPercent,
-        historical_average_total: historicalAverage,
-      };
-    })
-    .filter((category) => Number(category.adjusted_projected_total || 0) > 0)
-    .sort((a, b) => Number(b.delta_amount || 0) - Number(a.delta_amount || 0))[0];
-
   if (
     topCategoryProjection &&
     Number(topCategoryProjection.delta_amount || 0) >= 15 &&
@@ -833,21 +839,7 @@ function buildProjectionInsights(projection, scope) {
     });
   }
 
-  const lowestCategoryProjection = (projection?.categories || [])
-    .filter((category) => Number(category.historical_period_count || 0) >= 3)
-    .map((category) => {
-      const adjusted = Number(category.adjusted_projected_total || 0);
-      const historicalAverage = Number(category.historical_average_total || 0);
-      const deltaAmount = adjusted - historicalAverage;
-      const deltaPercent = historicalAverage > 0 ? (deltaAmount / historicalAverage) * 100 : 0;
-      return {
-        ...category,
-        delta_amount: deltaAmount,
-        delta_percent: deltaPercent,
-        historical_average_total: historicalAverage,
-      };
-    })
-    .filter((category) => Number(category.adjusted_projected_total || 0) > 0)
+  const lowestCategoryProjection = [...categoryProjectionDeltas]
     .sort((a, b) => Number(a.delta_amount || 0) - Number(b.delta_amount || 0))[0];
 
   if (
@@ -1920,6 +1912,7 @@ module.exports = {
   buildInsightPreferencesForUser,
   buildEarlyUsageInsights,
   buildDevelopingUsageInsights,
+  buildProjectionInsights,
   buildItemHistoryInsights,
   summarizeExpenseRows,
   summarizeInsightList,

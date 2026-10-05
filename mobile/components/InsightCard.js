@@ -14,9 +14,9 @@ import {
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 const { normalizeDisplayText } = require('../services/text');
 
-const INSIGHT_CARD_MIN_HEIGHT = 252;
+const INSIGHT_CARD_MIN_HEIGHT = 228;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
-const INSIGHT_SUMMARY_BODY_LINES = 3;
+const INSIGHT_SUMMARY_BODY_LINES = 2;
 
 function pluralVerb(label, singular, plural) {
   return `${label || ''}`.trim().toLowerCase().endsWith('s') ? plural : singular;
@@ -145,7 +145,7 @@ function insightDisplayBody(insight) {
       : `Recent spending is unusually ${categoryName.toLowerCase()}-heavy.`;
   }
   if (categoryName && type === 'projected_category_surge') {
-    return `${categoryName} is tracking above its usual month-end shape.${householdCarry}`;
+    return `${categoryName} ${pluralVerb(categoryName, 'is', 'are')} tracking above the usual month-end pattern.${householdCarry}`;
   }
   if (type === 'developing_weekly_spend_change') {
     const delta = Number(metadata.delta_amount || 0);
@@ -155,6 +155,14 @@ function insightDisplayBody(insight) {
   if (type === 'one_off_expense_skewing_projection' || type === 'one_offs_driving_variance') {
     const merchant = metadata.largest_expense?.merchant || metadata.top_unusual_expense?.merchant;
     return merchant ? `${merchant} is making the forecast look heavier than the underlying pattern.` : 'A larger purchase is making the forecast look heavier than the underlying pattern.';
+  }
+  if (scopeRelationship === 'personal_household_overlap' && (
+    type === 'projected_month_end_over_budget'
+    || type === 'projected_month_end_under_budget'
+    || type === 'budget_too_low'
+    || type === 'budget_too_high'
+  )) {
+    return 'Your personal pace is also moving the household outlook, so Adlo combined the two signals.';
   }
   return insight?.body || '';
 }
@@ -174,15 +182,17 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
   const actionDescriptor = useMemo(() => getInsightCardAction(insight), [insight]);
   const actionLabel = useMemo(() => normalizeDisplayText(insightActionLabel(insight, actionDescriptor)), [actionDescriptor, insight]);
   const actionReason = useMemo(() => normalizeDisplayText(actionDescriptor.reason), [actionDescriptor]);
-  const evidenceRows = useMemo(() => getInsightSupportRows(insight, { limit: 2 })
+  const evidenceRows = useMemo(() => getInsightSupportRows(insight, { limit: 3 })
     .map((row) => ({
       label: normalizeDisplayText(row.label),
       value: normalizeDisplayText(row.value),
     }))
-    .filter((row) => row.label && row.value), [insight]);
+    .filter((row) => row.label && row.value)
+    .filter((row) => !showPrimaryMetric || normalizeMetricText(row.value) !== normalizeMetricText(primaryMetric?.value))
+    .slice(0, 1), [insight, primaryMetric, showPrimaryMetric]);
 
   return (
-    <TouchableOpacity
+    <View
       style={[
         styles.insightCard,
         tone.card,
@@ -190,75 +200,84 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         disabled && styles.insightCardDisabled,
         { width },
       ]}
-      activeOpacity={0.92}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={() => onPress?.(insight)}
     >
-      <View style={styles.insightHeader}>
-        <View style={styles.insightHeaderTop}>
-          <View style={styles.insightMetaRow}>
-            <View style={styles.insightScopeChip}>
-              <Text style={styles.insightScopeText}>{scopeLabel}</Text>
-            </View>
-            <View style={[styles.insightRoleChip, tone.roleChip]}>
-              <Text style={[styles.insightRoleText, tone.roleText]}>{roleLabel}</Text>
-            </View>
+      <View style={styles.insightHeaderTop}>
+        <View style={styles.insightMetaRow}>
+          <View style={styles.insightScopeChip}>
+            <Text style={styles.insightScopeText}>{scopeLabel}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.dismissButton}
-            onPress={(event) => {
-              event?.stopPropagation?.();
-              onDismiss?.(insight);
-            }}
-            disabled={disabled}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Dismiss insight: ${displayTitle}`}
-          >
-            <Ionicons name="close" size={15} color={colors.textDisabled} />
-          </TouchableOpacity>
+          <View style={[styles.insightRoleChip, tone.roleChip]}>
+            <Text style={[styles.insightRoleText, tone.roleText]}>{roleLabel}</Text>
+          </View>
         </View>
-        <Text style={styles.insightContext} numberOfLines={1}>{timeframeLabel} · {confidenceLabel}</Text>
-        <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{displayTitle}</Text>
-        {showPrimaryMetric ? (
-          <View style={[styles.insightMetricPanel, isPrimary && styles.insightMetricPanelPrimary]}>
-            <Text style={[styles.insightMetricValue, isPrimary && styles.insightMetricValuePrimary]} numberOfLines={1}>{primaryMetric.value}</Text>
-            <Text style={[styles.insightMetricLabel, isPrimary && styles.insightMetricLabelPrimary]} numberOfLines={1}>{primaryMetric.label}</Text>
+        <TouchableOpacity
+          style={styles.dismissButton}
+          onPress={() => onDismiss?.(insight)}
+          disabled={disabled}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Dismiss insight: ${displayTitle}`}
+        >
+          <Ionicons name="close" size={15} color={colors.textDisabled} />
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity
+        style={styles.insightDetailButton}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={`Open insight details: ${displayTitle}`}
+        accessibilityHint={displayBody}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        onPress={() => onPress?.(insight)}
+      >
+        <View style={styles.insightHeader}>
+          <Text style={styles.insightContext} numberOfLines={1}>{timeframeLabel} · {confidenceLabel}</Text>
+          <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{displayTitle}</Text>
+          {showPrimaryMetric ? (
+            <View style={[styles.insightMetricPanel, isPrimary && styles.insightMetricPanelPrimary]}>
+              <Text style={[styles.insightMetricValue, isPrimary && styles.insightMetricValuePrimary]} numberOfLines={1}>{primaryMetric.value}</Text>
+              <Text style={[styles.insightMetricLabel, isPrimary && styles.insightMetricLabelPrimary]} numberOfLines={1}>{primaryMetric.label}</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.insightContent}>
+          <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
+        </View>
+        {trendVisual ? (
+          <InsightTrendVisual
+            visual={trendVisual}
+            compact
+            showProjection={!showPrimaryMetric}
+            showValue={!showPrimaryMetric}
+          />
+        ) : null}
+        {evidenceRows.length > 0 ? (
+          <View style={styles.evidenceBlock}>
+            <Text style={styles.evidenceEyebrow}>Key context</Text>
+            <View style={styles.evidenceRows}>
+              {evidenceRows.map((row) => (
+                <View key={`${row.label}:${row.value}`} style={styles.evidenceRow}>
+                  <Text style={styles.evidenceLabel} numberOfLines={1}>{row.label}</Text>
+                  <Text style={styles.evidenceValue} numberOfLines={1}>{row.value}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         ) : null}
-      </View>
-      <View style={styles.insightContent}>
-        <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
-      </View>
-      {trendVisual ? <InsightTrendVisual visual={trendVisual} compact /> : null}
-      {evidenceRows.length > 0 ? (
-        <View style={styles.evidenceBlock}>
-          <Text style={styles.evidenceEyebrow}>Based on</Text>
-          <View style={styles.evidenceRows}>
-            {evidenceRows.map((row) => (
-              <View key={`${row.label}:${row.value}`} style={styles.evidenceRow}>
-                <Text style={styles.evidenceLabel} numberOfLines={1}>{row.label}</Text>
-                <Text style={styles.evidenceValue} numberOfLines={1}>{row.value}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
+      </TouchableOpacity>
       <TouchableOpacity
         style={styles.insightFooter}
         activeOpacity={0.76}
         accessibilityRole="button"
         accessibilityLabel={`${actionLabel}: ${actionReason}`}
-        onPress={(event) => {
-          event?.stopPropagation?.();
+        onPress={() => {
           if (onAction) onAction(insight, actionDescriptor);
           else onPress?.(insight);
         }}
       >
         <View style={styles.insightActionCopy}>
-          <Text style={styles.insightActionEyebrow}>Next step</Text>
+          <Text style={styles.insightActionEyebrow}>{actionDescriptor.kind === 'action' ? 'Take action' : 'Explore'}</Text>
           <Text style={styles.insightActionLabel} numberOfLines={1}>{actionLabel}</Text>
           {actionReason ? <Text style={styles.insightActionReason} numberOfLines={1}>{actionReason}</Text> : null}
         </View>
@@ -266,7 +285,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
           <Ionicons name="chevron-forward" size={14} color={colors.text} />
         </View>
       </TouchableOpacity>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -284,7 +303,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   insightCardPrimary: {
-    minHeight: 272,
+    minHeight: 244,
     paddingHorizontal: 17,
     paddingVertical: 14,
     borderColor: colors.infoBorder,
@@ -296,6 +315,7 @@ const styles = StyleSheet.create({
   insightCardLearning: { borderColor: colors.successMuted },
   insightCardExplain: { borderColor: colors.border },
   insightCardDisabled: { opacity: 0.72 },
+  insightDetailButton: { gap: 10 },
   insightHeader: { gap: 10 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   insightMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },

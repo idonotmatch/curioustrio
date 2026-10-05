@@ -486,6 +486,9 @@ export function getInsightSupportRows(insight, context = {}) {
       case 'budget_too_high':
       case 'projected_month_end_over_budget':
       case 'projected_month_end_under_budget':
+        if (metadata.top_driver?.category_name && Number(metadata.top_driver?.delta_amount || 0) > 0) {
+          addRow(rows, 'Biggest driver', `${metadata.top_driver.category_name} +${formatCurrencyShort(metadata.top_driver.delta_amount)}`);
+        }
         addRow(rows, 'Month-end gap', formatCurrencyShort(metadata.projected_budget_delta ?? metadata.projected_over_under));
         addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
         addRow(rows, 'History compared', formatCountLabel(metadata.historical_period_count, 'month'));
@@ -696,5 +699,6 @@ export function getInsightCardAction(insight, context = {}) {
     label: primaryAction?.cta || descriptor.label,
     reason: primaryAction?.title || descriptor.reason,
     route: directRoute,
+    kind: directRoute ? 'action' : 'evidence',
   };
 }
