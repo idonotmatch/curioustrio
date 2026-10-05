@@ -1,6 +1,7 @@
 const db = require('../db');
 
 const CATEGORY_CACHE_TTL_MS = Math.max(1000, Number(process.env.CATEGORY_CACHE_TTL_MS) || 60 * 1000);
+const CATEGORY_CACHE_MAX_ENTRIES = Math.max(10, Number(process.env.CATEGORY_CACHE_MAX_ENTRIES) || 250);
 const categoryCache = new Map();
 
 function cacheKey(householdId, includeHidden) {
@@ -15,12 +16,32 @@ function clearCategoryCache() {
   categoryCache.clear();
 }
 
+function pruneCategoryCache(now = Date.now()) {
+  for (const [key, entry] of categoryCache.entries()) {
+    if (!entry || entry.expiresAt <= now) categoryCache.delete(key);
+  }
+  while (categoryCache.size >= CATEGORY_CACHE_MAX_ENTRIES) {
+    const oldestKey = categoryCache.keys().next().value;
+    if (oldestKey == null) break;
+    categoryCache.delete(oldestKey);
+  }
+}
+
+function categoryCacheSize() {
+  return categoryCache.size;
+}
+
 async function findByHousehold(householdId, { includeHidden = false } = {}) {
   const key = cacheKey(householdId, includeHidden);
   const cached = categoryCache.get(key);
   if (cached?.expiresAt > Date.now()) {
+    categoryCache.delete(key);
+    categoryCache.set(key, cached);
     return cloneRows(await cached.rowsPromise);
   }
+
+  if (cached) categoryCache.delete(key);
+  pruneCategoryCache();
 
   const rowsPromise = db.query(
     `SELECT c.id,
@@ -238,4 +259,5 @@ module.exports = {
   remove,
   merge,
   clearCategoryCache,
+  categoryCacheSize,
 };

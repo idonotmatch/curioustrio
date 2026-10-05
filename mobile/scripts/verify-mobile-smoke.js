@@ -47,6 +47,7 @@ const filesToCheck = [
   'services/text.js',
   'services/insightTrendVisual.js',
   'services/manualAddSuggestions.js',
+  'services/navigationPayloadStore.js',
   'services/confirmClientWork.js',
   'services/confirmNavigation.js',
   'services/apiConfig.js',

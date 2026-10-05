@@ -1,7 +1,15 @@
+jest.mock('../../src/db', () => {
+  const client = { query: jest.fn(), release: jest.fn() };
+  return {
+    pool: { connect: jest.fn().mockResolvedValue(client) },
+    __client: client,
+  };
+});
 jest.mock('../../src/models/expense');
 jest.mock('../../src/models/category');
 jest.mock('../../src/models/merchantMapping');
 jest.mock('../../src/models/expenseItem');
+jest.mock('../../src/models/expenseReceiptDetail');
 jest.mock('../../src/models/ingestAttemptLog');
 jest.mock('../../src/models/categoryDecisionEvent');
 jest.mock('../../src/models/receiptLineCorrection');
@@ -11,10 +19,12 @@ jest.mock('../../src/services/productResolver');
 jest.mock('../../src/services/categoryAssigner');
 jest.mock('../../src/services/mapkitService');
 
+const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
 const Category = require('../../src/models/category');
 const MerchantMapping = require('../../src/models/merchantMapping');
 const ExpenseItem = require('../../src/models/expenseItem');
+const ExpenseReceiptDetail = require('../../src/models/expenseReceiptDetail');
 const IngestAttemptLog = require('../../src/models/ingestAttemptLog');
 const CategoryDecisionEvent = require('../../src/models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../../src/models/receiptLineCorrection');
@@ -30,6 +40,9 @@ const {
 
 describe('expenseConfirmService deferred enrichment', () => {
   beforeEach(() => {
+    db.pool.connect.mockReset().mockResolvedValue(db.__client);
+    db.__client.query.mockReset().mockResolvedValue({ rows: [] });
+    db.__client.release.mockReset();
     Expense.create.mockReset();
     Expense.applyDeferredCategory.mockReset();
     Expense.applyDeferredLocation.mockReset();
@@ -37,6 +50,7 @@ describe('expenseConfirmService deferred enrichment', () => {
     MerchantMapping.upsert.mockReset();
     ExpenseItem.createBulk.mockReset();
     ExpenseItem.updateResolution.mockReset();
+    ExpenseReceiptDetail.upsert.mockReset().mockResolvedValue(null);
     IngestAttemptLog.findByIdForUser.mockReset();
     IngestAttemptLog.appendPaymentFeedback.mockReset();
     IngestAttemptLog.markConfirmed.mockReset();
@@ -272,7 +286,29 @@ describe('expenseConfirmService deferred enrichment', () => {
         quantity: 3,
         unit_price: 1.79,
       }),
-    ]);
+    ], db.__client);
+  });
+
+  it('rolls back the expense when line item persistence fails', async () => {
+    ExpenseItem.createBulk.mockRejectedValueOnce(new Error('item insert failed'));
+
+    await expect(createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Whole Foods',
+        amount: 19.84,
+        date: '2026-04-27',
+        source: 'camera',
+        items: [{ description: 'Organic Lasagne', amount: 5.37 }],
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm: jest.fn(),
+    })).rejects.toThrow('item insert failed');
+
+    expect(db.__client.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(db.__client.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(db.__client.query).not.toHaveBeenCalledWith('COMMIT');
+    expect(db.__client.release).toHaveBeenCalledTimes(1);
   });
 
   it('resolves deferred location in the synchronous fallback path when the user did not touch location', async () => {

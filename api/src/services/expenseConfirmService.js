@@ -1,3 +1,4 @@
+const db = require('../db');
 const Expense = require('../models/expense');
 const Category = require('../models/category');
 const MerchantMapping = require('../models/merchantMapping');
@@ -500,42 +501,71 @@ async function createConfirmedExpense({
   queuePostConfirm = queuePostConfirmSideEffects,
 }) {
   const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(payload.budget_exclusion_reason);
-  const createdExpense = await Expense.create({
-    userId: user.id,
-    householdId: user?.household_id,
-    merchant: payload.merchant,
-    description: payload.description,
-    amount: payload.amount,
-    date: payload.date,
-    categoryId: payload.category_id,
-    source: payload.source,
-    status: 'confirmed',
-    notes: payload.notes,
-    placeName: payload.place_name,
-    address: payload.address,
-    mapkitStableId: payload.mapkit_stable_id,
-    locationProviderId: payload.location_provider_id || null,
-    locationLatitude: payload.location_latitude ?? null,
-    locationLongitude: payload.location_longitude ?? null,
-    locationSource: payload.location_source || null,
-    locationStatus: payload.location_status || null,
-    locationConfidence: payload.location_confidence ?? null,
-    locationUserOwned: Boolean(payload.location_user_owned),
-    linkedExpenseId: payload.linked_expense_id,
-    paymentMethod: payload.payment_method,
-    cardLast4: payload.card_last4,
-    cardLabel: payload.card_label,
-    isPrivate: payload.is_private ?? false,
-    excludeFromBudget: payload.exclude_from_budget ?? false,
-    budgetExclusionReason: payload.exclude_from_budget ? normalizedBudgetExclusionReason : null,
-    categorySource: payload.category_source || null,
-    categoryConfidence: payload.category_confidence ?? null,
-    categoryReasoning: payload.category_reasoning || null,
-    idempotencyKey: payload.idempotency_key || null,
-  });
+  const client = await db.pool.connect();
+  let expense;
+  let idempotentReplay = false;
+  let createdItems = [];
+  let receiptDetails = null;
+  try {
+    await client.query('BEGIN');
+    const createdExpense = await Expense.create({
+      userId: user.id,
+      householdId: user?.household_id,
+      merchant: payload.merchant,
+      description: payload.description,
+      amount: payload.amount,
+      date: payload.date,
+      categoryId: payload.category_id,
+      source: payload.source,
+      status: 'confirmed',
+      notes: payload.notes,
+      placeName: payload.place_name,
+      address: payload.address,
+      mapkitStableId: payload.mapkit_stable_id,
+      locationProviderId: payload.location_provider_id || null,
+      locationLatitude: payload.location_latitude ?? null,
+      locationLongitude: payload.location_longitude ?? null,
+      locationSource: payload.location_source || null,
+      locationStatus: payload.location_status || null,
+      locationConfidence: payload.location_confidence ?? null,
+      locationUserOwned: Boolean(payload.location_user_owned),
+      linkedExpenseId: payload.linked_expense_id,
+      paymentMethod: payload.payment_method,
+      cardLast4: payload.card_last4,
+      cardLabel: payload.card_label,
+      isPrivate: payload.is_private ?? false,
+      excludeFromBudget: payload.exclude_from_budget ?? false,
+      budgetExclusionReason: payload.exclude_from_budget ? normalizedBudgetExclusionReason : null,
+      categorySource: payload.category_source || null,
+      categoryConfidence: payload.category_confidence ?? null,
+      categoryReasoning: payload.category_reasoning || null,
+      idempotencyKey: payload.idempotency_key || null,
+      queryable: client,
+    });
 
-  const idempotentReplay = createdExpense?._idempotent_replay === true;
-  const { _idempotent_replay: ignoredReplayMarker, ...expense } = createdExpense;
+    idempotentReplay = createdExpense?._idempotent_replay === true;
+    const { _idempotent_replay: ignoredReplayMarker, ...persistedExpense } = createdExpense;
+    expense = persistedExpense;
+    if (!idempotentReplay) {
+      createdItems = Array.isArray(payload.items) && payload.items.length > 0
+        ? await ExpenseItem.createBulk(expense.id, payload.items, client)
+        : [];
+      receiptDetails = payload.source === 'camera' && payload.receipt_details
+        ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details, client)
+        : null;
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      console.error('Confirm expense rollback failed:', rollbackErr?.message || rollbackErr);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+
   if (idempotentReplay) {
     const duplicateFlags = await DuplicateFlag.findByExpenseId(expense.id, {
       userId: user.id,
@@ -543,14 +573,6 @@ async function createConfirmedExpense({
     });
     return { expense, duplicate_flags: duplicateFlags, idempotent_replay: true };
   }
-
-  const createdItems = Array.isArray(payload.items) && payload.items.length > 0
-    ? await ExpenseItem.createBulk(expense.id, payload.items)
-    : [];
-
-  const receiptDetails = payload.source === 'camera' && payload.receipt_details
-    ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details)
-    : null;
 
   let duplicateFlags = [];
   try {

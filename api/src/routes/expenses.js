@@ -748,54 +748,81 @@ router.patch('/:id', async (req, res, next) => {
     if (originalExpense.source === 'email' && items !== undefined) {
       changedFields.push(...collectItemReviewSignals(originalItems, Array.isArray(items) ? items : []));
     }
-    const expense = await Expense.update(req.params.id, user.id, {
-      merchant,
-      amount,
-      date,
-      categoryId: category_id,
-      notes,
-      paymentMethod: payment_method,
-      cardLast4: card_last4,
-      cardLabel: card_label,
-      isPrivate: is_private,
-      excludeFromBudget: exclude_from_budget,
-      budgetExclusionReason: exclude_from_budget === false ? null : normalizedBudgetExclusionReason,
-      categorySource: category_id !== undefined ? 'manual_edit' : undefined,
-      categoryConfidence: category_id !== undefined ? null : undefined,
-      categoryReasoning: category_id !== undefined ? {
-        strategy: 'manual_edit',
-        label: 'Updated manually',
-        detail: 'This category was changed directly by the user.',
-      } : undefined,
-      placeName: place_name,
-      address,
-      mapkitStableId: mapkit_stable_id,
-      locationProviderId: location_provider_id,
-      locationLatitude: location_latitude,
-      locationLongitude: location_longitude,
-      locationSource: location_source,
-      locationStatus: location_status,
-      locationConfidence: location_confidence,
-      locationUserOwned: location_user_owned,
-    });
-    if (!expense) return res.status(404).json({ error: 'Expense not found' });
-    const categoryChanged = category_id !== undefined && `${originalExpense.category_id || ''}` !== `${expense.category_id || ''}`;
-    const merchantChanged = merchant !== undefined && `${originalExpense.merchant || ''}` !== `${expense.merchant || ''}`;
+    let resolvedItems = null;
     if (items !== undefined) {
       try {
-        const resolvedItems = await Promise.all(
+        resolvedItems = await Promise.all(
           (Array.isArray(items) ? items : []).map((item) =>
-            enrichItemWithResolution(item, merchant ?? expense.merchant)
+            enrichItemWithResolution(item, merchant ?? originalExpense.merchant)
           )
         );
-        await ExpenseItem.replaceItems(req.params.id, resolvedItems);
-      } catch (err) {
-        console.error('[expenses/:id PATCH] item replace failed:', {
+      } catch (resolutionErr) {
+        console.error('[expenses/:id PATCH] item enrichment failed; saving user edits without product matches:', {
           expense_id: req.params.id,
-          message: err?.message || String(err || 'unknown_error'),
+          message: resolutionErr?.message || String(resolutionErr || 'unknown_error'),
         });
+        resolvedItems = Array.isArray(items) ? items : [];
       }
     }
+
+    const client = await db.pool.connect();
+    let expense;
+    try {
+      await client.query('BEGIN');
+      expense = await Expense.update(req.params.id, user.id, {
+        merchant,
+        amount,
+        date,
+        categoryId: category_id,
+        notes,
+        paymentMethod: payment_method,
+        cardLast4: card_last4,
+        cardLabel: card_label,
+        isPrivate: is_private,
+        excludeFromBudget: exclude_from_budget,
+        budgetExclusionReason: exclude_from_budget === false ? null : normalizedBudgetExclusionReason,
+        categorySource: category_id !== undefined ? 'manual_edit' : undefined,
+        categoryConfidence: category_id !== undefined ? null : undefined,
+        categoryReasoning: category_id !== undefined ? {
+          strategy: 'manual_edit',
+          label: 'Updated manually',
+          detail: 'This category was changed directly by the user.',
+        } : undefined,
+        placeName: place_name,
+        address,
+        mapkitStableId: mapkit_stable_id,
+        locationProviderId: location_provider_id,
+        locationLatitude: location_latitude,
+        locationLongitude: location_longitude,
+        locationSource: location_source,
+        locationStatus: location_status,
+        locationConfidence: location_confidence,
+        locationUserOwned: location_user_owned,
+        queryable: client,
+      });
+      if (!expense) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Expense not found' });
+      }
+      if (resolvedItems !== null) {
+        await ExpenseItem.replaceItems(req.params.id, resolvedItems, client);
+      }
+      await client.query('COMMIT');
+    } catch (transactionErr) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('[expenses/:id PATCH] rollback failed:', {
+          expense_id: req.params.id,
+          message: rollbackErr?.message || String(rollbackErr || 'unknown_error'),
+        });
+      }
+      throw transactionErr;
+    } finally {
+      client.release();
+    }
+    const categoryChanged = category_id !== undefined && `${originalExpense.category_id || ''}` !== `${expense.category_id || ''}`;
+    const merchantChanged = merchant !== undefined && `${originalExpense.merchant || ''}` !== `${expense.merchant || ''}`;
     if ((categoryChanged || merchantChanged) && expense.category_id) {
       try {
         await updateMerchantMemory({

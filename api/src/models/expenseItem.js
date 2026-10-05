@@ -13,7 +13,7 @@ function hydrateItem(item = {}, index = 0) {
   };
 }
 
-async function createBulk(expenseId, items) {
+async function createBulk(expenseId, items, queryable = db) {
   if (!items || items.length === 0) return [];
   const preparedItems = items.map((item, i) => hydrateItem(item, i));
   const values = preparedItems.map((_, i) => {
@@ -50,7 +50,7 @@ async function createBulk(expenseId, items) {
       item.product_match_reason ?? null,
     );
   });
-  const result = await db.query(
+  const result = await queryable.query(
     `INSERT INTO expense_items (
        expense_id, description, amount, quantity, unit_price, sort_order, item_type, product_id, upc, sku, brand, product_size, pack_size, unit,
        normalized_name, normalized_brand, normalized_size_value, normalized_size_unit, normalized_pack_size,
@@ -72,10 +72,11 @@ async function findByExpenseId(expenseId) {
   return result.rows;
 }
 
-async function replaceItems(expenseId, items) {
-  const client = await db.pool.connect();
+async function replaceItems(expenseId, items, queryable = null) {
+  const ownsTransaction = !queryable;
+  const client = queryable || await db.pool.connect();
   try {
-    await client.query('BEGIN');
+    if (ownsTransaction) await client.query('BEGIN');
     await client.query('DELETE FROM expense_items WHERE expense_id = $1', [expenseId]);
     let rows = [];
     if (items && items.length > 0) {
@@ -127,13 +128,13 @@ async function replaceItems(expenseId, items) {
       );
       rows = result.rows;
     }
-    await client.query('COMMIT');
+    if (ownsTransaction) await client.query('COMMIT');
     return rows;
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (ownsTransaction) await client.query('ROLLBACK');
     throw err;
   } finally {
-    client.release();
+    if (ownsTransaction) client.release();
   }
 }
 

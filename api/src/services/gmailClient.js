@@ -5,6 +5,11 @@ const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
 const { decodeHtmlEntities } = require('../utils/htmlEntities');
 
+const GOOGLE_REQUEST_TIMEOUT_MS = Math.max(
+  3000,
+  Math.min(Number(process.env.GOOGLE_REQUEST_TIMEOUT_MS) || 15000, 60000)
+);
+
 const GMAIL_SEARCH_QUERY = [
   'newer_than:30d',
   '-category:promotions',
@@ -43,11 +48,16 @@ const GMAIL_SEARCH_QUERY = [
 ].join(' ');
 
 function createOAuth2Client() {
-  return new google.auth.OAuth2(
+  const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.GOOGLE_REDIRECT_URI
   );
+  client.transporter.defaults = {
+    ...client.transporter.defaults,
+    timeout: GOOGLE_REQUEST_TIMEOUT_MS,
+  };
+  return client;
 }
 
 async function getAuthUrl(userId, { loginHint = null } = {}) {
@@ -111,6 +121,7 @@ async function revokeRefreshToken(refreshToken) {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: `token=${encodeURIComponent(refreshToken)}`,
+    timeout: GOOGLE_REQUEST_TIMEOUT_MS,
   });
   return response.ok;
 }
@@ -146,6 +157,8 @@ async function listRecentMessages(userId, options = 50) {
     userId: 'me',
     maxResults,
     q: query,
+  }, {
+    timeout: GOOGLE_REQUEST_TIMEOUT_MS,
   });
   return response.data.messages || [];
 }
@@ -253,6 +266,8 @@ async function getMessage(userId, messageId) {
     userId: 'me',
     id: messageId,
     format: 'full',
+  }, {
+    timeout: GOOGLE_REQUEST_TIMEOUT_MS,
   });
 
   const payload = response.data.payload;

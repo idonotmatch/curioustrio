@@ -51,11 +51,13 @@ function normalizeDetails(details = {}) {
   };
 }
 
-async function upsert(expenseId, details = {}) {
+async function upsert(expenseId, details = {}, queryable = db) {
   if (!expenseId || !details || typeof details !== 'object') return null;
   const normalized = normalizeDetails(details);
+  const inTransaction = queryable !== db;
+  if (inTransaction) await queryable.query('SAVEPOINT expense_receipt_detail_compat');
   try {
-    const result = await db.query(
+    const result = await queryable.query(
       `INSERT INTO expense_receipt_details (
          expense_id, currency, subtotal, tax, tip, fees, discounts,
          transaction_id, purchase_time, store_number, validation
@@ -88,9 +90,16 @@ async function upsert(expenseId, details = {}) {
         JSON.stringify(normalized.validation),
       ]
     );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_receipt_detail_compat');
     return result.rows[0] || null;
   } catch (err) {
-    if (isMissingTableError(err)) return null;
+    if (isMissingTableError(err)) {
+      if (inTransaction) {
+        await queryable.query('ROLLBACK TO SAVEPOINT expense_receipt_detail_compat');
+        await queryable.query('RELEASE SAVEPOINT expense_receipt_detail_compat');
+      }
+      return null;
+    }
     throw err;
   }
 }

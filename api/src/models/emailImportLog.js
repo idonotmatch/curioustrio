@@ -458,7 +458,7 @@ async function upsertResult({
   snippet,
   structuredItemBlockLevel = null,
   deterministicItemCount = null,
-}) {
+}, queryable = db) {
   const {
     safeSubject,
     safeSnippet,
@@ -466,8 +466,10 @@ async function upsertResult({
     senderDomain,
     subjectPattern,
   } = buildStoredMessageContext({ status, expenseId, subject, fromAddress, snippet });
+  const inTransaction = queryable !== db;
+  if (inTransaction) await queryable.query('SAVEPOINT email_import_log_upsert_compat');
   try {
-    const result = await db.query(
+    const result = await queryable.query(
       `INSERT INTO email_import_log (
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
          structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern
@@ -492,10 +494,12 @@ async function upsertResult({
         senderDomain, subjectPattern,
       ]
     );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT email_import_log_upsert_compat');
     return result.rows[0] || null;
   } catch (err) {
     if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
-    const fallback = await db.query(
+    if (inTransaction) await queryable.query('ROLLBACK TO SAVEPOINT email_import_log_upsert_compat');
+    const fallback = await queryable.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (user_id, message_id) DO UPDATE SET
@@ -508,6 +512,7 @@ async function upsertResult({
        RETURNING *`,
       [userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null]
     );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT email_import_log_upsert_compat');
     return fallback.rows[0] || null;
   }
 }

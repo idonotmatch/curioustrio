@@ -127,12 +127,40 @@ if (require.main === module) {
   (async () => {
     try {
       await runStartupChecks();
-      seedDefaultCategories();
+      await seedDefaultCategories();
       // Bind explicitly to 0.0.0.0 (IPv4 wildcard) so the server is reachable from
       // the iOS Simulator and physical devices on the local network. Without an
       // explicit hostname, Node.js on some systems binds to :: (IPv6 only) which
       // is unreachable when the client falls back to 127.0.0.1.
-      app.listen(PORT, '0.0.0.0', () => console.log(`API running on ${PORT}`));
+      const server = app.listen(PORT, '0.0.0.0', () => console.log(`API running on ${PORT}`));
+      let shuttingDown = false;
+
+      const shutdown = (signal) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log(`[shutdown] ${signal} received; draining HTTP connections`);
+        const forceExitTimer = setTimeout(() => {
+          console.error('[shutdown] graceful shutdown timed out');
+          server.closeAllConnections?.();
+          process.exit(1);
+        }, 10000);
+        forceExitTimer.unref();
+
+        server.close(async (serverError) => {
+          try {
+            await db.pool.end();
+          } catch (dbError) {
+            console.error('[shutdown] database pool close failed:', dbError?.message || dbError);
+            serverError = serverError || dbError;
+          } finally {
+            clearTimeout(forceExitTimer);
+            process.exit(serverError ? 1 : 0);
+          }
+        });
+      };
+
+      process.once('SIGTERM', () => shutdown('SIGTERM'));
+      process.once('SIGINT', () => shutdown('SIGINT'));
     } catch (err) {
       console.error('[startup] Fatal startup check failure:', err?.message || err);
       process.exit(1);

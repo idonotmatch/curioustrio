@@ -56,9 +56,12 @@ async function create({
   reviewMode = null,
   reviewSource = null,
   idempotencyKey = null,
+  queryable = db,
 }) {
+  const inTransaction = queryable !== db;
+  if (inTransaction) await queryable.query('SAVEPOINT expense_create_compat');
   try {
-    const result = await db.query(
+    const result = await queryable.query(
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
          place_name, address, mapkit_stable_id,
@@ -84,13 +87,19 @@ async function create({
         reviewRequired, reviewMode, reviewSource, idempotencyKey,
       ]
     );
-    if (result.rows[0]) return result.rows[0];
+    if (result.rows[0]) {
+      if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_create_compat');
+      return result.rows[0];
+    }
     if (idempotencyKey) {
-      const existing = await db.query(
+      const existing = await queryable.query(
         `SELECT * FROM expenses WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1`,
         [userId, idempotencyKey]
       );
-      if (existing.rows[0]) return { ...existing.rows[0], _idempotent_replay: true };
+      if (existing.rows[0]) {
+        if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_create_compat');
+        return { ...existing.rows[0], _idempotent_replay: true };
+      }
     }
     throw new Error('Expense insert did not return a row');
   } catch (err) {
@@ -101,7 +110,8 @@ async function create({
       && !isMissingCategoryProvenanceError(err)
       && !isMissingLocationProvenanceError(err)
     ) throw err;
-    const fallback = await db.query(
+    if (inTransaction) await queryable.query('ROLLBACK TO SAVEPOINT expense_create_compat');
+    const fallback = await queryable.query(
       `INSERT INTO expenses (
          user_id, household_id, merchant, description, amount, date, category_id, source, status, notes,
          place_name, address, mapkit_stable_id, linked_expense_id, payment_method, card_last4, card_label,
@@ -114,6 +124,7 @@ async function create({
         isPrivate,
       ]
     );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_create_compat');
     return fallback.rows[0];
   }
 }
@@ -397,6 +408,7 @@ async function update(id, userId, {
   placeName, address, mapkitStableId,
   locationProviderId, locationLatitude, locationLongitude, locationSource,
   locationStatus, locationConfidence, locationUserOwned,
+  queryable = db,
 } = {}) {
   const hasMerchant = merchant !== undefined;
   const hasAmount = amount !== undefined;
@@ -422,8 +434,10 @@ async function update(id, userId, {
   const hasLocationStatus = locationStatus !== undefined;
   const hasLocationConfidence = locationConfidence !== undefined;
   const hasLocationUserOwned = locationUserOwned !== undefined;
+  const inTransaction = queryable !== db;
+  if (inTransaction) await queryable.query('SAVEPOINT expense_update_compat');
   try {
-    const result = await db.query(
+    const result = await queryable.query(
       `UPDATE expenses SET
          merchant = CASE WHEN $3 THEN $4 ELSE merchant END,
          amount = CASE WHEN $5 THEN $6 ELSE amount END,
@@ -478,6 +492,7 @@ async function update(id, userId, {
         hasLocationUserOwned, locationUserOwned,
       ]
     );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_update_compat');
     return result.rows[0] || null;
   } catch (err) {
     if (
@@ -486,7 +501,8 @@ async function update(id, userId, {
       && !isMissingCategoryProvenanceError(err)
       && !isMissingLocationProvenanceError(err)
     ) throw err;
-    const fallback = await db.query(
+    if (inTransaction) await queryable.query('ROLLBACK TO SAVEPOINT expense_update_compat');
+    const fallback = await queryable.query(
       `UPDATE expenses SET
          merchant = CASE WHEN $3 THEN $4 ELSE merchant END,
          amount = CASE WHEN $5 THEN $6 ELSE amount END,
@@ -517,6 +533,7 @@ async function update(id, userId, {
         hasMapkitStableId, mapkitStableId,
       ]
     );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_update_compat');
     return fallback.rows[0] || null;
   }
 }

@@ -32,4 +32,16 @@ describe('Category read cache', () => {
     ]);
     expect(db.query).toHaveBeenCalledTimes(2);
   });
+
+  it('bounds retained household entries as new households are read', async () => {
+    db.query.mockResolvedValue({ rows: [] });
+
+    for (let index = 0; index < 275; index += 1) {
+      await Category.findByHousehold(`household-${index}`);
+    }
+
+    expect(Category.categoryCacheSize()).toBeLessThanOrEqual(250);
+    await Category.findByHousehold('household-0');
+    expect(db.query).toHaveBeenCalledTimes(276);
+  });
 });

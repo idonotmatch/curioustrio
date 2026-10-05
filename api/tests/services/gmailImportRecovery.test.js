@@ -3,6 +3,7 @@ jest.mock('../../src/models/emailImportLog', () => ({
   findByIdForUser: jest.fn(), recordLogFeedback: jest.fn(), upsertResult: jest.fn(), markRetryFailed: jest.fn(),
 }));
 jest.mock('../../src/models/expense', () => ({ create: jest.fn(), findPotentialDuplicates: jest.fn() }));
+jest.mock('../../src/models/expenseItem', () => ({ createBulk: jest.fn() }));
 jest.mock('../../src/models/category', () => ({ findByHousehold: jest.fn() }));
 jest.mock('../../src/services/gmailClient', () => ({ getMessage: jest.fn() }));
 jest.mock('../../src/services/gmailImportQualityService', () => ({ getSenderImportQuality: jest.fn(), recommendReviewMode: jest.fn() }));
@@ -19,6 +20,7 @@ jest.mock('../../src/services/duplicateDetector', () => jest.fn());
 const db = require('../../src/db');
 const Log = require('../../src/models/emailImportLog');
 const Expense = require('../../src/models/expense');
+const ExpenseItem = require('../../src/models/expenseItem');
 const Category = require('../../src/models/category');
 const { getMessage } = require('../../src/services/gmailClient');
 const { classifyEmailExpense, parseEmailExpense, analyzeEmailSignals } = require('../../src/services/emailParser');
@@ -46,6 +48,8 @@ beforeEach(() => {
   parseEmailExpense.mockResolvedValue({ merchant: 'Shop', amount: 12, date: '2026-09-20', items: [] });
   Expense.findPotentialDuplicates.mockResolvedValue([]);
   Expense.create.mockResolvedValue({ id: 'expense-1', user_id: user.id, amount: 12, status: 'pending' });
+  ExpenseItem.createBulk.mockResolvedValue([]);
+  Log.upsertResult.mockResolvedValue({ id: 'log-1' });
   detectDuplicates.mockResolvedValue([]);
   assignCategory.mockResolvedValue({ category_id: null });
 });
@@ -55,7 +59,10 @@ it('recovers a skipped email into full pending review and records corrective fee
   expect(result).toMatchObject({ imported: 1, expense: { status: 'pending' } });
   expect(Log.recordLogFeedback).toHaveBeenCalledWith(log.id, user.id, 'should_have_imported');
   expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending', reviewMode: 'full_review', reviewRequired: true }));
-  expect(client.query).toHaveBeenLastCalledWith('ROLLBACK');
+  expect(client.query).toHaveBeenLastCalledWith(
+    'SELECT pg_advisory_unlock(hashtext($1), hashtext($2))',
+    [user.id, log.message_id]
+  );
   expect(client.release).toHaveBeenCalled();
 });
 
@@ -102,11 +109,32 @@ it('preserves existing message fingerprints when Gmail is unavailable', async ()
   silence.mockRestore();
 });
 
-it('retains the expense link if a later import step fails', async () => {
+it('keeps a committed import successful when freshness notification fails', async () => {
   const silence = jest.spyOn(console, 'error').mockImplementation(() => {});
   emitExpenseFreshnessEvent.mockRejectedValue(new Error('Freshness unavailable'));
-  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ failed: 1 });
-  expect(Log.upsertResult).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', expenseId: 'expense-1' }));
+  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ imported: 1, failed: 0 });
+  expect(Log.upsertResult).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'imported', expenseId: 'expense-1' }),
+    client
+  );
+  expect(Log.upsertResult).not.toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'failed' })
+  );
+  silence.mockRestore();
+});
+
+it('rolls back expense persistence when the import ledger write fails', async () => {
+  const silence = jest.spyOn(console, 'error').mockImplementation(() => {});
+  Log.upsertResult
+    .mockRejectedValueOnce(new Error('ledger unavailable'))
+    .mockResolvedValueOnce({ id: 'log-1', status: 'failed' });
+
+  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ imported: 0, failed: 1 });
+  expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  expect(Log.upsertResult).toHaveBeenLastCalledWith(expect.objectContaining({
+    status: 'failed',
+    expenseId: null,
+  }));
   silence.mockRestore();
 });
 

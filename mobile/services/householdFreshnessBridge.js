@@ -6,6 +6,7 @@ import { markFreshnessStale } from './freshnessRegistry';
 
 const POLL_INTERVAL_MS = 90 * 1000;
 const START_LOOKBACK_MS = 30 * 1000;
+const MAX_SEEN_EVENT_IDS = 1000;
 
 function eventDomains(event = {}) {
   return (Array.isArray(event?.domains) ? event.domains : [])
@@ -16,6 +17,11 @@ function eventDomains(event = {}) {
 function processEvent(event, seenIds) {
   if (!event?.id || seenIds.has(event.id)) return false;
   seenIds.add(event.id);
+  while (seenIds.size > MAX_SEEN_EVENT_IDS) {
+    const oldestId = seenIds.values().next().value;
+    if (oldestId == null) break;
+    seenIds.delete(oldestId);
+  }
   const domains = eventDomains(event);
   if (!domains.length) return false;
   markFreshnessStale(domains, {

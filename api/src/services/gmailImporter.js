@@ -270,6 +270,7 @@ async function processMessageImport(user, msgId, {
   forceReview = false,
   existingLog = null,
   outcomes = createOutcomes(),
+  persistenceClient: providedPersistenceClient = null,
 } = {}) {
   if (!allowExistingRetry) {
     const existing = existingLog || await EmailImportLog.findByMessageId(user.id, msgId);
@@ -460,58 +461,82 @@ async function processMessageImport(user, msgId, {
 
     let reviewMode = forceReview ? 'full_review' : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
 
-    let expense = await Expense.create({
-      userId: user.id,
-      householdId: user.household_id,
-      merchant: parsed.merchant,
-      description: parsed.description || null,
-      amount: parsed.amount,
-      date: parsed.date,
-      categoryId: category_id,
-      source: 'email',
-      status: 'pending',
-      notes: parsed.notes,
-      placeName: location?.place_name || null,
-      address: location?.address || null,
-      mapkitStableId: location?.mapkit_stable_id || null,
-      paymentMethod: parsed.payment_method || 'unknown',
-      cardLast4: parsed.card_last4 || null,
-      cardLabel: parsed.card_label || null,
-      categorySource: categoryAssignment.source || null,
-      categoryConfidence: categoryAssignment.confidence ?? null,
-      categoryReasoning: categoryAssignment.reasoning || null,
-      reviewRequired: true,
-      reviewMode: reviewMode || null,
-      reviewSource: 'gmail',
-    });
-    createdExpense = expense;
-
-    const duplicateFlags = await detectDuplicates(expense);
-    if (duplicateFlags.length > 0 && reviewMode !== 'full_review') {
-      reviewMode = 'full_review';
-      expense = await Expense.updateReviewMetadata(expense.id, user.id, {
+    const persistenceClient = providedPersistenceClient || await db.pool.connect();
+    const ownsPersistenceClient = !providedPersistenceClient;
+    let expense;
+    try {
+      await persistenceClient.query('BEGIN');
+      expense = await Expense.create({
+        userId: user.id,
+        householdId: user.household_id,
+        merchant: parsed.merchant,
+        description: parsed.description || null,
+        amount: parsed.amount,
+        date: parsed.date,
+        categoryId: category_id,
+        source: 'email',
+        status: 'pending',
+        notes: parsed.notes,
+        placeName: location?.place_name || null,
+        address: location?.address || null,
+        mapkitStableId: location?.mapkit_stable_id || null,
+        paymentMethod: parsed.payment_method || 'unknown',
+        cardLast4: parsed.card_last4 || null,
+        cardLabel: parsed.card_label || null,
+        categorySource: categoryAssignment.source || null,
+        categoryConfidence: categoryAssignment.confidence ?? null,
+        categoryReasoning: categoryAssignment.reasoning || null,
         reviewRequired: true,
-        reviewMode,
+        reviewMode: reviewMode || null,
         reviewSource: 'gmail',
-      }) || expense;
+        queryable: persistenceClient,
+      });
+      if (itemsWithProducts.length > 0) {
+        await ExpenseItem.createBulk(expense.id, itemsWithProducts, persistenceClient);
+      }
+      await EmailImportLog.upsertResult({
+        userId: user.id,
+        messageId: msgId,
+        expenseId: expense.id,
+        status: 'imported',
+        subject: msgSubject,
+        fromAddress: msgFrom,
+        snippet: msgSnippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
+      }, persistenceClient);
+      await persistenceClient.query('COMMIT');
       createdExpense = expense;
+    } catch (persistenceError) {
+      try {
+        await persistenceClient.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('[gmail import] persistence rollback failed', {
+          message: rollbackError?.message || String(rollbackError || 'unknown_error'),
+        });
+      }
+      throw persistenceError;
+    } finally {
+      if (ownsPersistenceClient) persistenceClient.release();
     }
 
-    if (itemsWithProducts.length > 0) {
-      await ExpenseItem.replaceItems(expense.id, itemsWithProducts);
+    let duplicateFlags = [];
+    try {
+      duplicateFlags = await detectDuplicates(expense);
+      if (duplicateFlags.length > 0 && reviewMode !== 'full_review') {
+        reviewMode = 'full_review';
+        expense = await Expense.updateReviewMetadata(expense.id, user.id, {
+          reviewRequired: true,
+          reviewMode,
+          reviewSource: 'gmail',
+        }) || expense;
+        createdExpense = expense;
+      }
+    } catch (duplicateError) {
+      console.error('[gmail import] duplicate detection failed (non-fatal)', {
+        message: duplicateError?.message || String(duplicateError || 'unknown_error'),
+      });
     }
-
-    await EmailImportLog.upsertResult({
-      userId: user.id,
-      messageId: msgId,
-      expenseId: expense.id,
-      status: 'imported',
-      subject: msgSubject,
-      fromAddress: msgFrom,
-      snippet: msgSnippet,
-      structuredItemBlockLevel: structuredItemSignal.level,
-      deterministicItemCount: structuredItemSignal.deterministic_item_count,
-    });
 
     if (reviewMode === 'quick_check') {
       outcomes.imported_fast_lane++;
@@ -531,20 +556,27 @@ async function processMessageImport(user, msgId, {
         review_mode: reviewMode || null,
       },
     });
-    await emitExpenseFreshnessEvent(user, expense, {
-      eventType: 'gmail_expense_imported',
-      includePending: true,
-      includeGmail: true,
-      metadata: {
-        source: 'gmail_import',
-        review_mode: reviewMode || null,
-      },
-    });
+    try {
+      await emitExpenseFreshnessEvent(user, expense, {
+        eventType: 'gmail_expense_imported',
+        includePending: true,
+        includeGmail: true,
+        metadata: {
+          source: 'gmail_import',
+          review_mode: reviewMode || null,
+        },
+      });
+    } catch (freshnessError) {
+      console.error('[gmail import] freshness event failed (non-fatal)', {
+        message: freshnessError?.message || String(freshnessError || 'unknown_error'),
+      });
+    }
     return { imported: 1, skipped: 0, failed: 0, expense, duplicate_flags: duplicateFlags };
   } catch (e) {
     const failureReason = summarizeImportFailure(e);
     console.error('[gmail import] message failed', {
       reason: failureReason,
+      message: `${e?.message || 'unknown_error'}`.slice(0, 160),
     });
     increment(outcomes.failed_reasons, failureReason);
     if (existingLog && !msgFrom) {
@@ -573,7 +605,7 @@ async function processMessageImportWithLock(user, msgId, options = {}) {
       if (options.outcomes) options.outcomes.skipped_existing++;
       return { imported: 0, skipped: 1, failed: 0, reason: 'processing' };
     }
-    return await processMessageImport(user, msgId, options);
+    return await processMessageImport(user, msgId, { ...options, persistenceClient: client });
   } finally {
     if (locked) {
       try {
@@ -649,13 +681,14 @@ async function recoverImportLog(user, log, {
 } = {}) {
   // Serialize recovery across API instances, then re-read to make repeated taps idempotent.
   const client = await db.pool.connect();
+  let locked = false;
   try {
-    await client.query('BEGIN');
     const lock = await client.query(
-      'SELECT pg_try_advisory_xact_lock(hashtext($1), hashtext($2)) AS locked',
+      'SELECT pg_try_advisory_lock(hashtext($1), hashtext($2)) AS locked',
       [user.id, log.message_id]
     );
-    if (!lock.rows[0].locked) {
+    locked = lock.rows[0]?.locked === true;
+    if (!locked) {
       throw Object.assign(new Error('This email is already being processed. Try again shortly.'), { status: 409 });
     }
     const current = await EmailImportLog.findByIdForUser(log.id, user.id);
@@ -678,9 +711,19 @@ async function recoverImportLog(user, log, {
       existingLog: current,
       outcomes,
       qualityCache,
+      persistenceClient: client,
     });
   } finally {
-    try { await client.query('ROLLBACK'); } finally { client.release(); }
+    if (locked) {
+      try {
+        await client.query('SELECT pg_advisory_unlock(hashtext($1), hashtext($2))', [user.id, log.message_id]);
+      } catch (unlockError) {
+        console.error('[gmail import] recovery lock release failed', {
+          message: unlockError?.message || String(unlockError || 'unknown_error'),
+        });
+      }
+    }
+    client.release();
   }
 }
 
