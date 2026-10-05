@@ -151,8 +151,10 @@ async function listRecentMessages(userId, options = 50) {
     : (options || {});
   const maxResults = Math.max(1, Math.min(Number(config.maxResults) || 50, 100));
   const query = `${config.query || GMAIL_SEARCH_QUERY}`.trim() || GMAIL_SEARCH_QUERY;
-  const auth = await getAuthenticatedClient(userId);
-  const gmail = google.gmail({ version: 'v1', auth });
+  const gmail = config.gmailClient || google.gmail({
+    version: 'v1',
+    auth: await getAuthenticatedClient(userId),
+  });
   const response = await gmail.users.messages.list({
     userId: 'me',
     maxResults,
@@ -259,9 +261,11 @@ function chooseBestMessageBody(plainText = '', htmlText = '', snippet = '') {
   return normalizedPlain;
 }
 
-async function getMessage(userId, messageId) {
-  const auth = await getAuthenticatedClient(userId);
-  const gmail = google.gmail({ version: 'v1', auth });
+async function getMessage(userId, messageId, { gmailClient = null } = {}) {
+  const gmail = gmailClient || google.gmail({
+    version: 'v1',
+    auth: await getAuthenticatedClient(userId),
+  });
   const response = await gmail.users.messages.get({
     userId: 'me',
     id: messageId,
@@ -302,11 +306,24 @@ async function getMessage(userId, messageId) {
   return { subject, from, snippet, body, receivedAt };
 }
 
+async function createGmailSession(userId) {
+  const auth = await getAuthenticatedClient(userId);
+  const gmailClient = google.gmail({ version: 'v1', auth });
+  return {
+    listRecentMessages: (options = 50) => listRecentMessages(userId, {
+      ...(typeof options === 'number' ? { maxResults: options } : options),
+      gmailClient,
+    }),
+    getMessage: (messageId) => getMessage(userId, messageId, { gmailClient }),
+  };
+}
+
 module.exports = {
   GMAIL_SEARCH_QUERY,
   getAuthUrl,
   exchangeCode,
   getAuthenticatedClient,
+  createGmailSession,
   disconnectGmailConnection,
   listRecentMessages,
   getMessage,

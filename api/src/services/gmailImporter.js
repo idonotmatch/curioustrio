@@ -6,7 +6,7 @@ const ExpenseItem = require('../models/expenseItem');
 const BackgroundJob = require('../models/backgroundJob');
 const PushToken = require('../models/pushToken');
 const db = require('../db');
-const { listRecentMessages, getMessage } = require('./gmailClient');
+const { listRecentMessages, getMessage, createGmailSession } = require('./gmailClient');
 const {
   classifyEmailExpense,
   parseEmailExpense,
@@ -270,6 +270,7 @@ async function processMessageImport(user, msgId, {
   existingLog = null,
   outcomes = createOutcomes(),
   persistenceClient: providedPersistenceClient = null,
+  gmailSession = null,
 } = {}) {
   if (!allowExistingRetry) {
     const existing = existingLog || await EmailImportLog.findByMessageId(user.id, msgId);
@@ -281,7 +282,9 @@ async function processMessageImport(user, msgId, {
 
   let msgSubject, msgFrom, msgSnippet, createdExpense;
   try {
-    const { subject, from, body, snippet, receivedAt } = await getMessage(user.id, msgId);
+    const { subject, from, body, snippet, receivedAt } = gmailSession
+      ? await gmailSession.getMessage(msgId)
+      : await getMessage(user.id, msgId);
     msgSubject = subject;
     msgFrom = from;
     msgSnippet = snippet;
@@ -608,7 +611,12 @@ async function processMessageImportWithLock(user, msgId, options = {}) {
  * All errors are caught per-message — a bad email never aborts the run.
  */
 async function importForUser(user) {
-  const messages = await listRecentMessages(user.id);
+  const gmailSession = typeof createGmailSession === 'function'
+    ? await createGmailSession(user.id)
+    : null;
+  const messages = gmailSession
+    ? await gmailSession.listRecentMessages()
+    : await listRecentMessages(user.id);
   const categories = await Category.findByHousehold(user.household_id);
   const todayDate = new Date().toISOString().split('T')[0];
 
@@ -622,6 +630,7 @@ async function importForUser(user) {
       todayDate,
       outcomes,
       qualityCache,
+      gmailSession,
     });
     imported += result.imported;
     skipped += result.skipped;

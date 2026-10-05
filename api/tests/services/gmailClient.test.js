@@ -1,6 +1,25 @@
 jest.mock('node-fetch', () => jest.fn());
+const mockGmailList = jest.fn();
+const mockGmailGet = jest.fn();
+const mockRefreshAccessToken = jest.fn();
+const mockSetCredentials = jest.fn();
+const mockOAuth2 = jest.fn(() => ({
+  transporter: { defaults: {} },
+  setCredentials: mockSetCredentials,
+  refreshAccessToken: mockRefreshAccessToken,
+}));
+const mockGoogleGmail = jest.fn(() => ({
+  users: { messages: { list: mockGmailList, get: mockGmailGet } },
+}));
+jest.mock('googleapis', () => ({
+  google: {
+    auth: { OAuth2: mockOAuth2 },
+    gmail: mockGoogleGmail,
+  },
+}));
 jest.mock('../../src/models/oauthToken', () => ({
   findCredentialsByUserId: jest.fn(),
+  upsert: jest.fn(),
   deleteByUserId: jest.fn(),
 }));
 jest.mock('../../src/db', () => ({
@@ -15,6 +34,7 @@ const {
   GMAIL_SEARCH_QUERY,
   chooseBestMessageBody,
   bodyRichnessScore,
+  createGmailSession,
   disconnectGmailConnection,
 } = require('../../src/services/gmailClient');
 
@@ -132,6 +152,58 @@ $107.95`;
 
     expect(bodyRichnessScore(htmlText)).toBeGreaterThan(bodyRichnessScore(plain));
     expect(chooseBestMessageBody(plain, htmlText, 'Order #RT-270233 confirmed')).toBe(htmlText);
+  });
+});
+
+describe('createGmailSession', () => {
+  beforeEach(() => {
+    mockGmailList.mockReset();
+    mockGmailGet.mockReset();
+    mockRefreshAccessToken.mockReset();
+    mockSetCredentials.mockReset();
+    mockOAuth2.mockClear();
+    mockGoogleGmail.mockClear();
+    OAuthToken.findCredentialsByUserId.mockReset();
+    OAuthToken.upsert.mockReset();
+  });
+
+  it('reuses one refreshed Gmail client for message listing and reads', async () => {
+    OAuthToken.findCredentialsByUserId.mockResolvedValue({
+      refresh_token: 'refresh-token',
+      scope: 'gmail.readonly',
+    });
+    OAuthToken.upsert.mockResolvedValue({});
+    mockRefreshAccessToken.mockResolvedValue({
+      credentials: { access_token: 'access-token', expiry_date: Date.now() + 3600000 },
+    });
+    mockGmailList.mockResolvedValue({ data: { messages: [{ id: 'message-1' }] } });
+    mockGmailGet.mockResolvedValue({
+      data: {
+        snippet: 'Order total $12.00',
+        internalDate: `${Date.now()}`,
+        payload: {
+          headers: [
+            { name: 'Subject', value: 'Order receipt' },
+            { name: 'From', value: 'orders@example.com' },
+          ],
+          mimeType: 'text/plain',
+          body: { data: Buffer.from('Order total $12.00').toString('base64') },
+        },
+      },
+    });
+
+    const session = await createGmailSession('user-1');
+    await expect(session.listRecentMessages()).resolves.toEqual([{ id: 'message-1' }]);
+    await expect(session.getMessage('message-1')).resolves.toMatchObject({
+      subject: 'Order receipt',
+      from: 'orders@example.com',
+      body: 'Order total $12.00',
+    });
+
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(mockGoogleGmail).toHaveBeenCalledTimes(1);
+    expect(mockGmailList).toHaveBeenCalledTimes(1);
+    expect(mockGmailGet).toHaveBeenCalledTimes(1);
   });
 });
 

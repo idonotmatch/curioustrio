@@ -81,6 +81,23 @@ async function markSynced(userId, { provider = 'google', source = null } = {}) {
   return serializeTokenRow(result.rows[0]);
 }
 
+async function markSyncPartial(userId, { provider = 'google', source = null, error = null } = {}) {
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET last_synced_at = NOW(),
+         last_sync_attempted_at = NOW(),
+         last_sync_error_at = NOW(),
+         last_sync_error = $4,
+         last_sync_status = 'partial',
+         last_sync_source = COALESCE($3, last_sync_source),
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider, source, error]
+  );
+  return serializeTokenRow(result.rows[0]);
+}
+
 async function markSyncFailure(userId, { provider = 'google', source = null, error = null } = {}) {
   const result = await db.query(
     `UPDATE oauth_tokens
@@ -114,6 +131,7 @@ module.exports = {
   findAllWithGmail,
   markSyncAttempt,
   markSynced,
+  markSyncPartial,
   markSyncFailure,
   deleteByUserId,
 };

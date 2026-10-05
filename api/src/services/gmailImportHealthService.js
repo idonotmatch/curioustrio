@@ -56,11 +56,17 @@ function buildRecommendations({ token, inboxProbe, importProbe, recentLogCounts 
     return recommendations;
   }
 
-  if (token.last_sync_status === 'failed' || token.last_sync_error) {
+  if (token.last_sync_status === 'failed') {
     recommendations.push({
       level: 'error',
       code: 'last_sync_failed',
       message: 'The last Gmail sync failed before completing.',
+    });
+  } else if (token.last_sync_status === 'partial') {
+    recommendations.push({
+      level: 'warning',
+      code: 'last_sync_partial',
+      message: 'The last Gmail sync completed, but one or more messages could not be imported.',
     });
   }
 

@@ -8,10 +8,11 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Trigger Gmail sync
         run: |
-          status=$(curl -sS -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/gmail-sync \
+          status=$(curl -sS --connect-timeout 15 --max-time 540 -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/gmail-sync \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json")
           cat response.json

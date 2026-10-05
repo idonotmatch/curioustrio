@@ -626,9 +626,9 @@ $1.61 promotions applied`,
     );
     expect(token.rows[0].last_sync_attempted_at).toBeTruthy();
     expect(token.rows[0].last_synced_at).toBeTruthy();
-    expect(token.rows[0].last_sync_status).toBe('success');
+    expect(token.rows[0].last_sync_status).toBe('partial');
     expect(token.rows[0].last_sync_source).toBe('manual');
-    expect(token.rows[0].last_sync_error).toBeNull();
+    expect(token.rows[0].last_sync_error).toMatch(/1 message import failed/i);
   });
 
   it('returns a reconnect message when Gmail credentials are expired before sync starts', async () => {

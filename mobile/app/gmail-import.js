@@ -244,7 +244,7 @@ export default function GmailImportScreen() {
   async function syncGmail() {
     setGmailSyncing(true);
     try {
-      const result = await api.post('/gmail/import', {});
+      const result = await api.post('/gmail/import', { source: 'manual' });
       await invalidateExpenseMutationCaches();
       await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
       const pendingReview = result?.outcomes?.imported_pending_review ?? 0;

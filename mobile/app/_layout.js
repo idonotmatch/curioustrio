@@ -244,10 +244,10 @@ function AppNavigator() {
       const lastSyncedAt = status.last_synced_at ? new Date(status.last_synced_at).getTime() : 0;
       const stale = !lastSyncedAt || Number.isNaN(lastSyncedAt) || (now - lastSyncedAt) >= 30 * 60 * 1000;
       if (!stale) return;
-      await api.post('/gmail/import', {}, { token });
+      await api.post('/gmail/import', { source: 'app_open' }, { token });
       await invalidateExpenseMutationCaches();
-    } catch {
-      // Non-fatal
+    } catch (error) {
+      captureException(error, { area: 'gmail_auto_sync' });
     } finally {
       gmailSyncInFlightRef.current = false;
     }

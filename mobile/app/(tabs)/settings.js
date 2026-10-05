@@ -32,11 +32,13 @@ export default function SettingsScreen() {
   const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(null);
   const [gmailStatus, setGmailStatus] = useState(null);
   const [gmailStatusState, setGmailStatusState] = useState('loading');
+  const gmailNeedsAttention = gmailStatus?.connected
+    && ['failed', 'partial'].includes(gmailStatus.last_sync_status);
   const budgetDirty = currentBudget?.limit == null
     ? Boolean(`${budgetLimit}`.trim())
     : Number(budgetLimit) !== Number(currentBudget.limit);
   const healthItems = [
-    gmailStatusState === 'loading' ? 'Checking Gmail' : gmailStatusState === 'error' ? 'Gmail status unavailable' : gmailStatus?.connected ? 'Gmail connected' : 'Gmail needs setup',
+    gmailStatusState === 'loading' ? 'Checking Gmail' : gmailStatusState === 'error' ? 'Gmail status unavailable' : gmailNeedsAttention ? 'Gmail needs attention' : gmailStatus?.connected ? 'Gmail connected' : 'Gmail needs setup',
     pendingSuggestionsCount == null ? 'Checking categories' : pendingSuggestionsCount < 0 ? 'Category status unavailable' : pendingSuggestionsCount > 0 ? `${pendingSuggestionsCount} category suggestion${pendingSuggestionsCount === 1 ? '' : 's'}` : 'Categories clear',
     recurringLoading ? 'Checking recurring' : recurring.length > 0 ? `${recurring.length} recurring expense${recurring.length === 1 ? '' : 's'}` : 'No recurring flags',
   ];
@@ -225,7 +227,7 @@ export default function SettingsScreen() {
             <Text style={styles.navRowText}>Manage Gmail import</Text>
             <Text style={styles.navRowSub}>
               {gmailStatus?.connected
-                ? gmailStatus.last_sync_status === 'failed'
+                ? ['failed', 'partial'].includes(gmailStatus.last_sync_status)
                   ? 'Connected, last sync needs attention'
                   : 'Connected and ready to sync receipts'
                 : gmailStatusState === 'loading'
@@ -238,13 +240,13 @@ export default function SettingsScreen() {
           <View style={styles.navRowRight}>
             <View style={[
               styles.statusBadge,
-              gmailStatus?.connected ? styles.statusBadgeGood : styles.statusBadgeAttention,
+              gmailStatus?.connected && !gmailNeedsAttention ? styles.statusBadgeGood : styles.statusBadgeAttention,
             ]}>
               <Text style={[
                 styles.statusBadgeText,
-                gmailStatus?.connected ? styles.statusBadgeTextGood : styles.statusBadgeTextAttention,
+                gmailStatus?.connected && !gmailNeedsAttention ? styles.statusBadgeTextGood : styles.statusBadgeTextAttention,
               ]}>
-                {gmailStatus?.connected ? 'On' : gmailStatusState === 'loading' ? 'Checking' : gmailStatusState === 'error' ? 'Retry' : 'Setup'}
+                {gmailNeedsAttention ? 'Check' : gmailStatus?.connected ? 'On' : gmailStatusState === 'loading' ? 'Checking' : gmailStatusState === 'error' ? 'Retry' : 'Setup'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />

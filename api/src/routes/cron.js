@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const User = require('../models/user');
-const OAuthToken = require('../models/oauthToken');
 const PushToken = require('../models/pushToken');
-const { importForUser } = require('../services/gmailImporter');
 const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 const { runDataRetention } = require('../services/dataRetentionService');
 const { notifyCronAlert } = require('../services/cronAlertService');
+const { captureException } = require('../services/observability');
+const { runScheduledGmailSync } = require('../services/gmailSyncService');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -31,58 +30,33 @@ function cronAuth(req, res, next) {
 // POST /cron/gmail-sync — sync Gmail for all connected users
 router.post('/gmail-sync', cronAuth, async (req, res, next) => {
   try {
-    const userIds = await OAuthToken.findAllWithGmail();
-    console.log(`[cron/gmail-sync] starting — ${userIds.length} connected account(s)`);
+    const result = await runScheduledGmailSync({
+      onAccountError(error, context) {
+        captureException(error, { area: 'gmail_scheduler', phase: context.phase });
+      },
+    });
+    console.log('[cron/gmail-sync] completed', result);
 
-    let usersProcessed = 0, totalImported = 0, totalSkipped = 0, totalFailed = 0;
-
-    for (const userId of userIds) {
-      try {
-        const user = await User.findById(userId);
-        if (!user) continue;
-
-        await OAuthToken.markSyncAttempt(userId, { source: 'scheduler' });
-        const { imported, skipped, failed } = await importForUser(user);
-        await OAuthToken.markSynced(userId, { source: 'scheduler' });
-        totalImported += imported;
-        totalSkipped += skipped;
-        totalFailed += failed;
-        usersProcessed++;
-
-        console.log(`[cron/gmail-sync] user=${userId} imported=${imported} skipped=${skipped} failed=${failed}`);
-      } catch (e) {
-        // Expired token or other per-user error — log and continue
-        await OAuthToken.markSyncFailure(userId, {
-          source: 'scheduler',
-          error: e?.message ? `${e.message}`.slice(0, 500) : 'Unknown Gmail sync error',
-        });
-        notifyCronAlert({
-          job: 'gmail-sync',
-          level: 'error',
-          message: 'Gmail scheduler failed for a connected account.',
-          metadata: { user_id: userId },
-        }).catch(() => {});
-        console.error(`[cron/gmail-sync] user=${userId} error:`, e.message);
-      }
-    }
-
-    if (totalFailed > 0) {
-      notifyCronAlert({
+    if (!result.ok) {
+      await notifyCronAlert({
         job: 'gmail-sync',
-        level: 'warning',
-        message: 'Gmail scheduler completed with failed message imports.',
-        metadata: {
-          users_processed: usersProcessed,
-          total_imported: totalImported,
-          total_skipped: totalSkipped,
-          total_failed: totalFailed,
-        },
-      }).catch(() => {});
+        level: result.users_failed > 0 ? 'error' : 'warning',
+        message: result.users_failed > 0
+          ? 'Gmail scheduler could not sync one or more connected accounts.'
+          : 'Gmail scheduler completed with failed message imports.',
+        metadata: result,
+      });
     }
-
-    console.log(`[cron/gmail-sync] done — users=${usersProcessed} imported=${totalImported} skipped=${totalSkipped} failed=${totalFailed}`);
-    res.json({ users_processed: usersProcessed, total_imported: totalImported, total_skipped: totalSkipped, total_failed: totalFailed });
-  } catch (err) { next(err); }
+    res.status(result.ok ? 200 : 503).json(result);
+  } catch (err) {
+    captureException(err, { area: 'gmail_scheduler', phase: 'run' });
+    await notifyCronAlert({
+      job: 'gmail-sync',
+      level: 'error',
+      message: 'Gmail scheduler failed before account processing completed.',
+    });
+    next(err);
+  }
 });
 
 router.post('/insights-push', cronAuth, async (req, res, next) => {

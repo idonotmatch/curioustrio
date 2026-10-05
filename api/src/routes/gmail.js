@@ -10,6 +10,7 @@ const { getAuthUrl, exchangeCode, disconnectGmailConnection, getMessage } = requ
 const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reviewSkippedImportLog } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { getGmailImportHealth } = require('../services/gmailImportHealthService');
+const { recordGmailSyncResult } = require('../services/gmailSyncService');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 function gmailAppReturnUrl() {
@@ -149,23 +150,28 @@ router.delete('/connection', authenticate, async (req, res, next) => {
 
 // POST /gmail/import — trigger email import for authenticated user
 router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
+  let user = null;
+  const source = req.body?.source === 'app_open' ? 'app_open' : 'manual';
   try {
-    const user = await User.findByProviderUid(req.userId);
+    user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
     if (!token) return res.status(403).json({ error: 'Gmail not connected. Visit GET /gmail/auth first.' });
-    await OAuthToken.markSyncAttempt(user.id, { source: 'manual' });
+    await OAuthToken.markSyncAttempt(user.id, { source });
     const result = await importForUser(user);
-    await OAuthToken.markSynced(user.id, { source: 'manual' });
-    res.json(result);
+    const syncStatus = await recordGmailSyncResult(user.id, result, { source });
+    res.json({ ...result, sync_status: syncStatus });
   } catch (err) {
     const classified = classifyGmailImportError(err);
-    const user = req.userId ? await User.findByProviderUid(req.userId) : null;
     if (user?.id) {
-      await OAuthToken.markSyncFailure(user.id, {
-        source: 'manual',
-        error: sanitizeErrorDetail(err) || classified.message,
-      });
+      try {
+        await OAuthToken.markSyncFailure(user.id, {
+          source,
+          error: sanitizeErrorDetail(err) || classified.message,
+        });
+      } catch (statusError) {
+        console.error('[gmail import] could not record sync failure:', sanitizeErrorDetail(statusError));
+      }
     }
     console.error('[gmail import] top-level failure:', {
       user_id: user?.id || null,

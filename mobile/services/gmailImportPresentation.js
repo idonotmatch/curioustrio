@@ -219,6 +219,7 @@ export function importHealthMessage(summary = {}) {
 
 function formatSyncSource(source) {
   if (source === 'manual') return 'manual refresh';
+  if (source === 'app_open') return 'app refresh';
   if (source === 'scheduler') return 'background refresh';
   return 'sync';
 }
@@ -230,6 +231,9 @@ export function syncStatusMessage(status = {}, summary = {}) {
   const source = summary?.last_sync_source || status?.last_sync_source;
   const syncStatus = summary?.last_sync_status || status?.last_sync_status;
 
+  if (syncStatus === 'partial' && lastAttempt) {
+    return `Last ${formatSyncSource(source)} completed with an issue ${lastAttempt}.`;
+  }
   if (syncStatus === 'failed' && lastAttempt) {
     return `Last ${formatSyncSource(source)} failed ${lastAttempt}.`;
   }
@@ -247,7 +251,11 @@ export function syncStatusMessage(status = {}, summary = {}) {
 
 export function syncErrorMessage(status = {}, summary = {}) {
   const lastError = summary?.last_sync_error || status?.last_sync_error;
+  const syncStatus = summary?.last_sync_status || status?.last_sync_status;
   if (!lastError) return null;
+  if (syncStatus === 'partial') {
+    return 'Some messages could not be imported. You can retry them below.';
+  }
   const normalized = `${lastError}`.trim();
   if (!normalized) return null;
   if (normalized.length <= 90) return normalized;
