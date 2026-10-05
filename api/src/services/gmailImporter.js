@@ -175,7 +175,6 @@ function buildItemHistoryReviewAdjustment(expenseLike = {}, itemHistories = []) 
   const contexts = Array.isArray(itemHistories) ? itemHistories : [];
   if (!contexts.length) return null;
 
-  const totalAmount = Math.abs(Number(expenseLike.amount || 0));
   let trustedSignals = 0;
   let cautionSignals = 0;
 
@@ -183,9 +182,10 @@ function buildItemHistoryReviewAdjustment(expenseLike = {}, itemHistories = []) 
     const latestPurchase = context.latest_purchase || null;
     const latestMerchant = `${latestPurchase?.merchant || ''}`.trim().toLowerCase();
     const currentMerchant = `${expenseLike.merchant || ''}`.trim().toLowerCase();
+    const currentItemAmount = Math.abs(Number(context.current_item_amount || 0));
     const medianAmount = Number(context.median_amount || 0);
-    const deltaPercent = medianAmount > 0
-      ? Math.round((Math.abs(totalAmount - medianAmount) / medianAmount) * 100)
+    const deltaPercent = medianAmount > 0 && currentItemAmount > 0
+      ? Math.round((Math.abs(currentItemAmount - medianAmount) / medianAmount) * 100)
       : null;
 
     if (Number(context.occurrence_count || 0) >= 3) trustedSignals += 1;
@@ -415,7 +415,10 @@ async function processMessageImport(user, msgId, {
           const resolution = await resolveProductMatch(item, parsed.merchant);
           return {
             ...item,
-            product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
+            source_type: 'email',
+            raw_description: item.description,
+            extraction_confidence: item.amount != null ? 'medium' : 'low',
+            product_id: resolution?.product_id || null,
             product_match_confidence: resolution?.confidence || null,
             product_match_reason: resolution?.reason || null,
           };
@@ -433,7 +436,18 @@ async function processMessageImport(user, msgId, {
         const histories = await Promise.all(
           uniqueGroupKeys.map((groupKey) => getItemHistoryByGroupKey(user.id, groupKey, { scope: 'personal', lookbackDays: 180 }))
         );
-        const adjustment = buildItemHistoryReviewAdjustment(parsed, histories.filter(Boolean));
+        const historyContexts = histories.map((history, index) => {
+          if (!history) return null;
+          const groupKey = uniqueGroupKeys[index];
+          const currentItem = itemsWithProducts.find((item) => (
+            item.product_id ? `product:${item.product_id}` : (item.comparable_key ? `comparable:${item.comparable_key}` : null)
+          ) === groupKey);
+          return {
+            ...history,
+            current_item_amount: currentItem?.amount ?? null,
+          };
+        }).filter(Boolean);
+        const adjustment = buildItemHistoryReviewAdjustment(parsed, historyContexts);
         if (adjustment?.level) {
           effectiveSenderQuality = {
             ...senderQuality,

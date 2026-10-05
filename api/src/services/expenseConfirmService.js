@@ -39,6 +39,14 @@ function validateConfirmExpensePayload(payload = {}) {
   const coreValidation = validateExpenseCoreFields(payload);
   if (coreValidation.error) return coreValidation;
 
+  if (items !== undefined && !Array.isArray(items)) {
+    return { error: 'items must be an array', reason: 'invalid_items' };
+  }
+
+  if (Array.isArray(items) && items.length > 250) {
+    return { error: 'items cannot contain more than 250 rows', reason: 'too_many_items' };
+  }
+
   if (Array.isArray(items) && items.some((item) => !item.description || typeof item.description !== 'string' || item.description.trim() === '')) {
     return { error: 'Each item must have a non-empty description', reason: 'invalid_items' };
   }
@@ -197,7 +205,7 @@ async function enrichItemWithResolution(item, merchant) {
   const resolution = await resolveProductMatch(item, merchant);
   return {
     ...item,
-    product_id: resolution?.confidence === 'high' ? resolution.product_id : null,
+    product_id: resolution?.product_id || null,
     product_match_confidence: resolution?.confidence || null,
     product_match_reason: resolution?.reason || null,
   };
@@ -207,11 +215,19 @@ async function captureReceiptLineCorrections({ householdId, merchant, originalIt
   if (!householdId || !merchant) return;
   const sourceItems = Array.isArray(originalItems) ? originalItems : [];
   const nextItems = Array.isArray(resolvedItems) ? resolvedItems : [];
-  const pairCount = Math.min(sourceItems.length, nextItems.length);
+  const resolvedByObservationKey = new Map(nextItems
+    .filter((item) => item?.observation_key)
+    .map((item) => [item.observation_key, item]));
+  const pairCount = sourceItems.length;
 
   for (let i = 0; i < pairCount; i += 1) {
-    const rawLabel = `${sourceItems[i]?.description || ''}`.trim();
-    const correctedLabel = `${nextItems[i]?.description || ''}`.trim();
+    const sourceItem = sourceItems[i];
+    const nextItem = sourceItem?.observation_key
+      ? resolvedByObservationKey.get(sourceItem.observation_key)
+      : nextItems[i];
+    if (!nextItem) continue;
+    const rawLabel = `${sourceItem?.raw_description || sourceItem?.description || ''}`.trim();
+    const correctedLabel = `${nextItem?.description || ''}`.trim();
     if (!rawLabel || !correctedLabel) continue;
     if (rawLabel.toLowerCase() === correctedLabel.toLowerCase()) continue;
     await ReceiptLineCorrection.upsert({
@@ -219,7 +235,7 @@ async function captureReceiptLineCorrections({ householdId, merchant, originalIt
       merchant,
       rawLabel,
       correctedLabel,
-      productId: nextItems[i]?.product_id || null,
+      productId: nextItem?.product_id || null,
     });
   }
 }
@@ -394,7 +410,11 @@ async function enqueuePostConfirmSideEffects({
       confirm_payload: durableConfirmPayload(payload),
       original_parsed_items: (Array.isArray(originalParsedItems) ? originalParsedItems : [])
         .slice(0, 250)
-        .map((item) => ({ description: `${item?.description || ''}`.slice(0, 500) })),
+        .map((item) => ({
+          observation_key: item?.observation_key || null,
+          description: `${item?.description || ''}`.slice(0, 500),
+          raw_description: `${item?.raw_description || item?.description || ''}`.slice(0, 500),
+        })),
     },
     queryable,
   });
@@ -641,7 +661,12 @@ async function createConfirmedExpense({
     expense = persistedExpense;
     if (!idempotentReplay) {
       createdItems = Array.isArray(payload.items) && payload.items.length > 0
-        ? await ExpenseItem.createBulk(expense.id, payload.items, client)
+        ? await ExpenseItem.createBulk(expense.id, payload.items.map((item) => ({
+          ...item,
+          source_type: item.source_type || payload.source || null,
+          raw_description: item.raw_description || item.description || null,
+          extraction_confidence: item.extraction_confidence || (payload.source === 'manual' ? 'high' : null),
+        })), client)
         : [];
       receiptDetails = payload.receipt_details
         ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details, client)

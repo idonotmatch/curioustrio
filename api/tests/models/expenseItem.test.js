@@ -68,6 +68,9 @@ describe('ExpenseItem.createBulk', () => {
       product_size: '12',
       pack_size: '8',
       unit: 'oz',
+      source_type: 'camera',
+      raw_description: 'SPRK WTR',
+      extraction_confidence: 'medium',
     }]);
     expect(rows[0].upc).toBe('123456789012');
     expect(rows[0].sku).toBe('SW-12');
@@ -87,6 +90,10 @@ describe('ExpenseItem.createBulk', () => {
     expect(rows[0].normalized_total_size_unit).toBe('oz');
     expect(Number(rows[0].estimated_unit_price)).toBeCloseTo(0.0312, 4);
     expect(rows[0].comparable_key).toBe('sparkling water|brand:water co|size:12oz|pack:8');
+    expect(rows[0].observation_key).toBeTruthy();
+    expect(rows[0].source_type).toBe('camera');
+    expect(rows[0].raw_description).toBe('SPRK WTR');
+    expect(rows[0].extraction_confidence).toBe('medium');
   });
 
   it('stores stable normalized names when descriptions include merchant or package noise', async () => {
@@ -126,14 +133,15 @@ describe('ExpenseItem.replaceItems', () => {
   });
 
   it('replaces all items atomically', async () => {
-    await ExpenseItem.createBulk(expenseId, [{ description: 'Old item', amount: 1.00 }]);
+    const [original] = await ExpenseItem.createBulk(expenseId, [{ description: 'Old item', amount: 1.00 }]);
     await ExpenseItem.replaceItems(expenseId, [
-      { description: 'New A', amount: 5.00 },
+      { description: 'New A', amount: 5.00, observation_key: original.observation_key },
       { description: 'New B', amount: 6.00 },
     ]);
     const rows = await ExpenseItem.findByExpenseId(expenseId);
     expect(rows).toHaveLength(2);
     expect(rows[0].description).toBe('New A');
+    expect(rows[0].observation_key).toBe(original.observation_key);
   });
 
   it('clears all items when called with empty array', async () => {

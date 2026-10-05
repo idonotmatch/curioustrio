@@ -15,9 +15,15 @@ function formatQuantityNumber(value) {
   return numeric.toFixed(3).replace(/\.?0+$/, '');
 }
 
+function createObservationKey() {
+  return `item:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function createEditableExpenseItem(item = {}) {
   return {
     ...item,
+    observation_key: item.observation_key || createObservationKey(),
+    raw_description: item.raw_description || item.description || '',
     description: item.description || '',
     amount: item.amount != null ? String(item.amount) : '',
     quantity: item.quantity != null ? formatQuantityNumber(item.quantity) : '',
@@ -67,6 +73,10 @@ function normalizeExpenseItemPayload(item = {}) {
     product_size: item.product_size || null,
     pack_size: item.pack_size || null,
     unit: item.unit || null,
+    observation_key: item.observation_key || null,
+    source_type: item.source_type || null,
+    raw_description: `${item.raw_description || item.description || ''}`.trim() || null,
+    extraction_confidence: item.extraction_confidence || null,
   };
 }
 

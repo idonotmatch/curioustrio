@@ -21,6 +21,11 @@ import {
 } from '../services/manualAddSuggestions';
 import { colors, radius } from '../theme/tokens';
 import { sanitizeMoneyInput } from '../services/moneyInput';
+import {
+  createEditableExpenseItem,
+  normalizeExpenseItemPayload,
+  updateEditableExpenseItem,
+} from '../services/itemEditing';
 const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
 const { expenseDraftError } = require('../services/expenseValidation');
 
@@ -70,6 +75,8 @@ export default function ManualAddScreen() {
   const [dismissedMerchantSuggestion, setDismissedMerchantSuggestion] = useState('');
   const [lastSuggestedMerchant, setLastSuggestedMerchant] = useState('');
   const [saving, setSaving] = useState(false);
+  const [items, setItems] = useState([]);
+  const [itemsOpen, setItemsOpen] = useState(false);
 
   const topCategories = categories.slice(0, 8);
   const selectedCategory = categories.find((category) => category.id === categoryId) || null;
@@ -79,6 +86,13 @@ export default function ManualAddScreen() {
     return categories.filter((category) => `${category.name || ''}`.toLowerCase().includes(query));
   }, [categories, categoryQuery]);
   const canSave = Number(amount) > 0 && merchant.trim().length > 0 && !saving;
+  const itemizedTotal = useMemo(() => items.reduce((sum, item) => {
+    const value = Number.parseFloat(`${item.amount || ''}`);
+    return Number.isFinite(value) ? sum + value : sum;
+  }, 0), [items]);
+  const itemizedDifference = Number(amount) > 0 && items.length > 0
+    ? Number(amount) - itemizedTotal
+    : null;
   const saveHint = !Number(amount) || Number(amount) <= 0
     ? 'Add an amount to save this expense.'
     : !merchant.trim()
@@ -259,6 +273,13 @@ export default function ManualAddScreen() {
         is_private: isPrivate,
         exclude_from_budget: excludeFromBudget,
         budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
+        items: items
+          .filter((item) => `${item.description || ''}`.trim())
+          .map((item) => normalizeExpenseItemPayload({
+            ...item,
+            source_type: 'manual',
+            extraction_confidence: 'high',
+          })),
       });
 
       queueConfirmedExpenseClientWork({ expense: result?.expense || null });
@@ -268,6 +289,26 @@ export default function ManualAddScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function addItem() {
+    setItemsOpen(true);
+    setItems((current) => [...current, createEditableExpenseItem({
+      description: '',
+      quantity: 1,
+      unit_price: null,
+      amount: null,
+    })]);
+  }
+
+  function updateItem(index, field, value) {
+    setItems((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? updateEditableExpenseItem(item, field, value) : item
+    )));
+  }
+
+  function removeItem(index) {
+    setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   return (
@@ -391,6 +432,96 @@ export default function ManualAddScreen() {
               maximumDate={new Date()}
               onChange={onDateChange}
             />
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.expandToggle}
+            onPress={() => {
+              if (items.length === 0) addItem();
+              else setItemsOpen((value) => !value);
+            }}
+            activeOpacity={0.82}
+          >
+            <View style={styles.expandCopy}>
+              <Text style={styles.expandTitle}>{items.length > 0 ? `Items (${items.length})` : 'Add items'}</Text>
+              <Text style={styles.expandBody}>Optional details for price history and planning.</Text>
+            </View>
+            <Ionicons name={itemsOpen ? 'chevron-up' : 'add'} size={17} color={colors.textSubtle} />
+          </TouchableOpacity>
+
+          {itemsOpen ? (
+            <View style={styles.card}>
+              <View style={styles.itemSectionHeader}>
+                <Text style={styles.sectionTitle}>Item breakdown</Text>
+                <TouchableOpacity style={styles.addItemButton} onPress={addItem} accessibilityLabel="Add item">
+                  <Ionicons name="add" size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+              {items.map((item, index) => (
+                <View key={item.observation_key || index} style={styles.itemBlock}>
+                  <View style={styles.itemDescriptionRow}>
+                    <TextInput
+                      style={[styles.textInput, styles.itemDescriptionInput]}
+                      value={item.description}
+                      onChangeText={(value) => updateItem(index, 'description', value)}
+                      placeholder="Item name"
+                      placeholderTextColor={colors.textDisabled}
+                      autoCorrect
+                    />
+                    <TouchableOpacity
+                      style={styles.removeItemButton}
+                      onPress={() => removeItem(index)}
+                      accessibilityLabel="Remove item"
+                    >
+                      <Ionicons name="trash-outline" size={17} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.itemMetricsRow}>
+                    <View style={styles.itemMetricField}>
+                      <Text style={styles.itemMetricLabel}>Qty</Text>
+                      <TextInput
+                        style={styles.itemMetricInput}
+                        value={item.quantity}
+                        onChangeText={(value) => updateItem(index, 'quantity', value)}
+                        keyboardType="decimal-pad"
+                        placeholder="1"
+                        placeholderTextColor={colors.textDisabled}
+                      />
+                    </View>
+                    <View style={styles.itemMetricField}>
+                      <Text style={styles.itemMetricLabel}>Each</Text>
+                      <TextInput
+                        style={styles.itemMetricInput}
+                        value={item.unit_price}
+                        onChangeText={(value) => updateItem(index, 'unit_price', value)}
+                        keyboardType="decimal-pad"
+                        placeholder="0.00"
+                        placeholderTextColor={colors.textDisabled}
+                      />
+                    </View>
+                    <View style={styles.itemMetricField}>
+                      <Text style={styles.itemMetricLabel}>Total</Text>
+                      <TextInput
+                        style={styles.itemMetricInput}
+                        value={item.amount}
+                        onChangeText={(value) => updateItem(index, 'amount', value)}
+                        keyboardType="decimal-pad"
+                        placeholder="0.00"
+                        placeholderTextColor={colors.textDisabled}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+              {items.length > 0 ? (
+                <Text style={styles.itemizedSummary}>
+                  Itemized ${itemizedTotal.toFixed(2)}
+                  {itemizedDifference != null && Math.abs(itemizedDifference) >= 0.01
+                    ? ` | $${Math.abs(itemizedDifference).toFixed(2)} ${itemizedDifference > 0 ? 'not itemized' : 'over total'}`
+                    : ' | matches expense total'}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
 
           <TouchableOpacity
@@ -678,6 +809,36 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.1 },
+  itemSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  addItemButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  itemBlock: { gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+  itemDescriptionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  itemDescriptionInput: { flex: 1 },
+  removeItemButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  itemMetricsRow: { flexDirection: 'row', gap: 8 },
+  itemMetricField: { flex: 1, gap: 5, minWidth: 0 },
+  itemMetricLabel: { color: colors.textSubtle, fontSize: 11, fontWeight: '600' },
+  itemMetricInput: {
+    minHeight: 42,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
+    color: colors.text,
+    fontSize: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  itemizedSummary: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
   compactDateRow: {
     minHeight: 36,
     flexDirection: 'row',

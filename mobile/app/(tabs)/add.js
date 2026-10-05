@@ -7,6 +7,11 @@ try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not ava
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
 const { receiptScanErrorPresentation } = require('../../services/receiptScanPresentation');
+const {
+  RECEIPT_IMAGE_MAX_BASE64_LENGTH,
+  fallbackReceiptImagePlan,
+  primaryReceiptImagePlan,
+} = require('../../services/receiptImagePreparation');
 import { useEffect, useRef, useState } from 'react';
 import { toLocalDateString } from '../../services/date';
 import { pushConfirmDraft } from '../../services/confirmNavigation';
@@ -74,26 +79,37 @@ export default function AddScreen() {
       }
 
       const pickerResult = fromGallery
-        ? await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7, mediaTypes: 'images' })
-        : await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 });
+        ? await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.9, mediaTypes: 'images' })
+        : await ImagePicker.launchCameraAsync({ base64: true, quality: 0.9 });
 
       if (pickerResult.canceled) return;
 
       const asset = pickerResult.assets[0];
       setScanLoading(true);
 
-      // Resize to max 1500px wide at 60% quality before encoding.
-      // Falls back to the original base64 when the native module isn't available
-      // (Expo Go / simulator without a dev build).
       let imageBase64 = asset.base64;
       try {
+        const primaryPlan = primaryReceiptImagePlan(asset);
         const resized = await ImageManipulator.manipulateAsync(
           asset.uri,
-          [{ resize: { width: 1500 } }],
-          { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+          [{ resize: { width: primaryPlan.width } }],
+          { compress: primaryPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
         );
         imageBase64 = resized.base64;
-      } catch { /* native module unavailable — use original */ }
+        if ((imageBase64?.length || 0) > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
+          const fallbackPlan = fallbackReceiptImagePlan(asset);
+          const compressed = await ImageManipulator.manipulateAsync(
+            asset.uri,
+            [{ resize: { width: fallbackPlan.width } }],
+            { compress: fallbackPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+          );
+          imageBase64 = compressed.base64;
+        }
+      } catch { /* native module unavailable; validate the picker-provided image below */ }
+
+      if (!imageBase64 || imageBase64.length > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
+        throw new Error('Receipt image is too large. Crop closer to the receipt and try again.');
+      }
 
       const today = toLocalDateString();
       const parsed = await api.post('/expenses/scan', { image_base64: imageBase64, today });
@@ -114,6 +130,8 @@ export default function AddScreen() {
         Alert.alert(presentation.title, presentation.message);
       } else if (msg.includes('Camera not available on simulator')) {
         Alert.alert('Simulator', 'Camera is not available in the simulator. Use "from camera roll" or test on a real device.');
+      } else if (msg.includes('Receipt image is too large')) {
+        Alert.alert('Crop the receipt', msg);
       } else {
         Alert.alert('Scan failed', 'Could not reach the server. Check your connection and try again.');
       }

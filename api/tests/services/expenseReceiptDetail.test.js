@@ -32,6 +32,9 @@ it('whitelists and bounds client-provided receipt details', () => {
       issues: ['item_sum_mismatch'],
       uncertain_fields: ['amount'],
       field_confidence: { amount: 'medium' },
+      items_truncated: false,
+      visible_item_count: null,
+      extracted_item_count: null,
     },
   });
 });

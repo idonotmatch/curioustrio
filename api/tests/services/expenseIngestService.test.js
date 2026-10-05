@@ -283,18 +283,117 @@ describe('expenseIngestService', () => {
     expect(payload.metadata.model_call_count).toBe(2);
   });
 
-  it('does not resend the image when only optional line items need review', async () => {
+  it('keeps richer line items when a contextual retry improves fewer fields overall', async () => {
+    process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
+    parseReceiptDetailed
+      .mockResolvedValueOnce({
+        parsed: {
+          merchant: 'Market',
+          amount: 24,
+          date: '2026-04-27',
+          items: [
+            { description: 'Milk', amount: 5, brand: 'Local Dairy', product_size: '1 gal' },
+            { description: 'Eggs', amount: 6 },
+            { description: 'Bread', amount: 4 },
+          ],
+          parse_status: 'partial',
+          review_fields: ['merchant'],
+        },
+        raw: { merchant: 'Market' },
+        diagnostics: { receipt_family: 'grocery_receipt', model_call_count: 1 },
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          merchant: 'Neighborhood Market',
+          amount: 24,
+          date: '2026-04-27',
+          items: [],
+          parse_status: 'complete',
+          review_fields: [],
+        },
+        raw: { merchant: 'Neighborhood Market' },
+        diagnostics: { receipt_family: 'grocery_receipt', model_call_count: 1 },
+      });
+    buildReceiptParsingContext.mockResolvedValue({
+      priors: ['Neighborhood Market'],
+      prior_count: 1,
+      merchant_alias_count: 1,
+      merchant_item_count: 0,
+      merchant_hint: 'Market',
+    });
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-04-27',
+    });
+
+    expect(result.body.items).toHaveLength(3);
+    expect(result.body.merchant).toBe('Market');
+  });
+
+  it('uses its single retry to recover missing line items', async () => {
+    process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
+    parseReceiptDetailed
+      .mockResolvedValueOnce({
+        parsed: {
+          merchant: 'Corner Cafe',
+          amount: 12.5,
+          date: '2026-04-27',
+          items: null,
+          parse_status: 'partial',
+          review_fields: ['items'],
+        },
+        raw: { merchant: 'Corner Cafe' },
+        diagnostics: { model_call_count: 1 },
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          merchant: 'Corner Cafe',
+          amount: 12.5,
+          date: '2026-04-27',
+          items: [{ description: 'Latte', amount: 5.5 }],
+          parse_status: 'complete',
+          review_fields: [],
+        },
+        raw: { merchant: 'Corner Cafe' },
+        diagnostics: { model_call_count: 1 },
+      });
+    buildReceiptParsingContext.mockResolvedValue({
+      priors: [],
+      prior_count: 0,
+      merchant_alias_count: 0,
+      merchant_item_count: 0,
+      merchant_hint: 'Corner Cafe',
+    });
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-04-27',
+    });
+
+    expect(parseReceiptDetailed).toHaveBeenCalledTimes(2);
+    expect(buildReceiptParsingContext).toHaveBeenCalled();
+    expect(result.body.items[0].description).toBe('Latte');
+    const payload = IngestAttemptLog.create.mock.calls[0][0];
+    expect(payload.metadata.retry_strategy).toBe('fallback_only');
+    expect(payload.metadata.model_call_count).toBe(2);
+  });
+
+  it('does not retry an explicitly truncated receipt item list', async () => {
     process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
     parseReceiptDetailed.mockResolvedValueOnce({
       parsed: {
-        merchant: 'Corner Cafe',
-        amount: 12.5,
+        merchant: 'Market',
+        amount: 120.5,
         date: '2026-04-27',
-        items: null,
+        items: [{ description: 'Item one', amount: 5 }],
+        items_truncated: true,
         parse_status: 'partial',
         review_fields: ['items'],
       },
-      raw: { merchant: 'Corner Cafe' },
+      raw: { merchant: 'Market' },
       diagnostics: { model_call_count: 1 },
     });
 
@@ -306,7 +405,7 @@ describe('expenseIngestService', () => {
 
     expect(parseReceiptDetailed).toHaveBeenCalledTimes(1);
     expect(buildReceiptParsingContext).not.toHaveBeenCalled();
-    expect(result.body.amount).toBe(12.5);
+    expect(result.body.items_truncated).toBe(true);
     const payload = IngestAttemptLog.create.mock.calls[0][0];
     expect(payload.metadata.retry_strategy).toBe('none');
     expect(payload.metadata.model_call_count).toBe(1);

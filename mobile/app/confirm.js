@@ -38,6 +38,27 @@ function savedCardKey(card = {}) {
   return `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
 }
 
+function createEditableDraftItems(parsed = {}) {
+  if (!Array.isArray(parsed?.items) || parsed.items.length === 0) return [];
+  return parsed.items.map((item) => createEditableExpenseItem({
+    ...item,
+    source_type: item?.source_type || parsed.source || null,
+    raw_description: item?.raw_description || item?.description || '',
+  }));
+}
+
+function createOriginalItemSnapshot(parsed = {}, editableItems = []) {
+  if (!Array.isArray(parsed?.items)) return [];
+  return parsed.items.map((item, index) => ({
+    observation_key: editableItems[index]?.observation_key || item?.observation_key || null,
+    description: item?.description || '',
+    raw_description: item?.raw_description || item?.description || '',
+    amount: item?.amount ?? null,
+    quantity: item?.quantity ?? null,
+    unit_price: item?.unit_price ?? null,
+  }));
+}
+
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
   { value: 'reimbursable', label: 'Reimbursable' },
@@ -90,11 +111,9 @@ export default function ConfirmScreen() {
   const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const confirmRequestKeyRef = useRef(createExpenseIdempotencyKey('confirm'));
-  const [items, setItems] = useState(
-    Array.isArray(parsed?.items) && parsed.items.length > 0
-      ? parsed.items.map((it) => createEditableExpenseItem(it))
-      : []
-  );
+  const initialItems = useMemo(() => createEditableDraftItems(parsed), [parsed]);
+  const originalParsedItemsRef = useRef(createOriginalItemSnapshot(parsed, initialItems));
+  const [items, setItems] = useState(initialItems);
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
   const hasReviewHint = reviewFields.length > 0;
   const fieldConfidence = expense?.field_confidence || {};
@@ -122,11 +141,9 @@ export default function ConfirmScreen() {
     setCatSuggestion(null);
     setCatSuggestionLoading(false);
     setShowDatePicker(false);
-    setItems(
-      Array.isArray(parsed?.items) && parsed.items.length > 0
-        ? parsed.items.map((it) => createEditableExpenseItem(it))
-        : []
-    );
+    const nextItems = createEditableDraftItems(parsed);
+    originalParsedItemsRef.current = createOriginalItemSnapshot(parsed, nextItems);
+    setItems(nextItems);
     setLocationData(
       parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id
         ? {
@@ -460,12 +477,7 @@ export default function ConfirmScreen() {
           },
         } : undefined,
         original_parsed_items: parsed?.source === 'camera' && Array.isArray(parsed?.items)
-          ? parsed.items.map((it) => ({
-              description: it?.description || '',
-              amount: it?.amount ?? null,
-              quantity: it?.quantity ?? null,
-              unit_price: it?.unit_price ?? null,
-            }))
+          ? originalParsedItemsRef.current
           : undefined,
         items: items.length > 0
           ? items
@@ -720,8 +732,13 @@ export default function ConfirmScreen() {
         <View style={styles.itemsSection}>
           <Text style={styles.sectionLabel}>ITEMS</Text>
           {reviewNote('items', 'Line items may be incomplete or approximate.')}
+          {parsed?.items_truncated ? (
+            <Text style={styles.truncatedItemsNote}>
+              This receipt shows about {parsed.visible_item_count || 'more'} items. The first {items.length} were extracted. Add or correct the rest if you need a complete item history.
+            </Text>
+          ) : null}
           {items.map((item, i) => (
-            <View key={i} style={styles.itemCard}>
+            <View key={item.observation_key || i} style={styles.itemCard}>
               <View style={styles.itemRow}>
                 <TextInput
                   style={styles.itemDescInput}
@@ -1090,6 +1107,7 @@ const styles = StyleSheet.create({
   cardInput: { backgroundColor: colors.surface, borderRadius: 8, padding: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
 
   itemsSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
+  truncatedItemsNote: { color: colors.warning, fontSize: 12, lineHeight: 17, marginBottom: 10 },
   itemCard: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: 8,

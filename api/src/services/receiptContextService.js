@@ -51,6 +51,7 @@ async function listMerchantAliasPriors(householdId, requesterUserId, merchantHin
        AND e.status = 'confirmed'
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
+       AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND LOWER(e.merchant) = LOWER($2)
        AND LOWER(TRIM(COALESCE(ei.description, ''))) <> LOWER(TRIM(COALESCE(p.name, '')))
      GROUP BY ei.description, p.name, e.merchant
@@ -78,6 +79,7 @@ async function listRecentMerchantItemPriors(householdId, requesterUserId, mercha
        AND e.status = 'confirmed'
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
+       AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND LOWER(e.merchant) = LOWER($2)
      GROUP BY COALESCE(p.name, ei.description), e.merchant
      ORDER BY occurrence_count DESC, last_seen_at DESC
@@ -104,6 +106,7 @@ async function listHouseholdStaplePriors(householdId, requesterUserId, limit = 8
        AND e.status = 'confirmed'
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
+       AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      GROUP BY COALESCE(p.name, ei.description)
      HAVING COUNT(*) >= 2

@@ -182,6 +182,7 @@ async function loadItemHistoryRows(ownerId, {
       AND e.status = 'confirmed'
       AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')
       AND COALESCE(ei.item_type, 'product') = 'product'
+      AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
       AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
       ${identityClause}
     ORDER BY e.date DESC`;

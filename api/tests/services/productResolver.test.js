@@ -44,6 +44,7 @@ describe('productResolver', () => {
       productSize: '12',
       packSize: '8',
       unit: 'oz',
+      allowCrossMerchant: true,
     });
     expect(productId).toBe('product-123');
   });
@@ -74,16 +75,17 @@ describe('productResolver', () => {
       productSize: undefined,
       packSize: undefined,
       unit: undefined,
+      allowCrossMerchant: false,
     });
     expect(resolution).toEqual({
       product_id: 'product-456',
       confidence: 'medium',
       reason: 'normalized_match',
     });
-    expect(productId).toBeNull();
+    expect(productId).toBe('product-456');
   });
 
-  it('returns medium confidence for merchant-backed name-only matches without auto-linking', async () => {
+  it('keeps medium confidence while linking an exact merchant-backed normalized match', async () => {
     Product.findByUpc.mockResolvedValue(null);
     Product.findBySkuAndMerchant.mockResolvedValue(null);
     Product.findByNormalizedDetails.mockResolvedValue({
@@ -107,7 +109,7 @@ describe('productResolver', () => {
       confidence: 'medium',
       reason: 'normalized_match',
     });
-    expect(productId).toBeNull();
+    expect(productId).toBe('product-789');
   });
 
   it('matches merchant-backed variants when the description includes trailing merchant text', async () => {
@@ -132,12 +134,41 @@ describe('productResolver', () => {
       productSize: undefined,
       packSize: undefined,
       unit: undefined,
+      allowCrossMerchant: false,
     });
     expect(resolution).toEqual({
       product_id: 'product-900',
       confidence: 'medium',
       reason: 'normalized_match',
     });
+  });
+
+  it('does not create a canonical product from an unmatched name-only description', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue(null);
+
+    const resolution = await resolveProductMatch({
+      description: 'Organic Bananas',
+      amount: 2.99,
+    }, 'Whole Foods');
+
+    expect(resolution).toBeNull();
+    expect(Product.create).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a merchant-free SKU as a stable global identity', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue(null);
+
+    const resolution = await resolveProductMatch({
+      description: 'Store Brand Crackers',
+      sku: 'SKU-1042',
+    }, null);
+
+    expect(resolution).toBeNull();
+    expect(Product.findBySkuAndMerchant).not.toHaveBeenCalled();
+    expect(Product.create).not.toHaveBeenCalled();
   });
 
   it('skips product resolution for fee-like imported rows', async () => {

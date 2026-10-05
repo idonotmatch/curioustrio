@@ -92,8 +92,20 @@ describe('itemNormalizer', () => {
 
   it('normalizes common unit aliases', () => {
     expect(normalizeUnit('ounces')).toBe('oz');
+    expect(normalizeUnit('fluid ounces')).toBe('fl_oz');
     expect(normalizeUnit('count')).toBe('ct');
     expect(normalizeUnit('liter')).toBe('l');
+  });
+
+  it('converts equivalent package units to a shared comparison unit', () => {
+    const pounds = normalizeItemMetadata({ description: 'Flour', product_size: '1', unit: 'lb' });
+    const ounces = normalizeItemMetadata({ description: 'Flour', product_size: '16', unit: 'oz' });
+    const liters = normalizeItemMetadata({ description: 'Sparkling Water', product_size: '1', unit: 'l' });
+
+    expect(pounds.comparable_key).toBe(ounces.comparable_key);
+    expect(pounds.normalized_total_size_value).toBe(16);
+    expect(liters.normalized_total_size_value).toBe(1000);
+    expect(liters.normalized_total_size_unit).toBe('ml');
   });
 
   it('parses multiplier-style pack sizes', () => {

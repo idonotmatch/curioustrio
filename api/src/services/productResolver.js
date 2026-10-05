@@ -9,11 +9,12 @@ const { isProductLikeItem } = require('./itemClassifier');
  * Lookup priority:
  *   1. UPC (globally unique)
  *   2. SKU + merchant
- *   3. No match → create if we have at least UPC or SKU
+ *   3. Normalized product details, optionally across merchants when strongly structured
+ *   4. No match -> create only from UPC, merchant-scoped SKU, or strong structured metadata
  */
 async function resolveProduct(item, merchant) {
   const resolution = await resolveProductMatch(item, merchant);
-  return resolution?.confidence === 'high' ? resolution.product_id : null;
+  return resolution?.product_id || null;
 }
 
 async function resolveProductMatch(item, merchant) {
@@ -67,6 +68,7 @@ async function resolveProductMatch(item, merchant) {
         productSize: product_size,
         packSize: pack_size,
         unit,
+        allowCrossMerchant: matchConfidence === 'high',
       });
       if (existing) {
         const updates = {};
@@ -83,7 +85,11 @@ async function resolveProductMatch(item, merchant) {
     }
 
     // 4. Create new when we have a stable identifier or enough descriptive structure.
-    const hasStructuredIdentity = !!(upc || sku || canCreateCanonicalProduct({ merchant, normalized, brand, product_size, pack_size, unit }));
+    const hasStructuredIdentity = !!(
+      upc
+      || (sku && merchant)
+      || canCreateCanonicalProduct({ merchant, normalized, brand, product_size, pack_size, unit })
+    );
     if (!hasStructuredIdentity) return null;
 
     const product = await Product.create({
@@ -118,10 +124,7 @@ function getNormalizedMatchConfidence({ merchant, normalized, brand, product_siz
 
 function canCreateCanonicalProduct({ merchant, normalized, brand, product_size, pack_size, unit }) {
   const matchConfidence = getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit });
-  if (matchConfidence === 'high') return true;
-
-  const tokenCount = normalized.normalized_name?.split(' ').filter(Boolean).length || 0;
-  return !!merchant && tokenCount >= 2 && normalized.normalized_name?.length >= 8;
+  return matchConfidence === 'high';
 }
 
 module.exports = { resolveProduct, resolveProductMatch };

@@ -10,7 +10,7 @@ function normalizeText(value) {
 function normalizeUnit(unit = '') {
   const value = normalizeText(unit);
   if (!value) return null;
-  if (['fl oz', 'fluid ounce', 'fluid ounces'].includes(value)) return 'oz';
+  if (['fl oz', 'fluid ounce', 'fluid ounces'].includes(value)) return 'fl_oz';
   if (['oz', 'ounce', 'ounces'].includes(value)) return 'oz';
   if (['lb', 'lbs', 'pound', 'pounds'].includes(value)) return 'lb';
   if (['g', 'gram', 'grams'].includes(value)) return 'g';
@@ -36,9 +36,23 @@ function parsePurchaseQuantity(quantity) {
 
 function normalizeSizeValue(rawValue, rawUnit) {
   const numeric = parseNumeric(rawValue);
-  const unit = normalizeUnit(rawUnit || rawValue);
+  let unit = normalizeUnit(rawUnit || rawValue);
   if (numeric == null || !unit) return { normalizedSizeValue: null, normalizedSizeUnit: null };
-  return { normalizedSizeValue: numeric, normalizedSizeUnit: unit };
+  let normalized = numeric;
+  if (unit === 'lb') {
+    normalized *= 16;
+    unit = 'oz';
+  } else if (unit === 'kg') {
+    normalized *= 1000;
+    unit = 'g';
+  } else if (unit === 'l') {
+    normalized *= 1000;
+    unit = 'ml';
+  }
+  return {
+    normalizedSizeValue: Number(normalized.toFixed(3)),
+    normalizedSizeUnit: unit,
+  };
 }
 
 function parsePackSize(packSize) {

@@ -47,13 +47,47 @@ function shouldRetryReceipt(parsedResult, merchantHint = null) {
   }
   const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
   return parsedResult.parsed.parse_status === 'partial'
-    && reviewFields.some((field) => ['merchant', 'amount'].includes(field));
+    && parsedResult.parsed.items_truncated !== true
+    && reviewFields.some((field) => ['merchant', 'amount', 'items'].includes(field));
 }
 
 function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
   if (!merchantHint || !parsedResult?.parsed) return false;
   const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
-  return reviewFields.includes('merchant');
+  return parsedResult.parsed.items_truncated !== true
+    && reviewFields.some((field) => ['merchant', 'items'].includes(field));
+}
+
+function receiptResultQuality(parsedResult) {
+  const parsed = parsedResult?.parsed;
+  if (!parsed) return -1000;
+  const reviewFields = Array.isArray(parsed.review_fields) ? parsed.review_fields : [];
+  const items = Array.isArray(parsed.items) ? parsed.items : [];
+  const structuredItemFields = items.reduce((count, item) => count + [
+    item?.brand,
+    item?.product_size,
+    item?.pack_size,
+    item?.unit,
+    item?.upc,
+    item?.sku,
+  ].filter(Boolean).length, 0);
+  const arithmeticIssues = Array.isArray(parsed.receipt_validation?.issues)
+    ? parsed.receipt_validation.issues.length
+    : 0;
+
+  return (parsed.amount != null ? 30 : 0)
+    + (parsed.merchant ? 16 : 0)
+    + (parsed.date ? 8 : 0)
+    + Math.min(items.length, 30) * 2
+    + Math.min(structuredItemFields, 12)
+    - reviewFields.length * 5
+    - arithmeticIssues * 8;
+}
+
+function preferReceiptResult(currentResult, candidateResult) {
+  return receiptResultQuality(candidateResult) > receiptResultQuality(currentResult)
+    ? candidateResult
+    : currentResult;
 }
 
 function createModelMetrics() {
@@ -319,15 +353,12 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
           });
           addModelMetrics(modelMetrics, contextualResult?.diagnostics);
           contextRetryDurationMs = Date.now() - contextRetryStartedAt;
-          const contextualParsed = contextualResult?.parsed || null;
-          const currentParsed = parsedResult?.parsed || null;
-          const currentReviewCount = Array.isArray(currentParsed?.review_fields) ? currentParsed.review_fields.length : 99;
-          const contextualReviewCount = Array.isArray(contextualParsed?.review_fields) ? contextualParsed.review_fields.length : 99;
-          const isBetter = contextualParsed && (!currentParsed || contextualReviewCount <= currentReviewCount);
+          const preferredResult = preferReceiptResult(parsedResult, contextualResult);
+          const isBetter = preferredResult === contextualResult;
 
           if (isBetter) {
             parsedResult = {
-              ...contextualResult,
+              ...preferredResult,
               diagnostics: {
                 ...(contextualResult.diagnostics || {}),
                 context_retry_used: true,
@@ -359,22 +390,24 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         if (needsRetry || !parsedResult?.parsed) {
           retryStrategy = 'fallback_only';
           const fallbackStartedAt = Date.now();
-          parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
+          const fallbackResult = await parseReceiptDetailed(imageBase64, todayDate, {
             passMode: 'fallback_only',
             familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
           });
-          addModelMetrics(modelMetrics, parsedResult?.diagnostics);
+          addModelMetrics(modelMetrics, fallbackResult?.diagnostics);
+          parsedResult = preferReceiptResult(parsedResult, fallbackResult);
           contextRetryDurationMs = Date.now() - fallbackStartedAt;
         }
       }
     } else if (needsRetry || !parsedResult?.parsed) {
       retryStrategy = 'fallback_only';
       const fallbackStartedAt = Date.now();
-      parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
+      const fallbackResult = await parseReceiptDetailed(imageBase64, todayDate, {
         passMode: 'fallback_only',
         familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
       });
-      addModelMetrics(modelMetrics, parsedResult?.diagnostics);
+      addModelMetrics(modelMetrics, fallbackResult?.diagnostics);
+      parsedResult = preferReceiptResult(parsedResult, fallbackResult);
       contextRetryDurationMs = Date.now() - fallbackStartedAt;
       contextRetrySkippedReason = merchantHint ? 'fallback_without_context' : 'fallback_without_merchant_hint';
     } else {
@@ -399,15 +432,12 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, { priors: context.priors });
         addModelMetrics(modelMetrics, contextualResult?.diagnostics);
         contextRetryDurationMs = Date.now() - contextRetryStartedAt;
-        const contextualParsed = contextualResult?.parsed || null;
-        const currentParsed = parsedResult?.parsed || null;
-        const currentReviewCount = Array.isArray(currentParsed?.review_fields) ? currentParsed.review_fields.length : 99;
-        const contextualReviewCount = Array.isArray(contextualParsed?.review_fields) ? contextualParsed.review_fields.length : 99;
-        const isBetter = contextualParsed && (!currentParsed || contextualReviewCount <= currentReviewCount);
+        const preferredResult = preferReceiptResult(parsedResult, contextualResult);
+        const isBetter = preferredResult === contextualResult;
 
         if (isBetter) {
           parsedResult = {
-            ...contextualResult,
+            ...preferredResult,
             diagnostics: {
               ...(contextualResult.diagnostics || {}),
               context_retry_used: true,

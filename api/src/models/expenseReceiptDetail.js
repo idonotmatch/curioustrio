@@ -31,6 +31,13 @@ function normalizeValidation(validation = {}) {
       ? validation.uncertain_fields.filter((value) => allowedFields.includes(value))
       : [],
     field_confidence: fieldConfidence,
+    items_truncated: validation.items_truncated === true,
+    visible_item_count: Number.isFinite(Number(validation.visible_item_count))
+      ? Math.max(0, Math.floor(Number(validation.visible_item_count)))
+      : null,
+    extracted_item_count: Number.isFinite(Number(validation.extracted_item_count))
+      ? Math.max(0, Math.floor(Number(validation.extracted_item_count)))
+      : null,
   };
 }
 

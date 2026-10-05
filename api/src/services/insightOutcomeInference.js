@@ -171,6 +171,7 @@ async function findMatchingPurchase({ user, groupKey, shownAt, windowDays }) {
      JOIN expenses e ON e.id = ei.expense_id
      WHERE ${identityClause}
        AND e.status = 'confirmed'
+       AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND e.exclude_from_budget = FALSE
        AND e.date >= $1::date
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
@@ -188,6 +189,7 @@ async function findMatchingPurchase({ user, groupKey, shownAt, windowDays }) {
      JOIN expenses e ON e.id = ei.expense_id
      WHERE ${identityClause}
        AND e.status = 'confirmed'
+       AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND e.date >= $1::date
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
        ${scopeClause}

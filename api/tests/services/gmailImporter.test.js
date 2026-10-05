@@ -60,6 +60,7 @@ describe('buildItemHistoryReviewAdjustment', () => {
       { merchant: 'Target', amount: 18.49 },
       [{
         item_name: 'Sparkling Water',
+        current_item_amount: 18.49,
         occurrence_count: 3,
         median_amount: 17.99,
         latest_purchase: { merchant: 'Target', amount: 18.19 },
@@ -75,6 +76,7 @@ describe('buildItemHistoryReviewAdjustment', () => {
       { merchant: 'Whole Foods', amount: 39.99 },
       [{
         item_name: 'Sparkling Water',
+        current_item_amount: 39.99,
         occurrence_count: 3,
         median_amount: 17.99,
         latest_purchase: { merchant: 'Target', amount: 18.19 },

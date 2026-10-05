@@ -19,6 +19,8 @@ Return only the JSON object required by the response schema. Extract:
 - store_address (string or null): the physical store address if clearly visible on the receipt
 - store_number (string or null): the store/location number if clearly visible on the receipt
 - items (array): up to 30 legible rows, or an empty array when no rows are legible. Include description and line-total amount. For unknown numeric item fields use 0; for unknown text item fields use an empty string. When clearly visible, also include quantity, unit_price, item_type, brand, product_size, pack_size, unit, upc, and sku. Never infer UPC or SKU. Omit subtotal and grand-total rows.
+- items_truncated (boolean): true when more legible product rows are visible than fit in the items array
+- visible_item_count (number): best count of visible product rows, including rows omitted because of the 30-item limit
 - uncertain_fields (array): any of merchant, amount, date, items, payment_method whose values are ambiguous in the image
 
 If you cannot extract a nullable field, return null. Use the empty values described above for required non-null fields. Never invent a value.
@@ -36,6 +38,8 @@ Return ONLY a JSON object with these fields:
 - store_address (string or null)
 - store_number (string or null)
 - items (array): simple visible line items as { "description": string, "amount": number }. Do not include product metadata. If items are unclear, return an empty array.
+- items_truncated (boolean): true when more legible product rows are visible than fit in the items array
+- visible_item_count (number): best count of visible product rows
 - uncertain_fields (array): any of merchant, amount, date, items, payment_method whose values are ambiguous
 
 Prioritize finding the final total and merchant correctly even if items are incomplete.
@@ -93,12 +97,14 @@ const RECEIPT_OUTPUT_SCHEMA = {
         ],
       },
     },
+    items_truncated: { type: 'boolean' },
+    visible_item_count: { type: 'number' },
   },
   required: [
     'merchant', 'amount', 'date', 'notes', 'currency', 'subtotal', 'tax', 'tip',
     'fees', 'discounts', 'transaction_id', 'purchase_time', 'payment_method',
     'card_label', 'card_last4', 'store_address', 'store_number', 'uncertain_fields',
-    'items',
+    'items', 'items_truncated', 'visible_item_count',
   ],
 };
 
@@ -131,10 +137,13 @@ const FALLBACK_RECEIPT_OUTPUT_SCHEMA = {
         required: ['description', 'amount'],
       },
     },
+    items_truncated: { type: 'boolean' },
+    visible_item_count: { type: 'number' },
   },
   required: [
     'merchant', 'amount', 'date', 'notes', 'payment_method', 'card_label',
     'card_last4', 'store_address', 'store_number', 'uncertain_fields', 'items',
+    'items_truncated', 'visible_item_count',
   ],
 };
 
@@ -267,6 +276,9 @@ function normalizeReceiptItems(items) {
       unit: optionalString(item?.unit),
       upc: optionalString(item?.upc),
       sku: optionalString(item?.sku),
+      source_type: 'camera',
+      raw_description: description,
+      extraction_confidence: optionalNumber(item?.amount) != null ? 'medium' : 'low',
     };
   }).filter(Boolean);
   return normalized.length ? normalized : null;
@@ -329,6 +341,13 @@ function cleanParsedReceipt(parsed, todayDate) {
   const rawDate = typeof parsed.date === 'string' ? parsed.date.trim() : '';
   const hasValidDate = isValidIsoDate(rawDate);
   const items = normalizeReceiptItems(parsed.items);
+  const rawItemCount = Array.isArray(parsed.items) ? parsed.items.filter((item) => optionalString(item?.description)).length : 0;
+  const reportedVisibleItemCount = optionalNumber(parsed.visible_item_count);
+  const visibleItemCount = Math.max(
+    rawItemCount,
+    reportedVisibleItemCount == null ? 0 : Math.floor(reportedVisibleItemCount)
+  );
+  const itemsTruncated = Boolean(parsed.items_truncated) || rawItemCount > 30 || visibleItemCount > (items?.length || 0);
   const paymentMethod = ['cash', 'credit', 'debit'].includes(parsed.payment_method) ? parsed.payment_method : null;
   const cardLabel = typeof parsed.card_label === 'string' && parsed.card_label.trim() ? parsed.card_label.trim() : null;
   const cardLast4Raw = typeof parsed.card_last4 === 'string' ? parsed.card_last4 : parsed.card_last4 != null ? String(parsed.card_last4) : '';
@@ -353,12 +372,17 @@ function cleanParsedReceipt(parsed, todayDate) {
     transaction_id: optionalString(parsed.transaction_id),
     purchase_time: /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(`${parsed.purchase_time || ''}`.trim()) ? `${parsed.purchase_time}`.trim() : null,
     items,
+    items_truncated: itemsTruncated,
+    visible_item_count: visibleItemCount || (items?.length || 0),
   };
 
   const uncertainFields = Array.isArray(parsed.uncertain_fields)
     ? [...new Set(parsed.uncertain_fields.filter((field) => ['merchant', 'amount', 'date', 'items', 'payment_method'].includes(field)))]
     : [];
   const receiptValidation = validateReceiptArithmetic(normalized);
+  receiptValidation.items_truncated = itemsTruncated;
+  receiptValidation.visible_item_count = normalized.visible_item_count;
+  receiptValidation.extracted_item_count = items?.length || 0;
   const totalIsInconsistent = receiptValidation.total_components_match === false;
 
   const review_fields = [];
@@ -369,13 +393,13 @@ function cleanParsedReceipt(parsed, todayDate) {
     payment_method: normalized.payment_method ? (uncertainFields.includes('payment_method') ? 'low' : 'medium') : 'low',
     card_label: normalized.card_label ? 'medium' : 'low',
     card_last4: normalized.card_last4 ? 'high' : 'low',
-    items: items?.length ? (uncertainFields.includes('items') ? 'low' : 'medium') : 'low',
+    items: items?.length ? (uncertainFields.includes('items') || itemsTruncated ? 'low' : 'medium') : 'low',
   };
 
   if (!normalized.merchant || uncertainFields.includes('merchant')) review_fields.push('merchant');
   if (normalized.amount == null || uncertainFields.includes('amount') || totalIsInconsistent) review_fields.push('amount');
   if (!hasValidDate || uncertainFields.includes('date')) review_fields.push('date');
-  if (!items?.length || uncertainFields.includes('items')) review_fields.push('items');
+  if (!items?.length || uncertainFields.includes('items') || itemsTruncated) review_fields.push('items');
   if (!normalized.payment_method && (normalized.card_label || normalized.card_last4)) review_fields.push('payment method');
 
   if (normalized.amount == null) return null;

@@ -14,16 +14,20 @@ function run() {
     unit_price: 1.79,
   });
 
-  assert.deepStrictEqual(
-    seeded,
-    {
-      description: 'OLIPOP',
-      amount: '5.37',
-      quantity: '3',
-      unit_price: '1.79',
-    },
-    'editable items should seed string values for quantity-aware editing'
-  );
+  assert(seeded.observation_key.startsWith('item:'), 'editable items should receive a stable observation key');
+  assert.deepStrictEqual({
+    description: seeded.description,
+    raw_description: seeded.raw_description,
+    amount: seeded.amount,
+    quantity: seeded.quantity,
+    unit_price: seeded.unit_price,
+  }, {
+    description: 'OLIPOP',
+    raw_description: 'OLIPOP',
+    amount: '5.37',
+    quantity: '3',
+    unit_price: '1.79',
+  }, 'editable items should seed string values and preserve the raw label');
 
   assert.deepStrictEqual(
     buildExpenseItemsPatch([], { includeItems: false }),
@@ -78,6 +82,10 @@ function run() {
       product_size: null,
       pack_size: null,
       unit: 'can',
+      observation_key: null,
+      source_type: null,
+      raw_description: 'OLIPOP',
+      extraction_confidence: null,
     },
     'normalized payloads should preserve quantity fields and trim descriptions'
   );
@@ -98,6 +106,10 @@ function expectItemPayload(description, amount) {
     product_size: null,
     pack_size: null,
     unit: null,
+    observation_key: null,
+    source_type: null,
+    raw_description: description,
+    extraction_confidence: null,
   };
 }
 

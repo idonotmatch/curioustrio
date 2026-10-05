@@ -19,7 +19,7 @@ async function findBySkuAndMerchant(sku, merchant) {
   return result.rows[0] || null;
 }
 
-async function findByNormalizedDetails({ name, merchant, brand, productSize, packSize, unit }) {
+async function findByNormalizedDetails({ name, merchant, brand, productSize, packSize, unit, allowCrossMerchant = false }) {
   if (!name) return null;
   const normalized = normalizeItemMetadata({
     description: name,
@@ -32,9 +32,12 @@ async function findByNormalizedDetails({ name, merchant, brand, productSize, pac
     `SELECT *
      FROM products
      WHERE comparable_key = $1
-       AND ($2::text IS NULL OR merchant = $2)
+       AND ($2::text IS NULL OR LOWER(merchant) = LOWER($2) OR $3::boolean = TRUE)
+     ORDER BY
+       CASE WHEN $2::text IS NOT NULL AND LOWER(merchant) = LOWER($2) THEN 0 ELSE 1 END,
+       created_at ASC
      LIMIT 1`,
-    [normalized.comparable_key, merchant || null]
+    [normalized.comparable_key, merchant || null, allowCrossMerchant]
   );
   return result.rows[0] || null;
 }

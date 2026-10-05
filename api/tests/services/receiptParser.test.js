@@ -104,6 +104,31 @@ describe('parseReceipt', () => {
     expect(result.field_confidence.amount).toBe('medium');
   });
 
+  it('marks long receipt item extraction as incomplete', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 120,
+      date: '2026-03-21',
+      items: Array.from({ length: 30 }, (_, index) => ({
+        description: `Item ${index + 1}`,
+        amount: 4,
+      })),
+      items_truncated: true,
+      visible_item_count: 37,
+      uncertain_fields: [],
+    }, '2026-03-21');
+
+    expect(result.items).toHaveLength(30);
+    expect(result.items_truncated).toBe(true);
+    expect(result.visible_item_count).toBe(37);
+    expect(result.review_fields).toContain('items');
+    expect(result.receipt_validation).toMatchObject({
+      items_truncated: true,
+      visible_item_count: 37,
+      extracted_item_count: 30,
+    });
+  });
+
   it('returns null when Claude returns "null"', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     const instance = new Anthropic();
