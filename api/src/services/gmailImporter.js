@@ -70,7 +70,8 @@ function findLikelyAmount(...parts) {
 }
 
 function hasValidParsedAmount(parsed) {
-  return Number.isFinite(Number(parsed?.amount)) && Number(parsed.amount) !== 0;
+  const amount = Number(parsed?.amount);
+  return Number.isFinite(amount) && amount !== 0 && Math.abs(amount) <= 99_999_999.99;
 }
 
 function normalizeParsedAmountAgainstDeterministicTotal(parsed = null, body = '', classification = {}) {

@@ -3,8 +3,16 @@ const db = require('../db');
 const { normalizeItemMetadata } = require('../services/itemNormalizer');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
 
+function safeNumeric(value, max, { positive = false } = {}) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || Math.abs(numeric) > max) return null;
+  if (positive && numeric <= 0) return null;
+  return numeric;
+}
+
 function hydrateItem(item = {}, index = 0) {
-  return {
+  const hydrated = {
     ...item,
     sort_order: item.sort_order ?? index,
     item_type: item.item_type || classifyExpenseItemType(item.description),
@@ -15,6 +23,17 @@ function hydrateItem(item = {}, index = 0) {
     raw_description: item.raw_description || item.description || null,
     extraction_confidence: item.extraction_confidence || null,
     ...normalizeItemMetadata(item),
+  };
+  return {
+    ...hydrated,
+    amount: safeNumeric(hydrated.amount, 99_999_999.99),
+    quantity: safeNumeric(hydrated.quantity, 9_999_999.999, { positive: true }),
+    unit_price: safeNumeric(hydrated.unit_price, 999_999.9999, { positive: true }),
+    normalized_size_value: safeNumeric(hydrated.normalized_size_value, 9_999_999.999, { positive: true }),
+    normalized_pack_size: safeNumeric(hydrated.normalized_pack_size, 9_999_999.999, { positive: true }),
+    normalized_quantity: safeNumeric(hydrated.normalized_quantity, 9_999_999.999, { positive: true }),
+    normalized_total_size_value: safeNumeric(hydrated.normalized_total_size_value, 9_999_999.999, { positive: true }),
+    estimated_unit_price: safeNumeric(hydrated.estimated_unit_price, 999_999.9999, { positive: true }),
   };
 }
 

@@ -34,6 +34,8 @@ If the email describes a refund or return, set amount as a negative number.
 If the email is not purchase/refund related, return null.
 Do not include any text outside the JSON object.`;
 
+const MAX_DATABASE_MONEY = 99_999_999.99;
+
 function cleanText(value) {
   return (value || '').replace(/\s+/g, ' ').trim();
 }
@@ -90,11 +92,17 @@ function isSummaryLikeLine(line = '') {
 }
 
 function isMoneyOnlyLine(line = '') {
-  return /^\$?\s?-?\d+(?:\.\d{2})?$/.test(`${line || ''}`.trim());
+  const text = `${line || ''}`.trim();
+  return /^\$\s?-?\d{1,8}(?:\.\d{1,2})?$/.test(text)
+    || /^-?\d{1,8}\.\d{2}$/.test(text);
 }
 
 function isPriceBearingLine(line = '') {
-  return /\$\s?-?\d+(?:\.\d{2})?/.test(`${line || ''}`);
+  const text = `${line || ''}`;
+  const match = text.match(/\$\s?(-?\d{1,8}(?:\.\d{1,2})?)/);
+  if (!match) return false;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && Math.abs(value) <= MAX_DATABASE_MONEY;
 }
 
 function isQuantityLine(line = '') {
@@ -425,8 +433,12 @@ function parseJsonResponse(text) {
 }
 
 function parsePriceValue(line = '') {
-  const match = `${line || ''}`.match(/\$?\s?(-?\d+(?:\.\d{2})?)/);
-  return match ? Number(match[1]) : null;
+  const text = `${line || ''}`.trim();
+  const match = text.match(/\$\s?(-?\d{1,8}(?:\.\d{1,2})?)/)
+    || text.match(/(?:^|\s)(-?\d{1,8}\.\d{2})(?:\s|$)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && Math.abs(value) <= MAX_DATABASE_MONEY ? value : null;
 }
 
 function extractDeterministicTotalAmount(emailBody = '') {
@@ -755,6 +767,9 @@ function sanitizeParsedItems(items = [], familyOverride = null) {
     .map((item) => ({
       ...item,
       description: `${item?.description || ''}`.trim(),
+      amount: sanitizeParsedNumeric(item?.amount, MAX_DATABASE_MONEY),
+      quantity: sanitizeParsedNumeric(item?.quantity, 9_999_999.999, { positive: true }),
+      unit_price: sanitizeParsedNumeric(item?.unit_price, 999_999.9999, { positive: true }),
     }))
     .filter((item) => item.description)
     .filter((item) => !isClearlyNonItemLine(item.description));
@@ -762,6 +777,14 @@ function sanitizeParsedItems(items = [], familyOverride = null) {
   const familySanitized = sanitized.filter((item) => isAllowedParsedItemForFamily(item.description, family));
 
   return familySanitized.length > 0 ? familySanitized : null;
+}
+
+function sanitizeParsedNumeric(value, max, { positive = false } = {}) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || Math.abs(numeric) > max) return null;
+  if (positive && numeric <= 0) return null;
+  return numeric;
 }
 
 function normalizeParsedPaymentFields(parsed = {}) {

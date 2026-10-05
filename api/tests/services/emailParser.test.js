@@ -237,6 +237,20 @@ $24.19`;
     expect(result.extractionText).toContain('Estimated total\n$22.00');
   });
 
+  it('does not treat long identifiers as item prices', () => {
+    const items = extractFallbackItemsFromEmailBody(`Item Description
+Beauty Set
+7047982594
+$43.34
+Subtotal
+$43.34`);
+
+    expect(items).toEqual([
+      expect.objectContaining({ description: 'Beauty Set', amount: 43.34 }),
+    ]);
+    expect(items.some((item) => item.amount === 7047982594)).toBe(false);
+  });
+
   it('preserves bottom receipt totals when they appear later in the email', () => {
     const emailBody = `Thanks for your order
 Marketing banner

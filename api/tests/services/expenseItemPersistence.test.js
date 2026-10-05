@@ -41,4 +41,26 @@ describe('expense item persistence contract', () => {
     expect(params[26]).toEqual(expect.any(String));
     expect(params[55]).toEqual(expect.any(String));
   });
+
+  it('drops parsed numeric values that cannot fit database columns', async () => {
+    await ExpenseItem.createBulk('expense-1', [{
+      description: 'Malformed item',
+      amount: 7047982594,
+      quantity: 7047982594,
+      unit_price: 7047982594,
+      product_size: '7047982594',
+      pack_size: '7047982594',
+      unit: 'oz',
+    }]);
+
+    const [, params] = db.query.mock.calls[0];
+    expect(params[2]).toBeNull();
+    expect(params[3]).toBeNull();
+    expect(params[4]).toBeNull();
+    expect(params[16]).toBeNull();
+    expect(params[18]).toBeNull();
+    expect(params[19]).toBeNull();
+    expect(params[20]).toBeNull();
+    expect(params[22]).toBeNull();
+  });
 });
