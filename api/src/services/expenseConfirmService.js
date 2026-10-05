@@ -201,8 +201,8 @@ async function resolveDeferredConfirmPayload({ user, payload }) {
   return resolveDeferredLocationOnConfirm({ payload: categoryResolvedPayload });
 }
 
-async function enrichItemWithResolution(item, merchant) {
-  const resolution = await resolveProductMatch(item, merchant);
+async function enrichItemWithResolution(item, merchant, { householdId = null } = {}) {
+  const resolution = await resolveProductMatch(item, merchant, { householdId });
   return {
     ...item,
     product_id: resolution?.product_id || null,
@@ -458,11 +458,11 @@ async function applyDeferredExpenseEnrichment({ user, expense, originalPayload, 
   return nextExpense;
 }
 
-async function enrichPersistedItems({ expenseId, items, merchant }) {
+async function enrichPersistedItems({ expenseId, items, merchant, householdId = null }) {
   if (!Array.isArray(items) || items.length === 0) return [];
 
   const resolvedItems = await Promise.all(
-    items.map((item) => enrichItemWithResolution(item, merchant))
+    items.map((item) => enrichItemWithResolution(item, merchant, { householdId }))
   );
 
   await Promise.all(
@@ -513,6 +513,7 @@ async function runPostConfirmSideEffects({
     expenseId: expense.id,
     items,
     merchant: enrichedExpense.merchant || resolvedPayload.merchant,
+    householdId: user?.household_id || null,
   });
 
   if (resolvedPayload.source === 'camera' && resolvedItems.length > 0 && resolvedPayload.is_private !== true) {

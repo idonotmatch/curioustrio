@@ -4,6 +4,7 @@ const db = require('../db');
 const JOB_TYPES = Object.freeze({
   projectionRefresh: 'projection_refresh',
   postConfirm: 'post_confirm',
+  gmailEnrichment: 'gmail_enrichment',
 });
 
 function cleanDelayMs(value) {

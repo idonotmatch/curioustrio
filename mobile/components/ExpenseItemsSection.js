@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createEditableExpenseItem, updateEditableExpenseItem } from '../services/itemEditing';
 import { colors } from '../theme/tokens';
@@ -18,6 +18,8 @@ export function ExpenseItemsSection({
   itemMatchLabel,
   formatItemStructuredMeta,
   itemSubmeta,
+  itemDecisionId,
+  onItemMatchDecision,
 }) {
   const showSection = items.length > 0 || (editing && canEdit);
   if (!showSection) return null;
@@ -140,6 +142,11 @@ export function ExpenseItemsSection({
                 const matchLabel = itemMatchLabel(item);
                 const structuredMeta = formatItemStructuredMeta(item);
                 const submeta = itemSubmeta(item);
+                const needsMatchReview = canEdit
+                  && item.product_match_confidence === 'medium'
+                  && item.product_id;
+                const decisionBusy = itemDecisionId === item.id;
+                const candidateName = item.candidate_product_name || item.description || 'this item';
 
                 return (
                   <View key={index} style={styles.itemReadRow}>
@@ -154,6 +161,50 @@ export function ExpenseItemsSection({
                       </View>
                       {structuredMeta ? <Text style={styles.itemReadMeta}>{structuredMeta}</Text> : null}
                       {submeta ? <Text style={styles.itemReadSubmeta}>{submeta}</Text> : null}
+                      {needsMatchReview ? (
+                        <View style={styles.itemMatchReview}>
+                          <Text style={styles.itemMatchReviewTitle}>
+                            Same product as <Text style={styles.itemMatchReviewCandidate}>{candidateName}</Text> in your history?
+                          </Text>
+                          <View style={styles.itemMatchReviewActions}>
+                            <TouchableOpacity
+                              style={[
+                                styles.itemMatchReviewButton,
+                                styles.itemMatchReviewButtonPrimary,
+                                decisionBusy && styles.itemMatchReviewButtonDisabled,
+                              ]}
+                              disabled={decisionBusy}
+                              onPress={() => onItemMatchDecision?.(item.id, 'same')}
+                              activeOpacity={0.78}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Confirm ${candidateName} is the same item`}
+                            >
+                              {decisionBusy ? (
+                                <ActivityIndicator size="small" color={colors.success} />
+                              ) : (
+                                <Ionicons name="checkmark" size={15} color={colors.success} />
+                              )}
+                              <Text style={[styles.itemMatchReviewButtonText, styles.itemMatchReviewButtonTextPrimary]}>
+                                Same item
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[
+                                styles.itemMatchReviewButton,
+                                decisionBusy && styles.itemMatchReviewButtonDisabled,
+                              ]}
+                              disabled={decisionBusy}
+                              onPress={() => onItemMatchDecision?.(item.id, 'different')}
+                              activeOpacity={0.78}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Mark ${candidateName} as a different item`}
+                            >
+                              <Ionicons name="close" size={15} color={colors.textMuted} />
+                              <Text style={styles.itemMatchReviewButtonText}>Different</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : null}
                     </View>
                     {item.amount != null ? (
                       <Text style={styles.itemReadAmount}>${Number(item.amount).toFixed(2)}</Text>

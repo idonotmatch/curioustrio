@@ -72,6 +72,7 @@ const MIGRATION_PLAN = [
   '076_durable_background_jobs.sql',
   '077_item_identity_alignment.sql',
   '078_expense_item_observation_provenance.sql',
+  '079_item_match_memory_and_gmail_enrichment.sql',
 ];
 
 module.exports = {

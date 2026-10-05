@@ -270,6 +270,7 @@ async function assignCategory({
   categories,
   placeType,
   allowDeferredFallback = false,
+  skipAiFallback = false,
 }) {
   const { merchantMapping, learnedDecision } = await gatherAssignmentSignals({
     householdId,
@@ -331,6 +332,19 @@ async function assignCategory({
   }
 
   if (heuristic) return heuristic;
+
+  if (skipAiFallback) {
+    return {
+      category_id: null,
+      source: 'deferred',
+      confidence: 0,
+      reasoning: {
+        strategy: 'background_fallback',
+        label: 'Category still processing',
+        detail: 'No local category signal matched, so the AI fallback will run after the expense is saved.',
+      },
+    };
+  }
 
   if (categories.length === 0) {
     return {

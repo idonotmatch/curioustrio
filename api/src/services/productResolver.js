@@ -1,4 +1,5 @@
 const Product = require('../models/product');
+const ItemMatchDecision = require('../models/itemMatchDecision');
 const { normalizeItemMetadata } = require('./itemNormalizer');
 const { isProductLikeItem } = require('./itemClassifier');
 
@@ -12,14 +13,15 @@ const { isProductLikeItem } = require('./itemClassifier');
  *   3. Normalized product details, optionally across merchants when strongly structured
  *   4. No match -> create only from UPC, merchant-scoped SKU, or strong structured metadata
  */
-async function resolveProduct(item, merchant) {
-  const resolution = await resolveProductMatch(item, merchant);
+async function resolveProduct(item, merchant, options = {}) {
+  const resolution = await resolveProductMatch(item, merchant, options);
   return resolution?.product_id || null;
 }
 
-async function resolveProductMatch(item, merchant) {
+async function resolveProductMatch(item, merchant, { householdId = null } = {}) {
   const { description, upc, sku, brand, product_size, pack_size, unit } = item;
   const normalized = normalizeItemMetadata(item);
+  const matchConfidence = getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit });
 
   if (!description) return null;
 
@@ -59,7 +61,6 @@ async function resolveProductMatch(item, merchant) {
     }
 
     // 3. Try normalized description matching with explicit confidence thresholds.
-    const matchConfidence = getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit });
     if (matchConfidence) {
       const existing = await Product.findByNormalizedDetails({
         name: description,
@@ -71,6 +72,22 @@ async function resolveProductMatch(item, merchant) {
         allowCrossMerchant: matchConfidence === 'high',
       });
       if (existing) {
+        const rememberedDecision = matchConfidence === 'medium'
+          ? await ItemMatchDecision.findForCandidate({
+              householdId,
+              normalizedName: normalized.normalized_name,
+              merchant,
+              candidateProductId: existing.id,
+            })
+          : null;
+        if (rememberedDecision?.decision === 'different') return null;
+        if (rememberedDecision?.decision === 'same') {
+          return {
+            product_id: existing.id,
+            confidence: 'high',
+            reason: 'household_confirmed_alias',
+          };
+        }
         const updates = {};
         if (!existing.upc && upc) updates.upc = upc;
         if (!existing.sku && sku) updates.sku = sku;

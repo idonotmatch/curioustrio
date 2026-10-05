@@ -3,6 +3,7 @@ const Expense = require('../models/expense');
 const Category = require('../models/category');
 const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
+const BackgroundJob = require('../models/backgroundJob');
 const PushToken = require('../models/pushToken');
 const db = require('../db');
 const { listRecentMessages, getMessage } = require('./gmailClient');
@@ -20,7 +21,6 @@ const {
   clampExpenseDate,
 } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
-const { resolveProductMatch } = require('./productResolver');
 const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
 const {
@@ -30,7 +30,6 @@ const {
 const { extractSenderDomain, extractSubjectPattern } = require('./gmailImportFingerprint');
 const { requestProjectionRefresh } = require('./projectionRefreshService');
 const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
-const { getItemHistoryByGroupKey } = require('./itemHistoryService');
 const { pushNotificationsEnabled } = require('./pushPreferences');
 const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
 const detectDuplicates = require('./duplicateDetector');
@@ -405,61 +404,23 @@ async function processMessageImport(user, msgId, {
       description: parsed.description,
       householdId: user.household_id,
       categories,
+      skipAiFallback: true,
     });
     const { category_id } = categoryAssignment;
-    const { location } = await resolveEmailLocation({ merchant: parsed.merchant, subject, from, body });
-    let itemsWithProducts = [];
+    let itemsForPersistence = [];
     if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-      itemsWithProducts = await Promise.all(
-        parsed.items.filter(it => it.description).map(async (item) => {
-          const resolution = await resolveProductMatch(item, parsed.merchant);
-          return {
-            ...item,
-            source_type: 'email',
-            raw_description: item.description,
-            extraction_confidence: item.amount != null ? 'medium' : 'low',
-            product_id: resolution?.product_id || null,
-            product_match_confidence: resolution?.confidence || null,
-            product_match_reason: resolution?.reason || null,
-          };
-        })
-      );
+      itemsForPersistence = parsed.items.filter(it => it.description).map((item) => ({
+        ...item,
+        source_type: 'email',
+        raw_description: item.description,
+        extraction_confidence: item.amount != null ? 'medium' : 'low',
+        product_id: null,
+        product_match_confidence: null,
+        product_match_reason: null,
+      }));
     }
 
     let effectiveSenderQuality = senderQuality;
-    if (itemsWithProducts.length > 0) {
-      const uniqueGroupKeys = [...new Set(itemsWithProducts
-        .map((item) => item.product_id ? `product:${item.product_id}` : (item.comparable_key ? `comparable:${item.comparable_key}` : null))
-        .filter(Boolean))]
-        .slice(0, 2);
-      if (uniqueGroupKeys.length > 0) {
-        const histories = await Promise.all(
-          uniqueGroupKeys.map((groupKey) => getItemHistoryByGroupKey(user.id, groupKey, { scope: 'personal', lookbackDays: 180 }))
-        );
-        const historyContexts = histories.map((history, index) => {
-          if (!history) return null;
-          const groupKey = uniqueGroupKeys[index];
-          const currentItem = itemsWithProducts.find((item) => (
-            item.product_id ? `product:${item.product_id}` : (item.comparable_key ? `comparable:${item.comparable_key}` : null)
-          ) === groupKey);
-          return {
-            ...history,
-            current_item_amount: currentItem?.amount ?? null,
-          };
-        }).filter(Boolean);
-        const adjustment = buildItemHistoryReviewAdjustment(parsed, historyContexts);
-        if (adjustment?.level) {
-          effectiveSenderQuality = {
-            ...senderQuality,
-            item_reliability: {
-              ...(senderQuality.item_reliability || {}),
-              level: adjustment.level,
-              message: adjustment.message,
-            },
-          };
-        }
-      }
-    }
 
     const structuredItemAdjustment = buildStructuredItemReviewAdjustment({
       senderQuality: effectiveSenderQuality,
@@ -491,9 +452,9 @@ async function processMessageImport(user, msgId, {
         source: 'email',
         status: 'pending',
         notes: parsed.notes,
-        placeName: location?.place_name || null,
-        address: location?.address || null,
-        mapkitStableId: location?.mapkit_stable_id || null,
+        placeName: null,
+        address: null,
+        mapkitStableId: null,
         paymentMethod: parsed.payment_method || 'unknown',
         cardLast4: parsed.card_last4 || null,
         cardLabel: parsed.card_label || null,
@@ -505,8 +466,8 @@ async function processMessageImport(user, msgId, {
         reviewSource: 'gmail',
         queryable: persistenceClient,
       });
-      if (itemsWithProducts.length > 0) {
-        await ExpenseItem.createBulk(expense.id, itemsWithProducts, persistenceClient);
+      if (itemsForPersistence.length > 0) {
+        await ExpenseItem.createBulk(expense.id, itemsForPersistence, persistenceClient);
       }
       await EmailImportLog.upsertResult({
         userId: user.id,
@@ -519,6 +480,15 @@ async function processMessageImport(user, msgId, {
         structuredItemBlockLevel: structuredItemSignal.level,
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
       }, persistenceClient);
+      await BackgroundJob.enqueue({
+        jobType: BackgroundJob.JOB_TYPES.gmailEnrichment,
+        dedupeKey: expense.id,
+        payload: {
+          user_id: user.id,
+          expense_id: expense.id,
+        },
+        queryable: persistenceClient,
+      });
       await persistenceClient.query('COMMIT');
       createdExpense = expense;
     } catch (persistenceError) {
@@ -825,4 +795,5 @@ module.exports = {
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
+  resolveEmailLocation,
 };

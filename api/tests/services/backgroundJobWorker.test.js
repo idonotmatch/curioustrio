@@ -1,5 +1,9 @@
 jest.mock('../../src/models/backgroundJob', () => ({
-  JOB_TYPES: { projectionRefresh: 'projection_refresh', postConfirm: 'post_confirm' },
+  JOB_TYPES: {
+    projectionRefresh: 'projection_refresh',
+    postConfirm: 'post_confirm',
+    gmailEnrichment: 'gmail_enrichment',
+  },
   claimNext: jest.fn(),
   complete: jest.fn().mockResolvedValue({ status: 'completed' }),
   createWorkerId: jest.fn(() => 'worker-1'),
@@ -14,12 +18,16 @@ jest.mock('../../src/services/projectionRefreshService', () => ({
 jest.mock('../../src/services/expenseConfirmService', () => ({
   runPostConfirmJob: jest.fn().mockResolvedValue({}),
 }));
+jest.mock('../../src/services/gmailEnrichmentService', () => ({
+  runGmailEnrichmentJob: jest.fn().mockResolvedValue({}),
+}));
 jest.mock('../../src/services/observability', () => ({ captureException: jest.fn() }));
 
 const BackgroundJob = require('../../src/models/backgroundJob');
 const User = require('../../src/models/user');
 const { refreshProjectionNow } = require('../../src/services/projectionRefreshService');
 const { runPostConfirmJob } = require('../../src/services/expenseConfirmService');
+const { runGmailEnrichmentJob } = require('../../src/services/gmailEnrichmentService');
 const { captureException } = require('../../src/services/observability');
 const { processJob } = require('../../src/services/backgroundJobWorker');
 
@@ -49,6 +57,18 @@ describe('background job worker', () => {
     await processJob(job);
     expect(runPostConfirmJob).toHaveBeenCalledWith(job.payload);
     expect(BackgroundJob.complete).toHaveBeenCalledWith('job-2', 'worker-1');
+  });
+
+  it('delegates Gmail enrichment after the import has been persisted', async () => {
+    const job = {
+      id: 'job-gmail',
+      job_type: 'gmail_enrichment',
+      attempt_count: 1,
+      payload: { user_id: 'user-1', expense_id: 'expense-1' },
+    };
+    await processJob(job);
+    expect(runGmailEnrichmentJob).toHaveBeenCalledWith(job.payload);
+    expect(BackgroundJob.complete).toHaveBeenCalledWith('job-gmail', 'worker-1');
   });
 
   it('records a retry and captures failures without crashing the worker', async () => {

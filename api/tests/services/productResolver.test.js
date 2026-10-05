@@ -5,13 +5,57 @@ jest.mock('../../src/models/product', () => ({
   create: jest.fn(),
   update: jest.fn(),
 }));
+jest.mock('../../src/models/itemMatchDecision', () => ({
+  findForCandidate: jest.fn(),
+}));
 
 const Product = require('../../src/models/product');
+const ItemMatchDecision = require('../../src/models/itemMatchDecision');
 const { resolveProduct, resolveProductMatch } = require('../../src/services/productResolver');
 
 describe('productResolver', () => {
   beforeEach(() => {
     Object.values(Product).forEach(fn => fn.mockReset && fn.mockReset());
+    ItemMatchDecision.findForCandidate.mockReset().mockResolvedValue(null);
+  });
+
+  it('uses a household-confirmed alias before making a new normalized guess', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue({ id: 'product-known' });
+    ItemMatchDecision.findForCandidate.mockResolvedValue({ decision: 'same' });
+
+    const resolution = await resolveProductMatch({ description: 'Organic Bananas' }, 'Whole Foods', {
+      householdId: 'household-1',
+    });
+
+    expect(resolution).toEqual({
+      product_id: 'product-known',
+      confidence: 'high',
+      reason: 'household_confirmed_alias',
+    });
+    expect(ItemMatchDecision.findForCandidate).toHaveBeenCalledWith(expect.objectContaining({
+      candidateProductId: 'product-known',
+      householdId: 'household-1',
+    }));
+  });
+
+  it('does not relink a household-rejected normalized candidate', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue({ id: 'product-rejected' });
+    ItemMatchDecision.findForCandidate.mockResolvedValue({ decision: 'different' });
+
+    const resolution = await resolveProductMatch({ description: 'Organic Bananas' }, 'Whole Foods', {
+      householdId: 'household-1',
+    });
+
+    expect(resolution).toBeNull();
+    expect(ItemMatchDecision.findForCandidate).toHaveBeenCalledWith(expect.objectContaining({
+      candidateProductId: 'product-rejected',
+      householdId: 'household-1',
+    }));
+    expect(Product.update).not.toHaveBeenCalled();
   });
 
   it('matches an existing product by normalized description and size metadata', async () => {

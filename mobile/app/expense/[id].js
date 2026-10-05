@@ -107,6 +107,8 @@ export default function ExpenseDetailScreen() {
     setSecondaryDetailsExpanded,
     activeReviewField,
     setActiveReviewField,
+    itemDecisionId,
+    handleItemMatchDecision,
     canEdit,
     canAdjustReviewControls,
     handleSave,
@@ -668,6 +670,8 @@ export default function ExpenseDetailScreen() {
         itemMatchLabel={itemMatchLabel}
         formatItemStructuredMeta={formatItemStructuredMeta}
         itemSubmeta={itemSubmeta}
+        itemDecisionId={itemDecisionId}
+        onItemMatchDecision={handleItemMatchDecision}
       />
 
       <ExpenseDetailActions
@@ -1266,6 +1270,31 @@ const styles = StyleSheet.create({
   itemReadAmount: { fontSize: 13, color: colors.textSubtle, paddingLeft: 8, paddingTop: 1, fontWeight: '700' },
   itemMatchChip: { borderRadius: 8, backgroundColor: colors.infoMuted, paddingHorizontal: 8, paddingVertical: 4 },
   itemMatchChipText: { color: colors.info, fontSize: 10, fontWeight: '700' },
+  itemMatchReview: {
+    marginTop: 6,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  itemMatchReviewTitle: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
+  itemMatchReviewCandidate: { color: colors.text, fontWeight: '700' },
+  itemMatchReviewActions: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  itemMatchReviewButton: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceRaised,
+  },
+  itemMatchReviewButtonPrimary: { borderColor: colors.successBorder, backgroundColor: colors.successMuted },
+  itemMatchReviewButtonDisabled: { opacity: 0.55 },
+  itemMatchReviewButtonText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  itemMatchReviewButtonTextPrimary: { color: colors.success },
   itemEditCard: { gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   itemEditRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemEditDesc: { flex: 1, minWidth: 0, color: colors.text, fontSize: 13, padding: 4 },

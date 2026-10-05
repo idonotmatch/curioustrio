@@ -76,10 +76,25 @@ async function createBulk(expenseId, items, queryable = db) {
 
 async function findByExpenseId(expenseId) {
   const result = await db.query(
-    `SELECT * FROM expense_items WHERE expense_id = $1 ORDER BY sort_order ASC`,
+    `SELECT i.*,
+            p.name AS candidate_product_name,
+            p.brand AS candidate_product_brand,
+            p.merchant AS candidate_product_merchant
+     FROM expense_items i
+     LEFT JOIN products p ON p.id = i.product_id
+     WHERE i.expense_id = $1
+     ORDER BY i.sort_order ASC`,
     [expenseId]
   );
   return result.rows;
+}
+
+async function findByIdForExpense(id, expenseId, queryable = db) {
+  const result = await queryable.query(
+    `SELECT * FROM expense_items WHERE id = $1 AND expense_id = $2 LIMIT 1`,
+    [id, expenseId]
+  );
+  return result.rows[0] || null;
 }
 
 async function replaceItems(expenseId, items, queryable = null) {
@@ -157,8 +172,8 @@ async function updateResolution(id, expenseId, {
   productId = null,
   productMatchConfidence = null,
   productMatchReason = null,
-} = {}) {
-  const result = await db.query(
+} = {}, queryable = db) {
+  const result = await queryable.query(
     `UPDATE expense_items
      SET product_id = $3,
          product_match_confidence = $4,
@@ -171,4 +186,4 @@ async function updateResolution(id, expenseId, {
   return result.rows[0] || null;
 }
 
-module.exports = { createBulk, findByExpenseId, replaceItems, updateResolution };
+module.exports = { createBulk, findByExpenseId, findByIdForExpense, replaceItems, updateResolution };

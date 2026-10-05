@@ -54,6 +54,7 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
   const [recurringNotes, setRecurringNotes] = useState('');
   const [secondaryDetailsExpanded, setSecondaryDetailsExpanded] = useState(false);
   const [activeReviewField, setActiveReviewField] = useState(null);
+  const [itemDecisionId, setItemDecisionId] = useState(null);
 
   const setters = createExpenseSetters({
     setExpense,
@@ -288,6 +289,30 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
     }
   }
 
+  async function handleItemMatchDecision(itemId, decision) {
+    if (!itemId || itemDecisionId) return;
+    setItemDecisionId(itemId);
+    try {
+      const result = await api.post(`/expenses/${id}/items/${itemId}/match-decision`, { decision });
+      const updatedItem = result?.item;
+      if (!updatedItem?.id) throw new Error('The item match response was incomplete.');
+      const currentItems = Array.isArray(expense?.items) ? expense.items : items;
+      const nextItems = currentItems.map((item) => (
+        item.id === updatedItem.id ? { ...item, ...updatedItem } : item
+      ));
+      const refreshed = { ...expense, items: nextItems };
+      setExpense(refreshed);
+      setItems(nextItems);
+      saveExpenseSnapshot(refreshed);
+      patchExpenseInCachedLists(refreshed);
+      await invalidateCacheByPrefix('cache:insights:');
+    } catch (e) {
+      Alert.alert('Could not save item match', e.message || 'Try again in a moment.');
+    } finally {
+      setItemDecisionId(null);
+    }
+  }
+
   return {
     expense,
     loading,
@@ -342,6 +367,8 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
     setSecondaryDetailsExpanded,
     activeReviewField,
     setActiveReviewField,
+    itemDecisionId,
+    handleItemMatchDecision,
     canEdit,
     canAdjustReviewControls,
     handleSave,

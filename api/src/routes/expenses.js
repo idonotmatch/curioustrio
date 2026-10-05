@@ -38,6 +38,7 @@ const { buildExpensePage, decodeExpenseCursor } = require('../services/expensePa
 const { resolveDuplicate, undoDuplicateMerge } = require('../services/duplicateResolutionService');
 const { validateExpenseCoreFields } = require('../services/expenseValidation');
 const { transitionPendingExpense } = require('../services/expenseReviewTransitionService');
+const { recordItemMatchDecision } = require('../services/itemMatchReviewService');
 
 router.use(authenticate);
 
@@ -609,6 +610,42 @@ router.post('/:id/approve', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/:id/items/:itemId/match-decision', async (req, res, next) => {
+  try {
+    if (!UUID_RE.test(req.params.id) || !UUID_RE.test(req.params.itemId)) {
+      return res.status(400).json({ error: 'Invalid expense or item id' });
+    }
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const result = await recordItemMatchDecision({
+      user,
+      expenseId: req.params.id,
+      itemId: req.params.itemId,
+      decision: req.body?.decision,
+    });
+    try {
+      await requestProjectionRefresh({
+        user,
+        reason: 'item_match_decision',
+        expense: result.expense,
+        metadata: { source: 'item_match_review', decision: req.body?.decision },
+      });
+      await emitExpenseFreshnessEvent(user, result.expense, {
+        eventType: 'item_match_decision',
+        includePending: result.expense?.status === 'pending',
+        includeGmail: result.expense?.source === 'email',
+        metadata: { decision: req.body?.decision },
+      });
+    } catch (followUpError) {
+      console.error('[item match review] follow-up failed (non-fatal):', {
+        expense_id: req.params.id,
+        message: followUpError?.message || String(followUpError || 'unknown_error'),
+      });
+    }
+    res.json({ item: result.item, decision: req.body?.decision });
+  } catch (err) { next(err); }
+});
+
 router.post('/:id/duplicates/:flagId/resolve', async (req, res, next) => {
   try {
     const user = await getUser(req);
@@ -768,7 +805,9 @@ router.patch('/:id', async (req, res, next) => {
       try {
         resolvedItems = await Promise.all(
           (Array.isArray(items) ? items : []).map((item) =>
-            enrichItemWithResolution(item, merchant ?? originalExpense.merchant)
+            enrichItemWithResolution(item, merchant ?? originalExpense.merchant, {
+              householdId: user.household_id,
+            })
           )
         );
       } catch (resolutionErr) {

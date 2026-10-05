@@ -94,6 +94,26 @@ describe('assignCategory', () => {
     expect(result.confidence).toBe(1); // Claude fallback → 1 dot
   });
 
+  it('can defer only the AI fallback while retaining local assignment checks', async () => {
+    CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
+    MerchantMapping.findByMerchant.mockResolvedValueOnce(null);
+
+    const result = await assignCategory({
+      merchant: 'New Restaurant',
+      description: 'order confirmation',
+      householdId: 'hh-1',
+      categories: mockCategories,
+      skipAiFallback: true,
+    });
+
+    expect(result).toMatchObject({
+      category_id: null,
+      source: 'deferred',
+      reasoning: { strategy: 'background_fallback' },
+    });
+    expect(mockCreate()).not.toHaveBeenCalled();
+  });
+
   it('skips AI fallback for low-specificity generic descriptions when strict gating is on', async () => {
     process.env.PARSING_CATEGORY_AI_FALLBACK_STRICT = 'true';
     CategoryDecisionEvent.findBestLearnedMatch.mockResolvedValueOnce(null);
