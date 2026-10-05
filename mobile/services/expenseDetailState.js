@@ -4,8 +4,8 @@ import {
   mergeExpenseData,
 } from './expenseLocalStore';
 import {
+  buildExpenseItemsPatch,
   createEditableExpenseItem,
-  normalizeExpenseItemPayload,
 } from './itemEditing';
 import { locationApiFields, normalizeLocationData } from './locationData';
 import { formatMoneyInput } from './moneyInput';
@@ -116,6 +116,7 @@ export function buildExpensePatchPayload({
   budgetExclusionReason,
   locationData,
   itemsEdits,
+  includeItems = true,
 }) {
   const locationFields = locationApiFields(locationData, { cleared: !locationData });
   return {
@@ -131,8 +132,6 @@ export function buildExpensePatchPayload({
     exclude_from_budget: excludeFromBudget,
     budget_exclusion_reason: excludeFromBudget ? budgetExclusionReason : null,
     ...locationFields,
-    items: itemsEdits
-      .filter((it) => it.description.trim())
-      .map((it) => normalizeExpenseItemPayload(it)),
+    ...buildExpenseItemsPatch(itemsEdits, { includeItems }),
   };
 }

@@ -36,6 +36,8 @@ const {
 const db = require('../db');
 const { buildExpensePage, decodeExpenseCursor } = require('../services/expensePagination');
 const { resolveDuplicate, undoDuplicateMerge } = require('../services/duplicateResolutionService');
+const { validateExpenseCoreFields } = require('../services/expenseValidation');
+const { transitionPendingExpense } = require('../services/expenseReviewTransitionService');
 
 router.use(authenticate);
 
@@ -555,10 +557,17 @@ router.post('/cards/forget', async (req, res, next) => {
 // Dismiss a pending expense
 router.post('/:id/dismiss', async (req, res, next) => {
   try {
+    if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid expense id' });
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    let expense = await Expense.updateStatus(req.params.id, user.id, 'dismissed');
-    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const transition = await transitionPendingExpense(req.params.id, user.id, 'dismissed');
+    let expense = transition.expense;
+    if (transition.idempotentReplay) {
+      return res.json(await attachExpenseReviewContext(expense, user.id, {
+        includeItems: true,
+        includeCategoryReasoning: true,
+      }));
+    }
     expense = await handleDismissedExpenseReview(expense, user.id, req.body?.dismissal_reason);
     await emitExpenseFreshnessEvent(user, expense, {
       eventType: 'pending_expense_dismissed',
@@ -575,10 +584,14 @@ router.post('/:id/dismiss', async (req, res, next) => {
 
 router.post('/:id/approve', async (req, res, next) => {
   try {
+    if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid expense id' });
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    let expense = await Expense.updateStatus(req.params.id, user.id, 'confirmed');
-    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const transition = await transitionPendingExpense(req.params.id, user.id, 'confirmed', {
+      blockPendingDuplicates: true,
+    });
+    let expense = transition.expense;
+    if (transition.idempotentReplay) return res.json(expense);
     expense = await handleApprovedExpenseReview(expense, user.id, req.body?.review_context);
     requestProjectionRefresh({
       user,
@@ -711,6 +724,8 @@ router.patch('/:id', async (req, res, next) => {
             place_name, address, mapkit_stable_id,
             location_provider_id, location_latitude, location_longitude, location_source,
             location_status, location_confidence, location_user_owned } = req.body;
+    const coreValidation = validateExpenseCoreFields(req.body, { partial: true });
+    if (coreValidation.error) return res.status(400).json({ error: coreValidation.error });
     if (category_id !== undefined && category_id !== null && !UUID_RE.test(category_id)) {
       return res.status(400).json({ error: 'category_id must be a valid UUID' });
     }

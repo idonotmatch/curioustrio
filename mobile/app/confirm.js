@@ -19,6 +19,7 @@ import {
 } from '../services/itemEditing';
 import { colors } from '../theme/tokens';
 const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
+const { expenseDraftError } = require('../services/expenseValidation');
 
 function parseConfirmData(value) {
   try {
@@ -391,6 +392,11 @@ export default function ConfirmScreen() {
   async function handleConfirm() {
     try {
       setSaving(true);
+      const validationError = expenseDraftError({ merchant, amount: expense.amount, date: expense.date });
+      if (validationError) {
+        Alert.alert('Check expense details', validationError);
+        return;
+      }
       if (excludeFromBudget && !budgetExclusionReason) {
         Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
         return;

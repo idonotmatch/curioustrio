@@ -12,6 +12,7 @@ const detectDuplicates = require('./duplicateDetector');
 const { resolveProductMatch } = require('./productResolver');
 const { assignCategory } = require('./categoryAssigner');
 const { searchPlace } = require('./mapkitService');
+const { validateExpenseCoreFields } = require('./expenseValidation');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,9 +34,8 @@ function validateConfirmExpensePayload(payload = {}) {
     idempotency_key,
   } = payload;
 
-  if (!amount || !date || !source) {
-    return { error: 'amount, date, source required', reason: 'missing_required_fields' };
-  }
+  const coreValidation = validateExpenseCoreFields(payload);
+  if (coreValidation.error) return coreValidation;
 
   if (Array.isArray(items) && items.some((item) => !item.description || typeof item.description !== 'string' || item.description.trim() === '')) {
     return { error: 'Each item must have a non-empty description', reason: 'invalid_items' };
@@ -550,7 +550,7 @@ async function createConfirmedExpense({
       createdItems = Array.isArray(payload.items) && payload.items.length > 0
         ? await ExpenseItem.createBulk(expense.id, payload.items, client)
         : [];
-      receiptDetails = payload.source === 'camera' && payload.receipt_details
+      receiptDetails = payload.receipt_details
         ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details, client)
         : null;
     }

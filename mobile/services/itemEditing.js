@@ -70,8 +70,18 @@ function normalizeExpenseItemPayload(item = {}) {
   };
 }
 
+function buildExpenseItemsPatch(items = [], { includeItems = true } = {}) {
+  if (!includeItems) return {};
+  return {
+    items: (Array.isArray(items) ? items : [])
+      .filter((item) => `${item?.description || ''}`.trim())
+      .map((item) => normalizeExpenseItemPayload(item)),
+  };
+}
+
 module.exports = {
   createEditableExpenseItem,
+  buildExpenseItemsPatch,
   normalizeExpenseItemPayload,
   parseItemNumber,
   updateEditableExpenseItem,

@@ -289,6 +289,26 @@ describe('expenseConfirmService deferred enrichment', () => {
     ], db.__client);
   });
 
+  it('keeps receipt metadata when a scanned purchase is saved as a refund', async () => {
+    const receiptDetails = { subtotal: -12, transaction_id: 'refund-123' };
+    ExpenseReceiptDetail.upsert.mockResolvedValueOnce({ expense_id: 'expense-1', ...receiptDetails });
+
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Corner Store',
+        amount: -12,
+        date: '2026-10-04',
+        source: 'refund',
+        receipt_details: receiptDetails,
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm: jest.fn(),
+    });
+
+    expect(ExpenseReceiptDetail.upsert).toHaveBeenCalledWith('expense-1', receiptDetails, db.__client);
+  });
+
   it('rolls back the expense when line item persistence fails', async () => {
     ExpenseItem.createBulk.mockRejectedValueOnce(new Error('item insert failed'));
 

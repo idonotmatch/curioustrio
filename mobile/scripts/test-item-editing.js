@@ -1,5 +1,6 @@
 const assert = require('assert');
 const {
+  buildExpenseItemsPatch,
   createEditableExpenseItem,
   normalizeExpenseItemPayload,
   updateEditableExpenseItem,
@@ -22,6 +23,17 @@ function run() {
       unit_price: '1.79',
     },
     'editable items should seed string values for quantity-aware editing'
+  );
+
+  assert.deepStrictEqual(
+    buildExpenseItemsPatch([], { includeItems: false }),
+    {},
+    'edits should omit line items until item data has hydrated'
+  );
+  assert.deepStrictEqual(
+    buildExpenseItemsPatch([{ description: ' Milk ', amount: '4.25' }]),
+    { items: [expectItemPayload('Milk', 4.25)] },
+    'hydrated line item edits should be included explicitly'
   );
 
   const fromQuantityChange = updateEditableExpenseItem(
@@ -71,6 +83,22 @@ function run() {
   );
 
   process.stdout.write('[mobile-logic] item editing checks passed\n');
+}
+
+function expectItemPayload(description, amount) {
+  return {
+    description,
+    amount,
+    quantity: null,
+    unit_price: null,
+    item_type: null,
+    upc: null,
+    sku: null,
+    brand: null,
+    product_size: null,
+    pack_size: null,
+    unit: null,
+  };
 }
 
 run();

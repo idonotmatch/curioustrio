@@ -17,6 +17,8 @@ import {
   removeExpenseSnapshot,
   saveExpenseSnapshot,
 } from '../services/expenseLocalStore';
+const { expenseDraftError } = require('../services/expenseValidation');
+const { createEditableExpenseItem } = require('../services/itemEditing');
 
 export function useExpenseDetailController({ id, expenseParam, currentUserId, router }) {
   const [expense, setExpense] = useState(null);
@@ -40,7 +42,9 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
   const [budgetExclusionReason, setBudgetExclusionReason] = useState(null);
   const [items, setItems] = useState([]);
   const [itemsExpanded, setItemsExpanded] = useState(false);
-  const [itemsEdits, setItemsEdits] = useState([]);
+  const [itemsEdits, setItemsEditsState] = useState([]);
+  const itemsHydratedRef = useRef(false);
+  const itemsDirtyRef = useRef(false);
   const [locationData, setLocationData] = useState(null);
   const [recurringPreference, setRecurringPreference] = useState(null);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
@@ -64,15 +68,21 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
     setBudgetExclusionReason,
     setItems,
     setLocationData,
-    setItemsEdits,
+    setItemsEdits: setItemsEditsState,
   });
 
   const setEditing = useCallback((value) => {
     setEditingState((current) => {
       const next = typeof value === 'function' ? value(current) : Boolean(value);
+      if (next !== current) itemsDirtyRef.current = false;
       editingRef.current = next;
       return next;
     });
+  }, []);
+
+  const setItemsEdits = useCallback((value) => {
+    itemsDirtyRef.current = true;
+    setItemsEditsState(value);
   }, []);
 
   useEffect(() => {
@@ -83,6 +93,7 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
       const bootstrapped = await bootstrapExpenseRecord(id, expenseParam);
       if (active && bootstrapped) {
         applyExpenseToState(bootstrapped, setters);
+        itemsHydratedRef.current = Array.isArray(bootstrapped.items);
         setLoading(false);
       }
 
@@ -93,8 +104,13 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
         if (editingRef.current) {
           setExpense(merged);
           setItems(Array.isArray(merged?.items) ? merged.items : []);
+          if (!itemsDirtyRef.current && Array.isArray(merged?.items)) {
+            setItemsEditsState(merged.items.map((item) => createEditableExpenseItem(item)));
+            itemsHydratedRef.current = true;
+          }
         } else {
           applyExpenseToState(merged, setters);
+          itemsHydratedRef.current = Array.isArray(merged?.items);
         }
         setLoading(false);
         saveExpenseSnapshot(merged);
@@ -151,6 +167,11 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
   async function handleSave() {
     setSaving(true);
     try {
+      const validationError = expenseDraftError({ merchant, amount, date });
+      if (validationError) {
+        Alert.alert('Check expense details', validationError);
+        return;
+      }
       if (excludeFromBudget && !budgetExclusionReason) {
         Alert.alert('Choose a reason', 'Pick why this should be tracked without counting it toward your budget.');
         return;
@@ -170,6 +191,7 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
         budgetExclusionReason,
         locationData,
         itemsEdits,
+        includeItems: itemsHydratedRef.current || itemsDirtyRef.current,
       }));
       const refreshed = mergeReviewMetadata(expense, updated);
       applyExpenseToState(refreshed, setters);

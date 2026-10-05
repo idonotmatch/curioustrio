@@ -58,6 +58,7 @@ const filesToCheck = [
   'services/emailAuth.js',
   'services/expenseMutationEffects.js',
   'services/expenseIdempotency.js',
+  'services/expenseValidation.js',
   'services/observability.js',
   'services/provenancePresentation.js',
   'services/gmailAuthFlow.js',

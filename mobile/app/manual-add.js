@@ -22,6 +22,7 @@ import {
 import { colors, radius } from '../theme/tokens';
 import { sanitizeMoneyInput } from '../services/moneyInput';
 const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
+const { expenseDraftError } = require('../services/expenseValidation');
 
 const TRACK_ONLY_REASONS = [
   { value: 'business', label: 'Business' },
@@ -221,12 +222,9 @@ export default function ManualAddScreen() {
   }
 
   async function handleSave() {
-    if (!Number(amount) || Number(amount) <= 0) {
-      Alert.alert('Add an amount', 'Enter how much the expense was before saving.');
-      return;
-    }
-    if (!merchant.trim()) {
-      Alert.alert('Add a merchant or description', 'Give this expense a short name so it is easy to recognize later.');
+    const validationError = expenseDraftError({ merchant, amount, date });
+    if (validationError) {
+      Alert.alert('Check expense details', validationError);
       return;
     }
     if (excludeFromBudget && !budgetExclusionReason) {
