@@ -8,7 +8,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "node --watch src/index.js",
     "test": "jest --config jest.unit.config.js --passWithNoTests --runInBand",
     "test:unit": "jest --config jest.unit.config.js --passWithNoTests --runInBand",
     "test:launch": "jest --config jest.unit.config.js --passWithNoTests --runInBand tests/services/emailParser.test.js tests/services/gmailImporter.test.js tests/services/gmailSyncService.test.js tests/services/accountDeletionService.test.js tests/services/gmailClient.test.js tests/services/cronAlertService.test.js tests/services/observability.test.js tests/services/pushEligibility.test.js tests/services/categoryAssigner.test.js tests/services/expenseIngestService.test.js tests/services/expenseConfirmService.test.js tests/services/expenseAccessPolicy.test.js tests/services/internalTools.test.js tests/services/inviteToken.test.js tests/startup/validateEnv.test.js",
@@ -26,12 +26,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
+    "@anthropic-ai/sdk": "^0.131.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
-    "express": "^4.22.1",
-    "express-rate-limit": "^8.3.1",
-    "googleapis": "^148.0.0",
+    "express": "^4.22.3",
+    "express-rate-limit": "^8.7.0",
+    "googleapis": "^183.0.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
@@ -41,7 +41,6 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "jest": "^30.3.0",
-    "nodemon": "^3.1.14",
     "supertest": "^7.2.2"
   }
 }
