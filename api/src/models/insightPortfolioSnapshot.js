@@ -1,5 +1,7 @@
 const db = require('../db');
 
+const INSIGHT_LOGIC_VERSION = 'item-evidence-v1';
+
 function isMissingTable(err) {
   return err?.code === '42P01' || /insight_portfolio_snapshots/i.test(`${err?.message || ''}`);
 }
@@ -25,6 +27,7 @@ async function sourceFingerprint(userId) {
        SELECT household_id FROM users WHERE id = $1
      )
      SELECT jsonb_build_object(
+       'logic_version', '${INSIGHT_LOGIC_VERSION}',
        'expenses', (
          SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(e.created_at), 'epoch'::timestamptz), COALESCE(SUM(e.amount), 0))
          FROM expenses e, user_context c
@@ -108,6 +111,7 @@ async function invalidate(userId) {
 }
 
 module.exports = {
+  INSIGHT_LOGIC_VERSION,
   findByUser,
   invalidate,
   matchesFingerprint,

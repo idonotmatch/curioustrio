@@ -17,6 +17,7 @@ describe('summarizeHistoryRows', () => {
   it('groups rows by stable identity and summarizes recent item history', () => {
     const summaries = summarizeHistoryRows([
       {
+        expense_item_id: 'item-1',
         expense_id: 'expense-1',
         comparable_key: 'sparkling water lime|brand:water co|size:12oz|pack:8',
         product_match_confidence: 'medium',
@@ -30,6 +31,7 @@ describe('summarizeHistoryRows', () => {
         date: '2026-04-01',
       },
       {
+        expense_item_id: 'item-2',
         expense_id: 'expense-2',
         comparable_key: 'sparkling water lime|brand:water co|size:12oz|pack:8',
         product_match_confidence: 'medium',
@@ -43,6 +45,7 @@ describe('summarizeHistoryRows', () => {
         date: '2026-04-10',
       },
       {
+        expense_item_id: 'item-3',
         expense_id: 'expense-3',
         comparable_key: 'sparkling water lime|brand:water co|size:12oz|pack:8',
         product_match_confidence: 'medium',
@@ -64,17 +67,20 @@ describe('summarizeHistoryRows', () => {
       average_gap_days: 9.5,
       median_amount: 5.99,
       median_unit_price: 0.0624,
+      prior_median_amount: 6.24,
+      baseline_purchase_count: 2,
       merchants: ['Target', 'Whole Foods'],
       last_purchased_at: '2026-04-20',
+      next_expected_date: '2026-04-29',
     });
     expect(summaries[0].merchant_breakdown).toEqual(expect.arrayContaining([
       expect.objectContaining({ merchant: 'Target', occurrence_count: 2 }),
       expect.objectContaining({ merchant: 'Whole Foods', occurrence_count: 1 }),
     ]));
     expect(summaries[0].purchases).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'expense-1' }),
-      expect.objectContaining({ id: 'expense-2' }),
-      expect.objectContaining({ id: 'expense-3' }),
+      expect.objectContaining({ id: 'expense-1', expense_item_id: 'item-1', item_amount: 5.99 }),
+      expect.objectContaining({ id: 'expense-2', expense_item_id: 'item-2', item_amount: 6.49 }),
+      expect.objectContaining({ id: 'expense-3', expense_item_id: 'item-3', item_amount: 5.79 }),
     ]));
   });
 });

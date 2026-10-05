@@ -52,11 +52,15 @@ function summarizeHistoryRows(rows = []) {
     if (!groupKey) continue;
     if (!grouped.has(groupKey)) grouped.set(groupKey, []);
     grouped.get(groupKey).push({
+      expense_item_id: row.expense_item_id || null,
       expense_id: row.expense_id || null,
       group_key: groupKey,
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
       product_match_confidence: row.product_match_confidence || null,
+      product_match_reason: row.product_match_reason || null,
+      extraction_confidence: row.extraction_confidence || null,
+      source_type: row.source_type || null,
       item_name: row.item_name || row.description || null,
       brand: row.brand || null,
       merchant: row.merchant || null,
@@ -84,6 +88,8 @@ function summarizeIdentity(entries = []) {
   const first = sorted[0];
   const amounts = sorted.map((entry) => entry.amount).filter((value) => value != null);
   const unitPrices = sorted.map((entry) => entry.estimated_unit_price).filter((value) => value != null);
+  const priorAmounts = sorted.slice(0, -1).map((entry) => entry.amount).filter((value) => value != null);
+  const priorUnitPrices = sorted.slice(0, -1).map((entry) => entry.estimated_unit_price).filter((value) => value != null);
   const merchants = [...new Set(sorted.map((entry) => entry.merchant).filter(Boolean))];
   const dateObjs = sorted.map((entry) => parseDateOnly(entry.date));
   const gaps = [];
@@ -97,38 +103,65 @@ function summarizeIdentity(entries = []) {
     return {
       merchant,
       occurrence_count: merchantEntries.length,
+      amount_observation_count: merchantAmounts.length,
+      unit_price_observation_count: merchantUnitPrices.length,
       median_amount: median(merchantAmounts),
       median_unit_price: median(merchantUnitPrices),
       last_purchased_at: merchantEntries[merchantEntries.length - 1]?.date || null,
     };
   }).sort((a, b) => b.occurrence_count - a.occurrence_count || a.merchant.localeCompare(b.merchant));
+  const strongIdentityCount = sorted.filter((entry) => (
+    entry.product_id
+    && (
+      entry.product_match_confidence === 'high'
+      || entry.product_match_reason === 'user_confirmed'
+      || entry.product_match_reason === 'exact_upc'
+    )
+  )).length;
+  const identityConfidence = latest.product_id
+    ? (strongIdentityCount >= Math.min(2, sorted.length) ? 'high' : 'medium')
+    : (sorted.every((entry) => entry.product_match_confidence === 'high') ? 'high' : 'medium');
+  const nextExpected = gaps.length ? new Date(`${latest.date}T12:00:00`) : null;
+  if (nextExpected) nextExpected.setDate(nextExpected.getDate() + median(gaps));
 
   return {
     kind: 'item_history',
     group_key: latest.group_key,
     product_id: latest.product_id,
     comparable_key: latest.comparable_key,
-    identity_confidence: latest.product_id ? 'high' : (latest.product_match_confidence || 'medium'),
+    identity_confidence: identityConfidence,
+    strong_identity_count: strongIdentityCount,
     item_name: latest.item_name,
     brand: latest.brand,
     occurrence_count: sorted.length,
     average_gap_days: gaps.length ? median(gaps) : null,
     median_amount: median(amounts),
     median_unit_price: median(unitPrices),
+    prior_median_amount: median(priorAmounts),
+    prior_median_unit_price: median(priorUnitPrices),
+    baseline_purchase_count: sorted.length - 1,
     first_purchased_at: first.date,
     last_purchased_at: latest.date,
+    next_expected_date: nextExpected ? nextExpected.toISOString().slice(0, 10) : null,
     merchants,
     merchant_breakdown: merchantBreakdown,
+    merchant_price_history: merchantBreakdown,
     normalized_total_size_value: latest.normalized_total_size_value,
     normalized_total_size_unit: latest.normalized_total_size_unit,
     purchases: sorted.map((entry) => ({
+      expense_item_id: entry.expense_item_id,
       id: entry.expense_id || null,
       date: entry.date,
       merchant: entry.merchant,
       amount: entry.amount,
+      item_amount: entry.amount,
       estimated_unit_price: entry.estimated_unit_price,
       normalized_total_size_value: entry.normalized_total_size_value,
       normalized_total_size_unit: entry.normalized_total_size_unit,
+      product_match_confidence: entry.product_match_confidence,
+      product_match_reason: entry.product_match_reason,
+      extraction_confidence: entry.extraction_confidence,
+      source_type: entry.source_type,
     })),
   };
 }
@@ -162,10 +195,14 @@ async function loadItemHistoryRows(ownerId, {
 
   const sharedSelect = `
     SELECT
+      ei.id AS expense_item_id,
       ei.expense_id,
       ei.product_id,
       ei.comparable_key,
       ei.product_match_confidence,
+      ei.product_match_reason,
+      ei.extraction_confidence,
+      ei.source_type,
       COALESCE(p.name, ei.description) AS item_name,
       COALESCE(p.brand, ei.brand) AS brand,
       ei.amount AS item_amount,

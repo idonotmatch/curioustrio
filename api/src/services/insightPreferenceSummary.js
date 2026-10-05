@@ -45,6 +45,7 @@ function roleForInsightType(insightType = '') {
     || type === 'buy_soon_better_price'
     || type === 'item_merchant_variance'
     || type === 'item_staple_merchant_opportunity'
+    || type === 'item_pattern_lapsed'
   ) return 'act';
 
   if (

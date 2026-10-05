@@ -905,17 +905,20 @@ describe('GET /insights', () => {
     );
 
     const today = new Date();
-    const d1 = new Date(today); d1.setDate(d1.getDate() - 40);
-    const d2 = new Date(today); d2.setDate(d2.getDate() - 24);
-    const d3 = new Date(today); d3.setDate(d3.getDate() - 8);
+    const d1 = new Date(today); d1.setDate(d1.getDate() - 56);
+    const d2 = new Date(today); d2.setDate(d2.getDate() - 40);
+    const d3 = new Date(today); d3.setDate(d3.getDate() - 24);
+    const d4 = new Date(today); d4.setDate(d4.getDate() - 8);
 
     const s1 = await insertExpense('Target', 12.99, d1.toISOString().split('T')[0]);
     const s2 = await insertExpense('Whole Foods', 15.49, d2.toISOString().split('T')[0]);
     const s3 = await insertExpense('Target', 12.49, d3.toISOString().split('T')[0]);
+    const s4 = await insertExpense('Whole Foods', 15.29, d4.toISOString().split('T')[0]);
 
     await ExpenseItem.createBulk(s1, [{ description: 'Paper Towels', amount: 12.99, brand: 'Bounty', pack_size: '6', unit: 'count' }]);
     await ExpenseItem.createBulk(s2, [{ description: 'Paper Towels', amount: 15.49, brand: 'Bounty', pack_size: '6', unit: 'count' }]);
     await ExpenseItem.createBulk(s3, [{ description: 'Paper Towels', amount: 12.49, brand: 'Bounty', pack_size: '6', unit: 'count' }]);
+    await ExpenseItem.createBulk(s4, [{ description: 'Paper Towels', amount: 15.29, brand: 'Bounty', pack_size: '6', unit: 'count' }]);
 
     const res = await request(app).get('/insights?limit=10');
     expect(res.status).toBe(200);

@@ -51,12 +51,59 @@ function buildInsightAction(insight) {
   }
 
   if (insight?.entity_type === 'item' && metadata?.group_key) {
-    return {
-      next_step_type: 'review_item_detail',
+    const itemActions = {
+      item_recent_price_jump: {
+        reason: 'Price moved',
+        title: 'Check the price history',
+        body: 'Compare the latest purchase with the prior baseline, then open the source expense if the item or amount needs correcting.',
+        cta: 'Review price evidence',
+      },
+      item_merchant_variance: {
+        reason: 'Repeated comparison',
+        title: 'Compare the merchants',
+        body: 'See the sample count and typical price at each merchant before changing where you buy it.',
+        cta: 'Compare merchants',
+      },
+      item_staple_merchant_opportunity: {
+        reason: 'Savings opportunity',
+        title: 'Compare the merchants',
+        body: 'This is becoming a regular purchase, so a repeated price difference may be worth acting on.',
+        cta: 'Compare merchants',
+      },
+      item_repurchase_accelerating: {
+        reason: 'Cadence changed',
+        title: 'Check the purchase rhythm',
+        body: 'Review the purchase dates to confirm whether consumption is actually speeding up or one purchase was unusual.',
+        cta: 'Review purchase timing',
+      },
+      item_pattern_lapsed: {
+        reason: 'Pattern changed',
+        title: 'Review the missing purchase',
+        body: 'Check whether this routine ended, the item changed names, or a recent purchase was matched incorrectly.',
+        cta: 'Review item history',
+      },
+      item_staple_emerging: {
+        reason: 'Pattern forming',
+        title: 'Review the new routine',
+        body: 'See the purchases behind this pattern and decide whether it belongs in your ongoing plan.',
+        cta: 'Review item history',
+      },
+      recurring_repurchase_due: {
+        reason: 'Timing signal',
+        title: 'Check whether it is actually due',
+        body: 'Use the purchase timeline to confirm whether the usual cadence still fits.',
+        cta: 'Review purchase timing',
+      },
+    };
+    const itemAction = itemActions[type] || {
       reason: 'Item signal',
       title: 'Review the item detail',
       body: 'Use the item history and recent purchases to decide whether this is worth acting on now.',
       cta: 'Open item detail',
+    };
+    return {
+      next_step_type: 'review_item_detail',
+      ...itemAction,
       route: {
         pathname: '/recurring-item',
         params: {

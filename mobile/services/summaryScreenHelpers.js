@@ -74,10 +74,13 @@ export function buildRecurringItemPreload(insight) {
     group_key: metadata.group_key || null,
     item_name: metadata.item_name || insight?.title || 'Recurring item',
     brand: metadata.brand || null,
+    identity_confidence: metadata.identity_confidence || metadata.confidence || null,
     average_gap_days: metadata.average_gap_days ?? null,
     occurrence_count: metadata.occurrence_count ?? metadata.expense_count ?? null,
     median_amount: metadata.median_amount ?? metadata.average_amount ?? null,
     median_unit_price: metadata.median_unit_price ?? null,
+    prior_median_amount: metadata.prior_median_amount ?? null,
+    prior_median_unit_price: metadata.prior_median_unit_price ?? null,
     last_purchased_at: metadata.last_purchased_at || metadata.last_seen_at || null,
     next_expected_date: metadata.next_expected_date || null,
     merchants: merchants.length ? merchants : (fallbackMerchant ? [fallbackMerchant] : []),
@@ -87,7 +90,12 @@ export function buildRecurringItemPreload(insight) {
       median_amount: entry?.median_amount ?? entry?.average_amount ?? entry?.amount ?? null,
       median_unit_price: entry?.median_unit_price ?? null,
     })),
-    purchases: Array.isArray(metadata.purchases) ? metadata.purchases : [],
+    purchases: Array.isArray(metadata.purchases)
+      ? metadata.purchases.map((purchase) => ({
+        ...purchase,
+        item_amount: purchase?.item_amount ?? purchase?.amount ?? null,
+      }))
+      : [],
   };
 }
 

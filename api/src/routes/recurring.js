@@ -10,9 +10,9 @@ const {
   detectRecurring,
   detectRecurringItems,
   detectRecurringItemSignals,
-  getRecurringItemHistory,
   detectRecurringWatchCandidates,
 } = require('../services/recurringDetector');
+const { getItemHistoryByGroupKey } = require('../services/itemHistoryService');
 const { findObservationOpportunities } = require('../services/priceObservationService');
 const { emitRecurringFreshnessEvent } = require('../services/freshnessEvents');
 
@@ -67,7 +67,7 @@ router.get('/item-history', async (req, res, next) => {
       return res.status(403).json({ error: 'Must be in a household' });
     }
     const ownerId = scope === 'personal' ? user.id : user.household_id;
-    const history = await getRecurringItemHistory(ownerId, groupKey, { scope, requesterUserId: user.id });
+    const history = await getItemHistoryByGroupKey(ownerId, groupKey, { scope, requesterUserId: user.id });
     if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
     res.json(history);
   } catch (err) { next(err); }

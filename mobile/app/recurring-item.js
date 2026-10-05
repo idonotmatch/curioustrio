@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
+import { getItemInsightEvidence, getItemInsightSummary } from '../services/itemInsightPresentation';
+import { SecondaryButton } from '../components/ui/Buttons';
 import { colors } from '../theme/tokens';
 
 const FEEDBACK_REASONS = [
@@ -18,11 +21,6 @@ const FEEDBACK_REASONS = [
 function formatCurrency(value) {
   if (value == null || Number.isNaN(Number(value))) return '—';
   return `$${Number(value).toFixed(2)}`;
-}
-
-function formatPercent(value) {
-  if (value == null || Number.isNaN(Number(value))) return '—';
-  return `${Math.abs(Number(value)).toFixed(0)}%`;
 }
 
 function formatShortDate(value) {
@@ -47,58 +45,6 @@ function parsePayload(value, fallback = null) {
     return JSON.parse(value);
   } catch {
     return fallback;
-  }
-}
-
-function signalSummary(insightType, metadata = {}, history = null, fallbackBody = '') {
-  const itemName = metadata.item_name || history?.item_name || 'This item';
-  const latestMerchant = metadata.latest_merchant || history?.purchases?.[history.purchases.length - 1]?.merchant || 'your usual merchant';
-  const cheapestMerchant = metadata.cheaper_merchant || history?.merchant_price_history?.[0]?.merchant || null;
-  const deltaPercent = formatPercent(metadata.delta_percent);
-  const medianAmount = history?.median_amount != null ? formatCurrency(history.median_amount) : null;
-  const medianUnitPrice = history?.median_unit_price != null ? formatCurrency(history.median_unit_price) : null;
-
-  switch (`${insightType || ''}`) {
-    case 'recurring_price_spike':
-      return {
-        whatChanged: fallbackBody || `${itemName} came in above your usual price this time.`,
-        whyItMatters: `${latestMerchant} was about ${deltaPercent} above your recent baseline${medianAmount !== '—' ? ` of ${medianAmount}` : ''}.`,
-        nextStep: 'Check whether this was a one-off high price or whether it is worth changing where or when you buy it.',
-      };
-    case 'buy_soon_better_price':
-      return {
-        whatChanged: fallbackBody || `${itemName} is currently available below your usual price.`,
-        whyItMatters: cheapestMerchant
-          ? `${cheapestMerchant} is running about ${deltaPercent} below your usual ${metadata.comparison_type === 'unit_price' ? 'unit price' : 'price'}.`
-          : `A recent observation suggests a better-than-usual price for this item.`,
-        nextStep: 'If you actually need it soon, this is a good time to compare merchants before you buy.',
-      };
-    case 'recurring_repurchase_due':
-      return {
-        whatChanged: fallbackBody || `${itemName} looks close to its usual repurchase window.`,
-        whyItMatters: `You typically buy this every ${metadata.average_gap_days || history?.average_gap_days || '—'} days, so timing is part of keeping this spend predictable.`,
-        nextStep: 'Use the purchase history below to decide whether this still belongs in your normal routine or can wait.',
-      };
-    case 'recurring_restock_window':
-      return {
-        whatChanged: fallbackBody || `${itemName} could fit within the room you still have this period.`,
-        whyItMatters: `You may have roughly ${formatCurrency(metadata.projected_headroom_amount)} of headroom left, and this item often lands around ${medianAmount || 'your usual price'}.`,
-        nextStep: 'If this is a staple, this is a good moment to decide intentionally instead of getting surprised later.',
-      };
-    case 'recurring_cost_pressure':
-      return {
-        whatChanged: fallbackBody || `${itemName} is part of a recurring cost pattern that is getting more expensive.`,
-        whyItMatters: medianUnitPrice !== '—'
-          ? `Your recent median unit price is around ${medianUnitPrice}, which makes small changes add up faster over time.`
-          : `Small repeated price increases can quietly drive a meaningful share of month-to-month pressure.`,
-        nextStep: 'Review which merchant and purchase timing are actually creating the squeeze before changing your routine.',
-      };
-    default:
-      return {
-        whatChanged: fallbackBody || `${itemName} stands out in your recurring purchase history.`,
-        whyItMatters: 'This is one of the few places where a small habit or merchant change can compound over time.',
-        nextStep: 'Use the history below to decide whether the pattern is worth acting on now.',
-      };
   }
 }
 
@@ -136,11 +82,13 @@ export default function RecurringItemScreen() {
     [metadataParam, navPayload]
   );
   const summary = useMemo(
-    () => signalSummary(Array.isArray(insightType) ? insightType[0] : insightType, metadata, history, Array.isArray(body) ? body[0] : body),
+    () => getItemInsightSummary(Array.isArray(insightType) ? insightType[0] : insightType, metadata, history, Array.isArray(body) ? body[0] : body),
     [body, history, insightType, metadata]
   );
+  const evidence = useMemo(() => getItemInsightEvidence(metadata, history), [history, metadata]);
   const merchantPriceHistory = Array.isArray(history?.merchant_price_history) ? history.merchant_price_history : [];
   const purchaseHistory = Array.isArray(history?.purchases) ? history.purchases : [];
+  const latestPurchase = purchaseHistory[purchaseHistory.length - 1] || null;
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -249,6 +197,13 @@ export default function RecurringItemScreen() {
                 Median price {formatCurrency(history.median_amount)}
                 {history.median_unit_price != null ? ` · ${formatCurrency(history.median_unit_price)} / unit` : ''}
               </Text>
+              <View style={styles.evidenceLine}>
+                <Ionicons name="shield-checkmark-outline" size={15} color={colors.success} />
+                <View style={styles.evidenceCopy}>
+                  <Text style={styles.evidenceLabel}>{evidence.label}</Text>
+                  <Text style={styles.evidenceDetail}>{evidence.detail}</Text>
+                </View>
+              </View>
             </View>
 
             <View style={styles.card}>
@@ -261,6 +216,14 @@ export default function RecurringItemScreen() {
               <Text style={styles.cardEyebrow}>Next step</Text>
               <Text style={styles.cardTitle}>What to do next</Text>
               <Text style={styles.cardCopy}>{summary.nextStep}</Text>
+              {latestPurchase?.id || latestPurchase?.expense_id ? (
+                <SecondaryButton
+                  title="Review latest purchase"
+                  icon="receipt-outline"
+                  onPress={() => handleOpenExpense(latestPurchase)}
+                  style={styles.reviewButton}
+                />
+              ) : null}
             </View>
 
             <View style={styles.card}>
@@ -286,11 +249,16 @@ export default function RecurringItemScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardEyebrow}>Merchant comparison</Text>
                 <Text style={styles.cardTitle}>Where this item tends to land</Text>
+                <Text style={styles.cardCopy}>Comparisons use repeat observations at each merchant. One-off prices are not treated as a recommendation.</Text>
                 {merchantPriceHistory.map((entry) => (
                   <View key={`${entry.merchant}:${entry.occurrence_count}`} style={styles.purchaseRow}>
-                    <View>
+                    <View style={styles.purchaseLeft}>
                       <Text style={styles.purchaseMerchant}>{entry.merchant || 'Unknown merchant'}</Text>
-                      <Text style={styles.purchaseDate}>{entry.occurrence_count} purchases</Text>
+                      <Text style={styles.purchaseDate}>
+                        {entry.occurrence_count} purchases
+                        {entry.merchant === metadata.cheaper_merchant ? ' · Lower observed' : ''}
+                        {entry.merchant === metadata.pricier_merchant ? ' · Higher observed' : ''}
+                      </Text>
                     </View>
                     <View style={styles.purchaseRight}>
                       <Text style={styles.purchaseAmount}>{formatCurrency(entry.median_amount)}</Text>
@@ -306,6 +274,7 @@ export default function RecurringItemScreen() {
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>Supporting activity</Text>
               <Text style={styles.cardTitle}>Recent purchases</Text>
+              <Text style={styles.cardCopy}>Open a purchase to correct its item match, amount, merchant, or date. Changes will feed the next insight refresh.</Text>
               {purchaseHistory.map((purchase, index) => {
                 const purchaseId = purchase.id || purchase.expense_id || null;
                 const expenseItemId = purchase.expense_item_id || null;
@@ -320,12 +289,15 @@ export default function RecurringItemScreen() {
                   disabled={!purchaseId}
                   onPress={() => handleOpenExpense(purchase)}
                 >
-                  <View>
+                  <View style={styles.purchaseLeft}>
                     <Text style={styles.purchaseMerchant}>{purchase.merchant || 'Unknown merchant'}</Text>
                     <Text style={styles.purchaseDate}>{purchase.date}</Text>
                   </View>
                   <View style={styles.purchaseRight}>
-                    <Text style={styles.purchaseAmount}>{formatCurrency(purchase.item_amount)}</Text>
+                    <View style={styles.purchaseAmountRow}>
+                      <Text style={styles.purchaseAmount}>{formatCurrency(purchase.item_amount ?? purchase.amount)}</Text>
+                      {purchaseId ? <Ionicons name="chevron-forward" size={15} color={colors.textDisabled} /> : null}
+                    </View>
                     {purchase.estimated_unit_price != null ? (
                       <Text style={styles.purchaseUnit}>{formatCurrency(purchase.estimated_unit_price)} / unit</Text>
                     ) : null}
@@ -435,9 +407,18 @@ const styles = StyleSheet.create({
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textSubtle, fontSize: 15 },
   hero: { gap: 6, marginBottom: 8 },
-  itemName: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: -0.8 },
+  itemName: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: 0 },
   subtle: { fontSize: 14, color: colors.textSubtle },
   heroStat: { fontSize: 14, color: colors.textMuted },
+  evidenceLine: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingTop: 8,
+  },
+  evidenceCopy: { flex: 1, gap: 2 },
+  evidenceLabel: { fontSize: 13, color: colors.text, fontWeight: '600' },
+  evidenceDetail: { fontSize: 12, color: colors.textSubtle, lineHeight: 17 },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -450,6 +431,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
   detailTitle: { fontSize: 18, color: colors.text, fontWeight: '700', lineHeight: 24 },
   cardCopy: { fontSize: 14, color: colors.textMuted, lineHeight: 20 },
+  reviewButton: { alignSelf: 'stretch', marginTop: 2 },
   metricList: { gap: 0 },
   metricRow: {
     flexDirection: 'row',
@@ -469,10 +451,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
+    gap: 12,
   },
+  purchaseLeft: { flex: 1, minWidth: 0 },
   purchaseMerchant: { fontSize: 15, color: colors.text, fontWeight: '500' },
   purchaseDate: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
   purchaseRight: { alignItems: 'flex-end' },
+  purchaseAmountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   purchaseAmount: { fontSize: 15, color: colors.text, fontWeight: '600' },
   purchaseUnit: { fontSize: 12, color: colors.textSubtle, marginTop: 2 },
   feedbackRow: { flexDirection: 'row', gap: 10 },

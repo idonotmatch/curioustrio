@@ -41,6 +41,8 @@ describe('insightAction', () => {
 
     expect(action).toMatchObject({
       next_step_type: 'review_item_detail',
+      reason: 'Price moved',
+      cta: 'Review price evidence',
       route: {
         pathname: '/recurring-item',
         params: {
@@ -49,6 +51,22 @@ describe('insightAction', () => {
         },
       },
     });
+  });
+
+  it('gives lapsed item patterns a correction-oriented action', () => {
+    const action = buildInsightAction({
+      id: 'insight-lapsed',
+      type: 'item_pattern_lapsed',
+      entity_type: 'item',
+      metadata: { group_key: 'product:paper-towels', scope: 'household', item_name: 'Paper Towels' },
+    });
+
+    expect(action).toMatchObject({
+      reason: 'Pattern changed',
+      cta: 'Review item history',
+      route: { pathname: '/recurring-item' },
+    });
+    expect(action.body).toContain('matched incorrectly');
   });
 
   it('attaches action metadata to an insight', () => {

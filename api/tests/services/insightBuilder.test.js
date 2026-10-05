@@ -467,6 +467,111 @@ describe('insightBuilder orchestration', () => {
     jest.useRealTimers();
   });
 
+  it('compares the latest item price with the prior baseline only', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-04-29T12:00:00.000Z'));
+    const insights = buildItemHistoryInsights([{
+      group_key: 'yogurt',
+      item_name: 'Greek Yogurt',
+      occurrence_count: 3,
+      average_gap_days: 14,
+      median_amount: 10,
+      prior_median_amount: 8,
+      baseline_purchase_count: 2,
+      identity_confidence: 'high',
+      last_purchased_at: '2026-04-25',
+      purchases: [
+        { date: '2026-03-28', amount: 8, merchant: 'Market' },
+        { date: '2026-04-11', amount: 8, merchant: 'Market' },
+        { date: '2026-04-25', amount: 12, merchant: 'Market' },
+      ],
+      merchant_breakdown: [],
+      merchants: ['Market'],
+    }], 'personal');
+
+    const priceJump = insights.find((insight) => insight.type === 'item_recent_price_jump');
+    expect(priceJump).toBeTruthy();
+    expect(priceJump.metadata.baseline_amount).toBe(8);
+    expect(priceJump.metadata.delta_percent).toBe(50);
+    expect(priceJump.metadata.baseline_purchase_count).toBe(2);
+    jest.useRealTimers();
+  });
+
+  it('does not recommend a cheaper merchant from a one-off observation', () => {
+    const insights = buildItemHistoryInsights([{
+      group_key: 'paper-towels',
+      item_name: 'Paper Towels',
+      occurrence_count: 3,
+      average_gap_days: 16,
+      median_amount: 12.99,
+      identity_confidence: 'medium',
+      last_purchased_at: new Date().toISOString().slice(0, 10),
+      purchases: [],
+      merchant_breakdown: [
+        { merchant: 'Target', occurrence_count: 2, amount_observation_count: 2, median_amount: 12.49 },
+        { merchant: 'Whole Foods', occurrence_count: 1, amount_observation_count: 1, median_amount: 15.49 },
+      ],
+      merchants: ['Target', 'Whole Foods'],
+    }], 'personal');
+
+    expect(insights.some((insight) => ['item_merchant_variance', 'item_staple_merchant_opportunity'].includes(insight.type))).toBe(false);
+  });
+
+  it('recommends a merchant only after repeat comparable observations at both stores', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const insights = buildItemHistoryInsights([{
+      group_key: 'paper-towels-repeat',
+      item_name: 'Paper Towels',
+      occurrence_count: 4,
+      average_gap_days: 16,
+      median_amount: 13.99,
+      normalized_total_size_value: 6,
+      identity_confidence: 'high',
+      last_purchased_at: today,
+      purchases: [{ date: today, amount: 15.29, estimated_unit_price: 2.5483, merchant: 'Whole Foods' }],
+      merchant_breakdown: [
+        { merchant: 'Target', occurrence_count: 2, amount_observation_count: 2, unit_price_observation_count: 2, median_amount: 12.49, median_unit_price: 2.0817 },
+        { merchant: 'Whole Foods', occurrence_count: 2, amount_observation_count: 2, unit_price_observation_count: 2, median_amount: 15.39, median_unit_price: 2.565 },
+      ],
+      merchants: ['Target', 'Whole Foods'],
+    }], 'personal');
+
+    const merchant = insights.find((insight) => insight.type === 'item_staple_merchant_opportunity');
+    expect(merchant).toBeTruthy();
+    expect(merchant.metadata.comparison_type).toBe('unit_price');
+    expect(merchant.metadata.merchant_evidence_count).toBe(4);
+    expect(merchant.metadata.delta_amount).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it('surfaces a repeat item after it drops out of its established rhythm', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-20T12:00:00.000Z'));
+    const insights = buildItemHistoryInsights([{
+      group_key: 'detergent',
+      item_name: 'Laundry Detergent',
+      occurrence_count: 4,
+      average_gap_days: 14,
+      median_amount: 15,
+      identity_confidence: 'high',
+      last_purchased_at: '2026-04-20',
+      purchases: [
+        { date: '2026-03-09', amount: 15, merchant: 'Target' },
+        { date: '2026-03-23', amount: 15, merchant: 'Target' },
+        { date: '2026-04-06', amount: 15, merchant: 'Target' },
+        { date: '2026-04-20', amount: 15, merchant: 'Target' },
+      ],
+      merchant_breakdown: [],
+      merchants: ['Target'],
+    }], 'household');
+
+    const lapsed = insights.find((insight) => insight.type === 'item_pattern_lapsed');
+    expect(lapsed).toBeTruthy();
+    expect(lapsed.metadata.days_since_last_purchase).toBe(30);
+    expect(lapsed.metadata.days_past_usual).toBe(16);
+    expect(lapsed.metadata.evidence_count).toBe(4);
+    jest.useRealTimers();
+  });
+
   it('prefers a more diverse final portfolio over multiple similar cards', () => {
     const insights = [
       buildInsight({ id: 'warn-1', type: 'projected_month_end_over_budget', severity: 'high', entity_id: 'budget:1' }),

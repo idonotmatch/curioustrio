@@ -56,6 +56,8 @@ export function getInsightActionDescriptor(insight, context = {}) {
         return { label: 'Review recent item price', reason: 'Price moved' };
       case 'item_repurchase_accelerating':
         return { label: 'Review item rhythm', reason: 'Buying faster' };
+      case 'item_pattern_lapsed':
+        return { label: 'Review item history', reason: 'Pattern changed' };
       case 'recurring_price_spike':
         return { label: 'Review recent prices', reason: 'Price changed' };
       case 'buy_soon_better_price':
@@ -254,6 +256,8 @@ export function getInsightPrimaryMetric(insight, context = {}) {
           return metric(`${Number(metadata.latest_gap_days)}d`, 'latest gap');
         }
         return metric(formatCountLabel(metadata.occurrence_count, 'buy'), 'recent repeat rate');
+      case 'item_pattern_lapsed':
+        return metric(formatCountLabel(metadata.days_since_last_purchase, 'day'), 'since last purchase');
       case 'item_staple_emerging':
         return metric(formatCountLabel(metadata.occurrence_count, 'buy'), 'recent repeat rate');
       case 'recurring_repurchase_due':
@@ -375,13 +379,13 @@ export function getInsightSupportRows(insight, context = {}) {
       case 'item_merchant_variance':
         addRow(rows, 'Best merchant', metadata.cheaper_merchant);
         addRow(rows, 'Price difference', formatPercentShort(metadata.delta_percent));
-        addRow(rows, 'Recent purchases', formatCountLabel(metadata.occurrence_count, 'purchase'));
+        addRow(rows, 'Compared', formatCountLabel(metadata.merchant_evidence_count ?? metadata.occurrence_count, 'purchase'));
         break;
       case 'item_recent_price_jump':
       case 'recurring_price_spike':
         addRow(rows, 'Latest merchant', metadata.latest_merchant);
         addRow(rows, 'Price jump', formatPercentShort(metadata.delta_percent));
-        addRow(rows, 'Usual price', formatCurrencyShort(metadata.median_amount));
+        addRow(rows, 'Prior baseline', formatCurrencyShort(metadata.baseline_amount ?? metadata.prior_median_amount ?? metadata.median_amount));
         break;
       case 'item_repurchase_accelerating':
         if (Number.isFinite(Number(metadata.latest_gap_days))) {
@@ -398,6 +402,11 @@ export function getInsightSupportRows(insight, context = {}) {
           addRow(rows, 'Usual gap', `${Number(metadata.average_gap_days)} days`);
         }
         addRow(rows, 'Typical spend', formatCurrencyShort(metadata.median_amount));
+        break;
+      case 'item_pattern_lapsed':
+        addRow(rows, 'Since last purchase', formatCountLabel(metadata.days_since_last_purchase, 'day'));
+        addRow(rows, 'Usual gap', formatCountLabel(metadata.average_gap_days, 'day'));
+        addRow(rows, 'History used', formatCountLabel(metadata.evidence_count ?? metadata.occurrence_count, 'purchase'));
         break;
       case 'buy_soon_better_price':
         addRow(rows, 'Lower-price merchant', metadata.merchant);
@@ -656,6 +665,7 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
     case 'recurring_price_spike':
     case 'item_recent_price_jump':
     case 'item_repurchase_accelerating':
+    case 'item_pattern_lapsed':
     case 'buy_soon_better_price':
     case 'recurring_repurchase_due':
     case 'recurring_restock_window':

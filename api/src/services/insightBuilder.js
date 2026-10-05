@@ -174,18 +174,28 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
   for (const history of histories) {
     const itemName = history.item_name || 'This item';
     const merchantBreakdown = Array.isArray(history.merchant_breakdown) ? history.merchant_breakdown : [];
-    const stapleEmerging = (
-      Number(history.occurrence_count || 0) >= 3
-      && Number(history.average_gap_days || 0) > 0
-      && Number(history.average_gap_days || 0) <= 21
+    const occurrenceCount = Number(history.occurrence_count || 0);
+    const averageGapDays = Number(history.average_gap_days || 0);
+    const staplePattern = (
+      occurrenceCount >= 3
+      && averageGapDays > 0
+      && averageGapDays <= 21
       && Number(history.median_amount || 0) >= 8
     );
 
-    const sortedMerchants = merchantBreakdown
-      .filter((entry) => Number(entry.occurrence_count || 0) >= 1)
+    const unitPriceMerchants = merchantBreakdown.filter((entry) => (
+      Number(entry.unit_price_observation_count ?? (entry.median_unit_price == null ? 0 : entry.occurrence_count) ?? 0) >= 2
+      && Number(entry.median_unit_price || 0) > 0
+    ));
+    const amountMerchants = merchantBreakdown.filter((entry) => (
+      Number(entry.amount_observation_count ?? (entry.median_amount == null ? 0 : entry.occurrence_count) ?? 0) >= 2
+      && Number(entry.median_amount || 0) > 0
+    ));
+    const comparisonType = unitPriceMerchants.length >= 2 ? 'unit_price' : 'price';
+    const sortedMerchants = (comparisonType === 'unit_price' ? unitPriceMerchants : amountMerchants)
       .sort((a, b) => {
-        const aValue = a.median_unit_price ?? a.median_amount ?? Number.MAX_SAFE_INTEGER;
-        const bValue = b.median_unit_price ?? b.median_amount ?? Number.MAX_SAFE_INTEGER;
+        const aValue = comparisonType === 'unit_price' ? a.median_unit_price : a.median_amount;
+        const bValue = comparisonType === 'unit_price' ? b.median_unit_price : b.median_amount;
         return aValue - bValue;
       });
 
@@ -193,21 +203,31 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
     if (sortedMerchants.length >= 2) {
       const cheapest = sortedMerchants[0];
       const priciest = sortedMerchants[sortedMerchants.length - 1];
-      const cheapestValue = Number(cheapest.median_unit_price ?? cheapest.median_amount ?? 0);
-      const priciestValue = Number(priciest.median_unit_price ?? priciest.median_amount ?? 0);
-      const deltaAmount = Number((priciestValue - cheapestValue).toFixed(2));
+      const cheapestValue = Number(comparisonType === 'unit_price' ? cheapest.median_unit_price : cheapest.median_amount);
+      const priciestValue = Number(comparisonType === 'unit_price' ? priciest.median_unit_price : priciest.median_amount);
+      const comparisonDeltaAmount = Number((priciestValue - cheapestValue).toFixed(4));
       const deltaPercent = cheapestValue > 0
         ? Number((((priciestValue - cheapestValue) / cheapestValue) * 100).toFixed(1))
         : 0;
+      const normalizedSize = Number(history.normalized_total_size_value || 0);
+      const amountDifference = Math.abs(Number(priciest.median_amount || 0) - Number(cheapest.median_amount || 0));
+      const estimatedSavingsAmount = Number((
+        comparisonType === 'unit_price' && normalizedSize > 0
+          ? comparisonDeltaAmount * normalizedSize
+          : amountDifference || comparisonDeltaAmount
+      ).toFixed(2));
 
-      if (deltaAmount >= 1.5 && deltaPercent >= 10) {
+      if (estimatedSavingsAmount >= 1.5 && deltaPercent >= 10) {
         merchantVariance = {
           cheapest,
           priciest,
           cheapestValue,
           priciestValue,
-          deltaAmount,
+          deltaAmount: estimatedSavingsAmount,
+          comparisonDeltaAmount,
           deltaPercent,
+          comparisonType,
+          evidenceCount: Number(cheapest.occurrence_count || 0) + Number(priciest.occurrence_count || 0),
         };
       }
     }
@@ -215,26 +235,43 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
     const purchaseTrail = Array.isArray(history.purchases) ? history.purchases : [];
     const latestPurchase = purchaseTrail[purchaseTrail.length - 1] || null;
     const previousPurchase = purchaseTrail[purchaseTrail.length - 2] || null;
-    const latestAmount = latestPurchase?.amount == null ? null : Number(latestPurchase.amount);
-    const medianAmount = history.median_amount == null ? null : Number(history.median_amount);
-    const latestAgeMs = latestPurchase?.date ? new Date(`${latestPurchase.date}T12:00:00`).getTime() : null;
-    const latestAgeDays = Number.isFinite(latestAgeMs)
-      ? Math.max(0, Math.floor((Date.now() - latestAgeMs) / (1000 * 60 * 60 * 24)))
+    const latestHasUnitPrice = latestPurchase?.estimated_unit_price != null && history.prior_median_unit_price != null;
+    const priceComparisonType = latestHasUnitPrice ? 'unit_price' : 'price';
+    const latestAmount = latestHasUnitPrice
+      ? Number(latestPurchase.estimated_unit_price)
+      : (latestPurchase?.amount == null ? null : Number(latestPurchase.amount));
+    const baselineAmount = latestHasUnitPrice
+      ? Number(history.prior_median_unit_price)
+      : (history.prior_median_amount == null ? null : Number(history.prior_median_amount));
+    const latestDateParts = latestPurchase?.date
+      ? `${latestPurchase.date}`.slice(0, 10).split('-').map(Number)
+      : [];
+    const latestDayNumber = latestDateParts.length === 3
+      ? Date.UTC(latestDateParts[0], latestDateParts[1] - 1, latestDateParts[2])
       : null;
+    const now = new Date();
+    const todayDayNumber = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const latestAgeDays = Number.isFinite(latestDayNumber)
+      ? Math.max(0, Math.round((todayDayNumber - latestDayNumber) / (1000 * 60 * 60 * 24)))
+      : null;
+    const stapleEmerging = staplePattern
+      && latestAgeDays != null
+      && latestAgeDays <= Math.max(14, Math.ceil(averageGapDays * 1.5));
     const recentPriceJump = latestPurchase
       && latestAmount != null
-      && medianAmount != null
-      && medianAmount > 0
-      && Number(history.occurrence_count || 0) >= 3
+      && baselineAmount != null
+      && baselineAmount > 0
+      && occurrenceCount >= 3
+      && Number(history.baseline_purchase_count ?? occurrenceCount - 1) >= 2
       && latestAgeDays != null
       && latestAgeDays <= 14
-      && (latestAmount - medianAmount) >= 2
-      && latestAmount >= medianAmount * 1.18;
+      && latestAmount >= baselineAmount * 1.18
+      && (priceComparisonType === 'unit_price' || (latestAmount - baselineAmount) >= 2);
     const latestDeltaAmount = recentPriceJump
-      ? Number((latestAmount - medianAmount).toFixed(2))
+      ? Number((latestAmount - baselineAmount).toFixed(2))
       : null;
     const latestDeltaPercent = recentPriceJump
-      ? Number((((latestAmount - medianAmount) / medianAmount) * 100).toFixed(1))
+      ? Number((((latestAmount - baselineAmount) / baselineAmount) * 100).toFixed(1))
       : null;
     const latestPurchaseMs = latestPurchase?.date ? new Date(`${latestPurchase.date}T12:00:00`).getTime() : null;
     const previousPurchaseMs = previousPurchase?.date ? new Date(`${previousPurchase.date}T12:00:00`).getTime() : null;
@@ -243,24 +280,41 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
       : null;
     const acceleratedRepurchase = latestPurchase
       && latestGapDays != null
-      && Number(history.occurrence_count || 0) >= 4
-      && Number(history.average_gap_days || 0) >= 6
+      && occurrenceCount >= 4
+      && averageGapDays >= 6
       && latestAgeDays != null
       && latestAgeDays <= 10
       && latestGapDays >= 1
-      && latestGapDays <= Number(history.average_gap_days || 0) * 0.65
-      && (Number(history.average_gap_days || 0) - latestGapDays) >= 3;
+      && latestGapDays <= averageGapDays * 0.65
+      && (averageGapDays - latestGapDays) >= 3;
     const cadenceDeltaDays = acceleratedRepurchase
-      ? Number((Number(history.average_gap_days || 0) - latestGapDays).toFixed(1))
+      ? Number((averageGapDays - latestGapDays).toFixed(1))
       : null;
+    const overdueThresholdDays = averageGapDays > 0 ? Math.max(Math.ceil(averageGapDays * 1.75), averageGapDays + 7) : null;
+    const patternLapsed = (
+      occurrenceCount >= 4
+      && averageGapDays >= 3
+      && averageGapDays <= 60
+      && latestAgeDays != null
+      && overdueThresholdDays != null
+      && latestAgeDays >= overdueThresholdDays
+    );
+    const evidenceMetadata = {
+      evidence_count: occurrenceCount,
+      baseline_purchase_count: Number(history.baseline_purchase_count ?? Math.max(occurrenceCount - 1, 0)),
+      identity_confidence: history.identity_confidence || 'medium',
+      confidence_reason: history.identity_confidence === 'high'
+        ? 'Matched across repeated purchases'
+        : 'Matched from normalized item details',
+    };
 
-    if (stapleEmerging && merchantVariance) {
+    if (patternLapsed) {
       insights.push({
-        id: `item_staple_merchant_opportunity:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
-        type: 'item_staple_merchant_opportunity',
-        title: `${itemName} is becoming a regular buy`,
-        body: `${itemName} has shown up ${history.occurrence_count} times recently, and ${merchantVariance.cheapest.merchant} has been about ${merchantVariance.deltaPercent}% cheaper than ${merchantVariance.priciest.merchant} when you buy it.`,
-        severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 || Number(history.occurrence_count || 0) >= 4 ? 'medium' : 'low',
+        id: `item_pattern_lapsed:${scope}:${history.group_key}:${history.last_purchased_at}`,
+        type: 'item_pattern_lapsed',
+        title: `${itemName} has dropped out of its usual rhythm`,
+        body: `You usually bought ${itemName} about every ${averageGapDays} days, but it has been ${latestAgeDays} days since the last purchase. The routine may have changed.`,
+        severity: latestAgeDays >= averageGapDays * 2.5 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
         created_at: createdAt,
@@ -270,13 +324,41 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
           scope,
           maturity: 'developing',
           confidence: history.identity_confidence || 'medium',
-          comparison_type: merchantVariance.cheapest.median_unit_price != null && merchantVariance.priciest.median_unit_price != null ? 'unit_price' : 'price',
+          ...evidenceMetadata,
+          days_since_last_purchase: latestAgeDays,
+          days_past_usual: Math.max(0, latestAgeDays - averageGapDays),
+          continuity_key: `item_cadence:${scope}:${history.group_key}`,
+        },
+        actions: [],
+      });
+      continue;
+    }
+
+    if (stapleEmerging && merchantVariance) {
+      insights.push({
+        id: `item_staple_merchant_opportunity:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
+        type: 'item_staple_merchant_opportunity',
+        title: `${itemName} is becoming a regular buy`,
+        body: `${itemName} has shown up ${occurrenceCount} times recently, and ${merchantVariance.cheapest.merchant} has been about ${merchantVariance.deltaPercent}% cheaper than ${merchantVariance.priciest.merchant} across repeated purchases.`,
+        severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 || occurrenceCount >= 4 ? 'medium' : 'low',
+        entity_type: 'item',
+        entity_id: history.group_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          ...history,
+          scope,
+          maturity: 'developing',
+          confidence: history.identity_confidence || 'medium',
+          ...evidenceMetadata,
+          comparison_type: merchantVariance.comparisonType,
           cheaper_merchant: merchantVariance.cheapest.merchant,
           pricier_merchant: merchantVariance.priciest.merchant,
           cheaper_value: merchantVariance.cheapestValue,
           pricier_value: merchantVariance.priciestValue,
           delta_amount: merchantVariance.deltaAmount,
           delta_percent: merchantVariance.deltaPercent,
+          merchant_evidence_count: merchantVariance.evidenceCount,
           continuity_key: `item_story:${scope}:${history.group_key}`,
         },
         actions: [],
@@ -289,7 +371,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         id: `item_recent_price_jump:${scope}:${history.group_key}:${latestPurchase.date}`,
         type: 'item_recent_price_jump',
         title: `${itemName} came in above your usual price`,
-        body: `${latestPurchase.merchant || 'Your latest purchase'} was about ${latestDeltaPercent}% above your usual price for ${itemName}, which may be worth sanity-checking before it becomes the new normal.`,
+        body: `${latestPurchase.merchant || 'Your latest purchase'} was about ${latestDeltaPercent}% above the prior ${history.baseline_purchase_count || occurrenceCount - 1}-purchase baseline for ${itemName}.`,
         severity: latestDeltaPercent >= 25 || latestDeltaAmount >= 5 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
@@ -300,7 +382,10 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
           scope,
           maturity: 'developing',
           confidence: history.identity_confidence || 'medium',
+          ...evidenceMetadata,
+          comparison_type: priceComparisonType,
           latest_amount: latestAmount,
+          baseline_amount: baselineAmount,
           latest_merchant: latestPurchase.merchant || null,
           latest_date: latestPurchase.date || null,
           delta_amount: latestDeltaAmount,
@@ -309,15 +394,16 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         },
         actions: [],
       });
+      continue;
     }
 
-    if (acceleratedRepurchase) {
+    if (merchantVariance) {
       insights.push({
-        id: `item_repurchase_accelerating:${scope}:${history.group_key}:${latestPurchase.date}`,
-        type: 'item_repurchase_accelerating',
-        title: `${itemName} is showing up sooner than usual`,
-        body: `${itemName} came back after about ${latestGapDays} days, roughly ${Math.round(cadenceDeltaDays)} days sooner than your usual rhythm, so this may be turning into a quicker-repeat item.`,
-        severity: cadenceDeltaDays >= 7 || Number(history.occurrence_count || 0) >= 5 ? 'medium' : 'low',
+        id: `item_merchant_variance:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
+        type: 'item_merchant_variance',
+        title: `${itemName} tends to cost less at ${merchantVariance.cheapest.merchant}`,
+        body: `${itemName} has run about ${merchantVariance.deltaPercent}% lower at ${merchantVariance.cheapest.merchant} than at ${merchantVariance.priciest.merchant} across ${merchantVariance.evidenceCount} comparable purchases.`,
+        severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
         created_at: createdAt,
@@ -327,6 +413,39 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
           scope,
           maturity: 'developing',
           confidence: history.identity_confidence || 'medium',
+          ...evidenceMetadata,
+          comparison_type: merchantVariance.comparisonType,
+          cheaper_merchant: merchantVariance.cheapest.merchant,
+          pricier_merchant: merchantVariance.priciest.merchant,
+          cheaper_value: merchantVariance.cheapestValue,
+          pricier_value: merchantVariance.priciestValue,
+          delta_amount: merchantVariance.deltaAmount,
+          delta_percent: merchantVariance.deltaPercent,
+          merchant_evidence_count: merchantVariance.evidenceCount,
+          continuity_key: `item_merchant:${scope}:${history.group_key}`,
+        },
+        actions: [],
+      });
+      continue;
+    }
+
+    if (acceleratedRepurchase) {
+      insights.push({
+        id: `item_repurchase_accelerating:${scope}:${history.group_key}:${latestPurchase.date}`,
+        type: 'item_repurchase_accelerating',
+        title: `${itemName} is showing up sooner than usual`,
+        body: `${itemName} came back after about ${latestGapDays} days, roughly ${Math.round(cadenceDeltaDays)} days sooner than your usual rhythm, so this may be turning into a quicker-repeat item.`,
+        severity: cadenceDeltaDays >= 7 || occurrenceCount >= 5 ? 'medium' : 'low',
+        entity_type: 'item',
+        entity_id: history.group_key,
+        created_at: createdAt,
+        expires_at: expiresAt,
+        metadata: {
+          ...history,
+          scope,
+          maturity: 'developing',
+          confidence: history.identity_confidence || 'medium',
+          ...evidenceMetadata,
           latest_amount: latestAmount,
           latest_merchant: latestPurchase.merchant || null,
           latest_date: latestPurchase.date || null,
@@ -336,6 +455,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         },
         actions: [],
       });
+      continue;
     }
 
     if (stapleEmerging) {
@@ -356,40 +476,13 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
           scope,
           maturity: 'developing',
           confidence: history.identity_confidence || 'medium',
+          ...evidenceMetadata,
           continuity_key: `item_pattern:${scope}:${history.group_key}`,
         },
         actions: [],
       });
     }
 
-    if (merchantVariance) {
-        insights.push({
-          id: `item_merchant_variance:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
-          type: 'item_merchant_variance',
-          title: `${itemName} tends to cost less at ${merchantVariance.cheapest.merchant}`,
-          body: `${history.item_name || 'This item'} has recently run about ${merchantVariance.deltaPercent}% lower at ${merchantVariance.cheapest.merchant} than at ${merchantVariance.priciest.merchant}, which makes the merchant choice worth revisiting.`,
-          severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 ? 'medium' : 'low',
-          entity_type: 'item',
-          entity_id: history.group_key,
-          created_at: createdAt,
-          expires_at: expiresAt,
-          metadata: {
-            ...history,
-            scope,
-            maturity: 'developing',
-            confidence: history.identity_confidence || 'medium',
-            comparison_type: merchantVariance.cheapest.median_unit_price != null && merchantVariance.priciest.median_unit_price != null ? 'unit_price' : 'price',
-            cheaper_merchant: merchantVariance.cheapest.merchant,
-            pricier_merchant: merchantVariance.priciest.merchant,
-            cheaper_value: merchantVariance.cheapestValue,
-            pricier_value: merchantVariance.priciestValue,
-            delta_amount: merchantVariance.deltaAmount,
-            delta_percent: merchantVariance.deltaPercent,
-            continuity_key: `item_merchant:${scope}:${history.group_key}`,
-          },
-          actions: [],
-        });
-    }
   }
 
   return insights;

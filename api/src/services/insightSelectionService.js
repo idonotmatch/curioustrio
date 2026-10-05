@@ -263,6 +263,7 @@ function portfolioRole(insight) {
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_recent_price_jump'
     || type === 'item_repurchase_accelerating'
+    || type === 'item_pattern_lapsed'
   ) return 'act';
 
   if (
@@ -504,6 +505,7 @@ function portfolioFamily(insight) {
 
   if (
     type === 'recurring_repurchase_due'
+    || type === 'item_pattern_lapsed'
     || type === 'spend_pace_behind'
     || type === 'budget_too_high'
     || type === 'early_cleanup'
@@ -555,6 +557,7 @@ function narrativeClusterKey(insight) {
     || type === 'item_staple_merchant_opportunity'
     || type === 'item_recent_price_jump'
     || type === 'item_repurchase_accelerating'
+    || type === 'item_pattern_lapsed'
   ) {
     return `recurring:${scope}:${month}`;
   }

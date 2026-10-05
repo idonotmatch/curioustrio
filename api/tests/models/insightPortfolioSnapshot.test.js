@@ -25,6 +25,7 @@ describe('InsightPortfolioSnapshot', () => {
     await Snapshot.sourceFingerprint('user-1');
 
     const sql = db.query.mock.calls[0][0];
+    expect(sql).toContain(`'logic_version', 'item-evidence-v1'`);
     expect(sql).toContain('COALESCE(e.is_private, FALSE) = FALSE');
     expect(db.query.mock.calls[0][1]).toEqual(['user-1']);
   });
