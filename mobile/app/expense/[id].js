@@ -18,6 +18,7 @@ import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
 import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
+import { InlineError } from '../../components/ui/States';
 import { toLocalDateString } from '../../services/date';
 import { colors } from '../../theme/tokens';
 import {
@@ -56,6 +57,8 @@ export default function ExpenseDetailScreen() {
   const {
     expense,
     loading,
+    loadError,
+    retryLoad,
     editing,
     setEditing,
     saving,
@@ -169,7 +172,20 @@ export default function ExpenseDetailScreen() {
   }, [isPendingEmailReview, items, itemsExpanded, isItemsFirstReview]);
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.textDisabled} /></View>;
-  if (!expense) return <View style={styles.center}><Text style={styles.muted}>Expense not found.</Text></View>;
+  if (!expense) {
+    return (
+      <View style={styles.loadFailure}>
+        <InlineError
+          title={loadError?.status === 404 ? 'Expense unavailable' : 'Could not load expense'}
+          body={loadError?.status === 404
+            ? 'It may have been deleted or is no longer available to this account.'
+            : loadError?.message || 'Check your connection and try again.'}
+          actionLabel="Try again"
+          onAction={retryLoad}
+        />
+      </View>
+    );
+  }
 
   const formattedDate = (() => {
     const d = new Date((expense.date || '').slice(0, 10) + 'T12:00:00');
@@ -709,6 +725,7 @@ function Row({ label, children }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  loadFailure: { flex: 1, backgroundColor: colors.background, justifyContent: 'center', padding: 20 },
   muted: { color: colors.textDisabled },
   headerEditButton: { width: 44, height: 44, marginRight: -8, alignItems: 'center', justifyContent: 'center' },
 

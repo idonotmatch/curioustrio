@@ -48,6 +48,7 @@ export default function GmailImportScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [gmailStatus, setGmailStatus] = useState(null);
+  const [gmailStatusError, setGmailStatusError] = useState('');
   const [importLog, setImportLog] = useState([]);
   const [importSummary, setImportSummary] = useState(null);
   const [pendingReviewItems, setPendingReviewItems] = useState([]);
@@ -81,8 +82,10 @@ export default function GmailImportScreen() {
     try {
       const data = await api.get('/gmail/status');
       setGmailStatus(data);
-    } catch {
+      setGmailStatusError('');
+    } catch (error) {
       setGmailStatus(null);
+      setGmailStatusError(error?.message || 'Could not check the Gmail connection.');
     }
   }, []);
 
@@ -322,6 +325,8 @@ export default function GmailImportScreen() {
         <GmailImportOverview
           styles={styles}
           displayGmailStatus={displayGmailStatus}
+          gmailStatusError={gmailStatusError}
+          retryGmailStatus={loadGmailStatus}
           isUsingMockData={isUsingMockData}
           connectGmail={connectGmail}
           disconnectGmail={disconnectGmail}
@@ -363,6 +368,7 @@ export default function GmailImportScreen() {
           displayGmailStatus={displayGmailStatus}
           displayPendingReviewItems={displayPendingReviewItems}
           pendingReviewError={pendingReviewError}
+          retryPendingReview={loadPendingQueue}
           openReviewQueue={() => router.push('/review-queue')}
           openExpenseReview={(item) => router.push({
             pathname: '/expense/[id]',

@@ -12,6 +12,7 @@ import { api } from '../services/api';
 import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { colors } from '../theme/tokens';
+import { InlineError } from '../components/ui/States';
 
 function summarizeReviewModes(expenses = []) {
   const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
@@ -292,7 +293,13 @@ export default function ReviewQueueScreen() {
             <View style={styles.header}>
               <Text style={styles.eyebrow}>Pending actions</Text>
               <Text style={styles.title}>
-                {totalActions > 0 ? `${totalActions} thing${totalActions === 1 ? '' : 's'} to clear` : 'You are caught up'}
+                {loading
+                  ? 'Loading review queue'
+                  : error
+                    ? 'Review queue unavailable'
+                    : totalActions > 0
+                      ? `${totalActions} thing${totalActions === 1 ? '' : 's'} to clear`
+                      : 'You are caught up'}
               </Text>
               <Text style={styles.subtitle}>Things that need your attention before they settle into the app.</Text>
 
@@ -333,7 +340,14 @@ export default function ReviewQueueScreen() {
               ? <LoadingRows />
               : (
               error
-                ? <Text style={styles.error}>{error}</Text>
+                ? (
+                  <InlineError
+                    title="Could not load review queue"
+                    body={error}
+                    actionLabel="Try again"
+                    onAction={() => refresh({ forceRefresh: true })}
+                  />
+                )
                 : <Text style={styles.empty}>Nothing needs your attention right now. New review work will land here when it needs you.</Text>
               )
           }

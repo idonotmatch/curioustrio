@@ -15,6 +15,7 @@ import { DismissKeyboardScrollView } from '../../components/DismissKeyboardScrol
 import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../../services/freshnessRegistry';
 import { colors } from '../../theme/tokens';
+import { InlineError } from '../../components/ui/States';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -24,17 +25,19 @@ export default function SettingsScreen() {
 
   const [budgetLimit, setBudgetLimit] = useState('');
   const [currentBudget, setCurrentBudget] = useState(null);
+  const [budgetLoadError, setBudgetLoadError] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetMsg, setBudgetMsg] = useState('');
   const [budgetMsgIsError, setBudgetMsgIsError] = useState(false);
-  const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
+  const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(null);
   const [gmailStatus, setGmailStatus] = useState(null);
+  const [gmailStatusState, setGmailStatusState] = useState('loading');
   const budgetDirty = currentBudget?.limit == null
     ? Boolean(`${budgetLimit}`.trim())
     : Number(budgetLimit) !== Number(currentBudget.limit);
   const healthItems = [
-    gmailStatus?.connected ? 'Gmail connected' : 'Gmail needs setup',
-    pendingSuggestionsCount > 0 ? `${pendingSuggestionsCount} category suggestion${pendingSuggestionsCount === 1 ? '' : 's'}` : 'Categories clear',
+    gmailStatusState === 'loading' ? 'Checking Gmail' : gmailStatusState === 'error' ? 'Gmail status unavailable' : gmailStatus?.connected ? 'Gmail connected' : 'Gmail needs setup',
+    pendingSuggestionsCount == null ? 'Checking categories' : pendingSuggestionsCount < 0 ? 'Category status unavailable' : pendingSuggestionsCount > 0 ? `${pendingSuggestionsCount} category suggestion${pendingSuggestionsCount === 1 ? '' : 's'}` : 'Categories clear',
     recurringLoading ? 'Checking recurring' : recurring.length > 0 ? `${recurring.length} recurring expense${recurring.length === 1 ? '' : 's'}` : 'No recurring flags',
   ];
 
@@ -42,8 +45,11 @@ export default function SettingsScreen() {
     try {
       const data = await api.get('/budgets?scope=personal');
       setCurrentBudget(data.total);
+      setBudgetLoadError('');
       if (data.total?.limit) setBudgetLimit(String(data.total.limit));
-    } catch { /* ignore */ }
+    } catch (error) {
+      setBudgetLoadError(error?.message || 'Could not load your budget.');
+    }
   }, []);
 
   useEffect(() => {
@@ -53,10 +59,16 @@ export default function SettingsScreen() {
   useEffect(() => {
     api.get('/categories')
       .then(d => setPendingSuggestionsCount(d.pending_suggestions_count || 0))
-      .catch(() => {});
+      .catch(() => setPendingSuggestionsCount(-1));
     api.get('/gmail/status')
-      .then(d => setGmailStatus(d || null))
-      .catch(() => setGmailStatus({ connected: false }));
+      .then(d => {
+        setGmailStatus(d || null);
+        setGmailStatusState('ready');
+      })
+      .catch(() => {
+        setGmailStatus(null);
+        setGmailStatusState('error');
+      });
   }, []);
 
   async function saveBudget() {
@@ -119,7 +131,9 @@ export default function SettingsScreen() {
             <View key={item} style={styles.healthPill}>
               <View style={[
                 styles.healthDot,
-                item.includes('needs') || item.includes('suggestion') ? styles.healthDotAttention : null,
+                item.includes('needs') || item.includes('suggestion') || item.includes('unavailable')
+                  ? styles.healthDotAttention
+                  : null,
               ]} />
               <Text style={styles.healthText} numberOfLines={1}>{item}</Text>
             </View>
@@ -157,6 +171,15 @@ export default function SettingsScreen() {
         </View>
 
         {budgetMsg ? <Text style={budgetMsgIsError ? styles.msgError : styles.msgText}>{budgetMsg}</Text> : null}
+        {budgetLoadError ? (
+          <InlineError
+            title="Could not load budget"
+            body={budgetLoadError}
+            actionLabel="Try again"
+            onAction={loadBudget}
+            style={{ marginTop: 12 }}
+          />
+        ) : null}
 
         <TouchableOpacity style={styles.navRow} onPress={() => router.push('/budget-period')}>
           <View>
@@ -205,7 +228,11 @@ export default function SettingsScreen() {
                 ? gmailStatus.last_sync_status === 'failed'
                   ? 'Connected, last sync needs attention'
                   : 'Connected and ready to sync receipts'
-                : 'Connect Gmail to import receipt emails'}
+                : gmailStatusState === 'loading'
+                  ? 'Checking Gmail connection'
+                  : gmailStatusState === 'error'
+                    ? 'Could not check Gmail connection'
+                    : 'Connect Gmail to import receipt emails'}
             </Text>
           </View>
           <View style={styles.navRowRight}>
@@ -217,7 +244,7 @@ export default function SettingsScreen() {
                 styles.statusBadgeText,
                 gmailStatus?.connected ? styles.statusBadgeTextGood : styles.statusBadgeTextAttention,
               ]}>
-                {gmailStatus?.connected ? 'On' : 'Setup'}
+                {gmailStatus?.connected ? 'On' : gmailStatusState === 'loading' ? 'Checking' : gmailStatusState === 'error' ? 'Retry' : 'Setup'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
@@ -265,6 +292,10 @@ export default function SettingsScreen() {
             <Text style={styles.navRowSub}>
               {pendingSuggestionsCount > 0
                 ? `${pendingSuggestionsCount} suggestion${pendingSuggestionsCount === 1 ? '' : 's'} waiting`
+                : pendingSuggestionsCount == null
+                  ? 'Checking category status'
+                  : pendingSuggestionsCount < 0
+                    ? 'Could not check category status'
                 : 'Names and hierarchy are up to date'}
             </Text>
           </View>

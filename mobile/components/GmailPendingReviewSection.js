@@ -18,6 +18,7 @@ export function GmailPendingReviewSection({
   displayGmailStatus,
   displayPendingReviewItems,
   pendingReviewError,
+  retryPendingReview,
   openReviewQueue,
   openExpenseReview,
 }) {
@@ -33,9 +34,13 @@ export function GmailPendingReviewSection({
         onAction={displayPendingReviewItems.length > 0 ? openReviewQueue : null}
       />
       {pendingReviewError ? (
-        <InlineError title="Could not load review queue" body={pendingReviewError} />
-      ) : null}
-      {displayPendingReviewItems.length === 0 ? (
+        <InlineError
+          title="Could not load review queue"
+          body={pendingReviewError}
+          actionLabel="Try again"
+          onAction={retryPendingReview}
+        />
+      ) : displayPendingReviewItems.length === 0 ? (
         <EmptyState
           compact
           icon="checkmark-circle-outline"

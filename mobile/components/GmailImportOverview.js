@@ -1,12 +1,14 @@
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MetricStrip } from './ui/MetricStrip';
-import { SectionHeader } from './ui/States';
+import { InlineError, SectionHeader } from './ui/States';
 import { colors } from '../theme/tokens';
 
 export function GmailImportOverview({
   styles,
   displayGmailStatus,
+  gmailStatusError,
+  retryGmailStatus,
   isUsingMockData,
   connectGmail,
   disconnectGmail,
@@ -54,7 +56,7 @@ export function GmailImportOverview({
           <Text style={styles.rowTitle}>Gmail import</Text>
           <Text style={styles.rowSub}>
             {displayGmailStatus == null
-              ? 'Loading…'
+              ? (gmailStatusError ? 'Status unavailable' : 'Checking connection…')
               : displayGmailStatus.connected
                 ? (displayGmailStatus.email ? `Connected to ${displayGmailStatus.email}` : 'Connected')
                 : 'Not connected'}
@@ -82,7 +84,7 @@ export function GmailImportOverview({
             </TouchableOpacity>
           ) : null}
         </View>
-        <View style={styles.btnGroup}>
+        {displayGmailStatus != null ? <View style={styles.btnGroup}>
           {displayGmailStatus?.connected && !isUsingMockData ? (
             <TouchableOpacity
               style={[styles.actionBtn, gmailSyncing && styles.actionBtnDisabled]}
@@ -101,8 +103,17 @@ export function GmailImportOverview({
               {displayGmailStatus?.connected ? 'Reconnect' : 'Connect'}
             </Text>
           </TouchableOpacity>
-        </View>
+        </View> : null}
       </View>
+      {gmailStatusError ? (
+        <InlineError
+          title="Could not check Gmail"
+          body={gmailStatusError}
+          actionLabel="Try again"
+          onAction={retryGmailStatus}
+          style={{ marginTop: 12 }}
+        />
+      ) : null}
       {isUsingMockData ? (
         <Text style={styles.devPreviewNote}>
           Dev preview data is filling this screen until a real Gmail connection is available.

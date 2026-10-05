@@ -23,6 +23,8 @@ const { createEditableExpenseItem } = require('../services/itemEditing');
 export function useExpenseDetailController({ id, expenseParam, currentUserId, router }) {
   const [expense, setExpense] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [editing, setEditingState] = useState(false);
   const editingRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -89,8 +91,16 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
     let active = true;
 
     async function load() {
-      const freshRequest = api.get(`/expenses/${id}`);
-      const bootstrapped = await bootstrapExpenseRecord(id, expenseParam);
+      setLoadError(null);
+      const freshRequest = api.get(`/expenses/${id}`, { dedupe: false })
+        .then((data) => ({ data, error: null }))
+        .catch((error) => ({ data: null, error }));
+      let bootstrapped = null;
+      try {
+        bootstrapped = await bootstrapExpenseRecord(id, expenseParam);
+      } catch {
+        bootstrapped = null;
+      }
       if (active && bootstrapped) {
         applyExpenseToState(bootstrapped, setters);
         itemsHydratedRef.current = Array.isArray(bootstrapped.items);
@@ -98,7 +108,9 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
       }
 
       try {
-        const fresh = await freshRequest;
+        const freshResult = await freshRequest;
+        if (freshResult.error) throw freshResult.error;
+        const fresh = freshResult.data;
         if (!active) return;
         const merged = mergeReviewMetadata(bootstrapped, fresh);
         if (editingRef.current) {
@@ -114,14 +126,25 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
         }
         setLoading(false);
         saveExpenseSnapshot(merged);
-      } catch {
-        if (active && !bootstrapped) setLoading(false);
+      } catch (error) {
+        if (active && !bootstrapped) {
+          setLoadError({
+            status: error?.status || null,
+            message: error?.message || 'Could not load this expense.',
+          });
+          setLoading(false);
+        }
       }
     }
 
     load();
     return () => { active = false; };
-  }, [expenseParam, id]);
+  }, [expenseParam, id, loadAttempt]);
+
+  const retryLoad = useCallback(() => {
+    setLoading(true);
+    setLoadAttempt((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     api.get(`/recurring/preferences?expense_id=${encodeURIComponent(id)}`)
@@ -268,6 +291,8 @@ export function useExpenseDetailController({ id, expenseParam, currentUserId, ro
   return {
     expense,
     loading,
+    loadError,
+    retryLoad,
     editing,
     setEditing,
     saving,
