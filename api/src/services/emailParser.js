@@ -400,6 +400,19 @@ function heuristicDisposition(subject = '', fromAddress = '', emailBody = '') {
   return null;
 }
 
+function isRecoverableAiError(error) {
+  const status = Number(error?.status || error?.statusCode || 0);
+  const message = `${error?.message || ''}`.toLowerCase();
+  return (
+    error?.name === 'VendorTimeoutError'
+    || error?.service === 'anthropic_text'
+    || status === 408
+    || status === 429
+    || status >= 500
+    || /timed out|timeout|network|fetch failed|socket hang up|connection reset/.test(message)
+  );
+}
+
 function parseJsonResponse(text) {
   if (!text) return null;
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -807,14 +820,20 @@ async function classifyEmailExpense(emailBody, subject, fromAddress, todayDate, 
 
   const family = deriveEmailReceiptFamily(subject, fromAddress, emailBody);
   const { classifierText } = selectRelevantEmailText(emailBody, snippet, family);
-  const text = await complete({
-    system: CLASSIFIER_SYSTEM_PROMPT,
-    messages: [{
-      role: 'user',
-      content: `Subject: ${subject}\nFrom: ${fromAddress}\nToday: ${todayDate}\n\n${classifierText}`,
-    }],
-    maxTokens: 120,
-  });
+  let text;
+  try {
+    text = await complete({
+      system: CLASSIFIER_SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Subject: ${subject}\nFrom: ${fromAddress}\nToday: ${todayDate}\n\n${classifierText}`,
+      }],
+      maxTokens: 120,
+    });
+  } catch (error) {
+    if (!isRecoverableAiError(error)) throw error;
+    return { disposition: 'uncertain', merchant: null, reason: 'classifier_unavailable' };
+  }
 
   const parsed = parseJsonResponse(text);
   if (!parsed?.disposition) return { disposition: 'uncertain', merchant: null, reason: 'classifier_parse_failed' };
@@ -836,13 +855,19 @@ async function parseEmailExpense(emailBody, subject, fromAddress, todayDate, sni
   const family = deriveEmailReceiptFamily(subject, fromAddress, emailBody);
   const { extractionText } = selectRelevantEmailText(emailBody, snippet, family);
 
-  const text = await complete({
-    system: SYSTEM_PROMPT,
-    messages: [{
-      role: 'user',
-      content: `Subject: ${subject}\nFrom: ${fromAddress}\nToday: ${todayDate}\n\n${extractionText}`,
-    }],
-  });
+  let text;
+  try {
+    text = await complete({
+      system: SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Subject: ${subject}\nFrom: ${fromAddress}\nToday: ${todayDate}\n\n${extractionText}`,
+      }],
+    });
+  } catch (error) {
+    if (!isRecoverableAiError(error)) throw error;
+    return null;
+  }
 
   const parsed = normalizeParsedPaymentFields(parseJsonResponse(text));
   if (!parsed || typeof parsed !== 'object') return parsed;
@@ -884,6 +909,7 @@ module.exports = {
   extractFallbackItemsFromEmailBody,
   summarizeStructuredItemBlock,
   heuristicDisposition,
+  isRecoverableAiError,
   analyzeEmailSignals,
   classifyEmailModality,
   extractEmailLocationCandidate,

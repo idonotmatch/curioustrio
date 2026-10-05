@@ -16,6 +16,7 @@ const {
   classifyEmailModality,
   extractEmailLocationCandidate,
   clampExpenseDate,
+  isRecoverableAiError,
 } = require('../../src/services/emailParser');
 
 describe('emailParser', () => {
@@ -91,6 +92,42 @@ describe('emailParser', () => {
       merchant: 'Amazon',
       reason: 'order receipt',
     });
+  });
+
+  it('falls back to uncertain review when the classifier times out', async () => {
+    complete.mockRejectedValue(Object.assign(new Error('anthropic_text timed out after 8000ms'), {
+      name: 'VendorTimeoutError',
+      service: 'anthropic_text',
+    }));
+
+    await expect(classifyEmailExpense(
+      'Order total: $29.99',
+      'Order confirmation',
+      'orders@example.com',
+      '2026-03-21'
+    )).resolves.toEqual({
+      disposition: 'uncertain',
+      merchant: null,
+      reason: 'classifier_unavailable',
+    });
+  });
+
+  it('lets deterministic import fallback take over when extraction times out', async () => {
+    complete.mockRejectedValue(Object.assign(new Error('anthropic_text timed out after 8000ms'), {
+      name: 'VendorTimeoutError',
+      service: 'anthropic_text',
+    }));
+
+    await expect(parseEmailExpense(
+      'Order total: $29.99',
+      'Order confirmation',
+      'orders@example.com',
+      '2026-03-21'
+    )).resolves.toBeNull();
+  });
+
+  it('does not hide configuration or authorization failures', () => {
+    expect(isRecoverableAiError(Object.assign(new Error('unauthorized'), { status: 401 }))).toBe(false);
   });
 
   it('heuristicDisposition only flags clear non-expense emails', () => {
