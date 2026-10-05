@@ -39,6 +39,7 @@ const REQUIRED_COLUMNS = [
 ];
 
 const REQUIRED_TABLES = [
+  'background_jobs',
   'email_import_feedback',
   'products',
   'scenario_memory',

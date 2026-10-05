@@ -1,4 +1,5 @@
 const db = require('../db');
+const BackgroundJob = require('../models/backgroundJob');
 const InsightPortfolioSnapshot = require('../models/insightPortfolioSnapshot');
 const UserSummarySnapshot = require('../models/userSummarySnapshot');
 const { buildSummaryBundle } = require('./summaryBundleService');
@@ -13,7 +14,6 @@ const {
   emitFreshnessEvent,
 } = require('./freshnessEvents');
 
-const pendingRefreshes = new Map();
 const DEFAULT_DEBOUNCE_MS = Number(process.env.PROJECTION_REFRESH_DEBOUNCE_MS || 750);
 
 function monthFromDate(value) {
@@ -202,72 +202,63 @@ function pendingKey(user, options = {}) {
   return `${user?.id || 'unknown'}:${scope}:${month}`;
 }
 
-function schedulePendingRefresh(key, entry, delayMs) {
-  if (entry.timer) clearTimeout(entry.timer);
-  entry.timer = setTimeout(async () => {
-    entry.timer = null;
-    entry.running = true;
-    entry.rerun = false;
-    const runOptions = entry.options;
-    try {
-      await refreshProjectionNow(runOptions);
-    } catch (err) {
-      console.error('[projection refresh] failed:', {
-        user_id: runOptions.user.id,
-        reason: runOptions.reason || 'expense_changed',
-        message: err?.message || String(err || 'unknown_error'),
-      });
-    } finally {
-      entry.running = false;
-      if (entry.rerun) {
-        const nextDelayMs = entry.nextDelayMs;
-        entry.rerun = false;
-        entry.nextDelayMs = null;
-        schedulePendingRefresh(key, entry, nextDelayMs);
-      } else if (pendingRefreshes.get(key) === entry) {
-        pendingRefreshes.delete(key);
-      }
-    }
-  }, delayMs);
+function durableRefreshPayload(options = {}) {
+  const { user, expense, metadata = {} } = options;
+  const durableMetadata = Object.fromEntries([
+    'source',
+    'scope',
+    'action',
+    'count',
+    'review_mode',
+    'changed_fields',
+    'duplicate_flag_id',
+    'expense_id',
+    'category_id',
+    'merchant',
+  ]
+    .filter((key) => metadata[key] !== undefined)
+    .map((key) => [key, metadata[key]]));
+  return {
+    user_id: user.id,
+    reason: options.reason || 'expense_changed',
+    scope: options.scope || null,
+    month: options.month || monthFromDate(expense?.date) || null,
+    expense: expense ? {
+      id: expense.id || null,
+      date: expense.date || null,
+      category_id: expense.category_id || null,
+      merchant: expense.merchant || null,
+    } : null,
+    category_id: options.categoryId || null,
+    merchant: options.merchant || null,
+    limit: options.limit || 25,
+    metadata: durableMetadata,
+  };
 }
 
-function requestProjectionRefresh(options = {}) {
+async function requestProjectionRefresh(options = {}) {
   const { user } = options;
   if (!user?.id) return null;
+  const key = pendingKey(user, options);
+  const debounceMs = Math.max(0, Number(options.debounceMs ?? DEFAULT_DEBOUNCE_MS));
+  await BackgroundJob.enqueue({
+    jobType: BackgroundJob.JOB_TYPES.projectionRefresh,
+    dedupeKey: key,
+    payload: durableRefreshPayload(options),
+    delayMs: debounceMs,
+  });
   InsightPortfolioSnapshot.invalidate(user.id).catch((err) => {
     console.error('[projection refresh] snapshot invalidation failed:', {
       user_id: user.id,
       message: err?.message || String(err || 'unknown_error'),
     });
   });
-  const key = pendingKey(user, options);
-  const debounceMs = Math.max(0, Number(options.debounceMs ?? DEFAULT_DEBOUNCE_MS));
-  const existing = pendingRefreshes.get(key);
-  if (existing) {
-    existing.options = options;
-    if (existing.running) {
-      existing.rerun = true;
-      existing.nextDelayMs = debounceMs;
-    } else {
-      schedulePendingRefresh(key, existing, debounceMs);
-    }
-    return key;
-  }
-
-  const entry = {
-    timer: null,
-    running: false,
-    rerun: false,
-    nextDelayMs: null,
-    options,
-  };
-  pendingRefreshes.set(key, entry);
-  schedulePendingRefresh(key, entry, debounceMs);
   return key;
 }
 
 module.exports = {
   monthFromDate,
+  durableRefreshPayload,
   refreshProjectionNow,
   requestProjectionRefresh,
   sourceEventFromInput,

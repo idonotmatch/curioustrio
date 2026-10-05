@@ -299,7 +299,7 @@ router.post('/confirm', async (req, res, next) => {
       originalParsedItems,
     });
     if (!idempotentReplay) {
-      requestProjectionRefresh({
+      await requestProjectionRefresh({
         user,
         reason: 'expense_confirmed',
         expense,
@@ -448,7 +448,7 @@ router.post('/pending/batch', async (req, res, next) => {
     const processedIds = reviewed.map((expense) => expense.id);
     const failedIds = ids.filter((id) => !processedIds.includes(id));
     if (action === 'approve' && reviewed[0]) {
-      requestProjectionRefresh({
+      await requestProjectionRefresh({
         user,
         reason: 'pending_expense_batch_approved',
         expense: reviewed[0],
@@ -593,7 +593,7 @@ router.post('/:id/approve', async (req, res, next) => {
     let expense = transition.expense;
     if (transition.idempotentReplay) return res.json(expense);
     expense = await handleApprovedExpenseReview(expense, user.id, req.body?.review_context);
-    requestProjectionRefresh({
+    await requestProjectionRefresh({
       user,
       reason: 'expense_review_approved',
       expense,
@@ -623,7 +623,7 @@ router.post('/:id/duplicates/:flagId/resolve', async (req, res, next) => {
       action: req.body?.action,
     });
     if (!result.idempotent_replay) {
-      requestProjectionRefresh({
+      await requestProjectionRefresh({
         user,
         reason: 'duplicate_resolved',
         expense: result.expense,
@@ -688,7 +688,7 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     } finally {
       client.release();
     }
-    requestProjectionRefresh({
+    await requestProjectionRefresh({
       user,
       reason: 'expense_deleted',
       expense,
@@ -888,7 +888,7 @@ router.patch('/:id', async (req, res, next) => {
       'exclude_from_budget',
       'budget_exclusion_reason',
     ].includes(field))) {
-      requestProjectionRefresh({
+      await requestProjectionRefresh({
         user,
         reason: 'expense_updated',
         expense,

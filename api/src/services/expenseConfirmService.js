@@ -8,6 +8,8 @@ const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../models/receiptLineCorrection');
 const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
 const DuplicateFlag = require('../models/duplicateFlag');
+const BackgroundJob = require('../models/backgroundJob');
+const User = require('../models/user');
 const detectDuplicates = require('./duplicateDetector');
 const { resolveProductMatch } = require('./productResolver');
 const { assignCategory } = require('./categoryAssigner');
@@ -332,13 +334,69 @@ function shouldDeferPostConfirmSideEffects() {
   return process.env.NODE_ENV !== 'test';
 }
 
-function queuePostConfirmSideEffects(task) {
-  setImmediate(() => {
-    Promise.resolve()
-      .then(task)
-      .catch((err) => {
-        console.error('Deferred confirm side effects failed (non-fatal):', err?.message || err);
-      });
+function durableConfirmPayload(payload = {}) {
+  const receiptDetails = payload.receipt_details && typeof payload.receipt_details === 'object'
+    ? { store_number: payload.receipt_details.store_number || null }
+    : null;
+  const parsedPaymentSnapshot = payload.parsed_payment_snapshot && typeof payload.parsed_payment_snapshot === 'object'
+    ? {
+      payment_method: payload.parsed_payment_snapshot.payment_method || null,
+      card_label: payload.parsed_payment_snapshot.card_label || null,
+      card_last4: payload.parsed_payment_snapshot.card_last4 || null,
+    }
+    : null;
+  return {
+    merchant: payload.merchant || null,
+    description: payload.description || null,
+    amount: payload.amount ?? null,
+    date: payload.date || null,
+    source: payload.source || null,
+    category_id: payload.category_id || null,
+    suggested_category_id: payload.suggested_category_id || null,
+    category_source: payload.category_source || null,
+    category_confidence: payload.category_confidence ?? null,
+    category_reasoning: payload.category_reasoning || null,
+    category_status: payload.category_status || null,
+    category_user_owned: Boolean(payload.category_user_owned),
+    place_name: payload.place_name || null,
+    address: payload.address || null,
+    mapkit_stable_id: payload.mapkit_stable_id || null,
+    location_provider_id: payload.location_provider_id || null,
+    location_latitude: payload.location_latitude ?? null,
+    location_longitude: payload.location_longitude ?? null,
+    location_source: payload.location_source || null,
+    location_status: payload.location_status || null,
+    location_confidence: payload.location_confidence ?? null,
+    location_user_owned: Boolean(payload.location_user_owned),
+    payment_method: payload.payment_method || null,
+    card_label: payload.card_label || null,
+    card_last4: payload.card_last4 || null,
+    is_private: payload.is_private === true,
+    ingest_attempt_id: payload.ingest_attempt_id || null,
+    parsed_payment_snapshot: parsedPaymentSnapshot,
+    receipt_details: receiptDetails,
+  };
+}
+
+async function enqueuePostConfirmSideEffects({
+  user,
+  payload,
+  expense,
+  originalParsedItems = [],
+  queryable = db,
+}) {
+  return BackgroundJob.enqueue({
+    jobType: BackgroundJob.JOB_TYPES.postConfirm,
+    dedupeKey: expense.id,
+    payload: {
+      user_id: user.id,
+      expense_id: expense.id,
+      confirm_payload: durableConfirmPayload(payload),
+      original_parsed_items: (Array.isArray(originalParsedItems) ? originalParsedItems : [])
+        .slice(0, 250)
+        .map((item) => ({ description: `${item?.description || ''}`.slice(0, 500) })),
+    },
+    queryable,
   });
 }
 
@@ -493,12 +551,47 @@ async function runPostConfirmSideEffects({
   return { expense: enrichedExpense, duplicate_flags: duplicateFlags };
 }
 
+async function runPostConfirmJob(jobPayload = {}) {
+  const [user, expense, items] = await Promise.all([
+    User.findById(jobPayload.user_id),
+    Expense.findById(jobPayload.expense_id),
+    ExpenseItem.findByExpenseId(jobPayload.expense_id),
+  ]);
+  if (!user || !expense || expense.user_id !== user.id) {
+    return { skipped: true, reason: !user ? 'user_missing' : 'expense_missing' };
+  }
+
+  const originalPayload = jobPayload.confirm_payload || {};
+  const payload = {
+    ...expense,
+    ...originalPayload,
+    merchant: expense.merchant || originalPayload.merchant,
+    description: expense.description || originalPayload.description,
+    amount: expense.amount ?? originalPayload.amount,
+    date: expense.date || originalPayload.date,
+    source: expense.source || originalPayload.source,
+    category_id: expense.category_id || originalPayload.category_id || null,
+    payment_method: expense.payment_method || originalPayload.payment_method,
+    card_label: expense.card_label || originalPayload.card_label,
+    card_last4: expense.card_last4 || originalPayload.card_last4,
+    is_private: expense.is_private === true,
+  };
+  return runPostConfirmSideEffects({
+    user,
+    payload,
+    expense,
+    items,
+    originalParsedItems: jobPayload.original_parsed_items || [],
+    precomputedDuplicateFlags: [],
+  });
+}
+
 async function createConfirmedExpense({
   user,
   payload,
   originalParsedItems = [],
   deferPostConfirmSideEffects = shouldDeferPostConfirmSideEffects(),
-  queuePostConfirm = queuePostConfirmSideEffects,
+  queuePostConfirm = enqueuePostConfirmSideEffects,
 }) {
   const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(payload.budget_exclusion_reason);
   const client = await db.pool.connect();
@@ -553,6 +646,15 @@ async function createConfirmedExpense({
       receiptDetails = payload.receipt_details
         ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details, client)
         : null;
+      if (deferPostConfirmSideEffects) {
+        await queuePostConfirm({
+          user,
+          payload,
+          expense,
+          originalParsedItems,
+          queryable: client,
+        });
+      }
     }
     await client.query('COMMIT');
   } catch (err) {
@@ -585,14 +687,6 @@ async function createConfirmedExpense({
   }
 
   if (deferPostConfirmSideEffects) {
-    queuePostConfirm(() => runPostConfirmSideEffects({
-      user,
-      payload,
-      expense,
-      items: createdItems,
-      originalParsedItems,
-      precomputedDuplicateFlags: duplicateFlags,
-    }));
     return { expense, duplicate_flags: duplicateFlags };
   }
 
@@ -609,9 +703,12 @@ async function createConfirmedExpense({
 module.exports = {
   createConfirmedExpense,
   normalizeBudgetExclusionReason,
+  durableConfirmPayload,
+  enqueuePostConfirmSideEffects,
   resolveDeferredConfirmPayload,
+  runPostConfirmJob,
   runPostConfirmSideEffects,
-  queuePostConfirmSideEffects,
+  queuePostConfirmSideEffects: enqueuePostConfirmSideEffects,
   updateMerchantMemory,
   validateConfirmExpensePayload,
 };

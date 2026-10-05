@@ -546,7 +546,7 @@ async function processMessageImport(user, msgId, {
       outcomes.imported_full_review++;
     }
     outcomes.imported_pending_review++;
-    requestProjectionRefresh({
+    await requestProjectionRefresh({
       user,
       reason: 'gmail_expense_imported',
       expense,

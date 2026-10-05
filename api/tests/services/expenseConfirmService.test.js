@@ -14,6 +14,11 @@ jest.mock('../../src/models/ingestAttemptLog');
 jest.mock('../../src/models/categoryDecisionEvent');
 jest.mock('../../src/models/receiptLineCorrection');
 jest.mock('../../src/models/duplicateFlag');
+jest.mock('../../src/models/backgroundJob', () => ({
+  JOB_TYPES: { postConfirm: 'post_confirm' },
+  enqueue: jest.fn(),
+}));
+jest.mock('../../src/models/user', () => ({ findById: jest.fn() }));
 jest.mock('../../src/services/duplicateDetector');
 jest.mock('../../src/services/productResolver');
 jest.mock('../../src/services/categoryAssigner');
@@ -29,13 +34,17 @@ const IngestAttemptLog = require('../../src/models/ingestAttemptLog');
 const CategoryDecisionEvent = require('../../src/models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../../src/models/receiptLineCorrection');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
+const BackgroundJob = require('../../src/models/backgroundJob');
+const User = require('../../src/models/user');
 const detectDuplicates = require('../../src/services/duplicateDetector');
 const { resolveProductMatch } = require('../../src/services/productResolver');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { searchPlace } = require('../../src/services/mapkitService');
 const {
   createConfirmedExpense,
+  durableConfirmPayload,
   resolveDeferredConfirmPayload,
+  runPostConfirmJob,
 } = require('../../src/services/expenseConfirmService');
 
 describe('expenseConfirmService deferred enrichment', () => {
@@ -57,6 +66,8 @@ describe('expenseConfirmService deferred enrichment', () => {
     CategoryDecisionEvent.create.mockReset();
     ReceiptLineCorrection.upsert.mockReset();
     DuplicateFlag.findByExpenseId.mockReset();
+    BackgroundJob.enqueue.mockReset().mockResolvedValue({ id: 'job-1' });
+    User.findById.mockReset();
     detectDuplicates.mockReset();
     resolveProductMatch.mockReset();
     assignCategory.mockReset();
@@ -223,9 +234,74 @@ describe('expenseConfirmService deferred enrichment', () => {
     });
 
     expect(queuePostConfirm).toHaveBeenCalledTimes(1);
+    expect(queuePostConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      expense: expect.objectContaining({ id: 'expense-1' }),
+      queryable: db.__client,
+    }));
     expect(searchPlace).not.toHaveBeenCalled();
     expect(assignCategory).not.toHaveBeenCalled();
     expect(result.duplicate_flags).toEqual([]);
+  });
+
+  it('persists the default post-confirm job through the expense transaction', async () => {
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Whole Foods',
+        amount: 19.84,
+        date: '2026-04-27',
+        source: 'camera',
+        category_id: 'cat-1',
+      },
+      deferPostConfirmSideEffects: true,
+    });
+
+    expect(BackgroundJob.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      jobType: 'post_confirm',
+      dedupeKey: 'expense-1',
+      queryable: db.__client,
+    }));
+    const enqueueOrder = BackgroundJob.enqueue.mock.invocationCallOrder[0];
+    const commitCall = db.__client.query.mock.calls.findIndex(([sql]) => sql === 'COMMIT');
+    expect(enqueueOrder).toBeLessThan(db.__client.query.mock.invocationCallOrder[commitCall]);
+  });
+
+  it('stores only post-confirm fields needed by the durable worker', () => {
+    const payload = durableConfirmPayload({
+      merchant: 'Store',
+      amount: 12.34,
+      date: '2026-10-04',
+      source: 'camera',
+      notes: 'private note',
+      receipt_details: { store_number: '42', transaction_id: 'private-transaction' },
+      parsed_payment_snapshot: { payment_method: 'visa', card_last4: '1234', raw_text: 'private' },
+    });
+
+    expect(payload).not.toHaveProperty('notes');
+    expect(payload.receipt_details).toEqual({ store_number: '42' });
+    expect(payload.parsed_payment_snapshot).toEqual({
+      payment_method: 'visa', card_label: null, card_last4: '1234',
+    });
+  });
+
+  it('rebuilds a post-confirm task from persisted expense and item records', async () => {
+    User.findById.mockResolvedValueOnce({ id: 'user-1', household_id: 'hh-1' });
+    Expense.findById.mockResolvedValueOnce({
+      id: 'expense-1', user_id: 'user-1', household_id: 'hh-1', merchant: 'Store',
+      amount: 12.34, date: '2026-10-04', source: 'manual', category_id: 'cat-1',
+    });
+    ExpenseItem.findByExpenseId.mockResolvedValueOnce([]);
+
+    const result = await runPostConfirmJob({
+      user_id: 'user-1',
+      expense_id: 'expense-1',
+      confirm_payload: { category_status: 'assigned', category_id: 'cat-1' },
+    });
+
+    expect(result.expense).toEqual(expect.objectContaining({ id: 'expense-1' }));
+    expect(CategoryDecisionEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      expenseId: 'expense-1', finalCategoryId: 'cat-1',
+    }));
   });
 
   it('returns the original expense without repeating side effects on an idempotent replay', async () => {

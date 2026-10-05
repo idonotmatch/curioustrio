@@ -212,7 +212,7 @@ router.put('/total', async (req, res, next) => {
       return res.status(400).json({ error: 'monthly_limit must be a positive number' });
     }
     const setting = await BudgetSetting.upsert({ userId: user.id, categoryId: null, monthlyLimit: monthly_limit });
-    requestProjectionRefresh({
+    await requestProjectionRefresh({
       user,
       reason: 'budget_total_updated',
       metadata: { source: 'budget_edit' },
@@ -232,7 +232,7 @@ router.put('/category/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'monthly_limit must be a positive number' });
     }
     const setting = await BudgetSetting.upsert({ userId: user.id, categoryId: req.params.id, monthlyLimit: monthly_limit });
-    requestProjectionRefresh({
+    await requestProjectionRefresh({
       user,
       reason: 'budget_category_updated',
       categoryId: req.params.id,
@@ -250,7 +250,7 @@ router.delete('/category/:id', async (req, res, next) => {
     if (!user) return;
     const removed = await BudgetSetting.remove({ userId: user.id, categoryId: req.params.id });
     if (!removed) return res.status(404).json({ error: 'Budget not found' });
-    requestProjectionRefresh({
+    await requestProjectionRefresh({
       user,
       reason: 'budget_category_removed',
       categoryId: req.params.id,

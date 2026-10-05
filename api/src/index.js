@@ -29,6 +29,10 @@ const cronRouter = require('./routes/cron');
 const { seedDefaultCategories } = require('./db');
 const { runStartupChecks } = require('./startup/runStartupChecks');
 const { initObservability } = require('./services/observability');
+const {
+  startBackgroundJobWorker,
+  stopBackgroundJobWorker,
+} = require('./services/backgroundJobWorker');
 
 const app = express();
 initObservability();
@@ -132,7 +136,10 @@ if (require.main === module) {
       // the iOS Simulator and physical devices on the local network. Without an
       // explicit hostname, Node.js on some systems binds to :: (IPv6 only) which
       // is unreachable when the client falls back to 127.0.0.1.
-      const server = app.listen(PORT, '0.0.0.0', () => console.log(`API running on ${PORT}`));
+      const server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`API running on ${PORT}`);
+        startBackgroundJobWorker();
+      });
       let shuttingDown = false;
 
       const shutdown = (signal) => {
@@ -148,6 +155,7 @@ if (require.main === module) {
 
         server.close(async (serverError) => {
           try {
+            await stopBackgroundJobWorker({ timeoutMs: 8000 });
             await db.pool.end();
           } catch (dbError) {
             console.error('[shutdown] database pool close failed:', dbError?.message || dbError);

@@ -69,6 +69,7 @@ const MIGRATION_PLAN = [
   '073_merge_undo_audit.sql',
   '074_private_expense_projection_reset.sql',
   '075_launch_speed_indexes.sql',
+  '076_durable_background_jobs.sql',
 ];
 
 module.exports = {
