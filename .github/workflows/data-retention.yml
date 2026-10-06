@@ -1,0 +1,23 @@
+name: Data Retention
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prune expired operational data
+        run: |
+          status=$(curl -sS --connect-timeout 15 --max-time 540 -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/data-retention \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          cat response.json
+          if [ "$status" -ge 400 ]; then
+            echo ""
+            echo "Data retention failed with HTTP $status"
+            exit 1
+          fi

@@ -55,6 +55,7 @@ const filesToCheck = [
   'services/cache.js',
   'services/cachePolicy.js',
   'services/householdFreshnessBridge.js',
+  'services/freshnessCursor.js',
   'services/currentUserCache.js',
   'services/emailAuth.js',
   'services/expenseMutationEffects.js',
