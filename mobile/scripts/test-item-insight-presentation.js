@@ -3,6 +3,10 @@ const {
   getItemInsightEvidence,
   getItemInsightSummary,
 } = require('../services/itemInsightPresentation');
+const {
+  itemMatchLabel,
+  itemSubmeta,
+} = require('../services/expenseDetailPresentation');
 
 const priceSummary = getItemInsightSummary('item_recent_price_jump', {
   item_name: 'Greek Yogurt',
@@ -39,5 +43,18 @@ assert.deepStrictEqual(getItemInsightEvidence({
   label: 'Strong evidence',
   detail: '4 supporting purchases - Matched across repeated purchases',
 });
+
+assert.strictEqual(
+  itemMatchLabel({ product_id: 'product-1', product_match_confidence: 'medium' }),
+  'Possible match'
+);
+assert.strictEqual(
+  itemSubmeta({ product_match_reason: 'name_variant_match' }),
+  'Similar name at the same merchant'
+);
+assert.strictEqual(
+  itemMatchLabel({ comparable_key: 'paper towel', product_match_reason: 'user_rejected_match' }),
+  'Kept separate'
+);
 
 process.stdout.write('[mobile-logic] item insight presentation checks passed\n');

@@ -147,6 +147,9 @@ export function ExpenseItemsSection({
                   && item.product_id;
                 const decisionBusy = itemDecisionId === item.id;
                 const candidateName = item.candidate_product_name || item.description || 'this item';
+                const candidateDetails = [item.candidate_product_brand, item.candidate_product_merchant]
+                  .filter(Boolean)
+                  .join(' at ');
 
                 return (
                   <View key={index} style={styles.itemReadRow}>
@@ -166,6 +169,9 @@ export function ExpenseItemsSection({
                           <Text style={styles.itemMatchReviewTitle}>
                             Same product as <Text style={styles.itemMatchReviewCandidate}>{candidateName}</Text> in your history?
                           </Text>
+                          {candidateDetails ? (
+                            <Text style={styles.itemMatchReviewContext}>{candidateDetails}</Text>
+                          ) : null}
                           <View style={styles.itemMatchReviewActions}>
                             <TouchableOpacity
                               style={[

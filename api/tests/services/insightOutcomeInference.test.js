@@ -99,6 +99,7 @@ describe('inferOutcomeEventsForUser', () => {
         }),
       }),
     ]);
+    expect(db.query.mock.calls[0][0]).toContain("COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'");
   });
 
   it('does not infer a duplicate acted outcome when one is already logged', async () => {

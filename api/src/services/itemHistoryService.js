@@ -48,6 +48,7 @@ function summarizeHistoryRows(rows = []) {
   const grouped = new Map();
 
   for (const row of rows) {
+    if (row?.product_match_reason === 'user_rejected_match') continue;
     const groupKey = buildGroupKey(row);
     if (!groupKey) continue;
     if (!grouped.has(groupKey)) grouped.set(groupKey, []);
@@ -220,6 +221,7 @@ async function loadItemHistoryRows(ownerId, {
       AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')
       AND COALESCE(ei.item_type, 'product') = 'product'
       AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
+      AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
       AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
       ${identityClause}
     ORDER BY e.date DESC`;

@@ -66,6 +66,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
+       AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      ORDER BY e.date ASC`,
     params,
@@ -92,6 +93,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        AND e.date >= CURRENT_DATE - INTERVAL '180 days'
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
+       AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      ORDER BY e.date ASC`
   );

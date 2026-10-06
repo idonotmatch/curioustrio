@@ -206,6 +206,7 @@ async function attachItemHistoryBestEffort(expense, userId) {
   if (!ownerId) return { ...expense, item_review_context: [] };
 
   const candidates = items
+    .filter((item) => item?.product_match_reason !== 'user_rejected_match')
     .filter((item) => item?.product_id || item?.comparable_key)
     .map((item) => ({
       item,

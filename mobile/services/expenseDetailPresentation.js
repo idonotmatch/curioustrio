@@ -199,10 +199,27 @@ function formatItemStructuredMeta(item = {}) {
 }
 
 function itemMatchLabel(item = {}) {
+  if (item.product_match_reason === 'user_rejected_match') return 'Kept separate';
+  if (item.product_id && item.product_match_confidence === 'medium') return 'Possible match';
   if (item.product_id) return 'Matched product';
   if (item.estimated_unit_price != null) return 'Unit priced';
   if (item.comparable_key) return 'Comparable item';
   return null;
+}
+
+function itemMatchReasonText(reason) {
+  const labels = {
+    upc: 'Matched by barcode',
+    sku_merchant: 'Matched by store SKU',
+    normalized_match: 'Same merchant and product details',
+    normalized_backfill: 'Matched from prior product details',
+    name_variant_match: 'Similar name at the same merchant',
+    household_confirmed_alias: 'Confirmed from an earlier review',
+    user_confirmed_match: 'Confirmed by you',
+    user_rejected_match: 'Marked as a different item',
+    created: 'New product identity',
+  };
+  return labels[reason] || null;
 }
 
 function itemSubmeta(item = {}) {
@@ -211,7 +228,7 @@ function itemSubmeta(item = {}) {
     parts.push(`${formatCurrency(item.estimated_unit_price)} per ${item.unit || 'unit'}`);
   }
   if (item.product_match_reason) {
-    parts.push(`${item.product_match_reason}`.replace(/_/g, ' '));
+    parts.push(itemMatchReasonText(item.product_match_reason) || `${item.product_match_reason}`.replace(/_/g, ' '));
   }
   return parts.length ? parts.join(' • ') : null;
 }
@@ -237,6 +254,7 @@ module.exports = {
   buildPriorityReviewFields,
   formatItemStructuredMeta,
   itemMatchLabel,
+  itemMatchReasonText,
   itemSubmeta,
   summarizeItemSignals,
 };

@@ -19,6 +19,7 @@ describe('receiptContextService privacy', () => {
     expect(db.query).toHaveBeenCalledTimes(3);
     for (const [sql, params] of db.query.mock.calls) {
       expect(sql).toContain('COALESCE(e.is_private, FALSE) = FALSE');
+      expect(sql).toContain("COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'");
       expect(params).toContain('user-1');
     }
   });

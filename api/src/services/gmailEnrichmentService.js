@@ -121,6 +121,7 @@ async function enrichCategory(user, expense) {
 
 async function buildHistoryAdjustment(user, expense, items, buildItemHistoryReviewAdjustment) {
   const uniqueGroupKeys = [...new Set(items
+    .filter((item) => item?.product_match_reason !== 'user_rejected_match')
     .map((item) => item.product_id
       ? `product:${item.product_id}`
       : (item.comparable_key ? `comparable:${item.comparable_key}` : null))

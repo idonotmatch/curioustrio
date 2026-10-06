@@ -1278,6 +1278,7 @@ const styles = StyleSheet.create({
   },
   itemMatchReviewTitle: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   itemMatchReviewCandidate: { color: colors.text, fontWeight: '700' },
+  itemMatchReviewContext: { color: colors.textDisabled, fontSize: 11, lineHeight: 16, marginTop: 2 },
   itemMatchReviewActions: { flexDirection: 'row', gap: 8, marginTop: 9 },
   itemMatchReviewButton: {
     minHeight: 36,

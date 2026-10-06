@@ -42,6 +42,30 @@ async function findByNormalizedDetails({ name, merchant, brand, productSize, pac
   return result.rows[0] || null;
 }
 
+async function findNameCandidates({ merchant, normalizedBrand, searchToken, limit = 12 }) {
+  const merchantText = `${merchant || ''}`.trim();
+  const brandText = `${normalizedBrand || ''}`.trim();
+  const tokenText = `${searchToken || ''}`.trim();
+  if ((!merchantText && !brandText) || !tokenText) return [];
+  const result = await db.query(
+    `SELECT *
+     FROM products
+     WHERE normalized_name IS NOT NULL
+       AND (
+         ($1::text <> '' AND LOWER(COALESCE(merchant, '')) = LOWER($1))
+         OR ($2::text <> '' AND normalized_brand = $2)
+       )
+       AND normalized_name ILIKE ('%' || $3 || '%')
+     ORDER BY
+       CASE WHEN $1::text <> '' AND LOWER(COALESCE(merchant, '')) = LOWER($1) THEN 0 ELSE 1 END,
+       updated_at DESC,
+       created_at ASC
+     LIMIT $4`,
+    [merchantText, brandText, tokenText, Math.max(1, Math.min(Number(limit) || 12, 25))]
+  );
+  return result.rows;
+}
+
 async function create({ name, brand, upc, sku, merchant, productSize, packSize, unit }) {
   const normalized = normalizeItemMetadata({
     description: name,
@@ -106,4 +130,4 @@ async function update(id, { name, brand, upc, sku, merchant, productSize, packSi
   return result.rows[0] || null;
 }
 
-module.exports = { findByUpc, findBySkuAndMerchant, findByNormalizedDetails, create, update };
+module.exports = { findByUpc, findBySkuAndMerchant, findByNormalizedDetails, findNameCandidates, create, update };

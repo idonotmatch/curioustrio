@@ -172,6 +172,7 @@ async function findMatchingPurchase({ user, groupKey, shownAt, windowDays }) {
      WHERE ${identityClause}
        AND e.status = 'confirmed'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
+       AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
        AND e.exclude_from_budget = FALSE
        AND e.date >= $1::date
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
@@ -190,6 +191,7 @@ async function findMatchingPurchase({ user, groupKey, shownAt, windowDays }) {
      WHERE ${identityClause}
        AND e.status = 'confirmed'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
+       AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
        AND e.date >= $1::date
        AND e.date <= ($1::date + ($2::text || ' days')::interval)
        ${scopeClause}

@@ -83,6 +83,23 @@ describe('summarizeHistoryRows', () => {
       expect.objectContaining({ id: 'expense-3', expense_item_id: 'item-3', item_amount: 5.79 }),
     ]));
   });
+
+  it('does not group a user-rejected item identity into history', () => {
+    const summaries = summarizeHistoryRows([
+      {
+        expense_item_id: 'item-rejected',
+        expense_id: 'expense-1',
+        comparable_key: 'sparkling water',
+        product_match_reason: 'user_rejected_match',
+        item_name: 'Sparkling Water',
+        item_amount: 5.99,
+        merchant: 'Target',
+        date: '2026-04-01',
+      },
+    ]);
+
+    expect(summaries).toEqual([]);
+  });
 });
 
 describe('listItemHistorySummaries', () => {
@@ -139,6 +156,7 @@ describe('listItemHistorySummaries', () => {
     expect(results).toHaveLength(1);
     expect(results[0].group_key).toBe('comparable:organic banana');
     expect(db.query.mock.calls[0][0]).toContain('(COALESCE(e.is_private, FALSE) = FALSE OR e.user_id = $3)');
+    expect(db.query.mock.calls[0][0]).toContain("COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'");
     expect(db.query.mock.calls[0][1]).toEqual(['household-1', 180, 'user-1']);
   });
 });
