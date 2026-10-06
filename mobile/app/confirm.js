@@ -13,6 +13,7 @@ import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
 import { clearNavigationPayload, getNavigationPayload } from '../services/navigationPayloadStore';
 import {
+  buildItemReviewPresentation,
   createEditableExpenseItem,
   normalizeExpenseItemPayload,
   updateEditableExpenseItem,
@@ -115,8 +116,15 @@ export default function ConfirmScreen() {
   const originalParsedItemsRef = useRef(createOriginalItemSnapshot(parsed, initialItems));
   const [items, setItems] = useState(initialItems);
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
-  const hasReviewHint = reviewFields.length > 0;
   const fieldConfidence = expense?.field_confidence || {};
+  const itemReviewPresentation = useMemo(
+    () => buildItemReviewPresentation(expense, items, amountText),
+    [expense, items, amountText]
+  );
+  const effectiveReviewFields = reviewFields.filter(
+    (field) => field !== 'items' || itemReviewPresentation
+  );
+  const hasReviewHint = effectiveReviewFields.length > 0;
 
   useEffect(() => {
     setExpense(parsed);
@@ -476,7 +484,7 @@ export default function ConfirmScreen() {
             field_confidence: parsed?.field_confidence || {},
           },
         } : undefined,
-        original_parsed_items: parsed?.source === 'camera' && Array.isArray(parsed?.items)
+        original_parsed_items: parsed?.ingest_attempt_id && Array.isArray(parsed?.items)
           ? originalParsedItemsRef.current
           : undefined,
         items: items.length > 0
@@ -539,7 +547,7 @@ export default function ConfirmScreen() {
         <View style={styles.reviewBanner}>
           <Text style={styles.reviewBannerTitle}>Review before saving</Text>
           <Text style={styles.reviewBannerText}>
-            Double-check {reviewFields.join(', ')}.
+            Double-check {effectiveReviewFields.join(', ')}.
           </Text>
         </View>
       ) : null}
@@ -731,7 +739,15 @@ export default function ConfirmScreen() {
       {(items.length > 0 || parsed?.source === 'camera' || parsed?.source === 'email') && (
         <View style={styles.itemsSection}>
           <Text style={styles.sectionLabel}>ITEMS</Text>
-          {reviewNote('items', 'Line items may be incomplete or approximate.')}
+          {itemReviewPresentation ? (
+            <View style={[
+              styles.itemReviewNotice,
+              itemReviewPresentation.tone === 'warning' && styles.itemReviewNoticeWarning,
+            ]}>
+              <Text style={styles.itemReviewNoticeTitle}>{itemReviewPresentation.title}</Text>
+              <Text style={styles.itemReviewNoticeBody}>{itemReviewPresentation.body}</Text>
+            </View>
+          ) : null}
           {parsed?.items_truncated ? (
             <Text style={styles.truncatedItemsNote}>
               This receipt shows about {parsed.visible_item_count || 'more'} items. The first {items.length} were extracted. Add or correct the rest if you need a complete item history.
@@ -1107,6 +1123,17 @@ const styles = StyleSheet.create({
   cardInput: { backgroundColor: colors.surface, borderRadius: 8, padding: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
 
   itemsSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
+  itemReviewNotice: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  itemReviewNoticeWarning: { borderColor: colors.warning },
+  itemReviewNoticeTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginBottom: 3 },
+  itemReviewNoticeBody: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
   truncatedItemsNote: { color: colors.warning, fontSize: 12, lineHeight: 17, marginBottom: 10 },
   itemCard: {
     backgroundColor: colors.surfaceMuted,

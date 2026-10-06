@@ -256,15 +256,18 @@ async function appendConfirmPaymentFeedback({
   address,
   mapkitStableId,
   itemCount,
+  originalItems = [],
+  finalItems = [],
   expenseId,
 }) {
   if (!['manual', 'camera', 'refund'].includes(source) || !ingestAttemptId || !userId) return;
   try {
     const attempt = await IngestAttemptLog.findByIdForUser(ingestAttemptId, userId);
     const parsedSnapshot = attempt?.metadata?.parsed_snapshot || null;
-    const correctionFeedback = parsedSnapshot ? {
+    const itemCorrectionSummary = summarizeItemCorrections(originalItems, finalItems);
+    const correctionFeedback = parsedSnapshot || itemCorrectionSummary.original_count > 0 ? {
       correction_feedback_recorded: true,
-      correction_changed_fields: [
+      correction_changed_fields: (parsedSnapshot ? [
         ['merchant', parsedSnapshot.merchant, merchant],
         ['description', parsedSnapshot.description, description],
         ['amount', parsedSnapshot.amount, amount],
@@ -273,9 +276,11 @@ async function appendConfirmPaymentFeedback({
         ['address', parsedSnapshot.address, address],
         ['mapkit_stable_id', parsedSnapshot.mapkit_stable_id, mapkitStableId],
         ['item_count', parsedSnapshot.item_count, itemCount],
-      ]
+      ] : [])
         .filter(([, originalValue, finalValue]) => `${originalValue ?? ''}` !== `${finalValue ?? ''}`)
-        .map(([field]) => field),
+        .map(([field]) => field)
+        .concat(itemCorrectionSummary.changed_count > 0 ? ['items'] : []),
+      item_correction_summary: itemCorrectionSummary,
     } : null;
 
     await IngestAttemptLog.appendPaymentFeedback(ingestAttemptId, userId, {
@@ -293,6 +298,59 @@ async function appendConfirmPaymentFeedback({
   } catch (logErr) {
     console.error('Confirm ingest log update failed (non-fatal):', logErr.message);
   }
+}
+
+function summarizeItemCorrections(originalItems = [], finalItems = []) {
+  const original = Array.isArray(originalItems) ? originalItems : [];
+  const final = Array.isArray(finalItems) ? finalItems : [];
+  const originalByKey = new Map(original
+    .filter((item) => item?.observation_key)
+    .map((item) => [item.observation_key, item]));
+  let descriptionsChanged = 0;
+  let amountsChanged = 0;
+  let quantitiesChanged = 0;
+  let unitPricesChanged = 0;
+  let changedCount = Math.abs(original.length - final.length);
+
+  final.forEach((item, index) => {
+    const prior = (item?.observation_key && originalByKey.get(item.observation_key)) || original[index];
+    if (!prior) return;
+    let rowChanged = false;
+    const compareText = (left, right) => `${left ?? ''}`.trim() === `${right ?? ''}`.trim();
+    const compareNumber = (left, right) => {
+      if ((left == null || left === '') && (right == null || right === '')) return true;
+      const leftNumber = Number(left);
+      const rightNumber = Number(right);
+      return Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && Math.abs(leftNumber - rightNumber) < 0.001;
+    };
+    if (!compareText(prior.description, item?.description)) {
+      descriptionsChanged += 1;
+      rowChanged = true;
+    }
+    if (!compareNumber(prior.amount, item?.amount)) {
+      amountsChanged += 1;
+      rowChanged = true;
+    }
+    if (!compareNumber(prior.quantity, item?.quantity)) {
+      quantitiesChanged += 1;
+      rowChanged = true;
+    }
+    if (!compareNumber(prior.unit_price, item?.unit_price)) {
+      unitPricesChanged += 1;
+      rowChanged = true;
+    }
+    if (rowChanged) changedCount += 1;
+  });
+
+  return {
+    original_count: original.length,
+    final_count: final.length,
+    changed_count: changedCount,
+    descriptions_changed: descriptionsChanged,
+    amounts_changed: amountsChanged,
+    quantities_changed: quantitiesChanged,
+    unit_prices_changed: unitPricesChanged,
+  };
 }
 
 async function updateMerchantMemory({ categoryId, householdId, merchant }) {
@@ -414,6 +472,9 @@ async function enqueuePostConfirmSideEffects({
           observation_key: item?.observation_key || null,
           description: `${item?.description || ''}`.slice(0, 500),
           raw_description: `${item?.raw_description || item?.description || ''}`.slice(0, 500),
+          amount: item?.amount ?? null,
+          quantity: item?.quantity ?? null,
+          unit_price: item?.unit_price ?? null,
         })),
     },
     queryable,
@@ -541,6 +602,8 @@ async function runPostConfirmSideEffects({
     address: enrichedExpense.address || resolvedPayload.address,
     mapkitStableId: enrichedExpense.mapkit_stable_id || resolvedPayload.mapkit_stable_id,
     itemCount: Array.isArray(items) ? items.length : 0,
+    originalItems: originalParsedItems,
+    finalItems: resolvedItems,
     expenseId: expense.id,
   });
 
@@ -728,6 +791,7 @@ async function createConfirmedExpense({
 
 module.exports = {
   createConfirmedExpense,
+  summarizeItemCorrections,
   normalizeBudgetExclusionReason,
   durableConfirmPayload,
   enqueuePostConfirmSideEffects,

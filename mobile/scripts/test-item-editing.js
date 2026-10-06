@@ -1,5 +1,6 @@
 const assert = require('assert');
 const {
+  buildItemReviewPresentation,
   buildExpenseItemsPatch,
   createEditableExpenseItem,
   normalizeExpenseItemPayload,
@@ -60,6 +61,30 @@ function run() {
     '1.50'
   );
   assert.strictEqual(fromEachChange.amount, '4.50', 'each-price changes should recompute total when quantity exists');
+  assert.strictEqual(fromEachChange.extraction_confidence, 'high', 'a user item edit should become high-confidence input');
+
+  assert.deepStrictEqual(
+    buildItemReviewPresentation(
+      { item_total_status: 'unpriced' },
+      [{ description: 'chicken', amount: '' }, { description: 'berries', amount: '' }],
+      '48.12'
+    ),
+    {
+      tone: 'neutral',
+      title: '2 items found',
+      body: 'Add prices if you know them, or save now and keep the item names for matching and trends.',
+    },
+    'unpriced natural-language items should get lightweight, non-blocking guidance'
+  );
+
+  const mismatchPresentation = buildItemReviewPresentation(
+    { item_total_status: 'mismatch' },
+    [{ description: 'salmon', amount: '18.50' }, { description: 'asparagus', amount: '6.20' }],
+    '31.40'
+  );
+  assert.strictEqual(mismatchPresentation.title, 'Check the item total');
+  assert(mismatchPresentation.body.includes('$24.70'), 'mismatch guidance should show the parsed item sum');
+  assert(mismatchPresentation.body.includes('$31.40'), 'mismatch guidance should show the expense total');
 
   const payload = normalizeExpenseItemPayload({
     description: '  OLIPOP  ',

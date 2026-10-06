@@ -45,7 +45,31 @@ const {
   durableConfirmPayload,
   resolveDeferredConfirmPayload,
   runPostConfirmJob,
+  summarizeItemCorrections,
 } = require('../../src/services/expenseConfirmService');
+
+describe('summarizeItemCorrections', () => {
+  it('records item edits without persisting raw correction values in telemetry', () => {
+    expect(summarizeItemCorrections(
+      [
+        { observation_key: 'one', description: 'Yogrt', amount: 5, quantity: 1 },
+        { observation_key: 'two', description: 'Berries', amount: null },
+      ],
+      [
+        { observation_key: 'one', description: 'Yogurt', amount: 5, quantity: 2 },
+        { observation_key: 'two', description: 'Berries', amount: 4.5 },
+      ]
+    )).toEqual({
+      original_count: 2,
+      final_count: 2,
+      changed_count: 2,
+      descriptions_changed: 1,
+      amounts_changed: 1,
+      quantities_changed: 1,
+      unit_prices_changed: 0,
+    });
+  });
+});
 
 describe('expenseConfirmService deferred enrichment', () => {
   beforeEach(() => {

@@ -133,11 +133,45 @@ describe('parseExpense', () => {
     );
 
     expect(result.items).toEqual([
-      { description: 'bananas', amount: 3.2 },
-      { description: 'yogurt', amount: 6.99 },
-      { description: 'paper towels', amount: 12.49 },
+      expect.objectContaining({ description: 'bananas', amount: 3.2, source_type: 'nl', extraction_confidence: 'high' }),
+      expect.objectContaining({ description: 'yogurt', amount: 6.99, source_type: 'nl', extraction_confidence: 'high' }),
+      expect.objectContaining({ description: 'paper towels', amount: 12.49, source_type: 'nl', extraction_confidence: 'high' }),
     ]);
     expect(result.item_amount_sum).toBe(22.68);
+    expect(result.item_total_status).toBe('mismatch');
+  });
+
+  it('recovers comma-separated natural items when the model omits them', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const instance = new Anthropic();
+    instance.messages.create.mockResolvedValueOnce({
+      content: [{
+        text: JSON.stringify({
+          merchant: 'Whole Foods',
+          description: 'groceries',
+          amount: 48.12,
+          date: '2026-04-11',
+          notes: null,
+          payment_method: null,
+          card_label: null,
+          items: null,
+        }),
+      }],
+    });
+
+    const result = await parseExpenseDetailed(
+      'whole foods chicken, berries, yogurt 48.12',
+      '2026-04-11'
+    );
+
+    expect(result.parsed.items).toEqual([
+      expect.objectContaining({ description: 'chicken', amount: null, extraction_confidence: 'medium' }),
+      expect.objectContaining({ description: 'berries', amount: null, extraction_confidence: 'medium' }),
+      expect.objectContaining({ description: 'yogurt', amount: null, extraction_confidence: 'medium' }),
+    ]);
+    expect(result.parsed.item_total_status).toBe('unpriced');
+    expect(result.parsed.review_fields).toContain('items');
+    expect(result.diagnostics.natural_item_syntax_detected).toBe(true);
   });
 
   it('infers a single line item from a specific description plus merchant context', () => {
@@ -153,9 +187,43 @@ describe('parseExpense', () => {
     }, '2026-04-11');
 
     expect(result.items).toEqual([
-      { description: 'Nike running shoes', amount: 122.24 },
+      expect.objectContaining({
+        description: 'Nike running shoes',
+        amount: 122.24,
+        source_type: 'nl',
+        extraction_confidence: 'high',
+      }),
     ]);
     expect(result.item_inferred_from_description).toBe(true);
+    expect(result.item_total_status).toBe('matched');
+  });
+
+  it('sanitizes model item metadata and drops invalid item rows', () => {
+    const result = cleanParsedExpense({
+      merchant: 'Target',
+      description: 'household purchase',
+      amount: 18,
+      date: '2026-04-11',
+      items: [
+        { description: '  Tide Pods  ', amount: '18.00', quantity: '2', unit_price: '9', brand: ' Tide ' },
+        { description: '$12.00', amount: 12 },
+        { description: '', amount: 3 },
+      ],
+    }, '2026-04-11');
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        description: 'Tide Pods',
+        amount: 18,
+        quantity: 2,
+        unit_price: 9,
+        brand: 'Tide',
+        source_type: 'nl',
+        extraction_confidence: 'medium',
+      }),
+    ]);
+    expect(result.item_total_status).toBe('matched');
+    expect(result.field_confidence.items).toBe('high');
   });
 
   it('does not infer a single line item from a generic description', () => {

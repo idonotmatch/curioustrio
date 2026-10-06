@@ -35,6 +35,9 @@ function updateEditableExpenseItem(item = {}, field, value) {
   const next = {
     ...item,
     [field]: value,
+    ...(['description', 'amount', 'quantity', 'unit_price'].includes(field)
+      ? { extraction_confidence: 'high' }
+      : {}),
   };
 
   const quantity = parseItemNumber(next.quantity);
@@ -58,6 +61,62 @@ function updateEditableExpenseItem(item = {}, field, value) {
   }
 
   return next;
+}
+
+function buildItemReviewPresentation(parsed = {}, editableItems = [], amountValue = null) {
+  const items = Array.isArray(editableItems) ? editableItems : [];
+  if (!items.length) return null;
+
+  const amount = Number(amountValue ?? parsed?.amount);
+  const pricedItems = items.filter((item) => Number.isFinite(Number.parseFloat(`${item?.amount ?? ''}`)));
+  const itemSum = pricedItems.length
+    ? pricedItems.reduce((sum, item) => sum + Number.parseFloat(`${item.amount}`), 0)
+    : null;
+  const status = (
+    pricedItems.length === 0
+      ? 'unpriced'
+      : pricedItems.length < items.length
+        ? 'partial'
+        : Number.isFinite(amount) && Math.abs(itemSum - amount) > Math.max(0.05, Math.abs(amount) * 0.01)
+          ? 'mismatch'
+          : 'matched'
+  );
+
+  if (status === 'mismatch') {
+    return {
+      tone: 'warning',
+      title: 'Check the item total',
+      body: Number.isFinite(amount) && itemSum != null
+        ? `Items add to $${itemSum.toFixed(2)}, while the expense is $${Math.abs(amount).toFixed(2)}. Correct a price, or leave it if tax or fees explain the difference.`
+        : 'The item prices do not match the expense total. Correct them, or leave them if tax or fees explain the difference.',
+    };
+  }
+
+  if (status === 'partial') {
+    return {
+      tone: 'neutral',
+      title: `${pricedItems.length} of ${items.length} item prices captured`,
+      body: 'Add the missing prices if you know them, or save now and keep the item names for matching and trends.',
+    };
+  }
+
+  if (status === 'unpriced') {
+    return {
+      tone: 'neutral',
+      title: `${items.length} ${items.length === 1 ? 'item' : 'items'} found`,
+      body: 'Add prices if you know them, or save now and keep the item names for matching and trends.',
+    };
+  }
+
+  if (items.some((item) => item?.extraction_confidence === 'low')) {
+    return {
+      tone: 'warning',
+      title: 'Check the item details',
+      body: 'Some item details were uncertain. Correct anything that does not look right before saving.',
+    };
+  }
+
+  return null;
 }
 
 function normalizeExpenseItemPayload(item = {}) {
@@ -92,6 +151,7 @@ function buildExpenseItemsPatch(items = [], { includeItems = true } = {}) {
 module.exports = {
   createEditableExpenseItem,
   buildExpenseItemsPatch,
+  buildItemReviewPresentation,
   normalizeExpenseItemPayload,
   parseItemNumber,
   updateEditableExpenseItem,

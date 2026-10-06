@@ -149,7 +149,7 @@ export default function AddScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.hint}>
-        try: "242.50 trader joes" · "lunch chipotle 14.50" · "60 gas yesterday"
+        try: "242.50 trader joes" · "whole foods chicken, berries, yogurt 48.12"
       </Text>
       <NLInput onSubmit={handleSubmit} loading={loading} />
       {processingMessage ? (

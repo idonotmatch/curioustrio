@@ -10,7 +10,7 @@ Return ONLY a JSON object with these fields:
 - notes (string or null): any additional context.
 - payment_method (string or null): one of "cash", "credit", "debit", or null if not mentioned. Infer from context: "amex", "visa", "mastercard", "credit card" → "credit"; "debit card" → "debit"; "cash" → "cash".
 - card_label (string or null): the card nickname or description if mentioned (e.g. "platinum amex", "chase sapphire", "blue visa"). null if not mentioned.
-- items (array or null): individual line items if specific products/services are named, each as { "description": string, "amount": number or null }. Set to null if no specific items are mentioned beyond the overall description.
+- items (array or null): individual line items if specific products/services are named. Each item may include { "description": string, "amount": number or null, "quantity": number or null, "unit_price": number or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Set to null if no specific items are mentioned beyond the overall description. Do not invent item prices or product details. Preserve a clean product/service name in description.
 
 Examples:
 - "lunch 14" → { merchant: null, description: "lunch", amount: 14, items: null, payment_method: null, card_label: null, ... }
@@ -20,6 +20,8 @@ Examples:
 - "amazon 34 on chase sapphire" → { merchant: "Amazon", description: null, amount: 34, items: null, payment_method: "credit", card_label: "chase sapphire", ... }
 - "125 nike running shoes from nordstrom using amex platinum" → { merchant: "Nordstrom", description: null, amount: 125, items: [{ description: "Nike running shoes", amount: 125 }], payment_method: "credit", card_label: "amex platinum", ... }
 - "50 dinner and drinks at nobu with two glasses of wine" → { merchant: "Nobu", description: "dinner and drinks", amount: 50, items: [{ description: "dinner", amount: null }, { description: "drinks (2 glasses wine)", amount: null }], ... }
+- "whole foods chicken, berries, yogurt 48.12" → { merchant: "Whole Foods", description: "groceries", amount: 48.12, items: [{ description: "chicken", amount: null }, { description: "berries", amount: null }, { description: "yogurt", amount: null }], ... }
+- "target 42.18 items: bananas 3.20, yogurt 6.99, paper towels 12.49" → { merchant: "Target", description: "groceries", amount: 42.18, items: [{ description: "bananas", amount: 3.20 }, { description: "yogurt", amount: 6.99 }, { description: "paper towels", amount: 12.49 }], ... }
 
 If the input cannot be parsed as an expense or refund, return null.
 Today's date is provided in the user message. If no date is mentioned, use today's date.
@@ -214,6 +216,55 @@ function parseExplicitItemSegment(segment = '') {
   };
 }
 
+const ITEM_CONFIDENCE_LEVELS = new Set(['high', 'medium', 'low']);
+const ITEM_TEXT_FIELDS = ['brand', 'product_size', 'pack_size', 'unit', 'upc', 'sku'];
+
+function optionalItemNumber(value, { positive = false } = {}) {
+  if (value == null || value === '') return null;
+  const parsed = Number(`${value}`.replace(/^\$/, ''));
+  if (!Number.isFinite(parsed)) return null;
+  if (positive && parsed <= 0) return null;
+  return parsed;
+}
+
+function normalizeNlItem(item = {}, defaultConfidence = 'medium') {
+  if (!item || typeof item !== 'object') return null;
+  const description = `${item.description || item.name || ''}`
+    .replace(/^[\s\-*•]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+  if (!description || !/[a-z]/i.test(description) || /^-?\$?\d+(?:\.\d+)?$/.test(description)) return null;
+
+  const normalized = {
+    description,
+    amount: optionalItemNumber(item.amount),
+    quantity: optionalItemNumber(item.quantity, { positive: true }),
+    unit_price: optionalItemNumber(item.unit_price, { positive: true }),
+    source_type: 'nl',
+    raw_description: `${item.raw_description || description}`.trim().slice(0, 500) || description,
+    extraction_confidence: ITEM_CONFIDENCE_LEVELS.has(item.extraction_confidence)
+      ? item.extraction_confidence
+      : defaultConfidence,
+  };
+
+  ITEM_TEXT_FIELDS.forEach((field) => {
+    const value = typeof item[field] === 'string' ? item[field].trim() : '';
+    if (value) normalized[field] = value.slice(0, 120);
+  });
+
+  return normalized;
+}
+
+function normalizeNlItems(items, defaultConfidence = 'medium') {
+  if (!Array.isArray(items)) return null;
+  const normalized = items
+    .slice(0, 40)
+    .map((item) => normalizeNlItem(item, defaultConfidence))
+    .filter(Boolean);
+  return normalized.length ? normalized : null;
+}
+
 function extractExplicitItemsFromInput(input = '') {
   const text = `${input || ''}`.trim();
   if (!text) return null;
@@ -227,6 +278,12 @@ function extractExplicitItemsFromInput(input = '') {
   const items = itemText
     .split(/\s*,\s*/)
     .map(parseExplicitItemSegment)
+    .map((item) => item ? {
+      ...item,
+      source_type: 'nl',
+      raw_description: item.description,
+      extraction_confidence: item.amount == null ? 'medium' : 'high',
+    } : null)
     .filter(Boolean);
 
   if (!items.length) return null;
@@ -241,6 +298,73 @@ function extractExplicitItemsFromInput(input = '') {
     explicit_item_count: items.length,
     explicit_item_amount_sum: Number(amountSum.toFixed(2)),
     explicit_item_has_missing_amounts: items.some((item) => item.amount == null),
+  };
+}
+
+function escapeRegex(value = '') {
+  return `${value}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function removeParsedTotal(text, amount) {
+  const numericAmount = Math.abs(Number(amount));
+  if (!Number.isFinite(numericAmount)) return text;
+  const matches = [...`${text || ''}`.matchAll(/(^|\s)(-?\$?\d+(?:\.\d{1,2})?)(?=\s|$)/g)];
+  const match = matches.reverse().find((entry) => {
+    const numeric = Math.abs(Number(`${entry[2]}`.replace(/^\$/, '')));
+    return Number.isFinite(numeric) && Math.abs(numeric - numericAmount) < 0.001;
+  });
+  if (!match) return text;
+  const start = match.index + match[1].length;
+  return `${text}`.slice(0, start) + `${text}`.slice(start + match[2].length);
+}
+
+function extractNaturalCommaItemsFromInput(input = '', raw = {}) {
+  const original = `${input || ''}`.trim();
+  if (!original || /\bitems\s*:/i.test(original)) return null;
+  if ((original.match(/,/g) || []).length < 2) return null;
+
+  let working = removeParsedTotal(original, raw?.amount)
+    .replace(/\b(?:today|yesterday)\b/gi, ' ')
+    .replace(/\b(?:with|using|on)\s+(?:cash|debit(?: card)?|credit card|visa|mastercard|amex|american express|chase sapphire|platinum amex|amex platinum)\b/gi, ' ');
+
+  const merchant = typeof raw?.merchant === 'string' ? raw.merchant.trim() : '';
+  if (merchant) {
+    const flexibleMerchant = escapeRegex(merchant).replace(/\s+/g, '\\s+');
+    working = working.replace(new RegExp(`\\b${flexibleMerchant}\\b`, 'i'), ' ');
+  }
+
+  working = working
+    .replace(/^\s*(?:spent|bought|purchase(?:d)?|paid)\s+/i, '')
+    .replace(/^\s*(?:at|from)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const items = working
+    .split(/\s*,\s*/)
+    .map((segment) => segment
+      .replace(/^\s*(?:and\s+)?/i, '')
+      .replace(/(?:\s+\b(?:at|from|for)\b)+\s*$/i, '')
+      .trim())
+    .map(parseExplicitItemSegment)
+    .filter((item) => item && item.description.split(/\s+/).length <= 10)
+    .map((item) => ({
+      ...item,
+      source_type: 'nl',
+      raw_description: item.description,
+      extraction_confidence: 'medium',
+    }));
+
+  if (items.length < 3) return null;
+  return {
+    items,
+    natural_item_count: items.length,
+    natural_item_amount_sum: items.some((item) => item.amount != null)
+      ? Number(items
+        .map((item) => item.amount)
+        .filter((amount) => amount != null)
+        .reduce((sum, amount) => sum + amount, 0)
+        .toFixed(2))
+      : null,
   };
 }
 
@@ -405,7 +529,13 @@ function inferSingleItemFromMerchantContext(parsed = {}) {
 
   return {
     ...parsed,
-    items: [{ description, amount }],
+    items: [{
+      description,
+      amount,
+      source_type: 'nl',
+      raw_description: description,
+      extraction_confidence: 'high',
+    }],
   };
 }
 
@@ -418,7 +548,7 @@ function cleanParsedExpense(parsed, todayDate) {
   const amount = Number(inferredParsed.amount);
   const rawDate = typeof inferredParsed.date === 'string' ? inferredParsed.date.trim() : '';
   const hasValidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate);
-  const items = Array.isArray(inferredParsed.items) ? inferredParsed.items : null;
+  const items = normalizeNlItems(inferredParsed.items);
   const paymentMethod = ['cash', 'credit', 'debit'].includes(inferredParsed.payment_method) ? inferredParsed.payment_method : null;
   const cardLabel = typeof inferredParsed.card_label === 'string' && inferredParsed.card_label.trim() ? inferredParsed.card_label.trim() : null;
   const noteText = typeof inferredParsed.notes === 'string' && inferredParsed.notes.trim() ? inferredParsed.notes.trim() : null;
@@ -457,18 +587,40 @@ function cleanParsedExpense(parsed, todayDate) {
   if (!hasValidDate) review_fields.push('date');
   if (!normalized.payment_method && normalized.card_label) review_fields.push('payment method');
 
-  const itemAmountSum = items
-    ?.map((item) => Number(item?.amount))
-    .filter((value) => Number.isFinite(value))
-    .reduce((sum, value) => sum + value, 0) ?? null;
-  const itemTotalMismatch = (
-    normalized.amount != null
-    && itemAmountSum != null
-    && Math.abs(itemAmountSum - normalized.amount) > 0.01
+  const pricedItems = items?.filter((item) => item.amount != null) || [];
+  const itemAmountSum = pricedItems.length
+    ? Number(pricedItems.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2))
+    : null;
+  const allItemsPriced = Boolean(items?.length) && pricedItems.length === items.length;
+  const itemDifference = normalized.amount != null && itemAmountSum != null
+    ? Number((normalized.amount - itemAmountSum).toFixed(2))
+    : null;
+  const itemMatchTolerance = normalized.amount != null
+    ? Math.max(0.05, Math.abs(normalized.amount) * 0.01)
+    : 0.05;
+  const itemTotalMismatch = Boolean(
+    allItemsPriced
+    && itemDifference != null
+    && Math.abs(itemDifference) > itemMatchTolerance
   );
-  if ((items?.length || 0) > 0 && (itemTotalMismatch || items.some((item) => item?.amount == null))) {
+  const itemTotalStatus = !items?.length
+    ? null
+    : pricedItems.length === 0
+      ? 'unpriced'
+      : !allItemsPriced
+        ? 'partial'
+        : itemTotalMismatch
+          ? 'mismatch'
+          : 'matched';
+  const itemReviewReasons = [];
+  if (itemTotalStatus === 'unpriced' || itemTotalStatus === 'partial') itemReviewReasons.push('missing_item_amounts');
+  if (itemTotalMismatch) itemReviewReasons.push('total_mismatch');
+  if (items?.some((item) => item.extraction_confidence === 'low')) itemReviewReasons.push('low_confidence');
+  if ((items?.length || 0) > 0 && itemReviewReasons.length > 0) {
     if (!review_fields.includes('items')) review_fields.push('items');
-    field_confidence.items = itemTotalMismatch ? 'low' : 'medium';
+    field_confidence.items = itemTotalMismatch || itemReviewReasons.includes('low_confidence') ? 'low' : 'medium';
+  } else if (itemTotalStatus === 'matched') {
+    field_confidence.items = 'high';
   }
 
   if (normalized.amount == null || (!normalized.merchant && !normalized.description)) {
@@ -478,7 +630,11 @@ function cleanParsedExpense(parsed, todayDate) {
   return {
     ...normalized,
     item_amount_sum: itemAmountSum,
+    item_amount_difference: itemDifference,
+    item_amount_coverage: items?.length ? pricedItems.length / items.length : null,
+    item_total_status: itemTotalStatus,
     item_total_mismatch: itemTotalMismatch,
+    item_review_reasons: itemReviewReasons,
     item_inferred_from_description: Boolean(items?.length === 1 && items[0]?.description === normalized.description && items[0]?.amount === normalized.amount),
     parse_status: review_fields.length > 0 ? 'partial' : 'complete',
     review_fields,
@@ -535,6 +691,9 @@ async function parseExpenseDetailed(input, todayDate) {
 
   const { raw, parser_mode } = parseJsonWithRecovery(text);
   const explicitItems = extractExplicitItemsFromInput(input);
+  const naturalItems = raw && (!Array.isArray(raw.items) || raw.items.length === 0)
+    ? extractNaturalCommaItemsFromInput(input, raw)
+    : null;
   const baseDiagnostics = {
     raw_text_preview: clipTextPreview(text),
     response_length: text.length,
@@ -543,6 +702,9 @@ async function parseExpenseDetailed(input, todayDate) {
     explicit_item_syntax_detected: Boolean(explicitItems),
     explicit_item_count: explicitItems?.explicit_item_count || 0,
     explicit_item_amount_sum: explicitItems?.explicit_item_amount_sum ?? null,
+    natural_item_syntax_detected: Boolean(naturalItems),
+    natural_item_count: naturalItems?.natural_item_count || 0,
+    natural_item_amount_sum: naturalItems?.natural_item_amount_sum ?? null,
   };
   if (!raw) {
     return {
@@ -553,7 +715,11 @@ async function parseExpenseDetailed(input, todayDate) {
     };
   }
 
-  const mergedRaw = explicitItems ? { ...raw, items: explicitItems.items } : raw;
+  const mergedRaw = explicitItems
+    ? { ...raw, items: explicitItems.items }
+    : naturalItems
+      ? { ...raw, items: naturalItems.items }
+      : raw;
   const parsed = cleanParsedExpense(mergedRaw, todayDate);
   const diagnostics = {
     ...buildNlDiagnostics(input, mergedRaw),
@@ -591,6 +757,8 @@ module.exports = {
   parseExpense,
   parseExpenseDetailed,
   cleanParsedExpense,
+  extractNaturalCommaItemsFromInput,
+  normalizeNlItems,
   parseJsonWithRecovery,
   normalizePersonPaymentFields,
 };
