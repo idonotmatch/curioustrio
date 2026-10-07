@@ -161,6 +161,24 @@ function sanitizeExpenseCollection(expenses = []) {
     .filter(Boolean);
 }
 
+function sanitizePendingReviewHint(hint = null) {
+  if (!hint || typeof hint !== 'object') return null;
+  const recommendation = hint.automation_recommendation;
+  return {
+    review_mode: hint.review_mode || null,
+    likely_changed_fields: Array.isArray(hint.likely_changed_fields)
+      ? hint.likely_changed_fields.filter(Boolean).slice(0, 8)
+      : [],
+    automation_recommendation: recommendation && typeof recommendation === 'object'
+      ? {
+          label: recommendation.label || null,
+          reason: recommendation.reason || null,
+        }
+      : null,
+    imported_at: hint.imported_at || null,
+  };
+}
+
 function sanitizeCurrentUserCache(user = {}) {
   if (!user || typeof user !== 'object') return null;
   const authUserId = user.auth_user_id || user.provider_uid || null;
@@ -186,4 +204,5 @@ module.exports = {
   sanitizeExpenseItems,
   sanitizeExpenseSnapshot,
   sanitizeInsightSnapshot,
+  sanitizePendingReviewHint,
 };

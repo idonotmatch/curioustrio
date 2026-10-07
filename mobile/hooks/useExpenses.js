@@ -26,7 +26,7 @@ export function useExpenses(month, startDayOverride) {
     ].filter(Boolean).join('&');
     const pageParams = [params, 'paginated=1', 'limit=25'].filter(Boolean).join('&');
     const url = `/expenses?${pageParams}`;
-    return loadWithCache(
+    const result = await loadWithCache(
       `cache:expenses:v2:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => {
@@ -44,6 +44,10 @@ export function useExpenses(month, startDayOverride) {
       },
       { forceRefresh: options?.forceRefresh === true },
     );
+    if (requestVersion === requestVersionRef.current && !result?.refreshSucceeded && result?.source === 'cache') {
+      setError('Could not refresh the latest transactions.');
+    }
+    return result;
   }, [month, startDayOverride]);
 
   const loadMore = useCallback(async () => {

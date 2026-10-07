@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   screenHeader: { marginBottom: 28 },
   eyebrow: { color: colors.textSubtle, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
-  screenTitle: { color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.5, marginBottom: 8 },
+  screenTitle: { color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: 0, marginBottom: 8 },
   screenSubtitle: { color: colors.textSubtle, fontSize: 14, lineHeight: 20, marginBottom: 14 },
   healthStrip: { gap: 8 },
   healthPill: {

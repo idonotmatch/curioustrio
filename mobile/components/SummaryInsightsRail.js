@@ -36,11 +36,17 @@ function SummaryInsightsRailBase({
       <View style={styles.insightsHeading}>
         <Text style={styles.sectionLabel}>{title}</Text>
         {displayInsights.length > 1 ? (
-          <Text style={styles.insightsHint}>{`${activeIndex + 1} of ${displayInsights.length} | ${hint || 'Swipe for more'}`}</Text>
+          <Text style={styles.insightsHint}>{`${activeIndex + 1} of ${displayInsights.length} / ${hint || 'Swipe for more'}`}</Text>
         ) : null}
       </View>
       {insightsError ? (
-        <TouchableOpacity style={styles.insightsErrorCard} onPress={refreshInsights} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.insightsErrorCard}
+          onPress={refreshInsights}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Could not load insights. Try again"
+        >
           <Text style={styles.insightsErrorTitle}>Could not load insights</Text>
           <Text style={styles.insightsErrorBody}>{insightsError}</Text>
           <Text style={styles.insightsErrorAction}>Tap to retry</Text>

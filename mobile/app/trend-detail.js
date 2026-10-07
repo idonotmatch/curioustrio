@@ -1558,7 +1558,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  heroTitle: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: -0.8 },
+  heroTitle: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: 0 },
   heroCopy: { fontSize: 15, color: colors.textMuted, lineHeight: 22 },
   heroContext: { fontSize: 13, color: colors.info, lineHeight: 18 },
   sharedContextCard: {

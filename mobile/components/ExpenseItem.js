@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     fontWeight: '500',
-    letterSpacing: -0.2,
+    letterSpacing: 0,
     flexShrink: 1,
     minWidth: 0,
   },
@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     fontWeight: '600',
-    letterSpacing: -0.3,
+    letterSpacing: 0,
     textAlign: 'right',
   },
   amountRefund: {

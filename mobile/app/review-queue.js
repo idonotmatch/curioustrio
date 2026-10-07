@@ -1,5 +1,5 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, Pressable, ActivityIndicator } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,7 +12,7 @@ import { api } from '../services/api';
 import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { colors } from '../theme/tokens';
-import { InlineError } from '../components/ui/States';
+import { EmptyState, InlineError } from '../components/ui/States';
 
 function summarizeReviewModes(expenses = []) {
   const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
@@ -66,11 +66,14 @@ export default function ReviewQueueScreen() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchActioning, setBatchActioning] = useState('');
   const actioningIdsRef = useRef(new Set());
-  const reviewModeCounts = summarizeReviewModes(displayExpenses);
-  const queueRows = buildQueueRows(displayExpenses);
+  const reviewModeCounts = useMemo(() => summarizeReviewModes(displayExpenses), [displayExpenses]);
+  const queueRows = useMemo(() => buildQueueRows(displayExpenses), [displayExpenses]);
   const totalActions = displayExpenses.length;
   const hasSecondarySummary = reviewModeCounts.quickCheck > 0 || reviewModeCounts.itemsFirst > 0;
-  const selectedExpenses = displayExpenses.filter((expense) => selectedIds.has(expense.id));
+  const selectedExpenses = useMemo(
+    () => displayExpenses.filter((expense) => selectedIds.has(expense.id)),
+    [displayExpenses, selectedIds]
+  );
   const selectedHasItemsFirst = selectedExpenses.some((expense) => expense?.gmail_review_hint?.review_mode === 'items_first');
   const selectedHasDuplicate = selectedExpenses.some((expense) => Array.isArray(expense?.duplicate_flags) && expense.duplicate_flags.length > 0);
   const canBatchApprove = selectedExpenses.length > 0 && !selectedHasItemsFirst && !selectedHasDuplicate;
@@ -285,7 +288,7 @@ export default function ReviewQueueScreen() {
               />
             )
           )}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={() => refresh({ forceRefresh: true })} tintColor={colors.text} />}
+          refreshControl={<RefreshControl refreshing={loading && displayExpenses.length > 0} onRefresh={() => refresh({ forceRefresh: true })} tintColor={colors.text} />}
           contentContainerStyle={[styles.list, selectionMode && styles.listSelecting]}
           onEndReached={() => { if (hasMore && !loadingMore) loadMore(); }}
           onEndReachedThreshold={0.35}
@@ -298,10 +301,20 @@ export default function ReviewQueueScreen() {
                   : error
                     ? 'Review queue unavailable'
                     : totalActions > 0
-                      ? `${totalActions} thing${totalActions === 1 ? '' : 's'} to clear`
+                      ? `${totalActions} import${totalActions === 1 ? '' : 's'} need review`
                       : 'You are caught up'}
               </Text>
-              <Text style={styles.subtitle}>Things that need your attention before they settle into the app.</Text>
+              <Text style={styles.subtitle}>Start with duplicates and item checks. Quick confirms can be approved without opening the full expense.</Text>
+
+              {error && totalActions > 0 ? (
+                <InlineError
+                  title="Showing saved review items"
+                  body="The latest queue could not be refreshed. You can keep reviewing these items or try again."
+                  actionLabel="Refresh"
+                  onAction={() => refresh({ forceRefresh: true })}
+                  style={styles.staleError}
+                />
+              ) : null}
 
               {totalActions > 0 && hasSecondarySummary ? (
                 <View style={styles.summaryRow}>
@@ -348,7 +361,16 @@ export default function ReviewQueueScreen() {
                     onAction={() => refresh({ forceRefresh: true })}
                   />
                 )
-                : <Text style={styles.empty}>Nothing needs your attention right now. New review work will land here when it needs you.</Text>
+                : (
+                  <EmptyState
+                    icon="checkmark-circle-outline"
+                    title="Review queue clear"
+                    body="New imports will appear here only when they need a decision."
+                    actionLabel="Check Gmail import"
+                    onAction={() => router.push('/gmail-import')}
+                    style={styles.emptyState}
+                  />
+                )
               )
           }
           ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.loadingMore} color={colors.textMuted} /> : null}
@@ -409,7 +431,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.textInverse,
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -424,7 +446,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
   hint: { fontSize: 12, color: colors.textDisabled, letterSpacing: 0.2 },
-  selectButton: { minHeight: 36, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  selectButton: { minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },
   selectButtonText: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
   groupHeader: {
     flexDirection: 'row',
@@ -445,7 +467,8 @@ const styles = StyleSheet.create({
   loadingLineWide: { width: '54%', height: 13, borderRadius: 4, backgroundColor: colors.surfaceRaised },
   loadingLine: { width: '78%', height: 10, borderRadius: 4, backgroundColor: colors.surface },
   loadingLineShort: { width: '42%', height: 10, borderRadius: 4, backgroundColor: colors.surface },
-  empty: { color: colors.textDisabled, textAlign: 'center', marginTop: 40, lineHeight: 20 },
+  staleError: { marginTop: 4, marginBottom: 16 },
+  emptyState: { marginTop: 20 },
   error: { color: colors.danger, textAlign: 'center', marginTop: 40, lineHeight: 20 },
   loadingMore: { paddingVertical: 20 },
   batchBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 96, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10 },

@@ -76,23 +76,24 @@ export const typography = {
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700',
-    letterSpacing: -0.2,
+    letterSpacing: 0,
   },
   screenTitle: {
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700',
-    letterSpacing: -0.5,
+    letterSpacing: 0,
   },
   metric: {
     fontSize: 48,
     lineHeight: 54,
     fontWeight: '650',
-    letterSpacing: -1.6,
+    letterSpacing: 0,
   },
 };
 
 export const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
+export const minTapTarget = 44;
 
 export const categoryTints = [
   '#8587e8',

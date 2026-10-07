@@ -56,6 +56,59 @@ function fieldProvenance(expense = {}, gmailReviewHint = {}) {
   return fields.slice(0, 4);
 }
 
+function confidencePresentation(expense = {}) {
+  const hint = expense?.gmail_review_hint || {};
+  const reviewFields = Array.isArray(expense?.review_fields)
+    ? expense.review_fields.filter(Boolean)
+    : (Array.isArray(hint?.likely_changed_fields) ? hint.likely_changed_fields.filter(Boolean) : []);
+  const source = `${expense?.source || ''}`;
+
+  if (expense?.review_source === 'gmail' || source === 'email') {
+    if (hint?.review_mode === 'quick_check') {
+      return {
+        label: 'Quick verification',
+        detail: hint?.automation_recommendation?.reason || 'The import looks consistent. Confirm the core details before approving.',
+        icon: 'mail-outline',
+        tone: 'info',
+      };
+    }
+    return {
+      label: reviewFields.length ? 'Needs review' : 'Imported from email',
+      detail: reviewFields.length
+        ? `Check ${reviewFields.slice(0, 3).map((field) => `${field}`.replace('_id', '').replace(/_/g, ' ')).join(', ')} before approving.`
+        : 'Review the imported details before this expense enters your history.',
+      icon: 'mail-outline',
+      tone: reviewFields.length ? 'warning' : 'info',
+    };
+  }
+
+  if (source === 'camera') {
+    return {
+      label: reviewFields.length ? 'Check extracted fields' : 'Receipt read complete',
+      detail: reviewFields.length
+        ? `Adlo read the receipt. Verify ${reviewFields.slice(0, 3).join(', ')} before saving.`
+        : 'Adlo filled these details from the receipt. You remain in control of what is saved.',
+      icon: 'scan-outline',
+      tone: reviewFields.length ? 'warning' : 'info',
+    };
+  }
+
+  if (reviewFields.length) {
+    return {
+      label: 'Review parsed details',
+      detail: `Adlo interpreted your entry. Verify ${reviewFields.slice(0, 3).join(', ')} before saving.`,
+      icon: 'create-outline',
+      tone: 'warning',
+    };
+  }
+  return {
+    label: 'Entered by you',
+    detail: 'These details are saved as entered; suggestions stay editable.',
+    icon: 'create-outline',
+    tone: 'info',
+  };
+}
+
 function reviewReasonSummary(item = {}) {
   const hint = item?.gmail_review_hint || {};
   if (hint?.automation_recommendation?.reason) return hint.automation_recommendation.reason;
@@ -87,6 +140,7 @@ function locationStatusPresentation(location = {}) {
 
 module.exports = {
   fieldProvenance,
+  confidencePresentation,
   locationStatusPresentation,
   reviewReasonSummary,
   sourcePresentation,

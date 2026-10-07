@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48, gap: 16 },
   hero: { gap: 6 },
-  title: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: -0.8 },
+  title: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: 0 },
   subtitle: { fontSize: 15, color: colors.textMuted, lineHeight: 22 },
   successBanner: {
     backgroundColor: colors.successMuted,
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
   preferenceNote: { color: colors.info, fontSize: 12, lineHeight: 17, marginTop: 3 },
   scopeSection: { gap: 12 },
   scopeHeader: { gap: 4 },
-  scopeTitle: { color: colors.text, fontSize: 20, fontWeight: '600', letterSpacing: -0.4 },
+  scopeTitle: { color: colors.text, fontSize: 20, fontWeight: '600', letterSpacing: 0 },
   scopeSubtitle: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
   section: { gap: 10 },
   sectionLabel: {
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
   change: { color: colors.info, fontSize: 13, fontWeight: '700', marginTop: 10 },
   why: { color: colors.text, fontSize: 13, lineHeight: 18, marginTop: 3 },
   status: { color: colors.textMuted, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
-  amount: { color: colors.text, fontSize: 22, fontWeight: '600', letterSpacing: -0.4 },
+  amount: { color: colors.text, fontSize: 22, fontWeight: '600', letterSpacing: 0 },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   primaryAction: {
     borderRadius: 999,

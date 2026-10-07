@@ -217,6 +217,8 @@ export function ReviewQueueItem({
         }
       }}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={hasDuplicateFlags ? `Compare ${rowTitle}` : `Approve ${rowTitle}`}
     >
       <Ionicons name={hasDuplicateFlags ? 'git-compare-outline' : 'checkmark'} size={isPreview ? 16 : 20} color={colors.text} />
       <Text style={styles.actionLabel}>{hasDuplicateFlags ? 'Compare' : isPreview ? 'Approve' : mode.approveLabel}</Text>
@@ -230,6 +232,8 @@ export function ReviewQueueItem({
         if (!disabled) onDismiss(item.id);
       }}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`Dismiss ${rowTitle}`}
     >
       <Ionicons name="trash-outline" size={isPreview ? 16 : 20} color={colors.text} />
       <Text style={styles.actionLabel}>Dismiss</Text>
@@ -254,6 +258,10 @@ export function ReviewQueueItem({
           }}
           activeOpacity={0.85}
           disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={selectionMode ? `${selected ? 'Deselect' : 'Select'} ${rowTitle}` : `Review ${rowTitle}, $${Number(item.amount).toFixed(2)}`}
+          accessibilityHint={selectionMode ? undefined : guidance}
+          accessibilityState={{ disabled, selected: selectionMode ? selected : undefined }}
         >
           {selectionMode ? (
             <View style={[styles.selectionControl, selected && styles.selectionControlSelected]}>
@@ -294,6 +302,9 @@ export function ReviewQueueItem({
                 }}
                 activeOpacity={0.82}
                 disabled={disabled}
+                accessibilityRole="button"
+                accessibilityLabel={`${ctaLabel} ${rowTitle}`}
+                accessibilityHint={quickCheck ? 'Approves this import without opening the full expense.' : guidance}
               >
                 <Text style={styles.confirmChipText}>{ctaLabel}</Text>
               </TouchableOpacity>
@@ -319,6 +330,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingVertical: 14, paddingHorizontal: 4,
     borderBottomWidth: 1, borderBottomColor: colors.surface,
+    minHeight: 96,
   },
   rowMain: { flex: 1, minWidth: 0, marginRight: 12 },
   selectionControl: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
@@ -373,7 +385,9 @@ const styles = StyleSheet.create({
     borderColor: colors.infoBorder,
     backgroundColor: colors.infoMuted,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
   confirmChipText: { fontSize: 11, fontWeight: '700', color: colors.info },
   previewRow: {

@@ -2,7 +2,7 @@ import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-rout
 import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -109,6 +109,7 @@ function AppNavigator() {
   const rootNavigationState = useRootNavigationState();
   const [bootstrapped, setBootstrapped] = useState(false);
   const [authLinkReady, setAuthLinkReady] = useState(false);
+  const [showBootStatus, setShowBootStatus] = useState(false);
   const pathnameRef = useRef(pathname);
   const initialSessionPromiseRef = useRef(null);
   const initialUserCachePromiseRef = useRef(null);
@@ -122,6 +123,14 @@ function AppNavigator() {
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
+  useEffect(() => {
+    if (bootstrapped) {
+      setShowBootStatus(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setShowBootStatus(true), 900);
+    return () => clearTimeout(timer);
+  }, [bootstrapped]);
   const pendingNotificationResponseRef = useRef(null);
   const hasOnboardingRoute = rootNavigationState?.routeNames?.includes('onboarding') === true;
 
@@ -522,7 +531,16 @@ function AppNavigator() {
   }, [bootstrapped]);
 
   if (!bootstrapped) {
-    return <View style={styles.bootContainer} />;
+    return (
+      <View style={styles.bootContainer} accessibilityLabel={showBootStatus ? 'Finishing setup' : 'Opening app'}>
+        {showBootStatus ? (
+          <View style={styles.bootStatus}>
+            <ActivityIndicator color={colors.textMuted} size="small" />
+            <Text style={styles.bootStatusText}>Finishing setup</Text>
+          </View>
+        ) : null}
+      </View>
+    );
   }
 
   return (
@@ -605,7 +623,11 @@ const styles = StyleSheet.create({
   bootContainer: {
     flex: 1,
     backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  bootStatus: { alignItems: 'center', gap: 10 },
+  bootStatusText: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',

@@ -4,6 +4,7 @@ const {
   sanitizeExpenseCollection,
   sanitizeExpenseSnapshot,
   sanitizeInsightSnapshot,
+  sanitizePendingReviewHint,
 } = require('../services/storageSanitizers');
 
 function run() {
@@ -71,6 +72,24 @@ function run() {
     onboarding_complete: true,
   });
   assert.strictEqual(sanitizedUser.email, undefined, 'current user cache should drop email');
+
+  assert.deepStrictEqual(
+    sanitizePendingReviewHint({
+      review_mode: 'quick_check',
+      likely_changed_fields: ['amount'],
+      from_address: 'private@example.com',
+      message_subject: 'Private receipt subject',
+      automation_recommendation: { label: 'Looks ready', reason: 'Amount matches the receipt', internal_score: 0.94 },
+      imported_at: '2026-10-07T12:00:00.000Z',
+    }),
+    {
+      review_mode: 'quick_check',
+      likely_changed_fields: ['amount'],
+      automation_recommendation: { label: 'Looks ready', reason: 'Amount matches the receipt' },
+      imported_at: '2026-10-07T12:00:00.000Z',
+    },
+    'pending cache should retain review guidance without storing sender or message content'
+  );
 
   const collection = sanitizeExpenseCollection([
     { id: 'expense-2', merchant: 'Coffee', amount: 4.5 },

@@ -14,7 +14,7 @@ import {
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 const { normalizeDisplayText } = require('../services/text');
 
-const INSIGHT_CARD_MIN_HEIGHT = 228;
+const INSIGHT_CARD_MIN_HEIGHT = 252;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
 const INSIGHT_SUMMARY_BODY_LINES = 2;
 
@@ -189,7 +189,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
     }))
     .filter((row) => row.label && row.value)
     .filter((row) => !showPrimaryMetric || normalizeMetricText(row.value) !== normalizeMetricText(primaryMetric?.value))
-    .slice(0, 1), [insight, primaryMetric, showPrimaryMetric]);
+    .slice(0, 2), [insight, primaryMetric, showPrimaryMetric]);
 
   return (
     <View
@@ -254,7 +254,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         ) : null}
         {evidenceRows.length > 0 ? (
           <View style={styles.evidenceBlock}>
-            <Text style={styles.evidenceEyebrow}>Key context</Text>
+            <Text style={styles.evidenceEyebrow}>Based on your activity</Text>
             <View style={styles.evidenceRows}>
               {evidenceRows.map((row) => (
                 <View key={`${row.label}:${row.value}`} style={styles.evidenceRow}>
@@ -271,13 +271,16 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         activeOpacity={0.76}
         accessibilityRole="button"
         accessibilityLabel={`${actionLabel}: ${actionReason}`}
+        accessibilityHint="Opens the recommended next step"
+        accessibilityState={{ disabled }}
+        disabled={disabled}
         onPress={() => {
           if (onAction) onAction(insight, actionDescriptor);
           else onPress?.(insight);
         }}
       >
         <View style={styles.insightActionCopy}>
-          <Text style={styles.insightActionEyebrow}>{actionDescriptor.kind === 'action' ? 'Take action' : 'Explore'}</Text>
+          <Text style={styles.insightActionEyebrow}>Recommended next step</Text>
           <Text style={styles.insightActionLabel} numberOfLines={1}>{actionLabel}</Text>
           {actionReason ? <Text style={styles.insightActionReason} numberOfLines={1}>{actionReason}</Text> : null}
         </View>
@@ -404,6 +407,7 @@ const styles = StyleSheet.create({
   evidenceValue: { color: colors.text, fontSize: 12, fontWeight: '700', textAlign: 'right', flexShrink: 1 },
   insightFooter: {
     marginTop: 12,
+    minHeight: 52,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -414,16 +418,16 @@ const styles = StyleSheet.create({
   insightActionLabel: { fontSize: 13, color: colors.text, fontWeight: '700' },
   insightActionReason: { fontSize: 11, color: colors.textSubtle },
   insightCTA: {
-    width: 26,
-    height: 26,
+    width: 44,
+    height: 44,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfacePressed,
   },
   dismissButton: {
-    width: 28,
-    height: 28,
+    width: 44,
+    height: 44,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',

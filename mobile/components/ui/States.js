@@ -11,7 +11,7 @@ export function SectionHeader({ eyebrow, title, body, actionLabel, onAction, sty
         {body ? <Text style={styles.sectionBody}>{body}</Text> : null}
       </View>
       {actionLabel && onAction ? (
-        <TouchableOpacity onPress={onAction} activeOpacity={0.78} accessibilityRole="button" accessibilityLabel={actionLabel}>
+        <TouchableOpacity style={styles.inlineActionButton} onPress={onAction} activeOpacity={0.78} accessibilityRole="button" accessibilityLabel={actionLabel}>
           <Text style={styles.inlineAction}>{actionLabel}</Text>
         </TouchableOpacity>
       ) : null}
@@ -91,6 +91,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: colors.textSubtle, ...typography.eyebrow },
   sectionTitle: { color: colors.text, fontSize: 17, lineHeight: 22, fontWeight: '750' },
   sectionBody: { color: colors.textMuted, ...typography.bodySmall },
+  inlineActionButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
   inlineAction: { color: colors.info, fontSize: 13, fontWeight: '750' },
   empty: {
     borderRadius: radius.md,
@@ -121,7 +122,7 @@ const styles = StyleSheet.create({
   stateCopy: { flex: 1, gap: 4 },
   stateTitle: { color: colors.text, fontSize: 14, fontWeight: '750', lineHeight: 19 },
   stateBody: { color: colors.textMuted, ...typography.bodySmall },
-  stateAction: { alignSelf: 'flex-start', marginTop: spacing.xs },
+  stateAction: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', marginTop: spacing.xs, paddingRight: spacing.md },
   stateActionText: { color: colors.info, fontSize: 13, fontWeight: '750' },
   error: {
     borderRadius: radius.md,
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: { color: colors.text, fontSize: 14, fontWeight: '750' },
   errorBody: { color: colors.danger, ...typography.bodySmall },
-  errorAction: { alignSelf: 'flex-start', marginTop: spacing.xs },
+  errorAction: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', marginTop: spacing.xs, paddingRight: spacing.md },
   errorActionText: { color: colors.danger, fontSize: 13, fontWeight: '750' },
   loading: {
     borderRadius: radius.md,

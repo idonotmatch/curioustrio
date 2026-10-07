@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { LocationPicker } from '../components/LocationPicker';
 import { SmartSuggestionCard } from '../components/SmartSuggestionCard';
+import { ProvenanceSummary } from '../components/ProvenanceSummary';
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
@@ -334,6 +335,8 @@ export default function ManualAddScreen() {
             </TouchableOpacity>
           </View>
 
+          <ProvenanceSummary expense={{ source: 'manual' }} compact style={styles.provenanceBanner} />
+
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Core details</Text>
 
@@ -441,6 +444,9 @@ export default function ManualAddScreen() {
               else setItemsOpen((value) => !value);
             }}
             activeOpacity={0.82}
+            accessibilityRole="button"
+            accessibilityLabel={itemsOpen ? 'Hide item breakdown' : 'Add or review item breakdown'}
+            accessibilityState={{ expanded: itemsOpen }}
           >
             <View style={styles.expandCopy}>
               <Text style={styles.expandTitle}>{items.length > 0 ? `Items (${items.length})` : 'Add items'}</Text>
@@ -453,7 +459,7 @@ export default function ManualAddScreen() {
             <View style={styles.card}>
               <View style={styles.itemSectionHeader}>
                 <Text style={styles.sectionTitle}>Item breakdown</Text>
-                <TouchableOpacity style={styles.addItemButton} onPress={addItem} accessibilityLabel="Add item">
+                <TouchableOpacity style={styles.addItemButton} onPress={addItem} accessibilityRole="button" accessibilityLabel="Add item">
                   <Ionicons name="add" size={18} color={colors.text} />
                 </TouchableOpacity>
               </View>
@@ -472,6 +478,7 @@ export default function ManualAddScreen() {
                       style={styles.removeItemButton}
                       onPress={() => removeItem(index)}
                       accessibilityLabel="Remove item"
+                      accessibilityRole="button"
                     >
                       <Ionicons name="trash-outline" size={17} color={colors.textMuted} />
                     </TouchableOpacity>
@@ -528,10 +535,13 @@ export default function ManualAddScreen() {
             style={styles.expandToggle}
             onPress={() => setAdvancedOpen((value) => !value)}
             activeOpacity={0.82}
+            accessibilityRole="button"
+            accessibilityLabel={advancedOpen ? 'Hide optional details' : 'Show optional details'}
+            accessibilityState={{ expanded: advancedOpen }}
           >
             <View style={styles.expandCopy}>
               <Text style={styles.expandTitle}>More detail</Text>
-              <Text style={styles.expandBody}>Payment, privacy, track-only, notes, and location.</Text>
+              <Text style={styles.expandBody}>Payment, privacy, track-only, and notes.</Text>
             </View>
             <Ionicons name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSubtle} />
           </TouchableOpacity>
@@ -550,6 +560,8 @@ export default function ManualAddScreen() {
                         key={option.value}
                         style={[styles.segmentChip, active && styles.segmentChipActive]}
                         onPress={() => setPaymentMethod(option.value)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
                       >
                         <Text style={[styles.segmentChipText, active && styles.segmentChipTextActive]}>{option.label}</Text>
                       </TouchableOpacity>
@@ -645,6 +657,9 @@ export default function ManualAddScreen() {
               onPress={handleSave}
               disabled={!canSave}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Save expense"
+              accessibilityState={{ disabled: !canSave, busy: saving }}
             >
               {saving ? (
                 <ActivityIndicator color={colors.textInverse} size="small" />
@@ -670,7 +685,7 @@ export default function ManualAddScreen() {
                 <Text style={styles.categoryModalEyebrow}>Category</Text>
                 <Text style={styles.categoryModalTitle}>Pick the closest fit</Text>
               </View>
-              <TouchableOpacity style={styles.categoryModalClose} onPress={closeCategoryPicker}>
+              <TouchableOpacity style={styles.categoryModalClose} onPress={closeCategoryPicker} accessibilityRole="button" accessibilityLabel="Close category picker">
                 <Ionicons name="close" size={18} color={colors.text} />
               </TouchableOpacity>
             </View>
@@ -823,7 +838,7 @@ const styles = StyleSheet.create({
   itemBlock: { gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
   itemDescriptionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   itemDescriptionInput: { flex: 1 },
-  removeItemButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  removeItemButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   itemMetricsRow: { flexDirection: 'row', gap: 8 },
   itemMetricField: { flex: 1, gap: 5, minWidth: 0 },
   itemMetricLabel: { color: colors.textSubtle, fontSize: 11, fontWeight: '600' },
@@ -900,6 +915,8 @@ const styles = StyleSheet.create({
   selectorButtonText: { color: colors.text, fontSize: 15, flex: 1 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
@@ -931,6 +948,8 @@ const styles = StyleSheet.create({
   expandBody: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   segmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   segmentChip: {
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1056,4 +1075,5 @@ const styles = StyleSheet.create({
   categoryEmptyText: { color: colors.textSubtle, fontSize: 13, lineHeight: 18 },
   categoryLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   categoryLoadingText: { color: colors.textMuted, fontSize: 13 },
+  provenanceBanner: { marginBottom: 12 },
 });

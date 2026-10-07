@@ -7,6 +7,7 @@ import { api } from '../services/api';
 import { queueConfirmedExpenseClientWork } from '../services/confirmClientWork';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { LocationPicker } from '../components/LocationPicker';
+import { ProvenanceSummary } from '../components/ProvenanceSummary';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
@@ -124,7 +125,6 @@ export default function ConfirmScreen() {
   const effectiveReviewFields = reviewFields.filter(
     (field) => field !== 'items' || itemReviewPresentation
   );
-  const hasReviewHint = effectiveReviewFields.length > 0;
 
   useEffect(() => {
     setExpense(parsed);
@@ -543,14 +543,15 @@ export default function ConfirmScreen() {
           </Text>
         </View>
       ) : null}
-      {hasReviewHint ? (
-        <View style={styles.reviewBanner}>
-          <Text style={styles.reviewBannerTitle}>Review before saving</Text>
-          <Text style={styles.reviewBannerText}>
-            Double-check {effectiveReviewFields.join(', ')}.
-          </Text>
-        </View>
-      ) : null}
+      <ProvenanceSummary
+        expense={{
+          ...expense,
+          source: parsed?.source || expense?.source || 'manual',
+          review_fields: effectiveReviewFields,
+        }}
+        compact
+        style={styles.provenanceBanner}
+      />
       {/* Merchant / Description — editable */}
       <View style={styles.editableGroup}>
         <View style={styles.editableRow}>
@@ -561,6 +562,10 @@ export default function ConfirmScreen() {
             onChangeText={merchant.trim() ? setMerchant : setDescription}
             placeholder={merchant.trim() ? 'Merchant name' : 'What was this for?'}
             placeholderTextColor={colors.textDisabled}
+            autoCorrect
+            spellCheck
+            autoCapitalize="words"
+            accessibilityLabel={merchant.trim() ? 'Merchant' : 'Expense details'}
           />
         </View>
       </View>
@@ -579,6 +584,9 @@ export default function ConfirmScreen() {
                 onChangeText={setDescription}
                 placeholder="Description"
                 placeholderTextColor={colors.textDisabled}
+                autoCorrect
+                spellCheck
+                accessibilityLabel="Description"
               />
             </View>
           </View>
@@ -604,6 +612,7 @@ export default function ConfirmScreen() {
             keyboardType="decimal-pad"
             placeholder="0.00"
             placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="Amount"
           />
         </View>
         {reviewNote('amount', 'Amount may need a quick check.')}
@@ -622,7 +631,7 @@ export default function ConfirmScreen() {
               style={styles.confirmDatePicker}
             />
           ) : (
-            <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
+            <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)} accessibilityRole="button" accessibilityLabel={`Expense date ${expense.date || 'not selected'}`}>
               <Text style={styles.dateButtonText}>{expense.date || 'Select date'}</Text>
             </TouchableOpacity>
           )}
@@ -644,6 +653,9 @@ export default function ConfirmScreen() {
         <TouchableOpacity
           style={styles.categoryRow}
           onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+          accessibilityRole="button"
+          accessibilityLabel={`Category ${expense.category_name || 'Unassigned'}`}
+          accessibilityState={{ expanded: showCategoryPicker }}
         >
           <Text style={styles.categoryLabel}>CATEGORY</Text>
           <View style={styles.categoryRight}>
@@ -763,7 +775,7 @@ export default function ConfirmScreen() {
                   value={item.description}
                   onChangeText={v => handleItemChange(i, 'description', v)}
                 />
-                <TouchableOpacity onPress={() => handleRemoveItem(i)} style={styles.removeItemBtn}>
+                <TouchableOpacity onPress={() => handleRemoveItem(i)} style={styles.removeItemBtn} accessibilityRole="button" accessibilityLabel={`Remove ${item.description || `item ${i + 1}`}`}>
                   <Text style={styles.removeItemText}>×</Text>
                 </TouchableOpacity>
               </View>
@@ -961,13 +973,16 @@ export default function ConfirmScreen() {
       )}
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.discard} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.discard} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Discard expense">
           <Text style={styles.discardText}>discard</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.confirm, saving && styles.confirmDisabled]}
           onPress={handleConfirm}
           disabled={saving}
+          accessibilityRole="button"
+          accessibilityLabel="Confirm expense"
+          accessibilityState={{ disabled: saving, busy: saving }}
         >
           <Text style={styles.confirmText}>{saving ? 'saving...' : 'confirm'}</Text>
         </TouchableOpacity>
@@ -990,17 +1005,7 @@ const styles = StyleSheet.create({
   },
   watchBannerTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginBottom: 2 },
   watchBannerBody: { color: colors.text, fontSize: 12, lineHeight: 17 },
-  reviewBanner: {
-    backgroundColor: colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  reviewBannerTitle: { color: colors.text, fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  reviewBannerText: { color: colors.textSubtle, fontSize: 12 },
+  provenanceBanner: { marginBottom: 12 },
   editableGroup: { marginBottom: 8 },
   confidenceNoteRow: {
     flexDirection: 'row',
@@ -1053,7 +1058,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   confirmDatePicker: { marginRight: -2 },
-  dateButton: { flex: 1, alignItems: 'flex-end', paddingHorizontal: 6, paddingVertical: 4, minHeight: 28, justifyContent: 'center' },
+  dateButton: { flex: 1, alignItems: 'flex-end', paddingHorizontal: 6, paddingVertical: 8, minHeight: 44, justifyContent: 'center' },
   dateButtonText: { color: colors.text, fontSize: 15, textAlign: 'right' },
 
   categoryRow: {
@@ -1074,7 +1079,7 @@ const styles = StyleSheet.create({
   catSuggestionRow: { minHeight: 18, justifyContent: 'center' },
   catSuggestionText: { color: colors.textDisabled, fontSize: 12 },
   catChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  catChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.borderSubtle, borderWidth: 1, borderColor: colors.borderStrong },
+  catChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: colors.borderSubtle, borderWidth: 1, borderColor: colors.borderStrong },
   catChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
   catChipText: { fontSize: 14, color: colors.textSubtle },
   catChipTextActive: { color: colors.textInverse, fontWeight: '600' },
@@ -1151,7 +1156,7 @@ const styles = StyleSheet.create({
   itemMetricFieldWide: { flex: 1.3, minWidth: 0 },
   itemMetricLabel: { color: colors.textSubtle, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
   itemMetricInput: { backgroundColor: colors.surface, borderRadius: 6, padding: 8, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
-  removeItemBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  removeItemBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   removeItemText: { color: colors.textSubtle, fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingVertical: 6 },
   addItemText: { color: colors.textSubtle, fontSize: 14 },

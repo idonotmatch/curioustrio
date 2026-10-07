@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   fieldProvenance,
+  confidencePresentation,
   locationStatusPresentation,
   reviewReasonSummary,
   sourcePresentation,
@@ -8,6 +9,8 @@ const {
 
 assert.strictEqual(sourcePresentation({ source: 'email', review_source: 'gmail' }).label, 'Gmail import');
 assert.strictEqual(sourcePresentation({ source: 'camera' }).label, 'Receipt scan');
+assert.strictEqual(confidencePresentation({ source: 'camera', review_fields: ['amount'] }).label, 'Check extracted fields');
+assert.strictEqual(confidencePresentation({ source: 'manual' }).label, 'Entered by you');
 assert.strictEqual(
   reviewReasonSummary({ gmail_review_hint: { likely_changed_fields: ['amount', 'category_id'] } }),
   'Double-check amount and category before approving.'

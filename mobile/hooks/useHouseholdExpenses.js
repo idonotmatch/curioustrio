@@ -30,7 +30,7 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
     ].filter(Boolean).join('&');
     const pageParams = [params, 'paginated=1', 'limit=25'].filter(Boolean).join('&');
     const url = `/expenses/household?${pageParams}`;
-    return loadWithCache(
+    const result = await loadWithCache(
       `cache:household-expenses:v2:${month || 'all'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => {
@@ -48,6 +48,10 @@ export function useHouseholdExpenses(month, startDayOverride, { enabled = true }
       },
       { forceRefresh: options?.forceRefresh === true },
     );
+    if (requestVersion === requestVersionRef.current && !result?.refreshSucceeded && result?.source === 'cache') {
+      setError('Could not refresh the latest household transactions.');
+    }
+    return result;
   }, [enabled, month, startDayOverride]);
 
   const loadMore = useCallback(async () => {

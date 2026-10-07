@@ -30,6 +30,9 @@ export function ExpenseItemsSection({
         style={[styles.itemsHeader, activeReviewField === 'items' && styles.itemsHeaderActive]}
         onPress={() => setItemsExpanded((value) => !value)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : 'Items'}
+        accessibilityState={{ expanded: itemsExpanded }}
       >
         <Text style={[styles.itemsHeaderText, activeReviewField === 'items' && styles.itemsHeaderTextActive]}>
           {items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : 'Items'}
@@ -56,6 +59,8 @@ export function ExpenseItemsSection({
                     <TouchableOpacity
                       onPress={() => setItemsEdits((current) => current.filter((_, entryIndex) => entryIndex !== index))}
                       style={styles.itemRemoveBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${item.description || `item ${index + 1}`}`}
                     >
                       <Text style={styles.itemRemoveText}>×</Text>
                     </TouchableOpacity>
@@ -112,6 +117,8 @@ export function ExpenseItemsSection({
                   unit_price: '',
                 })])}
                 style={styles.addItemRow}
+                accessibilityRole="button"
+                accessibilityLabel="Add item"
               >
                 <Text style={styles.addItemText}>+ Add item</Text>
               </TouchableOpacity>

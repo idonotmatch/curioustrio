@@ -795,8 +795,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  heroTitle: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: -0.8 },
-  resultTitle: { fontSize: 28, color: colors.text, fontWeight: '600', letterSpacing: -0.6, lineHeight: 34 },
+  heroTitle: { fontSize: 30, color: colors.text, fontWeight: '600', letterSpacing: 0 },
+  resultTitle: { fontSize: 28, color: colors.text, fontWeight: '600', letterSpacing: 0, lineHeight: 34 },
   heroCopy: { fontSize: 15, color: colors.textMuted, lineHeight: 22 },
   seedCard: {
     marginTop: 8,
@@ -836,7 +836,7 @@ const styles = StyleSheet.create({
   recommendationLeadTitle: { fontSize: 20, color: colors.text, fontWeight: '700', lineHeight: 25 },
   recommendationLeadBody: { fontSize: 14, color: colors.text, lineHeight: 20 },
   recommendationLeadMeta: { fontSize: 12, color: colors.text, lineHeight: 17 },
-  recommendationLeadAmount: { fontSize: 24, color: colors.text, fontWeight: '700', letterSpacing: -0.6 },
+  recommendationLeadAmount: { fontSize: 24, color: colors.text, fontWeight: '700', letterSpacing: 0 },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -868,7 +868,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 19,
     fontWeight: '600',
-    letterSpacing: -0.3,
+    letterSpacing: 0,
     padding: 0,
   },
   inlineInputWrap: {

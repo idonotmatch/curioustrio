@@ -66,7 +66,7 @@ export function SecondaryButton({
   );
 }
 
-export function IconButton({ icon, onPress, label, disabled = false, size = 34, color = colors.text, style }) {
+export function IconButton({ icon, onPress, label, disabled = false, size = 44, color = colors.text, style }) {
   return (
     <TouchableOpacity
       style={[styles.iconButton, { width: size, height: size, borderRadius: size / 2 }, disabled && styles.disabled, style]}

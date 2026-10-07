@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, S
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { EmptyState, InlineError, LoadingState } from './ui/States';
 import { colors } from '../theme/tokens';
 const { importHistoryTitle, importHistoryReason, importRecoveryMessage } = require('../services/importRecoveryPresentation');
 const { decodeHtmlEntities } = require('../services/text');
@@ -119,7 +120,7 @@ export function SkippedImportsList({ onRecovered, isUsingMockData = false }) {
         data={entries}
         keyExtractor={(entry) => entry.id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={loading && !loadingMore} onRefresh={() => load()} tintColor={colors.text} />}
+        refreshControl={<RefreshControl refreshing={loading && !loadingMore && entries.length > 0} onRefresh={() => load()} tintColor={colors.text} />}
         renderItem={({ item }) => (
           <Pressable accessibilityRole="button" accessibilityLabel={`View email: ${importHistoryTitle(item)}`}
             onPress={() => openEntry(item)} style={styles.row}>
@@ -132,11 +133,22 @@ export function SkippedImportsList({ onRecovered, isUsingMockData = false }) {
             <Ionicons name="chevron-forward" size={18} color={colors.textSubtle} />
           </Pressable>
         )}
-        ListEmptyComponent={!loading && !error ? <Text style={styles.empty}>{isUsingMockData ? 'Import history is unavailable in preview mode.' : filter === 'potential' ? 'No potentially missed expenses in your retained import history.' : `No ${filter === 'failed' ? 'failed' : filter} emails in your retained import history.`}</Text> : null}
+        ListEmptyComponent={loading ? (
+          <LoadingState label="Loading import history" style={styles.stateBlock} />
+        ) : error ? (
+          <InlineError title="Could not load import history" body={error} actionLabel="Try again" onAction={() => load()} style={styles.stateBlock} />
+        ) : (
+          <EmptyState
+            icon="mail-open-outline"
+            title={filter === 'potential' ? 'No missed expenses found' : `No ${filter === 'failed' ? 'errors' : filter} to show`}
+            body={isUsingMockData ? 'Import history is unavailable in preview mode.' : filter === 'potential' ? 'Adlo did not find any potentially missed expenses in retained history.' : 'Try another import-history filter.'}
+            style={styles.stateBlock}
+          />
+        )}
         ListFooterComponent={(
           <View style={styles.footer}>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            {loading ? <ActivityIndicator color={colors.text} /> : (cursor || error) ? (
+            {entries.length > 0 && error ? <Text style={styles.error}>{error}</Text> : null}
+            {loadingMore ? <ActivityIndicator color={colors.text} /> : entries.length > 0 && (cursor || error) ? (
               <Pressable accessibilityRole="button" onPress={() => load(cursor)} style={styles.button}>
                 <Ionicons name={error ? 'refresh' : 'chevron-down'} size={18} color={colors.text} />
                 <Text style={styles.buttonText}>{error ? 'Try again' : 'Load more'}</Text>
@@ -202,6 +214,7 @@ const styles = StyleSheet.create({
   reason: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
   date: { color: colors.textSubtle, fontSize: 12 },
   empty: { color: colors.textSubtle, textAlign: 'center', paddingVertical: 40, lineHeight: 22 },
+  stateBlock: { marginTop: 20 },
   footer: { gap: 12, paddingVertical: 20, alignItems: 'center' },
   error: { color: colors.danger, fontSize: 14, lineHeight: 20 },
   button: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' },

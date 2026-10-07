@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     maxWidth: 540,
     alignSelf: 'center',
   },
-  title: { fontSize: 32, color: colors.text, fontWeight: '700', marginBottom: 8, letterSpacing: -0.4 },
+  title: { fontSize: 32, color: colors.text, fontWeight: '700', marginBottom: 8, letterSpacing: 0 },
   subtitle: { color: colors.textMuted, fontSize: 16, marginBottom: 32 },
   emailEntryArea: {
     marginTop: 18,

@@ -27,15 +27,15 @@ export function ExpenseDetailActions({
               Confidence: {flag.confidence} · {flag.status}
             </Text>
           ))}
-          <TouchableOpacity style={styles.dupReviewBtn} onPress={() => onReviewDuplicate?.(expense.duplicate_flags[0])}>
+          <TouchableOpacity style={styles.dupReviewBtn} onPress={() => onReviewDuplicate?.(expense.duplicate_flags[0])} accessibilityRole="button" accessibilityLabel="Compare possible duplicate expenses">
             <Text style={styles.dupReviewBtnText}>Compare expenses</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
       {editing && canEdit ? (
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save changes'}</Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving} accessibilityRole="button" accessibilityLabel="Save expense changes" accessibilityState={{ disabled: saving, busy: saving }}>
+          {saving ? <ActivityIndicator color={colors.textInverse} size="small" /> : <Text style={styles.saveBtnText}>Save changes</Text>}
         </TouchableOpacity>
       ) : null}
 
@@ -45,6 +45,9 @@ export function ExpenseDetailActions({
             style={[styles.approveBtn, actioning && { opacity: 0.5 }]}
             disabled={actioning}
             onPress={approvePendingExpense}
+            accessibilityRole="button"
+            accessibilityLabel={isItemsFirstReview ? 'Approve after item check' : isQuickCheckReview ? 'Approve after quick check' : 'Approve expense'}
+            accessibilityState={{ disabled: Boolean(actioning), busy: Boolean(actioning) }}
           >
             <Text style={styles.approveBtnText}>
               {isItemsFirstReview ? 'Approve after item check' : isQuickCheckReview ? 'Approve after quick check' : 'Approve'}
@@ -54,6 +57,9 @@ export function ExpenseDetailActions({
             style={[styles.dismissBtn, actioning && { opacity: 0.5 }]}
             disabled={actioning}
             onPress={openDismissReasonSheet}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss pending expense"
+            accessibilityState={{ disabled: Boolean(actioning), busy: Boolean(actioning) }}
           >
             <Text style={styles.dismissBtnText}>Dismiss</Text>
           </TouchableOpacity>
@@ -61,7 +67,7 @@ export function ExpenseDetailActions({
       ) : null}
 
       {canEdit ? (
-        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
+        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting} accessibilityRole="button" accessibilityLabel="Delete expense" accessibilityState={{ disabled: deleting, busy: deleting }}>
           {deleting
             ? <ActivityIndicator color={colors.danger} size="small" />
             : <Text style={styles.deleteBtnText}>Delete expense</Text>}

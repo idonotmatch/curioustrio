@@ -3,7 +3,7 @@ import {
   StyleSheet, ActivityIndicator, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useCategories } from '../../hooks/useCategories';
@@ -17,8 +17,9 @@ import { PendingExpenseReviewPanel } from '../../components/PendingExpenseReview
 import { ExpenseDetailActions } from '../../components/ExpenseDetailActions';
 import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
+import { ProvenanceSummary } from '../../components/ProvenanceSummary';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
-import { InlineError } from '../../components/ui/States';
+import { InlineError, SkeletonRow } from '../../components/ui/States';
 import { toLocalDateString } from '../../services/date';
 import { colors } from '../../theme/tokens';
 import {
@@ -36,7 +37,7 @@ import {
   itemSubmeta,
   summarizeItemSignals,
 } from '../../services/expenseDetailPresentation';
-import { fieldProvenance, sourcePresentation } from '../../services/provenancePresentation';
+import { sourcePresentation } from '../../services/provenancePresentation';
 import { formatMoneyInput, sanitizeMoneyInput } from '../../services/moneyInput';
 
 const TRACK_ONLY_REASONS = [
@@ -126,25 +127,7 @@ export default function ExpenseDetailScreen() {
     currentUserId,
     router,
   });
-  const [editDetailsReady, setEditDetailsReady] = useState(false);
   const itemSignals = summarizeItemSignals(items);
-
-  useEffect(() => {
-    if (!editing) {
-      setEditDetailsReady(false);
-      return undefined;
-    }
-    let active = true;
-    const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (active) setEditDetailsReady(true);
-      });
-    });
-    return () => {
-      active = false;
-      cancelAnimationFrame(frame);
-    };
-  }, [editing]);
 
   const reviewState = expense?.status === 'pending' && expense?.source === 'email';
   const gmailReviewHint = expense?.gmail_review_hint || null;
@@ -173,7 +156,15 @@ export default function ExpenseDetailScreen() {
     }
   }, [isPendingEmailReview, items, itemsExpanded, isItemsFirstReview]);
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color={colors.textDisabled} /></View>;
+  if (loading) {
+    return (
+      <View style={styles.detailLoading} accessibilityLabel="Loading expense details">
+        <SkeletonRow lines={2} style={styles.heroSkeleton} />
+        <SkeletonRow lines={3} />
+        <SkeletonRow lines={2} />
+      </View>
+    );
+  }
   if (!expense) {
     return (
       <View style={styles.loadFailure}>
@@ -197,7 +188,6 @@ export default function ExpenseDetailScreen() {
   const categoryLabel = expense.category_parent_name || expense.category_name || 'Uncategorized';
   const ownerLabel = expense.user_name || 'You';
   const sourceInfo = sourcePresentation(expense);
-  const provenanceFields = fieldProvenance(expense, gmailReviewHint);
   const categoryReasoning = expense.category_reasoning || null;
   const treatmentSuggestion = gmailReviewHint?.treatment_suggestion || null;
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
@@ -216,7 +206,9 @@ export default function ExpenseDetailScreen() {
   const priorityReviewFields = isPendingEmailReview
     ? buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel })
     : [];
-  const showSecondaryDetails = !isPendingEmailReview || secondaryDetailsExpanded;
+  const showSecondaryDetails = isPendingEmailReview
+    ? secondaryDetailsExpanded
+    : (!editing || secondaryDetailsExpanded);
   const displayIsPrivate = isPendingEmailReview ? isPrivate : (editing ? isPrivate : expense.is_private);
   const displayExcludeFromBudget = isPendingEmailReview ? excludeFromBudget : (editing ? excludeFromBudget : expense.exclude_from_budget);
   const itemReviewContext = Array.isArray(expense.item_review_context) ? expense.item_review_context : [];
@@ -251,16 +243,29 @@ export default function ExpenseDetailScreen() {
     <DismissKeyboardScrollView style={styles.container}>
       <Stack.Screen options={{
         title: expense.merchant,
-        headerRight: editing || !canEdit ? undefined : () => (
-          <TouchableOpacity
-            onPress={() => setEditing(true)}
-            style={styles.headerEditButton}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Edit expense"
-          >
-            <Ionicons name="pencil-outline" size={20} color={colors.text} />
-          </TouchableOpacity>
+        headerRight: !canEdit ? undefined : () => (
+          editing ? (
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={saving}
+              style={styles.headerSaveButton}
+              accessibilityRole="button"
+              accessibilityLabel="Save expense changes"
+              accessibilityState={{ disabled: saving, busy: saving }}
+            >
+              {saving ? <ActivityIndicator size="small" color={colors.info} /> : <Text style={styles.headerSaveText}>Save</Text>}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setEditing(true)}
+              style={styles.headerEditButton}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Edit expense"
+            >
+              <Ionicons name="pencil-outline" size={20} color={colors.text} />
+            </TouchableOpacity>
+          )
         ),
       }} />
 
@@ -321,14 +326,7 @@ export default function ExpenseDetailScreen() {
                 </View>
               ) : null}
             </View>
-            <View style={styles.provenanceSummary}>
-              <Text style={styles.provenanceSummaryTitle}>{sourceInfo.detail}</Text>
-              {provenanceFields.length ? (
-                <Text style={styles.provenanceSummaryMeta}>
-                  {provenanceFields.map((field) => `${field.label}: ${field.value}`).join(' · ')}
-                </Text>
-              ) : null}
-            </View>
+            <ProvenanceSummary expense={{ ...expense, gmail_review_hint: gmailReviewHint }} compact style={styles.provenanceSummary} />
           </>
         )}
       </View>
@@ -497,7 +495,7 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {editing && editDetailsReady && canEdit && !isPendingEmailReview ? (
+      {editing && canEdit && !isPendingEmailReview ? (
         <View style={styles.editDetailsCard}>
           <Text style={styles.editDetailsTitle}>Details</Text>
           <View style={activeReviewField === 'date' ? styles.reviewFieldWrapActive : null}>
@@ -517,7 +515,7 @@ export default function ExpenseDetailScreen() {
           </View>
           <View style={activeReviewField === 'category' ? styles.reviewFieldWrapActive : null}>
             <Row label="Category">
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 48 }}>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   {(categories || []).map(c => (
                     <TouchableOpacity
@@ -539,8 +537,8 @@ export default function ExpenseDetailScreen() {
       <View style={styles.section}>
 
         <Row label="Payment">
-          {editing && editDetailsReady ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36 }}>
+          {editing ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 48 }}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {['cash', 'debit', 'credit', 'unknown'].map(m => (
                   <TouchableOpacity
@@ -564,7 +562,7 @@ export default function ExpenseDetailScreen() {
           )}
         </Row>
 
-        {editing && editDetailsReady && (paymentMethod === 'debit' || paymentMethod === 'credit') && (
+        {editing && (paymentMethod === 'debit' || paymentMethod === 'credit') && (
           <Row label="Card">
             <View style={{ flexDirection: 'row', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
               <TextInput
@@ -603,9 +601,25 @@ export default function ExpenseDetailScreen() {
         ) : null}
       </View>
 
-      {showSecondaryDetails && ((editing && editDetailsReady && canEdit) || locationData || expense.place_name || expense.address) ? (
+      {editing && canEdit && !isPendingEmailReview ? (
+        <TouchableOpacity
+          style={styles.moreDetailsToggle}
+          onPress={() => setSecondaryDetailsExpanded((value) => !value)}
+          accessibilityRole="button"
+          accessibilityLabel={secondaryDetailsExpanded ? 'Hide optional expense details' : 'Show optional expense details'}
+          accessibilityState={{ expanded: secondaryDetailsExpanded }}
+        >
+          <View style={styles.moreDetailsCopy}>
+            <Text style={styles.moreDetailsTitle}>Optional details</Text>
+            <Text style={styles.moreDetailsBody}>Location, notes, and recurring settings</Text>
+          </View>
+          <Ionicons name={secondaryDetailsExpanded ? 'chevron-up' : 'chevron-down'} size={17} color={colors.textMuted} />
+        </TouchableOpacity>
+      ) : null}
+
+      {showSecondaryDetails && ((editing && canEdit) || locationData || expense.place_name || expense.address) ? (
         <View style={styles.locationSection}>
-          {editing && editDetailsReady && canEdit ? (
+          {editing && canEdit ? (
             <LocationPicker
               onLocation={setLocationData}
               locationData={locationData}
@@ -637,10 +651,10 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
-      {showSecondaryDetails && ((editing && editDetailsReady && canEdit) || expense.notes) && (
+      {showSecondaryDetails && ((editing && canEdit) || expense.notes) && (
         <View style={styles.noteCard}>
           <Text style={styles.noteCardLabel}>Notes</Text>
-          {editing && editDetailsReady && canEdit ? (
+          {editing && canEdit ? (
             <TextInput
               style={styles.noteInput}
               value={notes}
@@ -661,7 +675,7 @@ export default function ExpenseDetailScreen() {
         itemsExpanded={itemsExpanded}
         setItemsExpanded={setItemsExpanded}
         activeReviewField={activeReviewField}
-        editing={editing && editDetailsReady}
+        editing={editing}
         canEdit={canEdit}
         itemsEdits={itemsEdits}
         setItemsEdits={setItemsEdits}
@@ -729,13 +743,17 @@ function Row({ label, children }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  detailLoading: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20, paddingTop: 24, gap: 12 },
+  heroSkeleton: { minHeight: 130, justifyContent: 'center' },
   loadFailure: { flex: 1, backgroundColor: colors.background, justifyContent: 'center', padding: 20 },
   muted: { color: colors.textDisabled },
   headerEditButton: { width: 44, height: 44, marginRight: -8, alignItems: 'center', justifyContent: 'center' },
+  headerSaveButton: { minWidth: 52, height: 44, marginRight: -8, alignItems: 'center', justifyContent: 'center' },
+  headerSaveText: { color: colors.info, fontSize: 14, fontWeight: '700' },
 
   hero: { padding: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: colors.surface },
-  merchant: { fontSize: 20, color: colors.text, fontWeight: '600', letterSpacing: -0.3 },
-  amount: { fontSize: 36, color: colors.text, fontWeight: '600', marginTop: 4, letterSpacing: -1 },
+  merchant: { fontSize: 20, color: colors.text, fontWeight: '600', letterSpacing: 0 },
+  amount: { fontSize: 36, color: colors.text, fontWeight: '600', marginTop: 4, letterSpacing: 0 },
   amountRefund: { color: colors.success },
   heroMetaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   heroMetaChip: {
@@ -754,13 +772,29 @@ const styles = StyleSheet.create({
     marginTop: 12,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.textInverse,
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  provenanceSummaryTitle: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
-  provenanceSummaryMeta: { color: colors.textDisabled, fontSize: 11, lineHeight: 16, marginTop: 4 },
+  moreDetailsToggle: {
+    minHeight: 56,
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  moreDetailsCopy: { flex: 1, minWidth: 0 },
+  moreDetailsTitle: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  moreDetailsBody: { color: colors.textSubtle, fontSize: 11, lineHeight: 16, marginTop: 2 },
   reviewBanner: {
     marginHorizontal: 20,
     marginTop: 16,
@@ -880,7 +914,7 @@ const styles = StyleSheet.create({
     marginBottom: -4,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.textInverse,
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -959,7 +993,7 @@ const styles = StyleSheet.create({
   },
   inlineEditCategoryScroller: {
     marginTop: 2,
-    maxHeight: 36,
+    maxHeight: 48,
   },
   inlineEditCategoryRow: {
     flexDirection: 'row',
@@ -1224,13 +1258,13 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  catChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.textInverse },
+  catChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   catChipActive: { backgroundColor: colors.text, borderColor: colors.text },
   catChipText: { fontSize: 12, color: colors.textDisabled },
   catChipTextActive: { color: colors.textInverse, fontWeight: '600' },
 
   locationSection: { marginHorizontal: 20, marginTop: 4 },
-  locationCard: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.textInverse },
+  locationCard: { minHeight: 52, flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 4, padding: 14, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
   locationInfo: { flex: 1 },
   locationName: { color: colors.text, fontSize: 13, fontWeight: '500' },
   locationAddress: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
@@ -1281,7 +1315,7 @@ const styles = StyleSheet.create({
   itemMatchReviewContext: { color: colors.textDisabled, fontSize: 11, lineHeight: 16, marginTop: 2 },
   itemMatchReviewActions: { flexDirection: 'row', gap: 8, marginTop: 9 },
   itemMatchReviewButton: {
-    minHeight: 36,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1313,7 +1347,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
-  itemRemoveBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  itemRemoveBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   itemRemoveText: { color: colors.textDisabled, fontSize: 20, lineHeight: 22 },
   addItemRow: { paddingHorizontal: 14, paddingVertical: 10 },
   addItemText: { color: colors.textDisabled, fontSize: 13 },

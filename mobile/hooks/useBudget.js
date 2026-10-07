@@ -28,7 +28,7 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
     ].filter(Boolean).join('&');
     const url = params ? `/budgets?${params}` : '/budgets';
     const loader = cacheOnly ? loadCacheOnly : loadWithCache;
-    return loader(
+    const result = await loader(
       `cache:budget:${month || 'all'}:${scope || 'default'}:${startDayOverride || 'default'}`,
       () => api.get(url),
       (data) => {
@@ -44,6 +44,10 @@ export function useBudget(month, scope, { cacheOnly = false, startDayOverride = 
       },
       { forceRefresh: options?.forceRefresh === true },
     );
+    if (requestVersion === requestVersionRef.current && !result?.refreshSucceeded && result?.source === 'cache') {
+      setError('Could not refresh the latest budget totals.');
+    }
+    return result;
   }, [month, scope, cacheOnly, startDayOverride, enabled]);
 
   useEffect(() => {

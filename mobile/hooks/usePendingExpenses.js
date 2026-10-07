@@ -5,7 +5,7 @@ import { saveExpenseSnapshots } from '../services/expenseLocalStore';
 import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
 import { useFreshnessRefresh } from './useFreshnessRefresh';
 import { buildMockPendingExpenses } from '../fixtures/mockGmailImport';
-const { sanitizeExpenseCollection } = require('../services/storageSanitizers');
+const { sanitizeExpenseCollection, sanitizePendingReviewHint } = require('../services/storageSanitizers');
 
 const FORCE_MOCK_PENDING_PREVIEW = false;
 const OPTIMISTIC_REMOVE_TTL_MS = 2 * 60 * 1000;
@@ -53,12 +53,7 @@ function sanitizePendingPage(page = {}) {
     if (!hint || typeof hint !== 'object') return expense;
     return {
       ...expense,
-      gmail_review_hint: {
-        review_mode: hint.review_mode || null,
-        likely_changed_fields: Array.isArray(hint.likely_changed_fields)
-          ? hint.likely_changed_fields.slice(0, 8)
-          : [],
-      },
+      gmail_review_hint: sanitizePendingReviewHint(hint),
     };
   });
   return {
@@ -104,7 +99,7 @@ export function usePendingExpenses() {
       return;
     }
     setError(null);
-    return loadWithCache(
+    const result = await loadWithCache(
       'cache:expenses:pending',
       () => api.get('/expenses/pending?paginated=1&limit=25'),
       (page) => {
@@ -122,6 +117,10 @@ export function usePendingExpenses() {
       },
       { serialize: sanitizePendingPage, forceRefresh: options?.forceRefresh === true },
     );
+    if (requestVersion === requestVersionRef.current && !result?.refreshSucceeded && result?.source === 'cache') {
+      setError('Could not refresh the latest review items.');
+    }
+    return result;
   }, [isUsingMockData]);
 
   const loadMore = useCallback(async () => {

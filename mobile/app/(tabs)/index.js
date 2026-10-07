@@ -11,6 +11,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
+import { EmptyState, InlineError, SkeletonRow } from '../../components/ui/States';
 import { colors } from '../../theme/tokens';
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest' },
@@ -276,7 +277,7 @@ export default function FeedScreen() {
         data={listData}
         keyExtractor={(item, i) => item.id || `expense-${i}`}
         renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={loading || refreshing} onRefresh={refresh} tintColor={colors.text} />}
+        refreshControl={<RefreshControl refreshing={(loading || refreshing) && listData.length > 0} onRefresh={refresh} tintColor={colors.text} />}
         contentContainerStyle={styles.list}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -288,15 +289,39 @@ export default function FeedScreen() {
           <ActivityIndicator style={styles.loadingMore} color={colors.textMuted} />
         ) : null}
         ListHeaderComponent={
-          expenseError || budgetError ? (
-            <View style={styles.feedErrorState}>
-              <Text style={styles.feedErrorTitle}>Could not refresh your transactions</Text>
-              <Text style={styles.feedErrorBody}>{expenseError || budgetError}</Text>
-            </View>
+          (expenseError || budgetError) && listData.length > 0 ? (
+            <InlineError
+              title="Showing saved transactions"
+              body="The latest totals could not be refreshed. Your saved activity is still available."
+              actionLabel="Refresh"
+              onAction={refresh}
+              style={styles.feedErrorState}
+            />
           ) : null
         }
         ListEmptyComponent={
-          !loading && <Text style={styles.empty}>No expenses yet. Tap + to get started.</Text>
+          loading ? (
+            <View style={styles.loadingRows}>
+              <SkeletonRow lines={2} />
+              <SkeletonRow lines={2} />
+              <SkeletonRow lines={2} />
+            </View>
+          ) : expenseError || budgetError ? (
+            <InlineError
+              title="Could not load transactions"
+              body={expenseError || budgetError}
+              actionLabel="Try again"
+              onAction={refresh}
+              style={styles.emptyState}
+            />
+          ) : (
+            <EmptyState
+              icon="receipt-outline"
+              title="No expenses in this period"
+              body="Add one manually, scan a receipt, or import purchases from Gmail."
+              style={styles.emptyState}
+            />
+          )
         }
       />
 
@@ -363,11 +388,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   toggleRow: { flexDirection: 'row', gap: 8 },
-  toggleChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  toggleChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   toggleChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
   toggleText: { fontSize: 14, color: colors.textSubtle, fontWeight: '500' },
   toggleTextActive: { color: colors.textInverse },
   sortChip: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -387,7 +413,7 @@ const styles = StyleSheet.create({
   budgetLabelRow: { flexDirection: 'row', alignItems: 'center' },
   budgetLabel: { fontSize: 12, color: colors.textDisabled, textTransform: 'uppercase', letterSpacing: 0.5 },
   budgetPeriod: { fontSize: 11, color: colors.textDisabled },
-  budgetAmount: { fontSize: 22, color: colors.text, fontWeight: '600', letterSpacing: -0.5 },
+  budgetAmount: { fontSize: 22, color: colors.text, fontWeight: '600', letterSpacing: 0 },
   byParentList: { marginTop: 8, gap: 6 },
   byParentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   byParentName: { fontSize: 13, color: colors.textSubtle, flex: 1, marginRight: 8 },
@@ -400,19 +426,11 @@ const styles = StyleSheet.create({
 
   list: { padding: 16, paddingBottom: 88 },
   loadingMore: { paddingVertical: 20 },
-  empty: { color: colors.textSubtle, textAlign: 'center', marginTop: 40, fontSize: 15 },
+  loadingRows: { gap: 10, paddingTop: 12 },
+  emptyState: { marginTop: 20 },
   feedErrorState: {
-    marginHorizontal: 16,
     marginBottom: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: colors.dangerMuted,
-    backgroundColor: colors.dangerMuted,
-    borderRadius: 8,
   },
-  feedErrorTitle: { fontSize: 14, color: colors.text, fontWeight: '600', marginBottom: 4 },
-  feedErrorBody: { fontSize: 12, color: colors.danger, lineHeight: 18 },
   monthPickerOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   monthPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, paddingBottom: 40 },
   monthPickerTitle: { fontSize: 13, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
