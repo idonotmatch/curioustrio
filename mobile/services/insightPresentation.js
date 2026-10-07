@@ -44,6 +44,10 @@ export function getInsightActionDescriptor(insight, context = {}) {
     ?? 0
   ));
 
+  if (type === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
+    return { label: 'Review usual basket', reason: 'Shared timing signal' };
+  }
+
   if (insight?.entity_type === 'item' && metadata?.group_key) {
     switch (type) {
       case 'item_staple_merchant_opportunity':
@@ -153,6 +157,12 @@ function formatCurrencyShort(value) {
   return `$${amount.toFixed(0)}`;
 }
 
+function formatTypicalCost(value) {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  const amount = Math.abs(Number(value));
+  return amount >= 1000 ? formatCurrencyShort(amount) : `$${amount.toFixed(2)}`;
+}
+
 function formatPercentShort(value) {
   if (value == null || Number.isNaN(Number(value))) return null;
   return `${Math.abs(Number(value)).toFixed(0)}%`;
@@ -242,6 +252,14 @@ export function getInsightPrimaryMetric(insight, context = {}) {
   const metadata = insight?.metadata || context.metadata || {};
 
   const metric = (value, label) => (value && label ? { value, label } : null);
+
+  if (type === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
+    if (Number.isFinite(Number(metadata.days_until_due))) {
+      const days = Number(metadata.days_until_due);
+      return metric(days <= 0 ? 'Due now' : `${days}d`, 'shared timing');
+    }
+    return metric(formatCountLabel(metadata.bundle_item_count, 'item'), 'usual basket');
+  }
 
   if (insight?.entity_type === 'item' && metadata?.group_key) {
     switch (type) {
@@ -373,6 +391,17 @@ export function getInsightSupportRows(insight, context = {}) {
   const metadata = insight?.metadata || context.metadata || {};
   const rows = [];
 
+  if (type === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
+    addRow(rows, 'Usual store', metadata.usual_merchant);
+    addRow(rows, 'Usual basket', formatTypicalCost(metadata.typical_cost ?? metadata.median_amount));
+    addRow(rows, 'Items', Array.isArray(metadata.bundle_item_names) ? metadata.bundle_item_names.join(', ') : null);
+    addRow(rows, 'Bought together', formatCountLabel(metadata.bundle_co_purchase_count, 'time'));
+    if (Number.isFinite(Number(metadata.average_gap_days))) {
+      addRow(rows, 'Usual gap', `${Number(metadata.average_gap_days)} days`);
+    }
+    return rows.slice(0, Math.max(1, Number(context.limit || 2)));
+  }
+
   if (insight?.entity_type === 'item' && metadata?.group_key) {
     switch (type) {
       case 'item_staple_merchant_opportunity':
@@ -417,6 +446,8 @@ export function getInsightSupportRows(insight, context = {}) {
         }
         break;
       case 'recurring_repurchase_due':
+        addRow(rows, 'Usual store', metadata.usual_merchant || metadata.merchants?.[0]);
+        addRow(rows, 'Usual cost', formatTypicalCost(metadata.typical_cost ?? metadata.median_amount));
         if (Number.isFinite(Number(metadata.days_until_due))) {
           const days = Number(metadata.days_until_due);
           addRow(rows, 'Need timing', days <= 0 ? 'Due now' : `${days} days`);
@@ -672,6 +703,14 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
     case 'item_staple_merchant_opportunity':
     case 'item_merchant_variance':
     case 'item_staple_emerging':
+      if (insightType === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
+        return {
+          title: 'Review the usual basket',
+          body: 'Check the items, shared purchase history, usual store, and combined cost before adding them to your list.',
+          cta: null,
+          route: null,
+        };
+      }
       return {
         title: 'Review the item detail first',
         body: 'Use the item history, merchant comparison, and recent purchases to decide whether this is worth acting on right now.',

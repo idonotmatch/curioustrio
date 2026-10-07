@@ -304,6 +304,58 @@ function actionabilityScore(insight) {
   return 10;
 }
 
+function decisionContextAdjustment(insight) {
+  const metadata = insight?.metadata || {};
+  const role = portfolioRole(insight);
+  if (role === 'setup') return 6;
+
+  const hasAnchor = Boolean(
+    metadata.item_name
+    || metadata.bundle_item_count
+    || metadata.category_key
+    || metadata.category_name
+    || metadata.merchant_key
+    || metadata.merchant_name
+    || metadata.usual_merchant
+    || metadata.group_key
+    || metadata.largest_expense?.merchant
+    || metadata.top_driver?.category_name
+  );
+  const impactValues = [
+    metadata.projected_budget_delta,
+    metadata.projected_headroom_amount,
+    metadata.projected_over_under,
+    metadata.delta_amount,
+    metadata.delta_percent,
+    metadata.discount_percent,
+    metadata.total_delta_amount,
+    metadata.current_spend_to_date,
+    metadata.current_spend,
+    metadata.median_amount,
+    metadata.typical_cost,
+    metadata.days_until_due,
+    metadata.days_since_last_purchase,
+  ];
+  const hasImpact = impactValues.some((value) => value != null && Number.isFinite(Number(value)));
+  const evidenceValues = [
+    metadata.historical_period_count,
+    metadata.evidence_count,
+    metadata.expense_count,
+    metadata.occurrence_count,
+    metadata.merchant_count,
+    metadata.merchant_evidence_count,
+    metadata.bundle_co_purchase_count,
+  ];
+  const hasEvidence = evidenceValues.some((value) => Number(value || 0) > 0)
+    || Boolean(metadata.confidence || metadata.identity_confidence);
+  const dimensions = [hasAnchor, hasImpact, hasEvidence].filter(Boolean).length;
+
+  if (dimensions === 3) return 18;
+  if (dimensions === 2) return 6;
+  if (dimensions === 1) return -8;
+  return -18;
+}
+
 function minimumSurfaceThreshold(insight) {
   const maturity = `${insight?.metadata?.maturity || ''}`.trim() || 'unknown';
   const role = portfolioRole(insight);
@@ -408,6 +460,7 @@ function scoreInsightCandidate(insight, feedbackSummary = new Map(), preferenceS
     scope_hierarchy: scopeHierarchyAdjustment(insight),
     planner_timing: Number(insight?.metadata?.planner_timing_adjustment || 0),
     category_trust: categoryTrustAdjustment(insight),
+    decision_context: decisionContextAdjustment(insight),
   };
   const baseScore = Object.values(components).reduce((sum, value) => sum + Number(value || 0), 0);
   const adjustmentScore = Object.values(adjustments).reduce((sum, value) => sum + Number(value || 0), 0);

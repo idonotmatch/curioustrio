@@ -50,6 +50,17 @@ function buildInsightAction(insight) {
     };
   }
 
+  if (type === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
+    return {
+      next_step_type: 'review_item_bundle',
+      reason: 'Shared timing signal',
+      title: 'Review the usual basket',
+      body: `See why these ${metadata.bundle_item_count} items were grouped, including their shared purchases, usual store, and typical combined cost.`,
+      cta: 'Review usual basket',
+      route: null,
+    };
+  }
+
   if (insight?.entity_type === 'item' && metadata?.group_key) {
     const itemActions = {
       item_recent_price_jump: {

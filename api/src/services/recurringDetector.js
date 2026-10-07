@@ -28,6 +28,31 @@ function classifyFrequency(medianGap) {
   return 'yearly';
 }
 
+function summarizeUsualMerchant(occurrences = []) {
+  const merchants = new Map();
+  occurrences.forEach((occurrence, index) => {
+    const merchant = `${occurrence?.merchant || ''}`.trim();
+    if (!merchant) return;
+    const key = merchant.toLowerCase();
+    const current = merchants.get(key) || { merchant, count: 0, latest_index: -1 };
+    current.count += 1;
+    current.latest_index = index;
+    merchants.set(key, current);
+  });
+
+  const ranked = [...merchants.values()].sort((a, b) => (
+    b.count - a.count || b.latest_index - a.latest_index || a.merchant.localeCompare(b.merchant)
+  ));
+  const usual = ranked[0] || null;
+  return {
+    usual_merchant: usual?.merchant || null,
+    usual_merchant_count: usual?.count || 0,
+    usual_merchant_share: occurrences.length > 0 && usual
+      ? Number((usual.count / occurrences.length).toFixed(2))
+      : 0,
+  };
+}
+
 function recurringExpenseScopeClause(scope = 'household', paramIndex = 1) {
   if (scope === 'personal') return `e.user_id = $${paramIndex}`;
   return `e.household_id = $${paramIndex}`;
@@ -224,6 +249,7 @@ async function detectRecurringItems(ownerId, options = {}) {
     const unitPrices = occurrences.map(o => o.estimated_unit_price).filter(v => v != null);
     const medianUnitPrice = unitPrices.length ? median(unitPrices) : null;
     const merchants = [...new Set(occurrences.map(o => o.merchant).filter(Boolean))];
+    const merchantSummary = summarizeUsualMerchant(occurrences);
     const lastOccurrence = dates[dates.length - 1];
     const nextDate = new Date(lastOccurrence);
     nextDate.setDate(nextDate.getDate() + medianGap);
@@ -244,6 +270,7 @@ async function detectRecurringItems(ownerId, options = {}) {
       last_purchased_at: lastOccurrence.toISOString().split('T')[0],
       next_expected_date: nextDate.toISOString().split('T')[0],
       merchants,
+      ...merchantSummary,
       normalized_total_size_value: occurrences[0].normalized_total_size_value,
       normalized_total_size_unit: occurrences[0].normalized_total_size_unit,
     });
@@ -379,6 +406,9 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
         days_until_due: daysUntilDue,
         status,
         merchants: item.merchants,
+        usual_merchant: item.usual_merchant || item.merchants?.[0] || null,
+        usual_merchant_count: Number(item.usual_merchant_count || 0),
+        usual_merchant_share: Number(item.usual_merchant_share || 0),
         normalized_total_size_value: item.normalized_total_size_value,
         normalized_total_size_unit: item.normalized_total_size_unit,
       };
@@ -456,6 +486,9 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
       days_until_due: daysUntilDue,
       status: daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'due_today' : daysUntilDue <= windowDays ? 'watching' : 'upcoming',
       merchants: pref.merchant ? [pref.merchant] : [],
+      usual_merchant: pref.merchant || null,
+      usual_merchant_count: pref.merchant ? 1 : 0,
+      usual_merchant_share: pref.merchant ? 1 : 0,
       normalized_total_size_value: null,
       normalized_total_size_unit: null,
       source: 'manual',

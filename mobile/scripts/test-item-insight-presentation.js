@@ -7,6 +7,10 @@ const {
   itemMatchLabel,
   itemSubmeta,
 } = require('../services/expenseDetailPresentation');
+const {
+  getInsightPrimaryMetric,
+  getInsightSupportRows,
+} = require('../services/insightPresentation');
 
 const priceSummary = getItemInsightSummary('item_recent_price_jump', {
   item_name: 'Greek Yogurt',
@@ -34,6 +38,40 @@ const merchantSummary = getItemInsightSummary('item_merchant_variance', {
   merchant_evidence_count: 4,
 });
 assert.ok(merchantSummary.whyItMatters.includes('across 4 comparable purchases'));
+
+const dueSummary = getItemInsightSummary('recurring_repurchase_due', {
+  item_name: 'Greek Yogurt',
+  average_gap_days: 14,
+  usual_merchant: 'Market',
+  typical_cost: 7.25,
+});
+assert.ok(dueSummary.whyItMatters.includes('Market'));
+assert.ok(dueSummary.whyItMatters.includes('$7.25'));
+
+const dueInsight = {
+  type: 'recurring_repurchase_due',
+  entity_type: 'item',
+  metadata: {
+    group_key: 'product:yogurt',
+    days_until_due: 2,
+    average_gap_days: 14,
+    usual_merchant: 'Market',
+    typical_cost: 7.25,
+  },
+};
+assert.deepStrictEqual(getInsightPrimaryMetric(dueInsight), { value: '2d', label: 'until due' });
+assert.deepStrictEqual(getInsightSupportRows(dueInsight, { limit: 2 }), [
+  { label: 'Usual store', value: 'Market' },
+  { label: 'Usual cost', value: '$7.25' },
+]);
+
+const bundleSummary = getItemInsightSummary('recurring_repurchase_due', {
+  bundle_item_count: 2,
+  bundle_co_purchase_count: 3,
+  usual_merchant: 'Market',
+  typical_cost: 12.75,
+});
+assert.ok(bundleSummary.whyItMatters.includes('appeared together 3 times'));
 
 assert.deepStrictEqual(getItemInsightEvidence({
   evidence_count: 4,

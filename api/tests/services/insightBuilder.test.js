@@ -27,6 +27,7 @@ const {
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,
   pruneGeneratedInsights,
+  bundleRepurchaseCandidates,
 } = require('../../src/services/insightBuilder');
 
 function buildInsight(overrides = {}) {
@@ -97,6 +98,77 @@ describe('insightBuilder orchestration', () => {
     expect(portfolioRole(buildInsight({ type: 'top_category_driver' }))).toBe('explain');
     expect(portfolioRole(buildInsight({ type: 'item_recent_price_jump' }))).toBe('act');
     expect(portfolioRole(buildInsight({ type: 'item_repurchase_accelerating' }))).toBe('act');
+  });
+
+  it('combines due items only when their timing, merchant, and source purchases align', () => {
+    const candidates = [
+      {
+        group_key: 'product:yogurt', item_name: 'Greek Yogurt', days_until_due: 1,
+        average_gap_days: 14, occurrence_count: 3, median_amount: 7.25,
+        usual_merchant: 'Market', usual_merchant_share: 1, status: 'watching',
+      },
+      {
+        group_key: 'product:granola', item_name: 'Granola', days_until_due: 2,
+        average_gap_days: 15, occurrence_count: 3, median_amount: 5.5,
+        usual_merchant: 'Market', usual_merchant_share: 1, status: 'watching',
+      },
+      {
+        group_key: 'product:coffee', item_name: 'Coffee', days_until_due: 2,
+        average_gap_days: 14, occurrence_count: 3, median_amount: 12,
+        usual_merchant: 'Other Market', usual_merchant_share: 1, status: 'watching',
+      },
+    ];
+    const occurrenceGroups = new Map([
+      ['product:yogurt', [
+        { expense_id: 'e1', merchant: 'Market' },
+        { expense_id: 'e2', merchant: 'Market' },
+        { expense_id: 'e3', merchant: 'Market' },
+      ]],
+      ['product:granola', [
+        { expense_id: 'e1', merchant: 'Market' },
+        { expense_id: 'e2', merchant: 'Market' },
+        { expense_id: 'e3', merchant: 'Market' },
+      ]],
+      ['product:coffee', [
+        { expense_id: 'e1', merchant: 'Other Market' },
+        { expense_id: 'e2', merchant: 'Other Market' },
+        { expense_id: 'e3', merchant: 'Other Market' },
+      ]],
+    ]);
+
+    const result = bundleRepurchaseCandidates(candidates, occurrenceGroups);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      bundle_item_count: 2,
+      bundle_co_purchase_count: 3,
+      usual_merchant: 'Market',
+      typical_cost: 12.75,
+    });
+    expect(result[0].bundle_item_names).toEqual(['Greek Yogurt', 'Granola']);
+    expect(result[1].item_name).toBe('Coffee');
+  });
+
+  it('ranks insight candidates with decision context above context-free noise', () => {
+    const useful = buildInsight({
+      type: 'recurring_repurchase_due',
+      metadata: {
+        scope: 'personal',
+        item_name: 'Greek Yogurt',
+        group_key: 'product:yogurt',
+        usual_merchant: 'Market',
+        median_amount: 7.25,
+        days_until_due: 1,
+        occurrence_count: 4,
+      },
+    });
+    const noisy = buildInsight({
+      type: 'recurring_repurchase_due',
+      metadata: { scope: 'personal' },
+    });
+
+    expect(scoreInsightCandidate(useful).surface_score).toBeGreaterThan(scoreInsightCandidate(noisy).surface_score);
+    expect(scoreInsightCandidate(useful).adjustments.decision_context).toBe(18);
+    expect(scoreInsightCandidate(noisy).adjustments.decision_context).toBe(-18);
   });
 
   it('prunes expired or stale generated candidates before they enter ranking', () => {

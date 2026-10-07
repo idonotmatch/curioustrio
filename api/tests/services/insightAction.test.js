@@ -69,6 +69,23 @@ describe('insightAction', () => {
     expect(action.body).toContain('matched incorrectly');
   });
 
+  it('explains why aligned recurring items were grouped', () => {
+    const action = buildInsightAction({
+      id: 'bundle-1',
+      type: 'recurring_repurchase_due',
+      entity_type: 'item_bundle',
+      metadata: { bundle_item_count: 3, usual_merchant: 'Market' },
+    });
+
+    expect(action).toMatchObject({
+      next_step_type: 'review_item_bundle',
+      reason: 'Shared timing signal',
+      cta: 'Review usual basket',
+      route: null,
+    });
+    expect(action.body).toContain('shared purchases');
+  });
+
   it('attaches action metadata to an insight', () => {
     const insight = attachInsightAction({
       id: 'insight-3',

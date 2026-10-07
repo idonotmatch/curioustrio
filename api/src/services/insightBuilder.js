@@ -110,34 +110,160 @@ function toRepurchaseDueInsight(candidate, scope = 'household') {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
   const itemName = candidate.item_name || 'A recurring purchase';
+  const isBundle = Number(candidate.bundle_item_count || 0) > 1;
+  const usualMerchant = candidate.usual_merchant || candidate.merchants?.[0] || null;
+  const typicalCost = Number(candidate.typical_cost ?? candidate.median_amount);
+  const merchantContext = usualMerchant ? ` at ${usualMerchant}` : '';
+  const costContext = Number.isFinite(typicalCost) && typicalCost > 0
+    ? ` for about $${typicalCost.toFixed(2)}`
+    : '';
+  const purchaseContext = `${merchantContext}${costContext}`;
   let title = `${itemName} may be due soon`;
-  let body = `You usually buy this about every ${candidate.average_gap_days} days, and you may need it again in ${candidate.days_until_due} days.`;
+  let body = `You typically buy this${purchaseContext} every ${candidate.average_gap_days} days, and you may need it again in ${candidate.days_until_due} days.`;
 
-  if (candidate.status === 'due_today') {
+  if (isBundle) {
+    title = `${itemName} may be due together`;
+    body = `These ${candidate.bundle_item_count} items repeatedly show up together${purchaseContext}, and their usual timing lines up again.`;
+  }
+
+  if (!isBundle && candidate.status === 'due_today') {
     title = `${itemName} may be due today`;
-    body = `Today lines up with your usual ${candidate.average_gap_days}-day repurchase timing for this item.`;
-  } else if (candidate.status === 'overdue') {
+    body = `Today lines up with your usual ${candidate.average_gap_days}-day timing${purchaseContext}.`;
+  } else if (!isBundle && candidate.status === 'overdue') {
     title = `${itemName} may already be due`;
-    body = `You are about ${Math.abs(candidate.days_until_due)} days past your usual repurchase window for this item.`;
+    body = `You are about ${Math.abs(candidate.days_until_due)} days past your usual repurchase window${purchaseContext}.`;
   }
 
   return {
-    id: `recurring_repurchase_due:${candidate.group_key}:${candidate.next_expected_date}`,
+    id: `recurring_repurchase_due:${isBundle ? [...candidate.bundle_group_keys].sort().join('|') : candidate.group_key}:${candidate.next_expected_date}`,
     type: 'recurring_repurchase_due',
     title,
     body,
     severity: candidate.status === 'overdue' || candidate.days_until_due <= 1 ? 'high' : 'medium',
-    entity_type: 'item',
-    entity_id: candidate.group_key,
+    entity_type: isBundle ? 'item_bundle' : 'item',
+    entity_id: isBundle ? candidate.bundle_group_keys.join('|') : candidate.group_key,
     created_at: createdAt,
     expires_at: expiresAt,
     metadata: {
       ...candidate,
+      typical_cost: Number.isFinite(typicalCost) ? typicalCost : null,
+      evidence_count: Number(candidate.bundle_co_purchase_count || candidate.occurrence_count || 0),
+      maturity: Number(candidate.occurrence_count || 0) >= 4 ? 'mature' : 'developing',
+      confidence: isBundle || candidate.identity_confidence === 'high' ? 'observed' : 'descriptive',
       scope,
-      continuity_key: `recurring_due:${scope}:${candidate.group_key}`,
+      continuity_key: `recurring_due:${scope}:${isBundle ? [...candidate.bundle_group_keys].sort().join('|') : candidate.group_key}`,
     },
     actions: [],
   };
+}
+
+function normalizeMerchant(value) {
+  return `${value || ''}`.trim().toLowerCase();
+}
+
+function sharedExpenseCount(firstGroup = [], secondGroup = [], merchant = '') {
+  const normalizedMerchant = normalizeMerchant(merchant);
+  const expenseIds = (rows) => new Set(rows
+    .filter((row) => !normalizedMerchant || normalizeMerchant(row?.merchant) === normalizedMerchant)
+    .map((row) => row?.expense_id)
+    .filter(Boolean));
+  const first = expenseIds(firstGroup);
+  const second = expenseIds(secondGroup);
+  let count = 0;
+  first.forEach((expenseId) => {
+    if (second.has(expenseId)) count += 1;
+  });
+  return count;
+}
+
+function canBundleRepurchaseCandidates(first, second, occurrenceGroups) {
+  if (!first?.group_key || !second?.group_key || first.group_key === second.group_key) return null;
+  if (first.source === 'manual' || second.source === 'manual') return null;
+  const merchant = first.usual_merchant || first.merchants?.[0];
+  if (!merchant || normalizeMerchant(merchant) !== normalizeMerchant(second.usual_merchant || second.merchants?.[0])) return null;
+  if (Math.min(Number(first.usual_merchant_share || 0), Number(second.usual_merchant_share || 0)) < 0.6) return null;
+  if (Math.abs(Number(first.days_until_due || 0) - Number(second.days_until_due || 0)) > 2) return null;
+
+  const firstGap = Number(first.average_gap_days || 0);
+  const secondGap = Number(second.average_gap_days || 0);
+  const gapTolerance = Math.max(3, Math.round(Math.min(firstGap, secondGap) * 0.2));
+  if (!firstGap || !secondGap || Math.abs(firstGap - secondGap) > gapTolerance) return null;
+
+  const sharedCount = sharedExpenseCount(
+    occurrenceGroups?.get(first.group_key) || [],
+    occurrenceGroups?.get(second.group_key) || [],
+    merchant
+  );
+  const coPurchaseRate = sharedCount / Math.max(1, Math.min(
+    Number(first.occurrence_count || 0),
+    Number(second.occurrence_count || 0)
+  ));
+  if (sharedCount < 2 || coPurchaseRate < 0.6) return null;
+  return { sharedCount, coPurchaseRate };
+}
+
+function bundleRepurchaseCandidates(candidates = [], occurrenceGroups = new Map()) {
+  const remaining = [...candidates].sort((a, b) => (
+    Number(a.days_until_due || 0) - Number(b.days_until_due || 0)
+    || Number(b.occurrence_count || 0) - Number(a.occurrence_count || 0)
+  ));
+  const bundled = [];
+
+  while (remaining.length) {
+    const seed = remaining.shift();
+    const group = [seed];
+    const pairEvidence = [];
+
+    for (let index = 0; index < remaining.length && group.length < 4;) {
+      const candidate = remaining[index];
+      const comparisons = group.map((member) => canBundleRepurchaseCandidates(member, candidate, occurrenceGroups));
+      if (comparisons.every(Boolean)) {
+        group.push(candidate);
+        pairEvidence.push(...comparisons);
+        remaining.splice(index, 1);
+      } else {
+        index += 1;
+      }
+    }
+
+    if (group.length === 1) {
+      bundled.push(seed);
+      continue;
+    }
+
+    const itemNames = group.map((candidate) => candidate.item_name).filter(Boolean);
+    const typicalCost = group.reduce((sum, candidate) => sum + Math.max(0, Number(candidate.median_amount || 0)), 0);
+    const dueDays = group.map((candidate) => Number(candidate.days_until_due || 0)).sort((a, b) => a - b);
+    const gaps = group.map((candidate) => Number(candidate.average_gap_days || 0)).filter(Boolean);
+    const coPurchaseCount = Math.min(...pairEvidence.map((entry) => entry.sharedCount));
+    const coPurchaseRate = Math.min(...pairEvidence.map((entry) => entry.coPurchaseRate));
+    const representative = group[0];
+
+    bundled.push({
+      ...representative,
+      item_name: itemNames.length === 2
+        ? `${itemNames[0]} and ${itemNames[1]}`
+        : `${itemNames.slice(0, 2).join(', ')} + ${itemNames.length - 2} more`,
+      bundle_item_count: group.length,
+      bundle_item_names: itemNames,
+      bundle_group_keys: group.map((candidate) => candidate.group_key),
+      bundle_items: group.map((candidate) => ({
+        group_key: candidate.group_key,
+        item_name: candidate.item_name,
+        median_amount: candidate.median_amount,
+        days_until_due: candidate.days_until_due,
+      })),
+      bundle_co_purchase_count: coPurchaseCount,
+      bundle_co_purchase_rate: Number(coPurchaseRate.toFixed(2)),
+      typical_cost: Number(typicalCost.toFixed(2)),
+      average_gap_days: Math.round(gaps.reduce((sum, value) => sum + value, 0) / gaps.length),
+      days_until_due: dueDays[Math.floor(dueDays.length / 2)],
+      occurrence_count: Math.min(...group.map((candidate) => Number(candidate.occurrence_count || 0))),
+      status: dueDays.some((days) => days < 0) ? 'overdue' : dueDays.some((days) => days === 0) ? 'due_today' : 'watching',
+    });
+  }
+
+  return bundled;
 }
 
 function toBuySoonBetterPriceInsight(opportunity, scope = 'household') {
@@ -1668,8 +1794,9 @@ async function buildInsights({ user, limit = 10 }) {
       recurringItems,
     });
     householdWatchCandidates = watchCandidates;
+    const repurchaseCandidates = bundleRepurchaseCandidates(watchCandidates, occurrenceGroups);
     insightSets.push(
-      watchCandidates
+      repurchaseCandidates
         .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
         .slice(0, 3)
         .map((candidate) => toRepurchaseDueInsight(candidate, 'household'))
@@ -1762,8 +1889,9 @@ async function buildInsights({ user, limit = 10 }) {
       ...recurringOptions,
       recurringItems,
     });
+    const personalRepurchaseCandidates = bundleRepurchaseCandidates(personalWatchCandidates, occurrenceGroups);
     insightSets.push(
-      personalWatchCandidates
+      personalRepurchaseCandidates
         .filter((candidate) => candidate.status === 'watching' || candidate.status === 'due_today' || candidate.status === 'overdue')
         .slice(0, 3)
         .map((candidate) => toRepurchaseDueInsight(candidate, 'personal'))
@@ -2026,6 +2154,7 @@ module.exports = {
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,
   pruneGeneratedInsights,
+  bundleRepurchaseCandidates,
   insightDestinationAdjustment,
   portfolioRole,
   portfolioFamily,

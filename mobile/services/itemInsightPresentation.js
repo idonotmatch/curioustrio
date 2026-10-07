@@ -80,9 +80,18 @@ export function getItemInsightSummary(insightType, metadata = {}, history = null
         nextStep: 'If you need it soon, compare the observed price with the purchase history before buying.',
       };
     case 'recurring_repurchase_due':
+      if (Number(metadata.bundle_item_count || 0) > 1) {
+        const merchant = metadata.usual_merchant ? ` at ${metadata.usual_merchant}` : '';
+        const cost = metadata.typical_cost != null ? ` for about ${formatCurrency(metadata.typical_cost)} total` : '';
+        return {
+          whatChanged: fallbackBody || `${metadata.bundle_item_count} recurring items are approaching the same purchase window.`,
+          whyItMatters: `They have appeared together ${metadata.bundle_co_purchase_count || 'multiple'} times${merchant}${cost}, so one reminder is more useful than separate alerts.`,
+          nextStep: 'Review the grouped items and shared purchases before deciding whether the whole basket is actually due.',
+        };
+      }
       return {
         whatChanged: fallbackBody || `${itemName} looks close to its usual repurchase window.`,
-        whyItMatters: `You typically buy this every ${metadata.average_gap_days || history?.average_gap_days || '-'} days.`,
+        whyItMatters: `You typically buy this every ${metadata.average_gap_days || history?.average_gap_days || '-'} days${metadata.usual_merchant ? ` at ${metadata.usual_merchant}` : ''}${metadata.typical_cost != null || metadata.median_amount != null ? ` for about ${formatCurrency(metadata.typical_cost ?? metadata.median_amount)}` : ''}.`,
         nextStep: 'Use the purchase history below to decide whether this still belongs in your routine or can wait.',
       };
     case 'recurring_restock_window':
