@@ -1,4 +1,3 @@
-const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const parser = require('@babel/parser');
@@ -98,7 +97,6 @@ const filesToCheck = [
 for (const relativePath of filesToCheck) {
   const absolutePath = path.join(projectRoot, relativePath);
   process.stdout.write(`[mobile-smoke] checking ${relativePath}\n`);
-  execFileSync(process.execPath, ['--check', absolutePath], { stdio: 'inherit' });
   parser.parse(fs.readFileSync(absolutePath, 'utf8'), {
     sourceType: 'unambiguous',
     plugins: ['jsx'],
