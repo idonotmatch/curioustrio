@@ -37,3 +37,9 @@ jobs:
 
       - name: Run focused stability suite
         run: npm run test:stability
+
+      - name: Run launch-critical suite
+        run: npm run test:launch
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

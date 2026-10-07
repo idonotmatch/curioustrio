@@ -12,7 +12,8 @@ jobs:
     steps:
       - name: Prune expired operational data
         run: |
-          status=$(curl -sS --connect-timeout 15 --max-time 540 -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/data-retention \
+          set -euo pipefail
+          status=$(curl -sS --retry 2 --retry-all-errors --retry-delay 5 --connect-timeout 15 --max-time 540 -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/data-retention \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json")
           cat response.json

@@ -5,6 +5,10 @@ const User = require('../models/user');
 const { disconnectGmailConnection } = require('../services/gmailClient');
 const { deleteAccountDataForUser } = require('../services/accountDeletionService');
 const { emitBudgetFreshnessEvent } = require('../services/freshnessEvents');
+const {
+  assertSupabaseAuthUserExists,
+  deleteSupabaseAuthUser,
+} = require('../services/supabaseAdminService');
 
 function normalizeEmail(value) {
   const email = `${value || ''}`.trim().toLowerCase();
@@ -54,7 +58,9 @@ router.delete('/me', authenticate, async (req, res, next) => {
       });
     }
 
-    const result = await deleteAccountDataForUser(user.id);
+    const result = await deleteAccountDataForUser(user.id, {
+      beforeCommit: () => deleteSupabaseAuthUser(req.userId),
+    });
     if (!result) return res.status(404).json({ error: 'User not found' });
 
     res.json({ deleted: true });
@@ -80,6 +86,11 @@ router.post('/sync', authenticate, async (req, res, next) => {
 
     const trustedEmail = tokenEmail || null;
 
+    const existingByProviderUid = await User.findByProviderUid(req.userId);
+    if (!existingByProviderUid) {
+      await assertSupabaseAuthUserExists(req.userId);
+    }
+
     if (trustedEmail) {
       // Email-based linking is allowed only from the authenticated token, never
       // from a caller-supplied body value alone.
@@ -97,8 +108,7 @@ router.post('/sync', authenticate, async (req, res, next) => {
       return res.json(serializeUser(synced));
     }
 
-    const existing = await User.findByProviderUid(req.userId);
-    if (existing) return res.json(serializeUser(existing));
+    if (existingByProviderUid) return res.json(serializeUser(existingByProviderUid));
     const created = await User.findOrCreateByProviderUid({ providerUid: req.userId, name, email: null });
     return res.json(serializeUser(created));
   } catch (err) {

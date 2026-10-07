@@ -14,7 +14,7 @@ function errorHandler(err, req, res, next) {
   console.error('[api error]', context);
   if (status >= 500) captureException(err, context);
   // Don't leak DB messages, stack info, or internal details to clients in production.
-  const message = status >= 500 && process.env.NODE_ENV === 'production'
+  const message = status >= 500 && process.env.NODE_ENV === 'production' && err.expose !== true
     ? 'Internal server error'
     : err.message || 'Internal server error';
   res.status(status).json({

@@ -24,7 +24,9 @@
         "NSLocationWhenInUseUsageDescription": "Adlo only uses your location when you choose it to help match the right place for an expense.",
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["com.googleusercontent.apps.336238140966-9bdj3hpgi874t7073h8vkielsl4soola"]
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.336238140966-9bdj3hpgi874t7073h8vkielsl4soola"
+            ]
           }
         ]
       }
@@ -68,7 +70,9 @@
             ]
           }
         }
-      ]
+      ],
+      "@sentry/react-native",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},

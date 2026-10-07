@@ -1,6 +1,6 @@
 const db = require('../db');
 
-async function deleteAccountDataForUser(userId) {
+async function deleteAccountDataForUser(userId, { beforeCommit } = {}) {
   const client = await db.pool.connect();
 
   try {
@@ -149,6 +149,14 @@ async function deleteAccountDataForUser(userId) {
           [householdId]
         );
       }
+    }
+
+    if (typeof beforeCommit === 'function') {
+      await beforeCommit({
+        user_id: userId,
+        household_id: householdId,
+        expense_count: expenseIds.length,
+      });
     }
 
     await client.query('COMMIT');

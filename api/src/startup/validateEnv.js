@@ -15,6 +15,7 @@ const OPTIONAL_ENV_VARS = [
   'CRON_SECRET',
   'CRON_ALERT_WEBHOOK_URL',
   'SENTRY_DSN',
+  'SUPABASE_SERVICE_ROLE_KEY',
 ];
 
 function isPresent(value) {
@@ -43,6 +44,10 @@ function productionCriticalEnvVars() {
 
   if (featureEnabled('ENABLE_CRON_ROUTES', true)) {
     vars.push('CRON_SECRET');
+  }
+
+  if (featureEnabled('ENABLE_ACCOUNT_DELETION', true)) {
+    vars.push('SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY');
   }
 
   return vars;

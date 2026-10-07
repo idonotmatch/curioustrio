@@ -1,3 +1,6 @@
+import * as Sentry from '@sentry/react-native';
+import * as Updates from 'expo-updates';
+
 const SENSITIVE_KEY_RE = /(token|secret|authorization|password|snippet|subject|body|email|from_address|message_id|ocr|receipt|address)/i;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const TOKEN_RE = /\b(?:ya29|eyJ|sb_|ghp_|sk-)[A-Za-z0-9._-]{12,}\b/g;
@@ -25,17 +28,71 @@ function redact(value, depth = 0) {
   return '[redacted]';
 }
 
+let initialized = false;
+let enabled = false;
+
+function updateGroupId() {
+  const manifest = Updates.manifest;
+  const metadata = manifest && typeof manifest === 'object' && 'metadata' in manifest
+    ? manifest.metadata
+    : null;
+  return metadata && typeof metadata === 'object' ? metadata.updateGroup || null : null;
+}
+
+function initObservability() {
+  if (initialized) return enabled;
+  initialized = true;
+  const dsn = `${process.env.EXPO_PUBLIC_SENTRY_DSN || ''}`.trim();
+  enabled = dsn.length > 0;
+
+  Sentry.init({
+    dsn: dsn || undefined,
+    enabled,
+    sendDefaultPii: false,
+    tracesSampleRate: 0,
+    attachScreenshot: false,
+    attachViewHierarchy: false,
+    beforeSend(event) {
+      return redact(event);
+    },
+  });
+
+  if (enabled) {
+    Sentry.setTag('expo-update-id', Updates.updateId || 'embedded');
+    Sentry.setTag('expo-is-embedded-update', `${Updates.isEmbeddedLaunch === true}`);
+    const groupId = updateGroupId();
+    if (groupId) Sentry.setTag('expo-update-group-id', `${groupId}`);
+  }
+
+  return enabled;
+}
+
 function captureException(error, context = {}) {
+  const safeContext = redact(context);
+  if (enabled) {
+    Sentry.withScope((scope) => {
+      scope.setContext('adlo', safeContext);
+      Sentry.captureException(error);
+    });
+    return;
+  }
+
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
     console.error('[mobile-observability]', {
       message: error?.message || String(error || 'unknown_error'),
-      ...redact(context),
+      ...safeContext,
     });
   }
 }
 
-module.exports = {
+function wrapRootComponent(Component) {
+  return enabled ? Sentry.wrap(Component) : Component;
+}
+
+export {
   captureException,
+  initObservability,
   redact,
   redactString,
+  wrapRootComponent,
 };

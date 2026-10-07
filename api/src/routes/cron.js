@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const PushToken = require('../models/pushToken');
-const { dispatchInsightPushesForUser } = require('../services/insightPushDispatcher');
 const { runDataRetention } = require('../services/dataRetentionService');
 const { notifyCronAlert } = require('../services/cronAlertService');
 const { captureException } = require('../services/observability');
 const { runScheduledGmailSync } = require('../services/gmailSyncService');
+const { runInsightPushCron } = require('../services/insightPushCronService');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -61,34 +60,18 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
 
 router.post('/insights-push', cronAuth, async (req, res, next) => {
   try {
-    const userIds = await PushToken.findAllUserIds();
-    console.log(`[cron/insights-push] starting — ${userIds.length} user(s) with push token(s)`);
-
-    let usersProcessed = 0;
-    let notificationsSent = 0;
-
-    for (const userId of userIds) {
-      try {
-        const user = await User.findById(userId);
-        if (!user) continue;
-        const result = await dispatchInsightPushesForUser(user);
-        usersProcessed++;
-        notificationsSent += Number(result.sent || 0);
-        console.log(`[cron/insights-push] user=${userId} sent=${result.sent || 0} considered=${result.considered || 0}`);
-      } catch (e) {
-        notifyCronAlert({
-          job: 'insights-push',
-          level: 'error',
-          message: 'Insight push scheduler failed for a user.',
-          metadata: { user_id: userId },
-        }).catch(() => {});
-        console.error(`[cron/insights-push] user=${userId} error:`, e.message);
-      }
-    }
-
-    console.log(`[cron/insights-push] done — users=${usersProcessed} sent=${notificationsSent}`);
-    res.json({ users_processed: usersProcessed, notifications_sent: notificationsSent });
-  } catch (err) { next(err); }
+    const result = await runInsightPushCron();
+    console.log('[cron/insights-push] completed', result);
+    res.status(result.ok ? 200 : 503).json(result);
+  } catch (err) {
+    captureException(err, { area: 'insights_push_scheduler', phase: 'run' });
+    await notifyCronAlert({
+      job: 'insights-push',
+      level: 'error',
+      message: 'Insight push scheduler failed before user processing completed.',
+    });
+    next(err);
+  }
 });
 
 router.post('/data-retention', cronAuth, async (req, res, next) => {
@@ -96,7 +79,15 @@ router.post('/data-retention', cronAuth, async (req, res, next) => {
     const result = await runDataRetention();
     console.log('[cron/data-retention] done', result);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) {
+    captureException(err, { area: 'data_retention_scheduler', phase: 'run' });
+    await notifyCronAlert({
+      job: 'data-retention',
+      level: 'error',
+      message: 'Data retention scheduler failed.',
+    });
+    next(err);
+  }
 });
 
 module.exports = router;

@@ -14,9 +14,14 @@ jest.mock('../../src/middleware/auth', () => ({
 jest.mock('../../src/services/gmailClient', () => ({
   disconnectGmailConnection: jest.fn().mockResolvedValue({ disconnected: true, revoked: false, had_token: false }),
 }));
+jest.mock('../../src/services/supabaseAdminService', () => ({
+  assertSupabaseAuthUserExists: jest.fn().mockResolvedValue({ verified: true }),
+  deleteSupabaseAuthUser: jest.fn().mockResolvedValue({ deleted: true }),
+}));
 
 const app = require('../../src/index');
 const { disconnectGmailConnection } = require('../../src/services/gmailClient');
+const { deleteSupabaseAuthUser } = require('../../src/services/supabaseAdminService');
 
 afterAll(() => db.pool.end());
 
@@ -282,6 +287,7 @@ describe('DELETE /users/me', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ deleted: true });
     expect(disconnectGmailConnection).toHaveBeenCalledWith(userId);
+    expect(deleteSupabaseAuthUser).toHaveBeenCalledWith(TEST_UUID);
 
     const userCheck = await db.query('SELECT id FROM users WHERE id = $1', [userId]);
     const expenseCheck = await db.query('SELECT id FROM expenses WHERE user_id = $1', [userId]);

@@ -64,4 +64,24 @@ describe('deleteAccountDataForUser', () => {
     expect(client.query).toHaveBeenCalledWith('COMMIT');
     expect(client.release).toHaveBeenCalled();
   });
+
+  it('rolls back local deletion when the external identity cannot be deleted', async () => {
+    const error = new Error('auth deletion failed');
+    const beforeCommit = jest.fn().mockRejectedValue(error);
+    client.query.mockImplementation(async (sql) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return { rows: [], rowCount: 0 };
+      if (sql.includes('SELECT id, household_id')) {
+        return { rows: [{ id: 'user-1', household_id: null }], rowCount: 1 };
+      }
+      if (sql.includes('SELECT id') && sql.includes('FROM expenses')) {
+        return { rows: [], rowCount: 0 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    await expect(deleteAccountDataForUser('user-1', { beforeCommit })).rejects.toThrow(error);
+    expect(beforeCommit).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'user-1' }));
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.query).not.toHaveBeenCalledWith('COMMIT');
+  });
 });

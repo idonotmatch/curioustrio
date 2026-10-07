@@ -38,6 +38,8 @@ function initObservability() {
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV || 'development',
       release: process.env.RENDER_GIT_COMMIT || process.env.npm_package_version || undefined,
+      sendDefaultPii: false,
+      tracesSampleRate: 0,
       beforeSend(event) {
         return redact(event);
       },

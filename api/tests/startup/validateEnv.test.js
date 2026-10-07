@@ -26,6 +26,7 @@ describe('validateEnv', () => {
     delete process.env.GOOGLE_CLIENT_SECRET;
     delete process.env.GOOGLE_REDIRECT_URI;
     delete process.env.CRON_SECRET;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     const report = getEnvValidationReport();
 
@@ -36,6 +37,7 @@ describe('validateEnv', () => {
       'GOOGLE_CLIENT_SECRET',
       'GOOGLE_REDIRECT_URI',
       'CRON_SECRET',
+      'SUPABASE_SERVICE_ROLE_KEY',
     ]));
   });
 
@@ -48,6 +50,7 @@ describe('validateEnv', () => {
     process.env.ENABLE_AI_PARSING = '0';
     process.env.ENABLE_GMAIL_IMPORT = '0';
     process.env.ENABLE_CRON_ROUTES = '0';
+    process.env.ENABLE_ACCOUNT_DELETION = '0';
 
     const report = getEnvValidationReport();
 
@@ -57,6 +60,7 @@ describe('validateEnv', () => {
       'GOOGLE_CLIENT_SECRET',
       'GOOGLE_REDIRECT_URI',
       'CRON_SECRET',
+      'SUPABASE_SERVICE_ROLE_KEY',
     ]));
   });
 
@@ -71,12 +75,14 @@ describe('validateEnv', () => {
     delete process.env.ENABLE_AI_PARSING;
     delete process.env.ENABLE_GMAIL_IMPORT;
     delete process.env.ENABLE_CRON_ROUTES;
+    delete process.env.ENABLE_ACCOUNT_DELETION;
     expect(productionCriticalEnvVars()).toEqual(expect.arrayContaining([
       'ANTHROPIC_API_KEY',
       'GOOGLE_CLIENT_ID',
       'GOOGLE_CLIENT_SECRET',
       'GOOGLE_REDIRECT_URI',
       'CRON_SECRET',
+      'SUPABASE_SERVICE_ROLE_KEY',
     ]));
   });
 });

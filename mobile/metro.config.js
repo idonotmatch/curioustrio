@@ -1,6 +1,6 @@
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 // Supabase uses the `ws` package for realtime. In React Native, the global
 // WebSocket is already provided natively, so we shim `ws` to a no-op module

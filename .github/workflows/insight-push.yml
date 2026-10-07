@@ -1,0 +1,29 @@
+name: Insight Push
+
+on:
+  schedule:
+    # One conservative daily window: morning in the continental US.
+    - cron: '15 14 * * *'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch eligible insight notifications
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --retry 2 --retry-all-errors --retry-delay 5 --connect-timeout 15 --max-time 540 -o response.json -w "%{http_code}" -X POST https://adlo-1j98.onrender.com/cron/insights-push \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          cat response.json
+          if [ "$status" -ge 400 ]; then
+            echo ""
+            echo "Insight push dispatch failed with HTTP $status"
+            exit 1
+          fi
+          if ! jq -e '.ok == true' response.json >/dev/null; then
+            echo "Insight push dispatch did not report a healthy result"
+            exit 1
+          fi

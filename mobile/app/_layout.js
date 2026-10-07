@@ -14,7 +14,11 @@ import { loadCurrentUserCache, saveCurrentUserCache } from '../services/currentU
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { startHouseholdFreshnessBridge } from '../services/householdFreshnessBridge';
-import { captureException } from '../services/observability';
+import {
+  captureException,
+  initObservability,
+  wrapRootComponent,
+} from '../services/observability';
 import { setActiveCacheUserId, clearActiveCacheUserId } from '../services/cacheIdentity';
 import { invalidateCacheByPrefix } from '../services/cache';
 import { resetPendingExpenseStore } from '../hooks/usePendingExpenses';
@@ -36,6 +40,8 @@ const {
   endPasswordRecovery,
   isPasswordRecoveryActive,
 } = require('../services/passwordRecovery');
+
+initObservability();
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -561,7 +567,7 @@ function AppNavigator() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   // Auth0Provider wrapper removed — Supabase manages session internally via lib/supabase.js
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -571,6 +577,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default wrapRootComponent(RootLayout);
 
 export function ErrorBoundary({ error, retry }) {
   useEffect(() => {
