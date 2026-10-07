@@ -50,6 +50,24 @@ function buildInsightAction(insight) {
     };
   }
 
+  const sourceExpense = metadata.largest_expense || metadata.top_unusual_expense || null;
+  if (
+    (type === 'early_spend_concentration' || type === 'one_off_expense_skewing_projection')
+    && sourceExpense?.id
+  ) {
+    return {
+      next_step_type: 'review_source_expense',
+      reason: 'Source identified',
+      title: 'Check the purchase behind this read',
+      body: 'Review the amount, merchant, date, and category. Correcting the source expense will update the next insight refresh.',
+      cta: 'Review source expense',
+      route: {
+        pathname: '/expense/[id]',
+        params: { id: sourceExpense.id },
+      },
+    };
+  }
+
   if (type === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
     return {
       next_step_type: 'review_item_bundle',

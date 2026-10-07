@@ -172,6 +172,8 @@ export function buildPreloadedInsightEvidence(insight, personalExpenses = [], ho
         ? 'merchant'
         : `${insight?.type || ''}`.includes('one_off')
           ? 'largest_expense'
-          : null;
+          : ['early_budget_pace', 'early_logging_momentum', 'developing_weekly_spend_change'].includes(`${insight?.type || ''}`)
+            ? 'period'
+            : null;
   return selectInsightEvidence(monthRows, mode, metadata, 5);
 }

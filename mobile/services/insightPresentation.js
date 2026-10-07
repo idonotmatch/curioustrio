@@ -483,15 +483,25 @@ export function getInsightSupportRows(insight, context = {}) {
       case 'projected_category_surge':
       case 'projected_category_under_baseline':
         addRow(rows, 'Category', metadata.category_name);
-        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date ?? metadata.current_spend));
-        addRow(rows, 'Usual spend', formatCurrencyShort(metadata.previous_spend));
-        addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count, 'expense'));
+        addRow(rows, 'Spend so far', formatCurrencyShort(
+          metadata.current_spend_to_date
+          ?? metadata.current_spend
+          ?? metadata.category_spend
+          ?? metadata.adjusted_projected_total
+        ));
+        addRow(rows, 'Usual spend', formatCurrencyShort(
+          metadata.previous_spend
+          ?? metadata.historical_spend_to_date_avg
+          ?? metadata.historical_average_total
+          ?? metadata.baseline_projected_total
+        ));
+        addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count ?? metadata.category_count, 'expense'));
         break;
       case 'early_repeated_merchant':
       case 'developing_repeated_merchant':
         addRow(rows, 'Merchant', metadata.merchant_name);
         addRow(rows, 'Visits', formatCountLabel(metadata.merchant_count, 'visit'));
-        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend));
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend ?? metadata.merchant_spend));
         break;
       case 'early_spend_concentration':
         addRow(rows, 'Share of spend', formatPercentShort(metadata.share_of_spend));
@@ -508,8 +518,18 @@ export function getInsightSupportRows(insight, context = {}) {
         break;
       case 'developing_weekly_spend_change':
         addRow(rows, 'Recent shift', formatCurrencyShort(metadata.delta_amount));
+        addRow(rows, 'Last 7 days', formatCurrencyShort(metadata.current_spend));
+        addRow(rows, 'Prior 7 days', formatCurrencyShort(metadata.previous_spend));
         addRow(rows, 'Expenses', formatCountLabel(metadata.expense_count, 'expense'));
         addRow(rows, 'Active days', formatCountLabel(metadata.active_day_count, 'day'));
+        break;
+      case 'usage_start_logging':
+        addRow(rows, 'Expenses logged', formatCountLabel(metadata.expense_count, 'expense'));
+        addRow(rows, 'History available', formatCountLabel(metadata.historical_period_count, 'month'));
+        break;
+      case 'usage_set_budget':
+        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
+        addRow(rows, 'Expenses logged', formatCountLabel(metadata.expense_count, 'expense'));
         break;
       case 'usage_building_history':
       case 'usage_ready_to_plan':
@@ -520,6 +540,7 @@ export function getInsightSupportRows(insight, context = {}) {
       case 'spend_pace_behind':
         addRow(rows, 'Pace difference', formatPercentShort(metadata.delta_percent));
         addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
+        addRow(rows, 'Usual pace', formatCurrencyShort(metadata.historical_spend_to_date_avg));
         addRow(rows, 'History compared', formatCountLabel(metadata.historical_period_count, 'month'));
         break;
       case 'budget_too_low':
@@ -530,7 +551,8 @@ export function getInsightSupportRows(insight, context = {}) {
           addRow(rows, 'Biggest driver', `${metadata.top_driver.category_name} +${formatCurrencyShort(metadata.top_driver.delta_amount)}`);
         }
         addRow(rows, 'Month-end gap', formatCurrencyShort(metadata.projected_budget_delta ?? metadata.projected_over_under));
-        addRow(rows, 'Spend so far', formatCurrencyShort(metadata.current_spend_to_date));
+        addRow(rows, 'Projected total', formatCurrencyShort(metadata.adjusted_projected_total));
+        addRow(rows, 'Usual total', formatCurrencyShort(metadata.baseline_projected_total ?? metadata.average_actual_spend_last_6));
         addRow(rows, 'History compared', formatCountLabel(metadata.historical_period_count, 'month'));
         break;
       case 'one_off_expense_skewing_projection':
@@ -614,18 +636,31 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
         route: '/budget-period',
       };
     case 'early_budget_pace':
+      return {
+        title: 'Check the budget behind this pace',
+        body: 'Review the current target before deciding whether spending or the budget itself needs to change.',
+        cta: 'Review budget',
+        route: '/budget-period',
+      };
     case 'early_top_category':
     case 'early_repeated_merchant':
     case 'early_spend_concentration':
-    case 'early_logging_momentum':
     case 'developing_weekly_spend_change':
     case 'developing_category_shift':
     case 'developing_repeated_merchant':
       return {
-        title: 'Use this as a directional read',
-        body: 'Spending is starting to move here. Check the details before changing plans.',
-        cta: null,
+        title: 'Check the purchases behind this read',
+        body: 'Review the supporting expenses and correct any amount, merchant, date, or category that does not belong.',
+        cta: 'Review supporting expenses',
         route: null,
+        local_action: 'show_evidence',
+      };
+    case 'early_logging_momentum':
+      return {
+        title: 'Keep strengthening the signal',
+        body: 'Another expense or two will make the next comparison more specific.',
+        cta: 'Add expense',
+        route: '/(tabs)/add',
       };
     case 'early_cleanup':
       return {
@@ -651,8 +686,6 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
       };
     case 'projected_month_end_over_budget':
     case 'projected_month_end_under_budget':
-    case 'budget_too_low':
-    case 'budget_too_high':
       if (descriptor.label === 'Plan around it' || descriptor.label === 'Plan with the room') {
         return {
           title: descriptor.label === 'Plan with the room' ? 'Turn this room into a plan' : 'Plan around this now',
@@ -665,26 +698,35 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
         };
       }
       return {
-        title: 'Read the budget context first',
-        body: 'Check the budget impact before turning this into a plan.',
-        cta: null,
-        route: null,
+        title: 'Pressure-test the month before it closes',
+        body: 'Use the planner to see how another purchase would change this projection.',
+        cta: 'Open planner',
+        route: { pathname: '/scenario-check', params: { scope, month } },
+      };
+    case 'budget_too_low':
+    case 'budget_too_high':
+      return {
+        title: 'Review the target itself',
+        body: 'Compare the budget with your recent actual spending and adjust it if the target no longer fits.',
+        cta: 'Review budget',
+        route: '/budget-period',
       };
     case 'one_off_expense_skewing_projection':
     case 'one_offs_driving_variance':
       return {
         title: 'Review the unusual spend first',
         body: 'Check whether this is a one-time spike before you react to the full forecast as if it were a lasting change.',
-        cta: null,
+        cta: 'Review supporting expenses',
         route: null,
+        local_action: 'show_evidence',
       };
     case 'spend_pace_ahead':
     case 'spend_pace_behind':
       return {
         title: 'See what is driving this pace',
-        body: 'Use the breakdown below to tell whether this is broad-based pressure or mostly coming from one or two drivers.',
-        cta: null,
-        route: null,
+        body: 'Review the current budget target alongside the pace before deciding what to change.',
+        cta: 'Review budget',
+        route: '/budget-period',
       };
     case 'recurring_cost_pressure':
       return {
@@ -694,6 +736,8 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
         route: null,
       };
     case 'recurring_price_spike':
+    case 'recurring_better_than_usual':
+    case 'recurring_cheaper_elsewhere':
     case 'item_recent_price_jump':
     case 'item_repurchase_accelerating':
     case 'item_pattern_lapsed':
@@ -704,18 +748,36 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
     case 'item_merchant_variance':
     case 'item_staple_emerging':
       if (insightType === 'recurring_repurchase_due' && Number(metadata.bundle_item_count || 0) > 1) {
+        const firstItem = Array.isArray(metadata.bundle_items) ? metadata.bundle_items[0] : null;
         return {
           title: 'Review the usual basket',
           body: 'Check the items, shared purchase history, usual store, and combined cost before adding them to your list.',
-          cta: null,
-          route: null,
+          cta: firstItem?.group_key ? 'Review item histories' : 'Review grouped evidence',
+          route: firstItem?.group_key ? {
+            pathname: '/recurring-item',
+            params: {
+              group_key: firstItem.group_key,
+              scope,
+              title: firstItem.item_name || 'Recurring item',
+              insight_type: insightType,
+            },
+          } : null,
+          local_action: firstItem?.group_key ? null : 'show_evidence',
         };
       }
       return {
         title: 'Review the item detail first',
         body: 'Use the item history, merchant comparison, and recent purchases to decide whether this is worth acting on right now.',
-        cta: null,
-        route: null,
+        cta: metadata.group_key ? 'Open item detail' : null,
+        route: metadata.group_key ? {
+          pathname: '/recurring-item',
+          params: {
+            group_key: metadata.group_key,
+            scope,
+            title: metadata.item_name || 'Recurring item',
+            insight_type: insightType,
+          },
+        } : null,
       };
     case 'top_category_driver':
     case 'projected_category_surge':
@@ -723,8 +785,9 @@ export function getPrimaryActionForInsight({ insightType, scope, month, category
       return {
         title: 'Review the category detail first',
         body: 'See whether this category reflects a sustained shift, one large purchase, or a short-lived spike before you plan around it.',
-        cta: null,
+        cta: 'Review supporting expenses',
         route: null,
+        local_action: 'show_evidence',
       };
     default:
       return null;

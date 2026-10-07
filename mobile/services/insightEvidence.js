@@ -72,6 +72,7 @@ function scoreEvidenceRow(expense, mode, metadata = {}) {
   else if (mode === 'category') baseScore = categoryMatchScore(expense, metadata);
   else if (mode === 'cleanup') baseScore = cleanupMatchScore(expense);
   else if (mode === 'largest_expense') baseScore = expense?.id ? 100 : -Infinity;
+  else if (mode === 'period') baseScore = expense?.id ? 40 : -Infinity;
 
   if (!Number.isFinite(baseScore)) return -Infinity;
 

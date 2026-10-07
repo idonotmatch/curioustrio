@@ -18,6 +18,11 @@ import { consumeNavigationPayload, stashNavigationPayload } from '../services/na
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { planningActionSummary } from '../services/planningPresentation';
 import { loadInsightDetailSnapshot, saveInsightDetailSnapshot } from '../services/insightLocalStore';
+import {
+  buildInsightPurchaseHistoryRows,
+  getInsightEvidenceMode,
+  getInsightEvidenceTitle,
+} from '../services/insightDetailPresentation';
 import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from '../components/InsightTrendVisual';
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
@@ -328,23 +333,6 @@ function consolidatedRows(metadata = {}) {
     .slice(0, 4);
 }
 
-function evidenceModeForInsight(insightType, metadata = {}) {
-  const type = `${insightType || ''}`;
-  if (type === 'early_cleanup') return 'cleanup';
-  if (metadata.category_key) return 'category';
-  if (metadata.merchant_key || metadata.merchant_name) return 'merchant';
-  if (metadata.largest_expense) return 'largest_expense';
-  return null;
-}
-
-function evidenceTitle(mode, metadata = {}) {
-  if (mode === 'cleanup') return 'Expenses to clean up';
-  if (mode === 'category') return `${metadata.category_name || 'Category'} activity`;
-  if (mode === 'merchant') return `${metadata.merchant_name || 'Merchant'} activity`;
-  if (mode === 'largest_expense') return 'Purchase behind the read';
-  return 'Recent evidence';
-}
-
 function merchantComparisonRows(metadata = {}) {
   const rows = Array.isArray(metadata.merchant_breakdown) ? metadata.merchant_breakdown : [];
   return rows
@@ -355,21 +343,6 @@ function merchantComparisonRows(metadata = {}) {
       median_amount: row.median_amount == null ? null : Number(row.median_amount),
       median_unit_price: row.median_unit_price == null ? null : Number(row.median_unit_price),
       last_purchased_at: row.last_purchased_at || null,
-    }));
-}
-
-function purchaseHistoryRows(metadata = {}) {
-  const rows = Array.isArray(metadata.purchases) ? metadata.purchases : [];
-  return rows
-    .filter(Boolean)
-    .map((row, index) => ({
-      id: `${row.date || 'date'}:${row.merchant || 'merchant'}:${index}`,
-      date: row.date || null,
-      merchant: row.merchant || null,
-      amount: row.amount == null ? null : Number(row.amount),
-      estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
-      normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
-      normalized_total_size_unit: row.normalized_total_size_unit || null,
     }));
 }
 
@@ -404,7 +377,7 @@ function evidenceProofRows({ metadata = {}, supportRows = [], merchantComparison
     addRow('Combined views', `${consolidationRows.length + 1} views`);
   }
   if (evidenceMode && !rows.length) {
-    addRow('Evidence type', evidenceTitle(evidenceMode, metadata));
+    addRow('Evidence type', getInsightEvidenceTitle(evidenceMode, metadata));
   }
 
   supportRows.slice(0, 2).forEach((row) => addRow(row.label, row.value));
@@ -510,7 +483,7 @@ export default function InsightDetailScreen() {
   }), [insightId, remoteInsight, insightType, title, body, severity, entityType, entityId, metadata, actionPayload]);
 
   const primaryAction = useMemo(() => {
-    if (insight?.action && !isCurrentInsightDetailAction(insight.action, insightId, insightType)) return insight.action;
+    if (insight?.action?.route && !isCurrentInsightDetailAction(insight.action, insightId, insightType)) return insight.action;
     return getPrimaryActionForInsight({
       insightType: `${insightType}`,
       scope: metadata.scope || 'personal',
@@ -529,7 +502,7 @@ export default function InsightDetailScreen() {
   const categorySignal = categorySignalCopy(metadata);
   const consolidationNote = consolidatedCopy(metadata);
   const consolidationRows = consolidatedRows(metadata);
-  const evidenceMode = evidenceModeForInsight(insightType, metadata);
+  const evidenceMode = getInsightEvidenceMode(insightType, metadata);
   const changed = whatChangedCopy(metadata, body);
   const whyItMatters = whyItMattersCopy(insightType, metadata);
   const trendVisual = getInsightTrendVisual(insight);
@@ -537,10 +510,11 @@ export default function InsightDetailScreen() {
   const planningNextStep = `${insightType}` === 'usage_ready_to_plan'
     ? planningActionSummary(metadata)
     : null;
-  const hasPrimaryAction = Boolean(primaryAction?.route && nextStep.cta);
+  const hasPrimaryAction = Boolean((primaryAction?.route || primaryAction?.local_action) && nextStep.cta);
   const hasNextMove = Boolean(planningNextStep || hasPrimaryAction);
   const merchantComparisons = merchantComparisonRows(metadata);
-  const purchaseHistory = purchaseHistoryRows(metadata);
+  const purchaseHistory = buildInsightPurchaseHistoryRows(metadata);
+  const bundleItems = Array.isArray(metadata.bundle_items) ? metadata.bundle_items.filter((item) => item?.group_key) : [];
   const hasSupportingDetail = merchantComparisons.length > 0 || purchaseHistory.length > 0 || !!evidenceMode;
   const hasBehindRead = technicalRows.length > 0 || !!categorySignal || !!consolidationNote || consolidationRows.length > 0;
   const showAtAGlanceEvidence = supportRows.length > 0 && !hasSupportingDetail && !consolidationNote;
@@ -565,7 +539,8 @@ export default function InsightDetailScreen() {
   }
   const [evidenceRows, setEvidenceRows] = useState(() => {
     if (evidenceMode === 'largest_expense') {
-      return metadata.largest_expense ? [metadata.largest_expense] : [];
+      const sourceExpense = metadata.largest_expense || metadata.top_unusual_expense;
+      return sourceExpense ? [sourceExpense] : [];
     }
     return preloadedEvidence;
   });
@@ -573,13 +548,17 @@ export default function InsightDetailScreen() {
     if (!evidenceMode || evidenceMode === 'largest_expense') return false;
     return !preloadedEvidence.length;
   });
+  const evidencePreviewRows = (purchaseHistory.length > 0
+    ? purchaseHistory.slice().reverse()
+    : evidenceRows
+  ).filter(Boolean).slice(0, 2);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadEvidence() {
       if (!evidenceMode || evidenceMode === 'largest_expense') {
-        const largest = metadata.largest_expense;
+        const largest = metadata.largest_expense || metadata.top_unusual_expense;
         setEvidenceRows(largest ? [largest] : []);
         setEvidenceLoading(false);
         return;
@@ -715,6 +694,10 @@ export default function InsightDetailScreen() {
   }
 
   function openPrimaryAction() {
+    if (primaryAction?.local_action === 'show_evidence') {
+      setShowTechnicalDetails(true);
+      return;
+    }
     if (insight?.action?.route && !isCurrentInsightDetailAction(insight.action, insightId, insightType)) {
       router.push(insight.action.route);
       return;
@@ -769,6 +752,50 @@ export default function InsightDetailScreen() {
           </View>
         ) : null}
 
+        {bundleItems.length > 1 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardEyebrow}>Usual basket</Text>
+            <Text style={styles.cardTitle}>Items grouped by shared purchase history</Text>
+            <Text style={styles.cardCopy}>
+              These items were combined because they repeatedly appeared in the same source transactions with aligned timing. Open any item to inspect or correct its matches.
+            </Text>
+            <View style={styles.bundleList}>
+              {bundleItems.map((item) => (
+                <TouchableOpacity
+                  key={item.group_key}
+                  style={styles.bundleItemRow}
+                  activeOpacity={0.82}
+                  onPress={() => router.push({
+                    pathname: '/recurring-item',
+                    params: {
+                      group_key: item.group_key,
+                      scope: metadata.scope || 'personal',
+                      title: item.item_name || 'Recurring item',
+                      insight_id: insightId,
+                      insight_type: insightType,
+                    },
+                  })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Review ${item.item_name || 'recurring item'} history`}
+                >
+                  <View style={styles.bundleItemCopy}>
+                    <Text style={styles.metricMerchant}>{item.item_name || 'Recurring item'}</Text>
+                    <Text style={styles.metricSub}>
+                      {[
+                        item.median_amount != null ? `Usually ${formatCurrency(item.median_amount)}` : null,
+                        Number.isFinite(Number(item.days_until_due))
+                          ? (Number(item.days_until_due) <= 0 ? 'Due now' : `Due in ${item.days_until_due} days`)
+                          : null,
+                      ].filter(Boolean).join(' / ')}
+                    </Text>
+                  </View>
+                  <Text style={styles.bundleItemAction}>Review</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.sectionBlock}>
           <Text style={styles.cardEyebrow}>Why now</Text>
           <Text style={styles.sectionCopy}>{whyItMatters}</Text>
@@ -801,10 +828,10 @@ export default function InsightDetailScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.technicalHeaderText}>
-                <Text style={styles.cardEyebrow}>Evidence check</Text>
-                <Text style={styles.cardTitle}>Can I trust this?</Text>
+                <Text style={styles.cardEyebrow}>Supporting evidence</Text>
+                <Text style={styles.cardTitle}>What this is based on</Text>
               </View>
-              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Collapse' : 'Inspect'}</Text>
+              <Text style={styles.technicalToggle}>{showTechnicalDetails ? 'Show less' : 'Show all'}</Text>
             </TouchableOpacity>
             {proofRows.length > 0 ? (
               <View style={showTechnicalDetails ? styles.evidenceProofListExpanded : styles.evidenceProofList}>
@@ -819,6 +846,38 @@ export default function InsightDetailScreen() {
             ) : null}
             {!showTechnicalDetails && evidenceSummary ? (
               <Text style={styles.evidenceSummaryText}>{evidenceSummary}</Text>
+            ) : null}
+            {!showTechnicalDetails && evidencePreviewRows.length > 0 ? (
+              <View style={styles.supportBlock}>
+                <Text style={styles.supportBlockTitle}>Supporting expenses</Text>
+                <View style={styles.expenseList}>
+                  {evidencePreviewRows.map((expense, index) => {
+                    const expenseId = expense.id || expense.expense_id || null;
+                    return (
+                      <TouchableOpacity
+                        key={expense.key || expenseId || `${expense.merchant || 'expense'}:${index}`}
+                        style={styles.expenseRow}
+                        activeOpacity={expenseId ? 0.82 : 1}
+                        disabled={!expenseId}
+                        onPress={() => handleOpenExpense(expense)}
+                        accessibilityRole={expenseId ? 'button' : undefined}
+                        accessibilityLabel={expenseId ? `Review ${expense.merchant || 'supporting expense'}` : undefined}
+                      >
+                        <View style={styles.expenseText}>
+                          <Text style={styles.expenseMerchant}>{expense.merchant || 'Unknown merchant'}</Text>
+                          <Text style={styles.expenseMeta}>
+                            {[formatShortDate(expense.date), expense.category_name].filter(Boolean).join(' / ')}
+                          </Text>
+                        </View>
+                        <Text style={styles.expenseAmount}>{formatCurrency(expense.amount ?? expense.item_amount)}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {evidencePreviewRows.some((expense) => expense.id || expense.expense_id) ? (
+                  <Text style={styles.correctionHint}>Tap an expense to review or correct the source data.</Text>
+                ) : null}
+              </View>
             ) : null}
             {showTechnicalDetails && showAtAGlanceEvidence ? (
               <View style={styles.supportBlock}>
@@ -893,7 +952,7 @@ export default function InsightDetailScreen() {
 
             {showTechnicalDetails && evidenceMode ? (
               <View style={styles.supportBlock}>
-                <Text style={styles.supportBlockTitle}>{evidenceTitle(evidenceMode, metadata)}</Text>
+                <Text style={styles.supportBlockTitle}>{getInsightEvidenceTitle(evidenceMode, metadata)}</Text>
                 {evidenceLoading ? (
                   <View style={styles.loadingRow}>
                     <ActivityIndicator color={colors.textMuted} size="small" />
@@ -1147,6 +1206,19 @@ const styles = StyleSheet.create({
   expenseMerchant: { color: colors.text, fontSize: 14, fontWeight: '700' },
   expenseMeta: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
   expenseAmount: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  correctionHint: { color: colors.textSubtle, fontSize: 12, lineHeight: 17 },
+  bundleList: { gap: 0 },
+  bundleItemRow: {
+    minHeight: 48,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  bundleItemCopy: { flex: 1 },
+  bundleItemAction: { color: colors.info, fontSize: 12, fontWeight: '800' },
   primaryButton: {
     alignSelf: 'flex-start',
     backgroundColor: colors.accent,
