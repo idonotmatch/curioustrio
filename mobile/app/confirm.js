@@ -22,6 +22,12 @@ import {
 import { colors } from '../theme/tokens';
 const { createExpenseIdempotencyKey } = require('../services/expenseIdempotency');
 const { expenseDraftError } = require('../services/expenseValidation');
+const {
+  buildReceiptBreakdownPresentation,
+  createEditableReceiptDetails,
+  normalizeReceiptDetailsPayload,
+  receiptDetailChangedFields,
+} = require('../services/receiptDetailsEditing');
 
 function parseConfirmData(value) {
   try {
@@ -116,11 +122,22 @@ export default function ConfirmScreen() {
   const initialItems = useMemo(() => createEditableDraftItems(parsed), [parsed]);
   const originalParsedItemsRef = useRef(createOriginalItemSnapshot(parsed, initialItems));
   const [items, setItems] = useState(initialItems);
+  const initialReceiptDetails = useMemo(() => createEditableReceiptDetails(parsed), [parsed]);
+  const originalReceiptDetailsRef = useRef(initialReceiptDetails);
+  const [receiptDetails, setReceiptDetails] = useState(initialReceiptDetails);
   const reviewFields = Array.isArray(expense?.review_fields) ? expense.review_fields : [];
   const fieldConfidence = expense?.field_confidence || {};
   const itemReviewPresentation = useMemo(
-    () => buildItemReviewPresentation(expense, items, amountText),
-    [expense, items, amountText]
+    () => buildItemReviewPresentation({
+      ...expense,
+      subtotal: receiptDetails.subtotal,
+      discounts: receiptDetails.discounts,
+    }, items, amountText),
+    [expense, items, amountText, receiptDetails.subtotal, receiptDetails.discounts]
+  );
+  const receiptBreakdownPresentation = useMemo(
+    () => buildReceiptBreakdownPresentation(receiptDetails, amountText),
+    [receiptDetails, amountText]
   );
   const effectiveReviewFields = reviewFields.filter(
     (field) => field !== 'items' || itemReviewPresentation
@@ -152,6 +169,9 @@ export default function ConfirmScreen() {
     const nextItems = createEditableDraftItems(parsed);
     originalParsedItemsRef.current = createOriginalItemSnapshot(parsed, nextItems);
     setItems(nextItems);
+    const nextReceiptDetails = createEditableReceiptDetails(parsed);
+    originalReceiptDetailsRef.current = nextReceiptDetails;
+    setReceiptDetails(nextReceiptDetails);
     setLocationData(
       parsed?.place_name || parsed?.address || parsed?.mapkit_stable_id
         ? {
@@ -287,6 +307,10 @@ export default function ConfirmScreen() {
   }
   function handleRemoveItem(index) {
     setItems(prev => prev.filter((_, i) => i !== index));
+  }
+
+  function handleReceiptDetailChange(field, value) {
+    setReceiptDetails((current) => ({ ...current, [field]: value }));
   }
 
   function handleRefundToggle(value) {
@@ -427,6 +451,11 @@ export default function ConfirmScreen() {
         return;
       }
 
+      const normalizedReceiptDetails = normalizeReceiptDetailsPayload(receiptDetails);
+      const correctedReceiptFields = receiptDetailChangedFields(
+        originalReceiptDetailsRef.current,
+        receiptDetails
+      );
       const result = await api.post('/expenses/confirm', {
         idempotency_key: confirmRequestKeyRef.current,
         merchant: merchant.trim() || null,
@@ -469,19 +498,12 @@ export default function ConfirmScreen() {
           card_last4: parsed?.card_last4 || null,
         },
         receipt_details: parsed?.source === 'camera' ? {
-          currency: parsed?.currency || null,
-          subtotal: parsed?.subtotal ?? null,
-          tax: parsed?.tax ?? null,
-          tip: parsed?.tip ?? null,
-          fees: parsed?.fees ?? null,
-          discounts: parsed?.discounts ?? null,
-          transaction_id: parsed?.transaction_id || null,
-          purchase_time: parsed?.purchase_time || null,
-          store_number: parsed?.store_number || null,
+          ...normalizedReceiptDetails,
           validation: {
             ...(parsed?.receipt_validation || {}),
             uncertain_fields: parsed?.uncertain_fields || [],
             field_confidence: parsed?.field_confidence || {},
+            user_corrected_fields: correctedReceiptFields,
           },
         } : undefined,
         original_parsed_items: parsed?.ingest_attempt_id && Array.isArray(parsed?.items)
@@ -647,6 +669,97 @@ export default function ConfirmScreen() {
         ) : null}
         {reviewNote('date', 'Date was inferred and may need adjusting.')}
       </View>
+
+      {isCameraSource ? (
+        <View style={styles.receiptDetailsSection}>
+          <Text style={styles.sectionLabel}>RECEIPT BREAKDOWN</Text>
+          <Text style={styles.receiptDetailsHint}>
+            Check the printed breakdown. Savings is informational and is not subtracted from the subtotal again.
+          </Text>
+          {receiptBreakdownPresentation ? (
+            <View style={[styles.itemReviewNotice, styles.itemReviewNoticeWarning]}>
+              <Text style={styles.itemReviewNoticeTitle}>{receiptBreakdownPresentation.title}</Text>
+              <Text style={styles.itemReviewNoticeBody}>{receiptBreakdownPresentation.body}</Text>
+            </View>
+          ) : null}
+          <View style={styles.receiptDetailsGrid}>
+            {[
+              ['subtotal', 'Subtotal'],
+              ['tax', 'Tax'],
+              ['tip', 'Tip'],
+              ['fees', 'Fees'],
+              ['discounts', 'Savings'],
+            ].map(([field, label]) => (
+              <View key={field} style={styles.receiptDetailField}>
+                <Text style={styles.itemMetricLabel}>{label}</Text>
+                <TextInput
+                  style={styles.itemMetricInput}
+                  value={receiptDetails[field]}
+                  onChangeText={(value) => handleReceiptDetailChange(field, value)}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textDisabled}
+                  accessibilityLabel={`Receipt ${label.toLowerCase()}`}
+                />
+              </View>
+            ))}
+            <View style={styles.receiptDetailField}>
+              <Text style={styles.itemMetricLabel}>Currency</Text>
+              <TextInput
+                style={styles.itemMetricInput}
+                value={receiptDetails.currency}
+                onChangeText={(value) => handleReceiptDetailChange('currency', value.toUpperCase().slice(0, 3))}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={3}
+                placeholder="USD"
+                placeholderTextColor={colors.textDisabled}
+                accessibilityLabel="Receipt currency"
+              />
+            </View>
+          </View>
+          <View style={styles.receiptMetaRow}>
+            <View style={styles.receiptMetaField}>
+              <Text style={styles.itemMetricLabel}>Time (24h)</Text>
+              <TextInput
+                style={styles.itemMetricInput}
+                value={receiptDetails.purchase_time}
+                onChangeText={(value) => handleReceiptDetailChange('purchase_time', value)}
+                placeholder="14:30"
+                placeholderTextColor={colors.textDisabled}
+                maxLength={5}
+                accessibilityLabel="Receipt purchase time"
+              />
+            </View>
+            <View style={styles.receiptMetaField}>
+              <Text style={styles.itemMetricLabel}>Store #</Text>
+              <TextInput
+                style={styles.itemMetricInput}
+                value={receiptDetails.store_number}
+                onChangeText={(value) => handleReceiptDetailChange('store_number', value)}
+                placeholder="Optional"
+                placeholderTextColor={colors.textDisabled}
+                autoCorrect={false}
+                accessibilityLabel="Receipt store number"
+              />
+            </View>
+          </View>
+          <View style={styles.receiptTransactionField}>
+            <Text style={styles.itemMetricLabel}>Transaction / order ID</Text>
+            <TextInput
+              style={styles.itemMetricInput}
+              value={receiptDetails.transaction_id}
+              onChangeText={(value) => handleReceiptDetailChange('transaction_id', value)}
+              placeholder="Optional"
+              placeholderTextColor={colors.textDisabled}
+              autoCorrect={false}
+              autoCapitalize="characters"
+              accessibilityLabel="Receipt transaction or order ID"
+            />
+          </View>
+          {reviewNote('receipt totals', 'One or more printed totals did not reconcile. Check the breakdown and paid total.')}
+        </View>
+      ) : null}
 
       {/* Category — tappable picker */}
       <View style={styles.editableGroup}>
@@ -1110,6 +1223,13 @@ const styles = StyleSheet.create({
   reasonChipTextActive: { color: colors.text },
   paymentSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
   sectionLabel: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  receiptDetailsSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
+  receiptDetailsHint: { color: colors.textSubtle, fontSize: 12, lineHeight: 17, marginBottom: 10 },
+  receiptDetailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  receiptDetailField: { width: '31%', minWidth: 0 },
+  receiptMetaRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  receiptMetaField: { flex: 1, minWidth: 0 },
+  receiptTransactionField: { marginTop: 8 },
   methodRow: { flexDirection: 'row', gap: 6 },
   methodChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
   methodChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },

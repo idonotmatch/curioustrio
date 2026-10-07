@@ -68,16 +68,29 @@ function buildItemReviewPresentation(parsed = {}, editableItems = [], amountValu
   if (!items.length) return null;
 
   const amount = Number(amountValue ?? parsed?.amount);
-  const pricedItems = items.filter((item) => Number.isFinite(Number.parseFloat(`${item?.amount ?? ''}`)));
+  const subtotal = Number(parsed?.subtotal);
+  const hasSubtotal = parsed?.subtotal != null && parsed?.subtotal !== '' && Number.isFinite(subtotal);
+  const comparableItems = hasSubtotal
+    ? items.filter((item) => !item?.item_type || item.item_type === 'product')
+    : items;
+  const pricedItems = comparableItems.filter((item) => Number.isFinite(Number.parseFloat(`${item?.amount ?? ''}`)));
   const itemSum = pricedItems.length
     ? pricedItems.reduce((sum, item) => sum + Number.parseFloat(`${item.amount}`), 0)
     : null;
+  const targetAmount = hasSubtotal ? subtotal : amount;
+  const discounts = Number(parsed?.discounts);
+  const discountExplainsGap = hasSubtotal
+    && itemSum != null
+    && parsed?.discounts != null
+    && parsed?.discounts !== ''
+    && Number.isFinite(discounts)
+    && Math.abs((itemSum - Math.abs(discounts)) - targetAmount) <= Math.max(0.05, Math.abs(targetAmount) * 0.01);
   const status = (
     pricedItems.length === 0
       ? 'unpriced'
-      : pricedItems.length < items.length
+      : pricedItems.length < comparableItems.length
         ? 'partial'
-        : Number.isFinite(amount) && Math.abs(itemSum - amount) > Math.max(0.05, Math.abs(amount) * 0.01)
+        : Number.isFinite(targetAmount) && !discountExplainsGap && Math.abs(itemSum - targetAmount) > Math.max(0.05, Math.abs(targetAmount) * 0.01)
           ? 'mismatch'
           : 'matched'
   );
@@ -86,8 +99,8 @@ function buildItemReviewPresentation(parsed = {}, editableItems = [], amountValu
     return {
       tone: 'warning',
       title: 'Check the item total',
-      body: Number.isFinite(amount) && itemSum != null
-        ? `Items add to $${itemSum.toFixed(2)}, while the expense is $${Math.abs(amount).toFixed(2)}. Correct a price, or leave it if tax or fees explain the difference.`
+      body: Number.isFinite(targetAmount) && itemSum != null
+        ? `Items add to $${itemSum.toFixed(2)}, while the ${hasSubtotal ? 'receipt subtotal' : 'expense'} is $${Math.abs(targetAmount).toFixed(2)}. Correct a line total that does not look right.`
         : 'The item prices do not match the expense total. Correct them, or leave them if tax or fees explain the difference.',
     };
   }
@@ -95,7 +108,7 @@ function buildItemReviewPresentation(parsed = {}, editableItems = [], amountValu
   if (status === 'partial') {
     return {
       tone: 'neutral',
-      title: `${pricedItems.length} of ${items.length} item prices captured`,
+      title: `${pricedItems.length} of ${comparableItems.length} item prices captured`,
       body: 'Add the missing prices if you know them, or save now and keep the item names for matching and trends.',
     };
   }

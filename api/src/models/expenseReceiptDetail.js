@@ -16,8 +16,15 @@ function boundedAmount(value) {
 }
 
 function normalizeValidation(validation = {}) {
-  const allowedIssues = ['total_components_mismatch', 'item_sum_mismatch'];
-  const allowedFields = ['merchant', 'amount', 'date', 'items', 'payment_method'];
+  const allowedIssues = [
+    'total_components_mismatch', 'receipt_components_incomplete', 'item_sum_mismatch',
+    'item_amounts_incomplete', 'item_math_mismatch',
+  ];
+  const allowedFields = [
+    'merchant', 'amount', 'date', 'items', 'currency', 'subtotal', 'tax', 'tip',
+    'fees', 'discounts', 'transaction_id', 'purchase_time', 'payment_method',
+    'card_label', 'card_last4', 'store_address', 'store_number', 'receipt_totals',
+  ];
   const confidenceValues = new Set(['low', 'medium', 'high']);
   const fieldConfidence = Object.fromEntries(
     Object.entries(validation.field_confidence || {})
@@ -38,19 +45,32 @@ function normalizeValidation(validation = {}) {
     extracted_item_count: Number.isFinite(Number(validation.extracted_item_count))
       ? Math.max(0, Math.floor(Number(validation.extracted_item_count)))
       : null,
+    product_item_count: Number.isFinite(Number(validation.product_item_count))
+      ? Math.max(0, Math.floor(Number(validation.product_item_count)))
+      : null,
+    unpriced_item_count: Number.isFinite(Number(validation.unpriced_item_count))
+      ? Math.max(0, Math.floor(Number(validation.unpriced_item_count)))
+      : null,
+    item_math_mismatch_count: Number.isFinite(Number(validation.item_math_mismatch_count))
+      ? Math.max(0, Math.floor(Number(validation.item_math_mismatch_count)))
+      : null,
+    user_corrected_fields: Array.isArray(validation.user_corrected_fields)
+      ? validation.user_corrected_fields.filter((value) => allowedFields.includes(value))
+      : [],
   };
 }
 
 function normalizeDetails(details = {}) {
   const currency = `${details.currency || ''}`.trim().toUpperCase();
   const purchaseTime = `${details.purchase_time || ''}`.trim();
+  const discounts = boundedAmount(details.discounts);
   return {
     currency: /^[A-Z]{3}$/.test(currency) ? currency : null,
     subtotal: boundedAmount(details.subtotal),
     tax: boundedAmount(details.tax),
     tip: boundedAmount(details.tip),
     fees: boundedAmount(details.fees),
-    discounts: boundedAmount(details.discounts),
+    discounts: discounts == null ? null : Math.abs(discounts),
     transaction_id: boundedText(details.transaction_id, 160),
     purchase_time: /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(purchaseTime) ? purchaseTime : null,
     store_number: boundedText(details.store_number, 80),

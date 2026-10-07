@@ -86,6 +86,20 @@ function run() {
   assert(mismatchPresentation.body.includes('$24.70'), 'mismatch guidance should show the parsed item sum');
   assert(mismatchPresentation.body.includes('$31.40'), 'mismatch guidance should show the expense total');
 
+  const receiptSubtotalPresentation = buildItemReviewPresentation(
+    { subtotal: 24.70 },
+    [{ description: 'salmon', amount: '18.50' }, { description: 'asparagus', amount: '6.20' }],
+    '26.89'
+  );
+  assert.strictEqual(receiptSubtotalPresentation, null, 'receipt items should reconcile to subtotal rather than the tax-inclusive paid total');
+
+  const discountedSubtotalPresentation = buildItemReviewPresentation(
+    { subtotal: 11, discounts: 1 },
+    [{ description: 'water', amount: '6.50' }, { description: 'bananas', amount: '1.50' }, { description: 'bread', amount: '4.00' }],
+    '11.88'
+  );
+  assert.strictEqual(discountedSubtotalPresentation, null, 'receipt-wide savings should explain a product-sum versus net-subtotal difference');
+
   const payload = normalizeExpenseItemPayload({
     description: '  OLIPOP  ',
     amount: '5.37',

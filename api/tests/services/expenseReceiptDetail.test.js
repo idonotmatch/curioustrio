@@ -14,6 +14,10 @@ it('whitelists and bounds client-provided receipt details', () => {
       issues: ['item_sum_mismatch', 'unknown_issue'],
       uncertain_fields: ['amount', 'secret'],
       field_confidence: { amount: 'medium', unknown: 'high' },
+      product_item_count: 2,
+      unpriced_item_count: 1,
+      item_math_mismatch_count: 1,
+      user_corrected_fields: ['tax', 'transaction_id', 'secret'],
       ignored: 'value',
     },
   })).toEqual({
@@ -35,6 +39,10 @@ it('whitelists and bounds client-provided receipt details', () => {
       items_truncated: false,
       visible_item_count: null,
       extracted_item_count: null,
+      product_item_count: 2,
+      unpriced_item_count: 1,
+      item_math_mismatch_count: 1,
+      user_corrected_fields: ['tax', 'transaction_id'],
     },
   });
 });

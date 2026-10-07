@@ -304,17 +304,18 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     addModelMetrics(modelMetrics, parsedResult?.diagnostics);
     initialParseDurationMs = Date.now() - initialParseStartedAt;
   } catch (err) {
+    const failureReason = err?.name === 'VendorTimeoutError' ? 'ai_timeout' : 'ai_unavailable';
     await IngestAttemptLog.create({
       userId: user?.id || null,
       source: 'receipt',
       status: 'failed',
-      failureReason: 'ai_unavailable',
+      failureReason,
       metadata: {
         image_size: imageBase64.length,
         error: err.message,
       },
     });
-    return { errorStatus: 503, errorBody: buildIngestFailure('receipt', 'ai_unavailable') };
+    return { errorStatus: 503, errorBody: buildIngestFailure('receipt', failureReason) };
   }
 
   const firstPassOutcome = summarizeReceiptOutcome(parsedResult);

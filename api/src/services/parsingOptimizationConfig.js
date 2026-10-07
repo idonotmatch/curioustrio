@@ -37,7 +37,7 @@ module.exports = {
     return timeoutMs('PARSING_TEXT_MODEL_TIMEOUT_MS', 8000);
   },
   imageModelTimeoutMs() {
-    return timeoutMs('PARSING_IMAGE_MODEL_TIMEOUT_MS', 14000);
+    return timeoutMs('PARSING_IMAGE_MODEL_TIMEOUT_MS', 20000);
   },
   mapkitTimeoutMs() {
     return timeoutMs('PARSING_MAPKIT_TIMEOUT_MS', 2500);

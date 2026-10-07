@@ -101,7 +101,97 @@ describe('parseReceipt', () => {
 
     expect(result.receipt_validation.issues).toContain('total_components_mismatch');
     expect(result.review_fields).toContain('amount');
+    expect(result.review_fields).toContain('receipt totals');
     expect(result.field_confidence.amount).toBe('medium');
+  });
+
+  it('keeps summary, payment, tax, and discount rows out of product items', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 10.8,
+      date: '2026-03-21',
+      subtotal: 10,
+      tax: 0.8,
+      items: [
+        { description: 'Milk', amount: 4, item_type: 'product' },
+        { description: 'Bread', amount: 6 },
+        { description: 'Subtotal', amount: 10, item_type: '' },
+        { description: 'Sales Tax', amount: 0.8, item_type: '' },
+        { description: 'Visa Payment', amount: 10.8, item_type: 'summary' },
+        { description: 'Coupon Savings', amount: -2, item_type: 'discount' },
+      ],
+      uncertain_fields: [],
+    }, '2026-03-21');
+
+    expect(result.items.map((item) => item.description)).toEqual(['Milk', 'Bread']);
+    expect(result.receipt_validation).toMatchObject({
+      product_item_count: 2,
+      unpriced_item_count: 0,
+      item_math_mismatch_count: 0,
+      item_sum_matches_subtotal: true,
+    });
+  });
+
+  it('flags inconsistent quantity math without treating unit price as the line total', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 7,
+      date: '2026-03-21',
+      subtotal: 7,
+      items: [{
+        description: 'Sparkling water',
+        amount: 7,
+        quantity: 3,
+        unit_price: 2,
+        item_type: 'product',
+      }],
+      uncertain_fields: [],
+    }, '2026-03-21');
+
+    expect(result.items[0].amount).toBe(7);
+    expect(result.items[0].extraction_confidence).toBe('low');
+    expect(result.receipt_validation.issues).toContain('item_math_mismatch');
+    expect(result.review_fields).toContain('items');
+  });
+
+  it('does not claim an item sum mismatch when prices are incomplete', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 10.8,
+      date: '2026-03-21',
+      subtotal: 10,
+      tax: 0.8,
+      items: [
+        { description: 'Milk', amount: 4 },
+        { description: 'Bread', amount: 0 },
+      ],
+      uncertain_fields: [],
+    }, '2026-03-21');
+
+    expect(result.receipt_validation.item_sum_matches_subtotal).toBeNull();
+    expect(result.receipt_validation.issues).toContain('item_amounts_incomplete');
+    expect(result.receipt_validation.issues).not.toContain('item_sum_mismatch');
+  });
+
+  it('accepts a printed receipt-wide discount between product rows and subtotal', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 11.88,
+      date: '2026-03-21',
+      subtotal: 11,
+      tax: 0.88,
+      discounts: -1,
+      items: [
+        { description: 'Sparkling water', amount: 6.5 },
+        { description: 'Bananas', amount: 1.5 },
+        { description: 'Bread', amount: 4 },
+      ],
+      uncertain_fields: [],
+    }, '2026-03-21');
+
+    expect(result.discounts).toBe(1);
+    expect(result.receipt_validation.item_sum_matches_subtotal).toBe(true);
+    expect(result.receipt_validation.issues).not.toContain('item_sum_mismatch');
   });
 
   it('marks long receipt item extraction as incomplete', () => {
@@ -126,6 +216,7 @@ describe('parseReceipt', () => {
       items_truncated: true,
       visible_item_count: 37,
       extracted_item_count: 30,
+      item_sum_matches_subtotal: null,
     });
   });
 
@@ -274,6 +365,8 @@ describe('parseReceipt', () => {
     const schema = instance.messages.create.mock.calls[0][0].output_config.format.schema;
     expect(schema.properties.payment_method.enum).toBeUndefined();
     expect(schema.properties.items.items.properties.item_type.enum).toContain('');
+    expect(schema.properties.uncertain_fields.items.enum).toContain('subtotal');
+    expect(instance.messages.create.mock.calls[0][0].max_tokens).toBe(3200);
     expect(schema.required).toEqual(expect.arrayContaining(Object.keys(schema.properties)));
     expect(schema.properties.items.items.required).toEqual(
       expect.arrayContaining(Object.keys(schema.properties.items.items.properties))
@@ -356,7 +449,20 @@ describe('parseReceipt', () => {
     expect(result.date).toBe('2026-03-21');
     expect(result.parse_status).toBe('partial');
     expect(result.review_fields).toEqual(expect.arrayContaining(['date', 'items']));
-    expect(result.field_confidence.date).toBe('medium');
+    expect(result.field_confidence.date).toBe('low');
+  });
+
+  it('does not silently accept a future transaction date', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Target',
+      amount: 28.5,
+      date: '2027-03-21',
+      items: [{ description: 'Shampoo', amount: 28.5 }],
+    }, '2026-03-21');
+
+    expect(result.date).toBe('2026-03-21');
+    expect(result.review_fields).toContain('date');
+    expect(result.field_confidence.date).toBe('low');
   });
 
   it('returns null when amount is missing even if other fields exist', () => {

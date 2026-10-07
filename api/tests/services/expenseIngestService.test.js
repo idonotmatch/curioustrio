@@ -47,6 +47,27 @@ describe('expenseIngestService', () => {
     process.env = originalEnv;
   });
 
+  it('reports image-model timeouts separately from unreadable receipts', async () => {
+    const timeout = Object.assign(new Error('anthropic_image timed out'), { name: 'VendorTimeoutError' });
+    parseReceiptDetailed.mockRejectedValueOnce(timeout);
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-10-07',
+    });
+
+    expect(result).toEqual({
+      errorStatus: 503,
+      errorBody: { error: 'Could not parse receipt', reason_code: 'ai_timeout' },
+    });
+    expect(IngestAttemptLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'receipt',
+      status: 'failed',
+      failureReason: 'ai_timeout',
+    }));
+  });
+
   it('records compact success metadata for parsed NL input', async () => {
     process.env.INGEST_SUCCESS_PARSED_SNAPSHOT_SAMPLE_RATE = '1';
     parseExpenseDetailed.mockResolvedValue({

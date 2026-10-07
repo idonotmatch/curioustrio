@@ -38,6 +38,14 @@ function buildParsedSnapshot(parsed = {}) {
     item_count: Array.isArray(parsed?.items) ? parsed.items.length : 0,
     review_fields: Array.isArray(parsed?.review_fields) ? parsed.review_fields : [],
     parse_status: parsed?.parse_status || null,
+    receipt_validation: parsed?.receipt_validation ? {
+      total_components_match: parsed.receipt_validation.total_components_match ?? null,
+      item_sum_matches_subtotal: parsed.receipt_validation.item_sum_matches_subtotal ?? null,
+      issues: Array.isArray(parsed.receipt_validation.issues) ? parsed.receipt_validation.issues : [],
+      product_item_count: parsed.receipt_validation.product_item_count ?? null,
+      unpriced_item_count: parsed.receipt_validation.unpriced_item_count ?? null,
+      item_math_mismatch_count: parsed.receipt_validation.item_math_mismatch_count ?? null,
+    } : null,
   };
 }
 

@@ -11,6 +11,16 @@ assert.deepStrictEqual(
   }
 );
 
+assert.deepStrictEqual(
+  receiptScanErrorPresentation({ message: 'Could not parse receipt', reason_code: 'ai_timeout' }),
+  {
+    title: 'Receipt scan took too long',
+    message: 'The image reached the scanner, but processing timed out. Try once more or enter the expense manually.',
+    canRetry: true,
+    canEnterManually: true,
+  }
+);
+
 assert.strictEqual(
   receiptScanErrorPresentation({ message: 'Could not parse receipt', reason_code: 'missing_total' }).title,
   'Could not read receipt'

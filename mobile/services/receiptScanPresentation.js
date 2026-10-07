@@ -1,4 +1,13 @@
 function receiptScanErrorPresentation(error = {}) {
+  if (error?.reason_code === 'ai_timeout') {
+    return {
+      title: 'Receipt scan took too long',
+      message: 'The image reached the scanner, but processing timed out. Try once more or enter the expense manually.',
+      canRetry: true,
+      canEnterManually: true,
+    };
+  }
+
   if (error?.reason_code === 'ai_unavailable') {
     return {
       title: 'Receipt scanner unavailable',
