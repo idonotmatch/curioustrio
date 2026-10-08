@@ -60,4 +60,27 @@ describe('recurring analysis reuse', () => {
     expect(signals).toHaveLength(1);
     expect(db.query).not.toHaveBeenCalled();
   });
+
+  it('rejects redacted metadata even when a preloaded group repeats', async () => {
+    const redacted = (date) => ({
+      ...occurrence(date, 1),
+      product_id: null,
+      comparable_key: 'restaurant peace haven redacted address winston salem nc 27106',
+      product_match_confidence: 'medium',
+      item_name: 'Restaurant Peace Haven #[redacted-address] Winston Salem, NC 27106',
+    });
+    const occurrenceGroups = new Map([[
+      'comparable:restaurant peace haven redacted address winston salem nc 27106',
+      [redacted('2026-01-01'), redacted('2026-01-15'), redacted('2026-01-29'), redacted('2026-02-12')],
+    ]]);
+
+    await expect(detectRecurringItems('user-1', {
+      scope: 'personal',
+      occurrenceGroups,
+    })).resolves.toEqual([]);
+    await expect(detectRecurringItemSignals('user-1', {
+      scope: 'personal',
+      occurrenceGroups,
+    })).resolves.toEqual([]);
+  });
 });

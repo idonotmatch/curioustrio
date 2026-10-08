@@ -4,6 +4,8 @@ const {
   parsePackSize,
   normalizeComparableDescription,
   cleanItemDescription,
+  hasRedactedIdentityMarker,
+  isInsightEligibleItemIdentity,
   extractStructuredSize,
 } = require('../../src/services/itemNormalizer');
 
@@ -140,5 +142,15 @@ describe('itemNormalizer', () => {
   it('cleans item survey boilerplate while retaining the raw product name', () => {
     expect(cleanItemDescription('Sourdough Loaf Share your feedback')).toBe('Sourdough Loaf');
     expect(cleanItemDescription('Let us know how your visit went')).toBe('');
+  });
+
+  it('does not create an insight identity from redacted transaction metadata', () => {
+    const description = 'Restaurant Peace Haven #[redacted-address] Winston Salem, NC 27106';
+    const normalized = normalizeItemMetadata({ description, amount: 1 });
+
+    expect(hasRedactedIdentityMarker(description)).toBe(true);
+    expect(isInsightEligibleItemIdentity({ description })).toBe(false);
+    expect(normalized.normalized_name).toBeNull();
+    expect(normalized.comparable_key).toBeNull();
   });
 });

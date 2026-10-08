@@ -37,6 +37,28 @@ describe('emailParser', () => {
     });
   });
 
+  it('drops redacted location metadata from extracted line items', async () => {
+    complete.mockResolvedValue(JSON.stringify({
+      merchant: 'Chick-fil-A',
+      amount: 21.08,
+      date: '2026-09-11',
+      notes: null,
+      items: [{
+        description: 'Restaurant Peace Haven #[redacted-address] Winston Salem, NC 27106',
+        amount: 1,
+      }],
+    }));
+
+    const result = await parseEmailExpense(
+      'Order total: $21.08',
+      'Your Chick-fil-A receipt',
+      'orders@example.com',
+      '2026-09-11'
+    );
+
+    expect(result.items).toBeNull();
+  });
+
   it('returns null for non-receipt emails', async () => {
     complete.mockResolvedValue('null');
     const result = await parseEmailExpense('Hi, how are you?', 'Hey', 'friend@example.com', '2026-03-21');

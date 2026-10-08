@@ -2,7 +2,7 @@ const db = require('../db');
 const RecurringPreference = require('../models/recurringPreference');
 const ItemPlanningPreference = require('../models/itemPlanningPreference');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
-const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanItemDescription, isInsightEligibleItemIdentity } = require('./itemNormalizer');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
@@ -59,6 +59,13 @@ function summarizeUsualMerchant(occurrences = []) {
 function recurringExpenseScopeClause(scope = 'household', paramIndex = 1) {
   if (scope === 'personal') return `e.user_id = $${paramIndex}`;
   return `e.household_id = $${paramIndex}`;
+}
+
+function insightEligibleOccurrences(occurrences = []) {
+  return occurrences.filter((entry) => isInsightEligibleItemIdentity({
+    item_name: entry?.item_name,
+    comparable_key: entry?.comparable_key,
+  }));
 }
 
 async function loadRecurringItemOccurrences(ownerId, options = {}) {
@@ -128,6 +135,11 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
 
   const groups = new Map();
   for (const row of result.rows) {
+    const itemName = cleanItemDescription(row.item_name) || row.item_name;
+    if (!isInsightEligibleItemIdentity({
+      item_name: itemName,
+      comparable_key: row.comparable_key,
+    })) continue;
     const key = row.product_id ? `product:${row.product_id}` : `comparable:${row.comparable_key}`;
     if (!groups.has(key)) groups.set(key, []);
     const dateOnly = row.date instanceof Date
@@ -139,7 +151,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
       product_match_confidence: row.product_match_confidence || null,
-      item_name: cleanItemDescription(row.item_name) || row.item_name,
+      item_name: itemName,
       brand: row.brand || null,
       merchant: cleanMerchantDisplayName(row.merchant) || row.merchant,
       item_amount: row.item_amount == null ? null : Number(row.item_amount),
@@ -223,7 +235,8 @@ async function detectRecurringItems(ownerId, options = {}) {
     : await loadRecurringItemOccurrences(ownerId, options);
 
   const candidates = [];
-  for (const [groupKey, occurrences] of groups.entries()) {
+  for (const [groupKey, groupOccurrences] of groups.entries()) {
+    const occurrences = insightEligibleOccurrences(groupOccurrences);
     const hasStrongProductIdentity = occurrences.some((entry) => entry.product_id);
     const hasOnlyMediumComparableIdentity = !hasStrongProductIdentity
       && occurrences.every((entry) => entry.comparable_key && entry.product_match_confidence === 'medium');
@@ -284,7 +297,7 @@ async function detectRecurringItems(ownerId, options = {}) {
 
 async function getRecurringItemHistory(ownerId, groupKey, options = {}) {
   const groups = await loadRecurringItemOccurrences(ownerId, options);
-  const history = groups.get(groupKey);
+  const history = insightEligibleOccurrences(groups.get(groupKey) || []);
   if (!history || !history.length) return null;
 
   const sorted = [...history].sort((a, b) => a.date - b.date);
@@ -536,7 +549,8 @@ async function detectRecurringItemSignals(ownerId, options = {}) {
     ? options.occurrenceGroups
     : await loadRecurringItemOccurrences(ownerId, options);
   const signals = [];
-  for (const [groupKey, history] of groups.entries()) {
+  for (const [groupKey, groupHistory] of groups.entries()) {
+    const history = insightEligibleOccurrences(groupHistory);
     if (history.length < 3) continue;
 
     const sorted = [...history].sort((a, b) => a.date - b.date);

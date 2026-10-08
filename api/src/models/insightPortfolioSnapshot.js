@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const INSIGHT_LOGIC_VERSION = 'item-evidence-v1';
+const INSIGHT_LOGIC_VERSION = 'item-evidence-v2';
 
 function isMissingTable(err) {
   return err?.code === '42P01' || /insight_portfolio_snapshots/i.test(`${err?.message || ''}`);

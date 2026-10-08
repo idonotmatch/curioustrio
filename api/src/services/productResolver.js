@@ -1,6 +1,10 @@
 const Product = require('../models/product');
 const ItemMatchDecision = require('../models/itemMatchDecision');
-const { cleanItemDescription, normalizeItemMetadata } = require('./itemNormalizer');
+const {
+  cleanItemDescription,
+  isInsightEligibleItemIdentity,
+  normalizeItemMetadata,
+} = require('./itemNormalizer');
 const { isProductLikeItem } = require('./itemClassifier');
 const { cleanMerchantDisplayName } = require('./merchantIdentity');
 
@@ -159,6 +163,7 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
   });
 
   if (!description) return null;
+  if (!isInsightEligibleItemIdentity({ ...item, description })) return null;
 
   // Fee/tax/shipping/discount/summary items — skip product resolution
   if (!isProductLikeItem(item)) return null;

@@ -100,6 +100,23 @@ describe('summarizeHistoryRows', () => {
 
     expect(summaries).toEqual([]);
   });
+
+  it('does not group redacted email metadata into item history', () => {
+    const summaries = summarizeHistoryRows([
+      {
+        expense_item_id: 'item-redacted',
+        expense_id: 'expense-confirmed',
+        comparable_key: 'restaurant peace haven redacted address winston salem nc 27106',
+        product_match_confidence: 'medium',
+        item_name: 'Restaurant Peace Haven #[redacted-address] Winston Salem, NC 27106',
+        item_amount: 1,
+        merchant: 'Chick-fil-A',
+        date: '2026-09-11',
+      },
+    ]);
+
+    expect(summaries).toEqual([]);
+  });
 });
 
 describe('listItemHistorySummaries', () => {

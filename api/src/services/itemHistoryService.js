@@ -1,6 +1,6 @@
 const db = require('../db');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
-const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanItemDescription, isInsightEligibleItemIdentity } = require('./itemNormalizer');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
@@ -51,6 +51,10 @@ function summarizeHistoryRows(rows = []) {
 
   for (const row of rows) {
     if (row?.product_match_reason === 'user_rejected_match') continue;
+    if (!isInsightEligibleItemIdentity({
+      item_name: row?.item_name || row?.description,
+      comparable_key: row?.comparable_key,
+    })) continue;
     const groupKey = buildGroupKey(row);
     if (!groupKey) continue;
     if (!grouped.has(groupKey)) grouped.set(groupKey, []);

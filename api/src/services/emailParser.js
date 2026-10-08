@@ -1,5 +1,6 @@
 const { complete } = require('./ai');
 const { classifyExpenseItemType } = require('./itemClassifier');
+const { hasRedactedIdentityMarker } = require('./itemNormalizer');
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are an email expense classifier.
 Given an email subject, sender, and a few body excerpts, classify it as one of:
@@ -120,6 +121,7 @@ function isAddressLikeLine(line = '') {
 function isClearlyNonItemLine(line = '') {
   const text = `${line || ''}`.trim();
   if (!text) return false;
+  if (hasRedactedIdentityMarker(text)) return true;
   if (/\b(?:https?:\/\/|www\.|[a-z0-9.-]+\.(?:com|net|org|io|co|travel)\b)/i.test(text)) return true;
   if (/^(?:confirmed:?|confirmation:?|reservation:?|itinerary:?|created:?|guest name:?|room \d+\s+guest name:?|check-?in:?|check-?out:?|dollars used:?|for more information:?|how was your trip\??|provide feedback|view all items|payment method(?:\(s\))?:?|transaction id:?)/i.test(text)) return true;
   if (/(?:cancellation policy|policy deadlines|24-hour clock format|unless otherwise stated|cost\s*&\s*billing|terms\b|please visit\b|manage booking\b|view itinerary\b|order\s*#\s*\d{3,}|american express \*?\d{4}\b)/i.test(text)) return true;

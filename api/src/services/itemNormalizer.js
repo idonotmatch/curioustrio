@@ -39,6 +39,8 @@ const ITEM_BOILERPLATE_MARKERS = [
   /\bthanks? for (?:shopping|your purchase)\b/i,
 ];
 
+const REDACTED_IDENTITY_PATTERN = /(?:\[|#\[)?\s*redacted(?:[-_\s]+)(?:address|email|link|number)\s*\]?/i;
+
 function cleanItemDescription(value = '') {
   let text = `${value || ''}`.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!text) return '';
@@ -52,6 +54,26 @@ function cleanItemDescription(value = '') {
     .replace(/[\s,.;:|\-]+$/, '')
     .trim();
   return text.slice(0, 500);
+}
+
+function hasRedactedIdentityMarker(value = '') {
+  return REDACTED_IDENTITY_PATTERN.test(`${value || ''}`);
+}
+
+function isInsightEligibleItemIdentity(item = {}) {
+  const values = [
+    item.description,
+    item.raw_description,
+    item.normalized_name,
+    item.comparable_key,
+    item.item_name,
+  ].filter(Boolean);
+  if (!values.length || values.some(hasRedactedIdentityMarker)) return false;
+
+  const description = cleanItemDescription(item.description || item.item_name || item.normalized_name || '');
+  const normalized = normalizeText(description);
+  if (!normalized || normalized === 'unknown item') return false;
+  return normalized.split(' ').some((token) => token.length >= 2 && token !== 'redacted');
 }
 
 function extractStructuredSize(value = '') {
@@ -194,11 +216,17 @@ function buildComparableKey({ description, brand, normalizedSizeValue, normalize
 
 function normalizeItemMetadata(item = {}) {
   const cleanedDescription = cleanItemDescription(item.description);
+  const identityEligible = isInsightEligibleItemIdentity({
+    ...item,
+    description: cleanedDescription,
+  });
   const extracted = extractStructuredSize(cleanedDescription);
   const productSize = item.product_size || extracted.product_size || null;
   const packSize = item.pack_size || extracted.pack_size || null;
   const productUnit = item.product_size ? item.unit : (item.unit || extracted.unit);
-  const normalizedName = normalizeComparableDescription(cleanedDescription, item.brand) || normalizeText(cleanedDescription);
+  const normalizedName = identityEligible
+    ? (normalizeComparableDescription(cleanedDescription, item.brand) || normalizeText(cleanedDescription))
+    : '';
   const normalizedBrand = normalizeText(item.brand);
   const { normalizedSizeValue, normalizedSizeUnit } = normalizeSizeValue(productSize, productUnit);
   const normalizedPackSize = parsePackSize(packSize);
@@ -227,13 +255,15 @@ function normalizeItemMetadata(item = {}) {
     normalizedTotalSizeUnit = normalizeUnit(item.pricing_unit) || 'ea';
     comparisonPriceSource = 'derived_quantity';
   }
-  const comparableKey = buildComparableKey({
-    description: cleanedDescription,
-    brand: item.brand,
-    normalizedSizeValue,
-    normalizedSizeUnit,
-    normalizedPackSize,
-  });
+  const comparableKey = identityEligible
+    ? buildComparableKey({
+      description: cleanedDescription,
+      brand: item.brand,
+      normalizedSizeValue,
+      normalizedSizeUnit,
+      normalizedPackSize,
+    })
+    : null;
 
   return {
     cleaned_description: cleanedDescription || null,
@@ -260,6 +290,8 @@ module.exports = {
   normalizeItemMetadata,
   normalizeComparableDescription,
   cleanItemDescription,
+  hasRedactedIdentityMarker,
+  isInsightEligibleItemIdentity,
   extractStructuredSize,
   parsePackSize,
 };

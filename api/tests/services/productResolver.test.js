@@ -109,6 +109,17 @@ describe('productResolver', () => {
     expect(Product.update).not.toHaveBeenCalled();
   });
 
+  it('does not resolve redacted transaction metadata as a product', async () => {
+    const resolution = await resolveProductMatch({
+      description: 'Restaurant Peace Haven #[redacted-address] Winston Salem, NC 27106',
+      amount: 1,
+    }, 'Chick-fil-A', { householdId: 'household-1' });
+
+    expect(resolution).toBeNull();
+    expect(Product.findByNormalizedDetails).not.toHaveBeenCalled();
+    expect(Product.create).not.toHaveBeenCalled();
+  });
+
   it('matches an existing product by normalized description and size metadata', async () => {
     Product.findByUpc.mockResolvedValue(null);
     Product.findBySkuAndMerchant.mockResolvedValue(null);

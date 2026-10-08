@@ -1,6 +1,6 @@
 const db = require('../db');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
-const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanItemDescription, isInsightEligibleItemIdentity } = require('./itemNormalizer');
 const { cleanMerchantDisplayName } = require('./merchantIdentity');
 
 function formatCurrency(amount) {
@@ -11,6 +11,7 @@ function formatCurrency(amount) {
 function buildPriorSummary(rows = []) {
   return rows
     .filter(Boolean)
+    .filter((row) => isInsightEligibleItemIdentity({ item_name: row.item_name || row.description }))
     .map((row) => {
       const pieces = [cleanItemDescription(row.item_name || row.description) || 'Unknown item'];
       const merchant = cleanMerchantDisplayName(row.merchant);
@@ -25,6 +26,10 @@ function buildPriorSummary(rows = []) {
 function buildAliasSummary(rows = []) {
   return rows
     .filter(Boolean)
+    .filter((row) => isInsightEligibleItemIdentity({
+      description: row.raw_label,
+      item_name: row.canonical_name,
+    }))
     .map((row) => {
       const rawLabel = `${row.raw_label || ''}`.trim();
       const canonicalName = `${row.canonical_name || ''}`.trim();
@@ -56,6 +61,8 @@ async function listMerchantAliasPriors(householdId, requesterUserId, merchantHin
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
+       AND LOWER(COALESCE(ei.description, '')) NOT LIKE '%redacted%'
+       AND LOWER(COALESCE(p.name, '')) NOT LIKE '%redacted%'
        AND REGEXP_REPLACE(LOWER(e.merchant), '[^a-z0-9]+', '', 'g') =
            REGEXP_REPLACE(LOWER($2), '[^a-z0-9]+', '', 'g')
        AND LOWER(TRIM(COALESCE(ei.description, ''))) <> LOWER(TRIM(COALESCE(p.name, '')))
@@ -86,6 +93,8 @@ async function listRecentMerchantItemPriors(householdId, requesterUserId, mercha
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
+       AND LOWER(COALESCE(ei.description, '')) NOT LIKE '%redacted%'
+       AND LOWER(COALESCE(p.name, '')) NOT LIKE '%redacted%'
        AND REGEXP_REPLACE(LOWER(e.merchant), '[^a-z0-9]+', '', 'g') =
            REGEXP_REPLACE(LOWER($2), '[^a-z0-9]+', '', 'g')
      GROUP BY COALESCE(p.name, ei.description), e.merchant
@@ -115,6 +124,8 @@ async function listHouseholdStaplePriors(householdId, requesterUserId, limit = 8
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
+       AND LOWER(COALESCE(ei.description, '')) NOT LIKE '%redacted%'
+       AND LOWER(COALESCE(p.name, '')) NOT LIKE '%redacted%'
        AND (ei.product_id IS NOT NULL OR ei.comparable_key IS NOT NULL)
      GROUP BY COALESCE(p.name, ei.description)
      HAVING COUNT(*) >= 2
