@@ -75,7 +75,7 @@ export default function SummaryScreen() {
     markSeen,
     dismiss: dismissInsight,
     logEvents,
-  } = useInsights(5, { freezeFirstPaint: true });
+  } = useInsights(5);
   const [dismissedMockInsightIds, setDismissedMockInsightIds] = useState([]);
   const [allowMockInsights, setAllowMockInsights] = useState(__DEV__);
   const hasSnapshot = !!summarySnapshot;

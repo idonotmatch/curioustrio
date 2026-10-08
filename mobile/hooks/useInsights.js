@@ -38,7 +38,6 @@ function filterSuppressedInsights(insights = [], suppressedMap = new Map()) {
 
 export function useInsights(limit = 5, options = {}) {
   const fetchLimit = Math.max(limit, Number(options?.fetchLimit) || limit);
-  const freezeFirstPaint = options?.freezeFirstPaint === true;
   const minRefreshIntervalMs = Math.max(0, Number(options?.minRefreshIntervalMs ?? 15000));
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +46,7 @@ export function useInsights(limit = 5, options = {}) {
   const initialRefreshCompletedRef = useRef(false);
   const refreshInFlightRef = useRef(null);
   const lastRefreshStartedAtRef = useRef(0);
-  const cacheKey = `cache:insights:v3:${limit}:${fetchLimit}`;
+  const cacheKey = `cache:insights:v4:${limit}:${fetchLimit}`;
 
   const refresh = useCallback(async (context = {}) => {
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
@@ -67,16 +66,11 @@ export function useInsights(limit = 5, options = {}) {
     lastRefreshStartedAtRef.current = now;
     const refreshPromise = (async () => {
       setError(null);
-      let deliveryCount = 0;
       try {
         return await loadWithCache(
           cacheKey,
           () => api.get(`/insights?limit=${fetchLimit}`),
           (data) => {
-            deliveryCount += 1;
-            if (freezeFirstPaint && !initialRefreshCompletedRef.current && deliveryCount > 1) {
-              return;
-            }
             const normalized = Array.isArray(data) ? data.map(normalizeInsightForDisplay) : [];
             const filtered = filterSuppressedInsights(normalized, dismissedSuppressions);
             setInsights(filtered.slice(0, limit));
@@ -94,7 +88,7 @@ export function useInsights(limit = 5, options = {}) {
 
     refreshInFlightRef.current = refreshPromise;
     return refreshPromise;
-  }, [cacheKey, fetchLimit, freezeFirstPaint, limit, minRefreshIntervalMs, dismissedSuppressions]);
+  }, [cacheKey, fetchLimit, limit, minRefreshIntervalMs, dismissedSuppressions]);
 
   const markSeen = useCallback(async (ids = []) => {
     const cleanIds = ids.filter(Boolean);
