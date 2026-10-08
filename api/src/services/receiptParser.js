@@ -3,7 +3,7 @@ const {
   receiptFamilyStrategiesMode,
 } = require('./parsingOptimizationConfig');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
-const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanItemDescription, normalizeItemDisplayName } = require('./itemNormalizer');
 
 const SYSTEM_PROMPT = `You are a receipt parser. Extract structured data from a receipt image.
 Return only the JSON object required by the response schema. Extract:
@@ -288,7 +288,7 @@ function normalizeReceiptItems(items) {
   if (!Array.isArray(items)) return null;
   const normalized = items.slice(0, 30).map((item) => {
     const rawDescription = optionalString(item?.description);
-    const description = cleanItemDescription(rawDescription);
+    const description = normalizeItemDisplayName(cleanItemDescription(rawDescription));
     if (!description) return null;
     const itemType = inferredReceiptItemType(item);
     if (itemType !== 'product') return null;

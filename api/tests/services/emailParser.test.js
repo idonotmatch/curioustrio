@@ -59,6 +59,25 @@ describe('emailParser', () => {
     expect(result.items).toBeNull();
   });
 
+  it('normalizes all-caps email item names', async () => {
+    complete.mockResolvedValue(JSON.stringify({
+      merchant: 'Market',
+      amount: 3.99,
+      date: '2026-09-11',
+      notes: null,
+      items: [{ description: 'AVOCADOS', amount: 3.99 }],
+    }));
+
+    const result = await parseEmailExpense(
+      'Order total: $3.99',
+      'Your receipt',
+      'orders@example.com',
+      '2026-09-11'
+    );
+
+    expect(result.items).toEqual([expect.objectContaining({ description: 'Avocados' })]);
+  });
+
   it('returns null for non-receipt emails', async () => {
     complete.mockResolvedValue('null');
     const result = await parseEmailExpense('Hi, how are you?', 'Hey', 'friend@example.com', '2026-03-21');

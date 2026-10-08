@@ -4,6 +4,7 @@ const {
   parsePackSize,
   normalizeComparableDescription,
   cleanItemDescription,
+  normalizeItemDisplayName,
   hasRedactedIdentityMarker,
   isInsightEligibleItemIdentity,
   extractStructuredSize,
@@ -160,5 +161,14 @@ describe('itemNormalizer', () => {
     expect(isInsightEligibleItemIdentity({ description: 'Local sales tax' })).toBe(false);
     expect(normalized.normalized_name).toBeNull();
     expect(normalized.comparable_key).toBeNull();
+  });
+
+  it('normalizes extraction casing without flattening intentional brand casing', () => {
+    expect(normalizeItemDisplayName('AVOCADOS')).toBe('Avocados');
+    expect(normalizeItemDisplayName('ORGANIC AVOCADOS 4 CT')).toBe('Organic Avocados 4 ct');
+    expect(normalizeItemDisplayName('BBQ POTATO CHIPS')).toBe('BBQ Potato Chips');
+    expect(normalizeItemDisplayName('organic feta crumbles')).toBe('Organic Feta Crumbles');
+    expect(normalizeItemDisplayName('LaCroix Sparkling Water')).toBe('LaCroix Sparkling Water');
+    expect(normalizeItemDisplayName('iPhone USB-C Cable')).toBe('iPhone USB-C Cable');
   });
 });

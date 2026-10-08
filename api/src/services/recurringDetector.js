@@ -2,7 +2,11 @@ const db = require('../db');
 const RecurringPreference = require('../models/recurringPreference');
 const ItemPlanningPreference = require('../models/itemPlanningPreference');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
-const { cleanItemDescription, isInsightEligibleItemIdentity } = require('./itemNormalizer');
+const {
+  cleanItemDescription,
+  isInsightEligibleItemIdentity,
+  normalizeItemDisplayName,
+} = require('./itemNormalizer');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
@@ -135,7 +139,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
 
   const groups = new Map();
   for (const row of result.rows) {
-    const itemName = cleanItemDescription(row.item_name) || row.item_name;
+    const itemName = normalizeItemDisplayName(cleanItemDescription(row.item_name) || row.item_name);
     if (!isInsightEligibleItemIdentity({
       item_name: itemName,
       comparable_key: row.comparable_key,

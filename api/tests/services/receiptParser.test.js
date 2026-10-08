@@ -89,6 +89,20 @@ describe('parseReceipt', () => {
     expect(result.items[0]).toMatchObject({ quantity: 2, unit_price: 6, brand: 'Acme' });
   });
 
+  it('normalizes all-caps receipt item names while preserving raw OCR text', () => {
+    const result = cleanParsedReceipt({
+      merchant: 'Market',
+      amount: 3.99,
+      date: '2026-03-21',
+      items: [{ description: 'AVOCADOS', amount: 3.99, item_type: 'product' }],
+    }, '2026-03-21');
+
+    expect(result.items[0]).toMatchObject({
+      description: 'Avocados',
+      raw_description: 'AVOCADOS',
+    });
+  });
+
   it('marks the amount for review when printed totals do not reconcile', () => {
     const result = cleanParsedReceipt({
       merchant: 'Market',

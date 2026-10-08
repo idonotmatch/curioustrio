@@ -1,6 +1,6 @@
 const { complete } = require('./ai');
 const { classifyExpenseItemType } = require('./itemClassifier');
-const { hasRedactedIdentityMarker } = require('./itemNormalizer');
+const { hasRedactedIdentityMarker, normalizeItemDisplayName } = require('./itemNormalizer');
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are an email expense classifier.
 Given an email subject, sender, and a few body excerpts, classify it as one of:
@@ -554,7 +554,7 @@ function extractItemsPurchasedSectionItems(lines = []) {
       descriptionLines.unshift(candidate);
     }
 
-    const description = descriptionLines.join(' ').trim();
+    const description = normalizeItemDisplayName(descriptionLines.join(' ').trim());
     if (!description || description.length < 3) continue;
 
     items.push({
@@ -635,7 +635,7 @@ function extractFallbackItemsFromEmailBody(emailBody = '', familyOverride = null
 
     const brand = textLines.find((entry, entryIndex) => entryIndex > 0 && looksLikeBrandLine(entry)) || null;
     const descriptionLines = textLines.filter((entry) => entry !== brand);
-    const description = descriptionLines.slice(0, 2).join(' ').trim();
+    const description = normalizeItemDisplayName(descriptionLines.slice(0, 2).join(' ').trim());
     if (!description) continue;
 
     const sku = block.find((entry) => isSkuLikeLine(entry)) || null;
@@ -768,7 +768,7 @@ function sanitizeParsedItems(items = [], familyOverride = null) {
   const sanitized = items
     .map((item) => ({
       ...item,
-      description: `${item?.description || ''}`.trim(),
+      description: normalizeItemDisplayName(`${item?.description || ''}`.trim()),
       amount: sanitizeParsedNumeric(item?.amount, MAX_DATABASE_MONEY),
       quantity: sanitizeParsedNumeric(item?.quantity, 9_999_999.999, { positive: true }),
       unit_price: sanitizeParsedNumeric(item?.unit_price, 999_999.9999, { positive: true }),

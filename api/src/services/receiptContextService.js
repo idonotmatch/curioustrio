@@ -1,6 +1,10 @@
 const db = require('../db');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
-const { cleanItemDescription, isInsightEligibleItemIdentity } = require('./itemNormalizer');
+const {
+  cleanItemDescription,
+  isInsightEligibleItemIdentity,
+  normalizeItemDisplayName,
+} = require('./itemNormalizer');
 const { cleanMerchantDisplayName } = require('./merchantIdentity');
 
 function formatCurrency(amount) {
@@ -13,7 +17,7 @@ function buildPriorSummary(rows = []) {
     .filter(Boolean)
     .filter((row) => isInsightEligibleItemIdentity({ item_name: row.item_name || row.description }))
     .map((row) => {
-      const pieces = [cleanItemDescription(row.item_name || row.description) || 'Unknown item'];
+      const pieces = [normalizeItemDisplayName(cleanItemDescription(row.item_name || row.description)) || 'Unknown item'];
       const merchant = cleanMerchantDisplayName(row.merchant);
       if (merchant) pieces.push(`at ${merchant}`);
       if (row.occurrence_count) pieces.push(`${row.occurrence_count}x`);
@@ -32,7 +36,7 @@ function buildAliasSummary(rows = []) {
     }))
     .map((row) => {
       const rawLabel = `${row.raw_label || ''}`.trim();
-      const canonicalName = `${row.canonical_name || ''}`.trim();
+      const canonicalName = normalizeItemDisplayName(`${row.canonical_name || ''}`.trim());
       if (!rawLabel || !canonicalName) return null;
       const pieces = [`"${rawLabel}" usually means "${canonicalName}"`];
       if (row.merchant) pieces.push(`at ${row.merchant}`);

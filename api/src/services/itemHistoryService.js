@@ -1,6 +1,10 @@
 const db = require('../db');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
-const { cleanItemDescription, isInsightEligibleItemIdentity } = require('./itemNormalizer');
+const {
+  cleanItemDescription,
+  isInsightEligibleItemIdentity,
+  normalizeItemDisplayName,
+} = require('./itemNormalizer');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
@@ -68,7 +72,7 @@ function summarizeHistoryRows(rows = []) {
       product_match_reason: row.product_match_reason || null,
       extraction_confidence: row.extraction_confidence || null,
       source_type: row.source_type || null,
-      item_name: cleanItemDescription(row.item_name || row.description) || null,
+      item_name: normalizeItemDisplayName(cleanItemDescription(row.item_name || row.description)) || null,
       brand: row.brand || null,
       merchant: cleanMerchantDisplayName(row.merchant) || null,
       amount: row.item_amount == null ? null : Number(row.item_amount),

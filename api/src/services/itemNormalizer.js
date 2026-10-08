@@ -42,6 +42,9 @@ const ITEM_BOILERPLATE_MARKERS = [
 ];
 
 const REDACTED_IDENTITY_PATTERN = /(?:\[|#\[)?\s*redacted(?:[-_\s]+)(?:address|email|link|number)\s*\]?/i;
+const DISPLAY_LOWERCASE_WORDS = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']);
+const DISPLAY_UPPERCASE_WORDS = new Set(['BBQ', 'BLT', 'IPA', 'EVOO', 'GF', 'PBJ']);
+const DISPLAY_UNIT_WORDS = new Set(['CT', 'EA', 'FL', 'G', 'KG', 'L', 'LB', 'ML', 'OZ', 'PK']);
 
 function cleanItemDescription(value = '') {
   let text = `${value || ''}`.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -56,6 +59,35 @@ function cleanItemDescription(value = '') {
     .replace(/[\s,.;:|\-]+$/, '')
     .trim();
   return text.slice(0, 500);
+}
+
+function normalizeItemDisplayName(value = '') {
+  const text = cleanItemDescription(value);
+  if (!text) return '';
+
+  const letters = [...text].filter((character) => /[a-z]/i.test(character));
+  if (!letters.length) return text;
+  const uppercaseShare = letters.filter((character) => character === character.toUpperCase()).length / letters.length;
+  const lowercaseShare = letters.filter((character) => character === character.toLowerCase()).length / letters.length;
+  if (uppercaseShare < 0.8 && lowercaseShare < 0.98) return text;
+
+  const formatPart = (part, isFirstWord) => {
+    const key = part.replace(/[^a-z]/gi, '').toUpperCase();
+    if (!key) return part;
+    if (DISPLAY_UPPERCASE_WORDS.has(key)) return key;
+    if (DISPLAY_UNIT_WORDS.has(key)) return part.toLowerCase();
+    if (!isFirstWord && DISPLAY_LOWERCASE_WORDS.has(key.toLowerCase())) return part.toLowerCase();
+    const lower = part.toLowerCase();
+    return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+  };
+
+  return text
+    .split(/\s+/)
+    .map((token, tokenIndex) => token
+      .split('-')
+      .map((part, partIndex) => formatPart(part, tokenIndex === 0 && partIndex === 0))
+      .join('-'))
+    .join(' ');
 }
 
 function hasRedactedIdentityMarker(value = '') {
@@ -293,6 +325,7 @@ module.exports = {
   normalizeItemMetadata,
   normalizeComparableDescription,
   cleanItemDescription,
+  normalizeItemDisplayName,
   hasRedactedIdentityMarker,
   isInsightEligibleItemIdentity,
   extractStructuredSize,

@@ -4,6 +4,7 @@ const {
   cleanItemDescription,
   isInsightEligibleItemIdentity,
   normalizeItemMetadata,
+  normalizeItemDisplayName,
 } = require('./itemNormalizer');
 const { isProductLikeItem } = require('./itemClassifier');
 const { cleanMerchantDisplayName } = require('./merchantIdentity');
@@ -147,7 +148,7 @@ async function resolveProduct(item, merchant, options = {}) {
 
 async function resolveProductMatch(item, merchant, { householdId = null } = {}) {
   const { upc, sku, brand, product_size, pack_size, unit } = item;
-  const description = cleanItemDescription(item.description);
+  const description = normalizeItemDisplayName(cleanItemDescription(item.description));
   const canonicalMerchant = cleanMerchantDisplayName(merchant) || merchant;
   const normalized = normalizeItemMetadata({ ...item, description });
   const effectiveProductSize = product_size || normalized.inferred_product_size || undefined;
