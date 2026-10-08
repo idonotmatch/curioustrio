@@ -5,6 +5,7 @@ import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from './InsightTrendVisual';
 import {
   getInsightCardAction,
+  getInsightCardCopy,
   getInsightConfidenceLabel,
   getInsightPrimaryMetric,
   getInsightScopeLabel,
@@ -14,13 +15,9 @@ import {
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 const { normalizeDisplayText } = require('../services/text');
 
-const INSIGHT_CARD_MIN_HEIGHT = 252;
+const INSIGHT_CARD_MIN_HEIGHT = 232;
 const INSIGHT_SUMMARY_TITLE_LINES = 2;
-const INSIGHT_SUMMARY_BODY_LINES = 2;
-
-function pluralVerb(label, singular, plural) {
-  return `${label || ''}`.trim().toLowerCase().endsWith('s') ? plural : singular;
-}
+const INSIGHT_SUMMARY_BODY_LINES = 1;
 
 function insightRoleLabel(insight) {
   const type = `${insight?.type || ''}`;
@@ -101,84 +98,28 @@ function shouldShowPrimaryMetric(insight, primaryMetric) {
   if (!primaryMetric?.value) return false;
   const body = normalizeMetricText(insight?.body);
   const metricValue = normalizeMetricText(primaryMetric.value);
-  if (!body || !metricValue) return false;
+  if (!metricValue) return false;
+  if (!body) return true;
   return !body.includes(metricValue);
-}
-
-function insightDisplayTitle(insight) {
-  const type = `${insight?.type || ''}`;
-  const metadata = insight?.metadata || {};
-  const categoryName = metadata.category_name;
-  const merchantName = metadata.merchant_name;
-
-  if (categoryName && (
-    type === 'early_top_category'
-    || type === 'developing_category_shift'
-    || type === 'top_category_driver'
-    || type === 'projected_category_surge'
-  )) {
-    return `${categoryName} ${pluralVerb(categoryName, 'is', 'are')} driving the week`;
-  }
-  if (categoryName && type === 'projected_category_under_baseline') {
-    return `${categoryName} ${pluralVerb(categoryName, 'has', 'have')} room`;
-  }
-  if (merchantName && (type === 'early_repeated_merchant' || type === 'developing_repeated_merchant')) {
-    return `${merchantName} is repeating`;
-  }
-  if (type === 'developing_weekly_spend_change') return 'The week is picking up';
-  if (type === 'one_off_expense_skewing_projection' || type === 'one_offs_driving_variance') return 'One purchase is skewing the month';
-  return insight?.title || 'Insight';
-}
-
-function insightDisplayBody(insight) {
-  const type = `${insight?.type || ''}`;
-  const metadata = insight?.metadata || {};
-  const categoryName = metadata.category_name;
-  const scopeRelationship = metadata.scope_relationship;
-  const householdCarry = scopeRelationship === 'personal_household_overlap'
-    ? ' It is also affecting the household view.'
-    : '';
-
-  if (categoryName && (type === 'early_top_category' || type === 'developing_category_shift' || type === 'top_category_driver')) {
-    return scopeRelationship === 'personal_household_overlap'
-      ? `Recent spending is unusually ${categoryName.toLowerCase()}-heavy, and it is affecting the household view.`
-      : `Recent spending is unusually ${categoryName.toLowerCase()}-heavy.`;
-  }
-  if (categoryName && type === 'projected_category_surge') {
-    return `${categoryName} ${pluralVerb(categoryName, 'is', 'are')} tracking above the usual month-end pattern.${householdCarry}`;
-  }
-  if (type === 'developing_weekly_spend_change') {
-    const delta = Number(metadata.delta_amount || 0);
-    const direction = delta < 0 ? 'lighter' : 'heavier';
-    return `The last 7 days are running ${direction} than the prior week.${householdCarry}`;
-  }
-  if (type === 'one_off_expense_skewing_projection' || type === 'one_offs_driving_variance') {
-    const merchant = metadata.largest_expense?.merchant || metadata.top_unusual_expense?.merchant;
-    return merchant ? `${merchant} is making the forecast look heavier than the underlying pattern.` : 'A larger purchase is making the forecast look heavier than the underlying pattern.';
-  }
-  if (scopeRelationship === 'personal_household_overlap' && (
-    type === 'projected_month_end_over_budget'
-    || type === 'projected_month_end_under_budget'
-    || type === 'budget_too_low'
-    || type === 'budget_too_high'
-  )) {
-    return 'Your personal pace is also moving the household outlook, so Adlo combined the two signals.';
-  }
-  return insight?.body || '';
 }
 
 function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disabled = false, emphasis = 'default' }) {
   const tone = useMemo(() => insightToneStyles(insight), [insight]);
   const primaryMetric = useMemo(() => getInsightPrimaryMetric(insight), [insight]);
-  const showPrimaryMetric = useMemo(() => shouldShowPrimaryMetric(insight, primaryMetric), [insight, primaryMetric]);
+  const cardCopy = useMemo(() => getInsightCardCopy(insight), [insight]);
+  const displayTitle = useMemo(() => normalizeDisplayText(cardCopy.title), [cardCopy]);
+  const displayBody = useMemo(() => normalizeDisplayText(cardCopy.body), [cardCopy]);
+  const insightForMetric = useMemo(() => ({ ...insight, body: displayBody }), [displayBody, insight]);
+  const showPrimaryMetric = useMemo(
+    () => shouldShowPrimaryMetric(insightForMetric, primaryMetric),
+    [insightForMetric, primaryMetric]
+  );
   const isPrimary = emphasis === 'primary';
   const scopeLabel = useMemo(() => getInsightScopeLabel(insight), [insight]);
   const timeframeLabel = useMemo(() => getInsightTimeframeLabel(insight), [insight]);
   const confidenceLabel = useMemo(() => getInsightConfidenceLabel(insight), [insight]);
   const roleLabel = useMemo(() => insightRoleLabel(insight), [insight]);
   const trendVisual = useMemo(() => getInsightTrendVisual(insight), [insight]);
-  const displayTitle = useMemo(() => normalizeDisplayText(insightDisplayTitle(insight)), [insight]);
-  const displayBody = useMemo(() => normalizeDisplayText(insightDisplayBody(insight)), [insight]);
   const actionDescriptor = useMemo(() => getInsightCardAction(insight), [insight]);
   const actionLabel = useMemo(() => normalizeDisplayText(insightActionLabel(insight, actionDescriptor)), [actionDescriptor, insight]);
   const actionReason = useMemo(() => normalizeDisplayText(actionDescriptor.reason), [actionDescriptor]);
@@ -226,13 +167,13 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         activeOpacity={0.88}
         accessibilityRole="button"
         accessibilityLabel={`Open insight details: ${displayTitle}`}
-        accessibilityHint={displayBody}
+        accessibilityHint={[timeframeLabel, confidenceLabel, displayBody].filter(Boolean).join('. ')}
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={() => onPress?.(insight)}
       >
         <View style={styles.insightHeader}>
-          <Text style={styles.insightContext} numberOfLines={1}>{timeframeLabel} · {confidenceLabel}</Text>
+          <Text style={styles.insightContext} numberOfLines={1}>{timeframeLabel}</Text>
           <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{displayTitle}</Text>
           {showPrimaryMetric ? (
             <View style={[styles.insightMetricPanel, isPrimary && styles.insightMetricPanelPrimary]}>
@@ -241,9 +182,11 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
             </View>
           ) : null}
         </View>
-        <View style={styles.insightContent}>
-          <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
-        </View>
+        {displayBody ? (
+          <View style={styles.insightContent}>
+            <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
+          </View>
+        ) : null}
         {trendVisual ? (
           <InsightTrendVisual
             visual={trendVisual}
@@ -254,7 +197,6 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         ) : null}
         {evidenceRows.length > 0 ? (
           <View style={styles.evidenceBlock}>
-            <Text style={styles.evidenceEyebrow}>Based on your activity</Text>
             <View style={styles.evidenceRows}>
               {evidenceRows.map((row) => (
                 <View key={`${row.label}:${row.value}`} style={styles.evidenceRow}>
@@ -280,9 +222,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         }}
       >
         <View style={styles.insightActionCopy}>
-          <Text style={styles.insightActionEyebrow}>Recommended next step</Text>
           <Text style={styles.insightActionLabel} numberOfLines={1}>{actionLabel}</Text>
-          {actionReason ? <Text style={styles.insightActionReason} numberOfLines={1}>{actionReason}</Text> : null}
         </View>
         <View style={styles.insightCTA}>
           <Ionicons name="chevron-forward" size={14} color={colors.text} />
@@ -306,7 +246,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   insightCardPrimary: {
-    minHeight: 244,
+    minHeight: 232,
     paddingHorizontal: 17,
     paddingVertical: 14,
     borderColor: colors.infoBorder,
@@ -388,18 +328,11 @@ const styles = StyleSheet.create({
   insightBody: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
   insightBodyPrimary: { fontSize: 14, color: colors.text, lineHeight: 20 },
   evidenceBlock: {
-    marginTop: 12,
+    marginTop: 10,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
     paddingTop: 10,
-    gap: 7,
-  },
-  evidenceEyebrow: {
-    color: colors.textDisabled,
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    gap: 6,
   },
   evidenceRows: { gap: 6 },
   evidenceRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
@@ -413,10 +346,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  insightActionCopy: { flex: 1, gap: 2 },
-  insightActionEyebrow: { fontSize: 10, color: colors.textDisabled, textTransform: 'uppercase', fontWeight: '700', letterSpacing: 0.4 },
+  insightActionCopy: { flex: 1 },
   insightActionLabel: { fontSize: 13, color: colors.text, fontWeight: '700' },
-  insightActionReason: { fontSize: 11, color: colors.textSubtle },
   insightCTA: {
     width: 44,
     height: 44,

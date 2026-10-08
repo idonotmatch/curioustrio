@@ -1,6 +1,7 @@
 const assert = require('assert');
 const { selectInsightEvidence } = require('../services/insightEvidence');
 const {
+  getInsightCardCopy,
   getInsightSupportRows,
   getPrimaryActionForInsight,
 } = require('../services/insightPresentation');
@@ -55,6 +56,46 @@ assert.deepStrictEqual(getInsightSupportRows({
   { label: 'Spend so far', value: '$210' },
   { label: 'Expenses', value: '6 expenses' },
 ]);
+
+assert.deepStrictEqual(getInsightCardCopy({
+  type: 'item_repurchase_accelerating',
+  title: 'AVOCADOS is showing up sooner than usual',
+  metadata: {
+    item_name: 'Avocados',
+    latest_gap_days: 14,
+    average_gap_days: 25,
+  },
+}), {
+  title: 'Avocados is repeating sooner',
+  body: '',
+});
+
+assert.deepStrictEqual(getInsightCardCopy({
+  type: 'projected_category_surge',
+  metadata: {
+    category_name: 'Shopping',
+    delta_amount: 86,
+  },
+}), {
+  title: 'Shopping may finish high',
+  body: '',
+});
+
+assert.deepStrictEqual(getInsightCardCopy({
+  type: 'one_off_expense_skewing_projection',
+  metadata: { largest_expense: { merchant: 'Costco' } },
+}), {
+  title: 'One purchase is skewing the month',
+  body: 'Costco is driving the difference.',
+});
+
+assert.deepStrictEqual(getInsightCardCopy({
+  type: 'usage_ready_to_plan',
+  metadata: { planning_confidence: 'directional' },
+}), {
+  title: 'You have enough history to plan',
+  body: 'Start with a smaller what-if.',
+});
 
 const evidenceAction = getPrimaryActionForInsight({
   insightType: 'developing_repeated_merchant',
