@@ -117,6 +117,23 @@ describe('summarizeHistoryRows', () => {
 
     expect(summaries).toEqual([]);
   });
+
+  it('does not group tax lines into item history', () => {
+    const summaries = summarizeHistoryRows([
+      {
+        expense_item_id: 'item-tax',
+        expense_id: 'expense-confirmed',
+        comparable_key: 'local sale tax',
+        product_match_confidence: 'medium',
+        item_name: 'Local sales tax',
+        item_amount: 1.42,
+        merchant: 'Retailer',
+        date: '2026-09-11',
+      },
+    ]);
+
+    expect(summaries).toEqual([]);
+  });
 });
 
 describe('listItemHistorySummaries', () => {

@@ -1,3 +1,5 @@
+const { classifyExpenseItemType } = require('./itemClassifier');
+
 function normalizeText(value) {
   return (value || '')
     .toLowerCase()
@@ -73,6 +75,7 @@ function isInsightEligibleItemIdentity(item = {}) {
   const description = cleanItemDescription(item.description || item.item_name || item.normalized_name || '');
   const normalized = normalizeText(description);
   if (!normalized || normalized === 'unknown item') return false;
+  if (classifyExpenseItemType(description) !== 'product') return false;
   return normalized.split(' ').some((token) => token.length >= 2 && token !== 'redacted');
 }
 

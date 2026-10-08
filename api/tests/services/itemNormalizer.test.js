@@ -153,4 +153,12 @@ describe('itemNormalizer', () => {
     expect(normalized.normalized_name).toBeNull();
     expect(normalized.comparable_key).toBeNull();
   });
+
+  it('does not create an insight identity from qualified tax lines', () => {
+    const normalized = normalizeItemMetadata({ description: 'Local sales tax', amount: 1.42 });
+
+    expect(isInsightEligibleItemIdentity({ description: 'Local sales tax' })).toBe(false);
+    expect(normalized.normalized_name).toBeNull();
+    expect(normalized.comparable_key).toBeNull();
+  });
 });
