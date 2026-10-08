@@ -76,9 +76,9 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
     router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } });
   }
 
-  function openCheck() {
+  function openPlan() {
     close();
-    router.push('/scenario-check');
+    router.push('/plan/new');
   }
 
   return (
@@ -134,10 +134,10 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
                   />
 
                   <ActionRow
-                    icon="sparkles-outline"
-                    title="Check a purchase"
-                    body="Pressure-test whether something fits right now."
-                    onPress={openCheck}
+                    icon="compass-outline"
+                    title="Consider a purchase"
+                    body="Check whether it fits, compare funding paths, and revisit it later."
+                    onPress={openPlan}
                     disabled={loading}
                   />
 
@@ -146,7 +146,7 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
                   </TouchableOpacity>
                 </>
               ) : (
-                <Text style={styles.keyboardHint}>Dismiss the keyboard to scan, start from scratch, or check a purchase.</Text>
+                <Text style={styles.keyboardHint}>Dismiss the keyboard to scan, start from scratch, or consider a purchase.</Text>
               )}
             </ScrollView>
           </View>

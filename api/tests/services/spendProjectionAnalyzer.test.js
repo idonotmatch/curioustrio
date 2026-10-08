@@ -205,6 +205,44 @@ describe('spendProjectionAnalyzer', () => {
     expect(projection.confidence).toBeNull();
   });
 
+  it('uses completed historical totals for a future period instead of projecting zero from day one', () => {
+    const bounds = periodBounds('2026-11', 1);
+    const historicalPeriods = [100, 140, 120].map((total, index) => ({
+      ...periodBounds(`2026-${String(10 - index).padStart(2, '0')}`, 1),
+      expenses: [
+        { merchant: 'Typical spend', amount: total, date: `2026-${String(10 - index).padStart(2, '0')}-10`, category_key: 'other', category_name: 'Other' },
+      ],
+    }));
+    const projection = projectOverallSpend({
+      currentExpenses: [],
+      historicalPeriods,
+      bounds,
+      dayIndex: 1,
+      budgetLimit: 200,
+      futurePeriod: true,
+    });
+
+    expect(projection.adjusted_projected_total).toBe(120);
+    expect(projection.projected_budget_delta).toBe(-80);
+    expect(projection.future_period_baseline).toBe(true);
+  });
+
+  it('does not count an unfinished period as completed history', () => {
+    const periods = getCompletedHistoricalPeriods({
+      targetMonth: '2026-11',
+      startDay: 1,
+      monthsBack: 3,
+      todayWithin: new Date(2026, 9, 7, 12),
+      activityByMonth: {
+        '2026-10': { expense_count: 10, active_day_count: 5 },
+        '2026-09': { expense_count: 10, active_day_count: 5 },
+        '2026-08': { expense_count: 10, active_day_count: 5 },
+      },
+    });
+
+    expect(periods.map((period) => period.month)).toEqual(['2026-09', '2026-08']);
+  });
+
   it('projects a category separately from overall spend', () => {
     const bounds = periodBounds('2026-04', 1);
     const projection = projectCategorySpend({

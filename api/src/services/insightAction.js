@@ -75,7 +75,15 @@ function buildInsightAction(insight) {
       title: 'Review the usual basket',
       body: `See why these ${metadata.bundle_item_count} items were grouped, including their shared purchases, usual store, and typical combined cost.`,
       cta: 'Review usual basket',
-      route: null,
+      route: Array.isArray(metadata.bundle_group_keys) && metadata.bundle_group_keys.length > 1 ? {
+        pathname: '/recurring-bundle',
+        params: {
+          group_keys: metadata.bundle_group_keys.join(','),
+          scope,
+          title: metadata.item_name || insight.title,
+          insight_id: insight.id,
+        },
+      } : null,
     };
   }
 

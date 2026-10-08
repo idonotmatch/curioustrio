@@ -14,6 +14,7 @@ jest.mock('../../src/models/ingestAttemptLog');
 jest.mock('../../src/models/categoryDecisionEvent');
 jest.mock('../../src/models/receiptLineCorrection');
 jest.mock('../../src/models/duplicateFlag');
+jest.mock('../../src/models/productPriceObservation');
 jest.mock('../../src/models/backgroundJob', () => ({
   JOB_TYPES: { postConfirm: 'post_confirm' },
   enqueue: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock('../../src/services/duplicateDetector');
 jest.mock('../../src/services/productResolver');
 jest.mock('../../src/services/categoryAssigner');
 jest.mock('../../src/services/mapkitService');
+jest.mock('../../src/services/purchasePlanningService', () => ({ refreshPlansForPriceObservations: jest.fn() }));
 
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
@@ -34,16 +36,19 @@ const IngestAttemptLog = require('../../src/models/ingestAttemptLog');
 const CategoryDecisionEvent = require('../../src/models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../../src/models/receiptLineCorrection');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
+const ProductPriceObservation = require('../../src/models/productPriceObservation');
 const BackgroundJob = require('../../src/models/backgroundJob');
 const User = require('../../src/models/user');
 const detectDuplicates = require('../../src/services/duplicateDetector');
 const { resolveProductMatch } = require('../../src/services/productResolver');
 const { assignCategory } = require('../../src/services/categoryAssigner');
 const { searchPlace } = require('../../src/services/mapkitService');
+const { refreshPlansForPriceObservations } = require('../../src/services/purchasePlanningService');
 const {
   createConfirmedExpense,
   durableConfirmPayload,
   resolveDeferredConfirmPayload,
+  recordItemPriceObservations,
   runPostConfirmJob,
   summarizeItemCorrections,
 } = require('../../src/services/expenseConfirmService');
@@ -90,6 +95,8 @@ describe('expenseConfirmService deferred enrichment', () => {
     CategoryDecisionEvent.create.mockReset();
     ReceiptLineCorrection.upsert.mockReset();
     DuplicateFlag.findByExpenseId.mockReset();
+    ProductPriceObservation.createBatch.mockReset().mockResolvedValue([]);
+    refreshPlansForPriceObservations.mockReset().mockResolvedValue(0);
     BackgroundJob.enqueue.mockReset().mockResolvedValue({ id: 'job-1' });
     User.findById.mockReset();
     detectDuplicates.mockReset();
@@ -290,6 +297,63 @@ describe('expenseConfirmService deferred enrichment', () => {
     expect(enqueueOrder).toBeLessThan(db.__client.query.mock.invocationCallOrder[commitCall]);
   });
 
+  it('completes a linked purchase plan in the expense transaction', async () => {
+    const planId = '11111111-1111-4111-8111-111111111111';
+    db.__client.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: planId }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Laptop purchase',
+        amount: 900,
+        date: '2026-10-07',
+        source: 'manual',
+        purchase_plan_id: planId,
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm: jest.fn(),
+    });
+
+    expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({
+      purchasePlanId: planId,
+      queryable: db.__client,
+    }));
+    expect(db.__client.query).toHaveBeenCalledWith(
+      expect.stringContaining("SET state = 'purchased'"),
+      [planId, 'user-1', 'expense-1']
+    );
+    expect(db.__client.query).toHaveBeenCalledWith(
+      expect.stringContaining("SET state = 'spent'"),
+      [planId]
+    );
+    expect(db.__client.query).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('rolls back the expense when its purchase plan is unavailable', async () => {
+    const planId = '22222222-2222-4222-8222-222222222222';
+    db.__client.query.mockResolvedValue({ rows: [] });
+
+    await expect(createConfirmedExpense({
+      user: { id: 'user-1', household_id: 'hh-1' },
+      payload: {
+        merchant: 'Laptop purchase',
+        amount: 900,
+        date: '2026-10-07',
+        source: 'manual',
+        purchase_plan_id: planId,
+      },
+      deferPostConfirmSideEffects: true,
+      queuePostConfirm: jest.fn(),
+    })).rejects.toThrow('Purchase plan is unavailable or already linked to another expense');
+
+    expect(db.__client.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(db.__client.query).not.toHaveBeenCalledWith('COMMIT');
+  });
+
   it('stores only post-confirm fields needed by the durable worker', () => {
     const payload = durableConfirmPayload({
       merchant: 'Store',
@@ -306,6 +370,44 @@ describe('expenseConfirmService deferred enrichment', () => {
     expect(payload.parsed_payment_snapshot).toEqual({
       payment_method: 'visa', card_label: null, card_last4: '1234',
     });
+  });
+
+  it('records item prices from shared receipts for cross-merchant matching', async () => {
+    ProductPriceObservation.createBatch.mockResolvedValueOnce([{ id: 'observation-1' }]);
+    const result = await recordItemPriceObservations({
+      user: { id: 'user-1' },
+      expense: { id: 'expense-1', merchant: 'Retailer A', date: '2026-10-07' },
+      payload: { source: 'camera', is_private: false },
+      items: [{
+        id: 'item-1',
+        comparable_key: 'laptop m4 16gb 512gb',
+        amount: 899,
+        estimated_unit_price: 899,
+        quantity: 1,
+      }],
+    });
+
+    expect(result).toEqual([{ id: 'observation-1' }]);
+    expect(ProductPriceObservation.createBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        comparableKey: 'laptop m4 16gb 512gb',
+        merchant: 'Retailer A',
+        observedPrice: 899,
+        sourceType: 'receipt',
+        sourceTrust: 'receipt',
+        submittedByUserId: 'user-1',
+      }),
+    ]);
+  });
+
+  it('does not contribute private expense items to price observations', async () => {
+    await expect(recordItemPriceObservations({
+      user: { id: 'user-1' },
+      expense: { id: 'expense-private', merchant: 'Private Store', date: '2026-10-07' },
+      payload: { source: 'camera', is_private: true },
+      items: [{ comparable_key: 'private item', amount: 100 }],
+    })).resolves.toEqual([]);
+    expect(ProductPriceObservation.createBatch).not.toHaveBeenCalled();
   });
 
   it('rebuilds a post-confirm task from persisted expense and item records', async () => {

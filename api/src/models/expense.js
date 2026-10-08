@@ -21,6 +21,10 @@ function isMissingLocationProvenanceError(err) {
     && /location_(provider_id|latitude|longitude|source|status|confidence|user_owned)/i.test(`${err?.message || ''}`);
 }
 
+function isMissingPurchasePlanError(err) {
+  return err?.code === '42703' && /purchase_plan_id/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -56,6 +60,7 @@ async function create({
   reviewMode = null,
   reviewSource = null,
   idempotencyKey = null,
+  purchasePlanId = null,
   queryable = db,
 }) {
   const inTransaction = queryable !== db;
@@ -70,9 +75,9 @@ async function create({
          linked_expense_id, payment_method, card_last4, card_label,
          is_private, exclude_from_budget, budget_exclusion_reason,
          category_source, category_confidence, category_reasoning,
-         review_required, review_mode, review_source, idempotency_key
+         review_required, review_mode, review_source, idempotency_key, purchase_plan_id
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
        ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL
        DO NOTHING
        RETURNING *`,
@@ -84,7 +89,7 @@ async function create({
         linkedExpenseId, paymentMethod, cardLast4, cardLabel,
         isPrivate, excludeFromBudget, budgetExclusionReason,
         categorySource, categoryConfidence, categoryReasoning ? JSON.stringify(categoryReasoning) : null,
-        reviewRequired, reviewMode, reviewSource, idempotencyKey,
+        reviewRequired, reviewMode, reviewSource, idempotencyKey, purchasePlanId,
       ]
     );
     if (result.rows[0]) {
@@ -109,6 +114,7 @@ async function create({
       && !isMissingBudgetExclusionReasonError(err)
       && !isMissingCategoryProvenanceError(err)
       && !isMissingLocationProvenanceError(err)
+      && !isMissingPurchasePlanError(err)
     ) throw err;
     if (inTransaction) await queryable.query('ROLLBACK TO SAVEPOINT expense_create_compat');
     const fallback = await queryable.query(
@@ -226,11 +232,15 @@ async function updateReviewMetadata(id, userId, {
   }
 }
 
-async function findPotentialDuplicates({ householdId, userId, merchant, amount, date, excludeId }) {
+async function findPotentialDuplicates({ householdId, userId, merchant, amount, date, excludeId, allowMerchantMismatch = false }) {
   if (!householdId && !userId) return [];
   const scopeColumn = householdId ? 'household_id' : 'user_id';
   const scopeId = householdId || userId;
   const params = [scopeId, merchant, amount, date];
+  const merchantClause = allowMerchantMismatch
+    ? ''
+    : `AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER(COALESCE($2, '')), '[^a-z0-9]+', '', 'g')`;
   let privacyClause = '';
   if (householdId && userId) {
     params.push(userId);
@@ -244,8 +254,7 @@ async function findPotentialDuplicates({ householdId, userId, merchant, amount, 
   const result = await db.query(
     `SELECT * FROM expenses
      WHERE ${scopeColumn} = $1
-       AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') =
-           REGEXP_REPLACE(LOWER(COALESCE($2, '')), '[^a-z0-9]+', '', 'g')
+       ${merchantClause}
        AND ABS(amount - $3) <= 1.00
        AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
        AND status IN ('pending', 'confirmed')

@@ -10,7 +10,7 @@ function normalizeText(value) {
 function normalizeUnit(unit = '') {
   const value = normalizeText(unit);
   if (!value) return null;
-  if (['fl oz', 'fluid ounce', 'fluid ounces'].includes(value)) return 'fl_oz';
+  if (['fl oz', 'floz', 'fl ounce', 'fluid ounce', 'fluid ounces', 'fz'].includes(value)) return 'fl_oz';
   if (['oz', 'ounce', 'ounces'].includes(value)) return 'oz';
   if (['lb', 'lbs', 'pound', 'pounds'].includes(value)) return 'lb';
   if (['g', 'gram', 'grams'].includes(value)) return 'g';
@@ -19,7 +19,52 @@ function normalizeUnit(unit = '') {
   if (['l', 'liter', 'liters'].includes(value)) return 'l';
   if (['ct', 'count'].includes(value)) return 'ct';
   if (['ea', 'each'].includes(value)) return 'ea';
+  if (['gal', 'gallon', 'gallons'].includes(value)) return 'gal';
+  if (['pt', 'pint', 'pints'].includes(value)) return 'pt';
+  if (['qt', 'quart', 'quarts'].includes(value)) return 'qt';
   return value;
+}
+
+const ITEM_BOILERPLATE_MARKERS = [
+  /\blet us know\b/i,
+  /\btell us (?:about|how|what)\b/i,
+  /\bshare your feedback\b/i,
+  /\bhow (?:was|did) your (?:visit|experience|order)\b/i,
+  /\bvisit (?:us|our website)\b/i,
+  /\btake (?:our|a) survey\b/i,
+  /\bscan (?:the )?qr code\b/i,
+  /\bquestions or comments\b/i,
+  /\bjoin (?:our|the) rewards\b/i,
+  /\bfollow us\b/i,
+  /\bthanks? for (?:shopping|your purchase)\b/i,
+];
+
+function cleanItemDescription(value = '') {
+  let text = `${value || ''}`.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  let cutAt = text.length;
+  for (const marker of ITEM_BOILERPLATE_MARKERS) {
+    const match = marker.exec(text);
+    if (match) cutAt = Math.min(cutAt, match.index);
+  }
+  text = text.slice(0, cutAt)
+    .replace(/^[#*\-:|\s]+/, '')
+    .replace(/[\s,.;:|\-]+$/, '')
+    .trim();
+  return text.slice(0, 500);
+}
+
+function extractStructuredSize(value = '') {
+  const text = `${value || ''}`.toLowerCase().replace(/×/g, 'x');
+  const sizeMatch = text.match(/(?:^|\b)(\d+(?:\.\d+)?)\s*(fl\s*oz|floz|fl ounce|fz|oz|ounces?|lbs?|pounds?|kg|kilograms?|g|grams?|ml|milliliters?|l|liters?|gal|gallons?|pt|pints?|qt|quarts?|ct|count|ea|each)\b/i);
+  const packMatch = text.match(/(?:^|\b)(\d+(?:\.\d+)?)\s*(?:x|pk|pack)\b/i)
+    || text.match(/\bpack\s+of\s+(\d+(?:\.\d+)?)\b/i);
+  if (!sizeMatch && !packMatch) return {};
+  return {
+    product_size: sizeMatch ? sizeMatch[1] : null,
+    unit: sizeMatch ? normalizeUnit(sizeMatch[2]) : null,
+    pack_size: packMatch ? packMatch[1] : null,
+  };
 }
 
 function parseNumeric(value) {
@@ -48,6 +93,15 @@ function normalizeSizeValue(rawValue, rawUnit) {
   } else if (unit === 'l') {
     normalized *= 1000;
     unit = 'ml';
+  } else if (unit === 'gal') {
+    normalized *= 128;
+    unit = 'fl_oz';
+  } else if (unit === 'pt') {
+    normalized *= 16;
+    unit = 'fl_oz';
+  } else if (unit === 'qt') {
+    normalized *= 32;
+    unit = 'fl_oz';
   }
   return {
     normalizedSizeValue: Number(normalized.toFixed(3)),
@@ -102,14 +156,14 @@ function singularizeToken(token = '') {
 }
 
 function normalizeComparableDescription(description = '', brand = '') {
-  let text = normalizeText(description);
+  let text = normalizeText(cleanItemDescription(description));
   if (!text) return '';
 
   text = text
     .replace(/\b(?:bought|ordered|purchased)\s+(?:from|at)\s+[a-z0-9 ]+$/, ' ')
     .replace(/\b(?:from|at|via)\s+[a-z0-9 ]+$/, ' ')
     .replace(/\b\d+(?:\.\d+)?\s*(?:x|ct|count|pack|pk)\b/g, ' ')
-    .replace(/\b\d+(?:\.\d+)?\s*(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters|fl oz|ea|each)\b/g, ' ')
+    .replace(/\b\d+(?:\.\d+)?\s*(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l|liter|liters|fl oz|floz|fz|gal|gallon|pt|pint|qt|quart|ea|each)\b/g, ' ')
     .replace(/\b(?:pack|pk|count|ct|size)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -139,25 +193,42 @@ function buildComparableKey({ description, brand, normalizedSizeValue, normalize
 }
 
 function normalizeItemMetadata(item = {}) {
-  const normalizedName = normalizeComparableDescription(item.description, item.brand) || normalizeText(item.description);
+  const cleanedDescription = cleanItemDescription(item.description);
+  const extracted = extractStructuredSize(cleanedDescription);
+  const productSize = item.product_size || extracted.product_size || null;
+  const packSize = item.pack_size || extracted.pack_size || null;
+  const productUnit = item.product_size ? item.unit : (item.unit || extracted.unit);
+  const normalizedName = normalizeComparableDescription(cleanedDescription, item.brand) || normalizeText(cleanedDescription);
   const normalizedBrand = normalizeText(item.brand);
-  const { normalizedSizeValue, normalizedSizeUnit } = normalizeSizeValue(item.product_size, item.unit);
-  const normalizedPackSize = parsePackSize(item.pack_size);
+  const { normalizedSizeValue, normalizedSizeUnit } = normalizeSizeValue(productSize, productUnit);
+  const normalizedPackSize = parsePackSize(packSize);
   const purchaseQuantity = parsePurchaseQuantity(item.quantity);
   const normalizedQuantity = deriveNormalizedQuantity({
     normalizedSizeValue,
     normalizedSizeUnit,
     normalizedPackSize,
   });
-  const { normalizedTotalSizeValue, normalizedTotalSizeUnit } = deriveNormalizedTotalSize({
+  let { normalizedTotalSizeValue, normalizedTotalSizeUnit } = deriveNormalizedTotalSize({
     normalizedSizeValue,
     normalizedSizeUnit,
     normalizedQuantity,
     purchaseQuantity,
   });
-  const estimatedUnitPrice = deriveEstimatedUnitPrice(item.amount, normalizedTotalSizeValue);
+  let estimatedUnitPrice = deriveEstimatedUnitPrice(item.amount, normalizedTotalSizeValue);
+  let comparisonPriceSource = estimatedUnitPrice != null ? 'normalized_size' : null;
+  if (estimatedUnitPrice == null && Number(item.unit_price) > 0) {
+    estimatedUnitPrice = Number(Number(item.unit_price).toFixed(4));
+    normalizedTotalSizeValue = purchaseQuantity || 1;
+    normalizedTotalSizeUnit = normalizeUnit(item.pricing_unit || (!productSize ? item.unit : null)) || 'ea';
+    comparisonPriceSource = 'printed_unit_price';
+  } else if (estimatedUnitPrice == null && Number(item.amount) > 0 && purchaseQuantity > 0) {
+    estimatedUnitPrice = Number((Number(item.amount) / purchaseQuantity).toFixed(4));
+    normalizedTotalSizeValue = purchaseQuantity;
+    normalizedTotalSizeUnit = normalizeUnit(item.pricing_unit) || 'ea';
+    comparisonPriceSource = 'derived_quantity';
+  }
   const comparableKey = buildComparableKey({
-    description: item.description,
+    description: cleanedDescription,
     brand: item.brand,
     normalizedSizeValue,
     normalizedSizeUnit,
@@ -165,6 +236,10 @@ function normalizeItemMetadata(item = {}) {
   });
 
   return {
+    cleaned_description: cleanedDescription || null,
+    inferred_product_size: item.product_size ? null : (extracted.product_size || null),
+    inferred_pack_size: item.pack_size ? null : (extracted.pack_size || null),
+    inferred_unit: item.unit ? null : (extracted.unit || null),
     normalized_name: normalizedName || null,
     normalized_brand: normalizedBrand || null,
     normalized_size_value: normalizedSizeValue,
@@ -174,6 +249,7 @@ function normalizeItemMetadata(item = {}) {
     normalized_total_size_value: normalizedTotalSizeValue,
     normalized_total_size_unit: normalizedTotalSizeUnit,
     estimated_unit_price: estimatedUnitPrice,
+    comparison_price_source: comparisonPriceSource,
     comparable_key: comparableKey,
   };
 }
@@ -183,5 +259,7 @@ module.exports = {
   normalizeUnit,
   normalizeItemMetadata,
   normalizeComparableDescription,
+  cleanItemDescription,
+  extractStructuredSize,
   parsePackSize,
 };

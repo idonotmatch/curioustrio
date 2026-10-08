@@ -1,7 +1,8 @@
 const Product = require('../models/product');
 const ItemMatchDecision = require('../models/itemMatchDecision');
-const { normalizeItemMetadata } = require('./itemNormalizer');
+const { cleanItemDescription, normalizeItemMetadata } = require('./itemNormalizer');
 const { isProductLikeItem } = require('./itemClassifier');
+const { cleanMerchantDisplayName } = require('./merchantIdentity');
 
 const GENERIC_VARIANT_TOKENS = new Set([
   'organic', 'fresh', 'original', 'classic', 'large', 'small', 'medium',
@@ -141,9 +142,21 @@ async function resolveProduct(item, merchant, options = {}) {
 }
 
 async function resolveProductMatch(item, merchant, { householdId = null } = {}) {
-  const { description, upc, sku, brand, product_size, pack_size, unit } = item;
-  const normalized = normalizeItemMetadata(item);
-  const matchConfidence = getNormalizedMatchConfidence({ merchant, normalized, brand, product_size, pack_size, unit });
+  const { upc, sku, brand, product_size, pack_size, unit } = item;
+  const description = cleanItemDescription(item.description);
+  const canonicalMerchant = cleanMerchantDisplayName(merchant) || merchant;
+  const normalized = normalizeItemMetadata({ ...item, description });
+  const effectiveProductSize = product_size || normalized.inferred_product_size || undefined;
+  const effectivePackSize = pack_size || normalized.inferred_pack_size || undefined;
+  const effectiveUnit = unit || normalized.inferred_unit || undefined;
+  const matchConfidence = getNormalizedMatchConfidence({
+    merchant: canonicalMerchant,
+    normalized,
+    brand,
+    product_size: effectiveProductSize,
+    pack_size: effectivePackSize,
+    unit: effectiveUnit,
+  });
 
   if (!description) return null;
 
@@ -159,41 +172,41 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
         const updates = {};
         if (!existing.sku && sku) updates.sku = sku;
         if (!existing.brand && brand) updates.brand = brand;
-        if (!existing.product_size && product_size) updates.product_size = product_size;
-        if (!existing.pack_size && pack_size) updates.pack_size = pack_size;
-        if (!existing.unit && unit) updates.unit = unit;
-        if (!existing.merchant && merchant) updates.merchant = merchant;
+        if (!existing.product_size && effectiveProductSize) updates.product_size = effectiveProductSize;
+        if (!existing.pack_size && effectivePackSize) updates.pack_size = effectivePackSize;
+        if (!existing.unit && effectiveUnit) updates.unit = effectiveUnit;
+        if (!existing.merchant && canonicalMerchant) updates.merchant = canonicalMerchant;
         if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
         return { product_id: existing.id, confidence: 'high', reason: 'upc' };
       }
     }
 
     // 2. Try SKU + merchant match
-    if (sku && merchant) {
-      const existing = await Product.findBySkuAndMerchant(sku, merchant);
+    if (sku && canonicalMerchant) {
+      const existing = await Product.findBySkuAndMerchant(sku, canonicalMerchant);
       if (existing) {
         const updates = {};
         if (!existing.upc && upc) updates.upc = upc;
         if (!existing.brand && brand) updates.brand = brand;
-        if (!existing.product_size && product_size) updates.product_size = product_size;
-        if (!existing.pack_size && pack_size) updates.pack_size = pack_size;
-        if (!existing.unit && unit) updates.unit = unit;
+        if (!existing.product_size && effectiveProductSize) updates.product_size = effectiveProductSize;
+        if (!existing.pack_size && effectivePackSize) updates.pack_size = effectivePackSize;
+        if (!existing.unit && effectiveUnit) updates.unit = effectiveUnit;
         if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
         return { product_id: existing.id, confidence: 'high', reason: 'sku_merchant' };
       }
     }
 
-    const hasUnmatchedStableIdentifier = Boolean(upc || (sku && merchant));
+    const hasUnmatchedStableIdentifier = Boolean(upc || (sku && canonicalMerchant));
 
     // 3. Try normalized description matching with explicit confidence thresholds.
     if (!hasUnmatchedStableIdentifier && matchConfidence) {
       const existing = await Product.findByNormalizedDetails({
         name: description,
-        merchant,
+        merchant: canonicalMerchant,
         brand,
-        productSize: product_size,
-        packSize: pack_size,
-        unit,
+        productSize: effectiveProductSize,
+        packSize: effectivePackSize,
+        unit: effectiveUnit,
         allowCrossMerchant: matchConfidence === 'high',
       });
       if (existing) {
@@ -201,7 +214,7 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
           ? await ItemMatchDecision.findForCandidate({
               householdId,
               normalizedName: normalized.normalized_name,
-              merchant,
+              merchant: canonicalMerchant,
               candidateProductId: existing.id,
             })
           : null;
@@ -217,10 +230,10 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
         if (!existing.upc && upc) updates.upc = upc;
         if (!existing.sku && sku) updates.sku = sku;
         if (!existing.brand && brand) updates.brand = brand;
-        if (!existing.product_size && product_size) updates.product_size = product_size;
-        if (!existing.pack_size && pack_size) updates.pack_size = pack_size;
-        if (!existing.unit && unit) updates.unit = unit;
-        if (!existing.merchant && merchant) updates.merchant = merchant;
+        if (!existing.product_size && effectiveProductSize) updates.product_size = effectiveProductSize;
+        if (!existing.pack_size && effectivePackSize) updates.pack_size = effectivePackSize;
+        if (!existing.unit && effectiveUnit) updates.unit = effectiveUnit;
+        if (!existing.merchant && canonicalMerchant) updates.merchant = canonicalMerchant;
         if (Object.keys(updates).length > 0) await Product.update(existing.id, updates);
         return { product_id: existing.id, confidence: matchConfidence, reason: 'normalized_match' };
       }
@@ -233,7 +246,7 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
       const confirmedAlias = await ItemMatchDecision.findConfirmedAlias({
         householdId,
         normalizedName: normalized.normalized_name,
-        merchant,
+        merchant: canonicalMerchant,
       });
       if (confirmedAlias?.candidate_product_id && !confirmedAliasConflicts(normalized, confirmedAlias)) {
         return {
@@ -247,15 +260,22 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
     // 5. Offer one conservative same-merchant name variant for review. This
     // never auto-confirms unless the household has already accepted the alias.
     const variantMatch = !hasUnmatchedStableIdentifier
-      ? await findVariantMatch({ item, merchant, householdId, normalized })
+      ? await findVariantMatch({ item: { ...item, description }, merchant: canonicalMerchant, householdId, normalized })
       : null;
     if (variantMatch) return variantMatch;
 
     // 6. Create new when we have a stable identifier or enough descriptive structure.
     const hasStructuredIdentity = !!(
       upc
-      || (sku && merchant)
-      || canCreateCanonicalProduct({ merchant, normalized, brand, product_size, pack_size, unit })
+      || (sku && canonicalMerchant)
+      || canCreateCanonicalProduct({
+        merchant: canonicalMerchant,
+        normalized,
+        brand,
+        product_size: effectiveProductSize,
+        pack_size: effectivePackSize,
+        unit: effectiveUnit,
+      })
     );
     if (!hasStructuredIdentity) return null;
 
@@ -264,10 +284,10 @@ async function resolveProductMatch(item, merchant, { householdId = null } = {}) 
       brand: brand || null,
       upc: upc || null,
       sku: sku || null,
-      merchant: merchant || null,
-      productSize: product_size || null,
-      packSize: pack_size || null,
-      unit: unit || null,
+      merchant: canonicalMerchant || null,
+      productSize: effectiveProductSize || null,
+      packSize: effectivePackSize || null,
+      unit: effectiveUnit || null,
     });
     return { product_id: product.id, confidence: 'high', reason: 'created' };
   } catch (err) {

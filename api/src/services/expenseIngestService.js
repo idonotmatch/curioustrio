@@ -11,6 +11,7 @@ const {
 } = require('./parsingOptimizationConfig');
 const { finalizeIngestMetadata } = require('./parseIngestMetadata');
 const { persistSuccessInputPreviewEnabled } = require('./storageMinimizationConfig');
+const { canonicalizeMerchantForHousehold } = require('./merchantIdentity');
 
 function truncateInputPreview(input, max = 180) {
   const text = `${input || ''}`.trim();
@@ -126,7 +127,7 @@ function applyModelMetrics(parsedResult, metrics) {
 }
 
 function summarizeReceiptOutcome(parsedResult) {
-  const parsed = parsedResult?.parsed || null;
+  let parsed = parsedResult?.parsed || null;
   const reviewFields = Array.isArray(parsed?.review_fields) ? parsed.review_fields : [];
   return {
     parsed: Boolean(parsed),
@@ -233,7 +234,7 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
   }
 
   const user = await userPromise;
-  const parsed = parsedResult?.parsed || null;
+  let parsed = parsedResult?.parsed || null;
   if (!parsed) {
     const failure = buildIngestFailure('nl', parsedResult?.failureReason);
     await IngestAttemptLog.create({
@@ -245,6 +246,26 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
       metadata: parsedResult?.diagnostics || { raw_present: Boolean(parsedResult?.raw) },
     });
     return { errorStatus: 422, errorBody: failure };
+  }
+
+  const merchantIdentity = await canonicalizeMerchantForHousehold({
+    householdId: user?.household_id || null,
+    merchant: parsed.raw_merchant || parsed.merchant,
+  });
+  if (merchantIdentity.merchant) {
+    parsed = {
+      ...parsed,
+      merchant: merchantIdentity.merchant,
+      raw_merchant: parsed.raw_merchant || merchantIdentity.raw_merchant,
+      merchant_key: merchantIdentity.merchant_key,
+      merchant_identity_confidence: merchantIdentity.confidence,
+      field_confidence: {
+        ...(parsed.field_confidence || {}),
+        merchant: merchantIdentity.reason === 'household_history'
+          ? 'high'
+          : (parsed.field_confidence?.merchant || merchantIdentity.confidence),
+      },
+    };
   }
 
   const { assignment, matchedCategory } = await assignParsedCategory(user, parsed);
@@ -476,7 +497,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
   const finalOutcome = summarizeReceiptOutcome(parsedResult);
   const outcomeComparison = compareReceiptOutcomes(firstPassOutcome, finalOutcome);
   const totalScanDurationMs = Date.now() - scanStartedAt;
-  const parsed = parsedResult?.parsed || null;
+  let parsed = parsedResult?.parsed || null;
 
   if (!parsed) {
     const failure = buildIngestFailure('receipt', parsedResult?.failureReason);
@@ -504,6 +525,34 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       }),
     });
     return { errorStatus: 422, errorBody: failure };
+  }
+
+  const merchantIdentity = await canonicalizeMerchantForHousehold({
+    householdId: user?.household_id || null,
+    merchant: parsed.raw_merchant || parsed.merchant,
+  });
+  if (merchantIdentity.merchant) {
+    parsed = {
+      ...parsed,
+      merchant: merchantIdentity.merchant,
+      raw_merchant: parsed.raw_merchant || merchantIdentity.raw_merchant,
+      merchant_key: merchantIdentity.merchant_key,
+      merchant_identity_confidence: merchantIdentity.confidence,
+      receipt_validation: {
+        ...(parsed.receipt_validation || {}),
+        raw_merchant: parsed.raw_merchant || merchantIdentity.raw_merchant,
+        canonical_merchant: merchantIdentity.merchant,
+        merchant_key: merchantIdentity.merchant_key,
+        merchant_identity_confidence: merchantIdentity.confidence,
+        merchant_normalization_reason: merchantIdentity.reason,
+      },
+      field_confidence: {
+        ...(parsed.field_confidence || {}),
+        merchant: merchantIdentity.reason === 'household_history'
+          ? 'high'
+          : (parsed.field_confidence?.merchant || merchantIdentity.confidence),
+      },
+    };
   }
 
   const { assignment, matchedCategory } = await assignParsedCategory(user, parsed);

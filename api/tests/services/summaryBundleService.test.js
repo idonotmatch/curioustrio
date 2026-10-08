@@ -4,16 +4,12 @@ jest.mock('../../src/models/expense', () => ({
   findByHousehold: jest.fn(),
 }));
 jest.mock('../../src/models/household', () => ({ findById: jest.fn() }));
-jest.mock('../../src/models/scenarioMemory', () => ({ listWatchedByUser: jest.fn() }));
-jest.mock('../../src/services/scenarioMemoryService', () => ({
-  decoratePlansWithTimingPreference: jest.fn(),
-}));
+jest.mock('../../src/models/purchasePlan', () => ({ listByUser: jest.fn() }));
 
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
 const Household = require('../../src/models/household');
-const ScenarioMemory = require('../../src/models/scenarioMemory');
-const { decoratePlansWithTimingPreference } = require('../../src/services/scenarioMemoryService');
+const PurchasePlan = require('../../src/models/purchasePlan');
 const { buildSummaryBundle, periodBounds, SUMMARY_EXPENSE_LIMIT } = require('../../src/services/summaryBundleService');
 
 describe('summaryBundleService', () => {
@@ -27,8 +23,11 @@ describe('summaryBundleService', () => {
     Household.findById.mockResolvedValue({ id: 'household-1', name: 'Home' });
     Expense.findByUser.mockResolvedValue([{ id: 'expense-1' }]);
     Expense.findByHousehold.mockResolvedValue([{ id: 'expense-1' }, { id: 'expense-2' }]);
-    ScenarioMemory.listWatchedByUser.mockResolvedValue([{ id: 'plan-1' }]);
-    decoratePlansWithTimingPreference.mockResolvedValue([{ id: 'plan-1', scope: 'personal' }]);
+    PurchasePlan.listByUser.mockResolvedValue([{
+      id: 'plan-1',
+      scope: 'personal',
+      latest_snapshot: { material_change: 'unchanged', reserved_amount: '25', funding_gap: '75' },
+    }]);
   });
 
   it('builds a compact monthly bundle with bounded expense preloads', async () => {
@@ -39,12 +38,13 @@ describe('summaryBundleService', () => {
     });
 
     expect(bundle).toMatchObject({
+      schema_version: 3,
       period: '2026-10',
       member_count: 2,
       household: { id: 'household-1', name: 'Home' },
       personal_budget: { total: { limit: 500, spent: 125, remaining: 375 } },
       household_budget: { total: { limit: 900, spent: 275, remaining: 625 } },
-      watched_plans: [{ id: 'plan-1', scope: 'personal' }],
+      watched_plans: [expect.objectContaining({ id: 'plan-1', scope: 'personal', reserved_amount: 25, funding_gap: 75 })],
     });
     expect(Expense.findByUser).toHaveBeenCalledWith('user-1', expect.objectContaining({ limit: SUMMARY_EXPENSE_LIMIT }));
     expect(Expense.findByHousehold).toHaveBeenCalledWith('household-1', expect.objectContaining({ limit: SUMMARY_EXPENSE_LIMIT }));

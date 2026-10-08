@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const RecurringExpense = require('../models/recurringExpense');
 const RecurringPreference = require('../models/recurringPreference');
+const ItemPlanningPreference = require('../models/itemPlanningPreference');
 const Expense = require('../models/expense');
 const ExpenseItem = require('../models/expenseItem');
 const {
@@ -56,6 +57,47 @@ router.post('/detect-item-signals', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/bundle-history', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const scope = `${req.query.scope || ''}`.trim() === 'personal' ? 'personal' : 'household';
+    if (scope === 'household' && !user.household_id) {
+      return res.status(403).json({ error: 'Must be in a household' });
+    }
+    const groupKeys = `${req.query.group_keys || ''}`
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value, index, values) => /^(product|comparable):.+/.test(value) && values.indexOf(value) === index)
+      .slice(0, 8);
+    if (groupKeys.length < 2) {
+      return res.status(400).json({ error: 'At least two valid group_keys are required' });
+    }
+    const ownerId = scope === 'personal' ? user.id : user.household_id;
+    const histories = await Promise.all(groupKeys.map((groupKey) => getItemHistoryByGroupKey(ownerId, groupKey, {
+      scope,
+      requesterUserId: user.id,
+    })));
+    const items = histories.filter(Boolean);
+    if (items.length < 2) return res.status(404).json({ error: 'Basket history not found' });
+    const merchantCounts = new Map();
+    items.forEach((item) => (item.merchants || []).forEach((merchant) => {
+      merchantCounts.set(merchant, (merchantCounts.get(merchant) || 0) + 1);
+    }));
+    const usualMerchants = [...merchantCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([merchant]) => merchant);
+    res.json({
+      kind: 'item_bundle_history',
+      scope,
+      item_count: items.length,
+      typical_combined_cost: Number(items.reduce((sum, item) => sum + Number(item.median_amount || 0), 0).toFixed(2)),
+      usual_merchants: usualMerchants,
+      items,
+    });
+  } catch (err) { next(err); }
+});
+
 router.get('/item-history', async (req, res, next) => {
   try {
     const user = await getUser(req);
@@ -67,9 +109,98 @@ router.get('/item-history', async (req, res, next) => {
       return res.status(403).json({ error: 'Must be in a household' });
     }
     const ownerId = scope === 'personal' ? user.id : user.household_id;
-    const history = await getItemHistoryByGroupKey(ownerId, groupKey, { scope, requesterUserId: user.id });
+    const [history, planningPreference] = await Promise.all([
+      getItemHistoryByGroupKey(ownerId, groupKey, { scope, requesterUserId: user.id }),
+      ItemPlanningPreference.findByUserAndGroup(user.id, groupKey),
+    ]);
     if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
-    res.json(history);
+    res.json({ ...history, planning_preference: planningPreference });
+  } catch (err) { next(err); }
+});
+
+router.get('/item-preferences', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const groupKey = `${req.query.group_key || ''}`.trim();
+    const state = `${req.query.state || ''}`.trim() || null;
+    if (state && !['watching', 'needed', 'suppressed'].includes(state)) {
+      return res.status(400).json({ error: 'state is invalid' });
+    }
+    if (groupKey) {
+      const preference = await ItemPlanningPreference.findByUserAndGroup(user.id, groupKey);
+      return res.json(preference || null);
+    }
+    res.json(await ItemPlanningPreference.findByUser(user.id, { state }));
+  } catch (err) { next(err); }
+});
+
+router.put('/item-preferences', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const groupKey = `${req.body?.group_key || ''}`.trim();
+    const state = `${req.body?.state || 'watching'}`.trim();
+    const remindOn = req.body?.remind_on ? `${req.body.remind_on}`.slice(0, 10) : null;
+    const targetPrice = req.body?.target_price == null || req.body?.target_price === ''
+      ? null
+      : Number(req.body.target_price);
+    const notes = req.body?.notes == null ? null : `${req.body.notes}`.trim().slice(0, 500);
+    if (!/^(product|comparable):.+/.test(groupKey)) {
+      return res.status(400).json({ error: 'group_key is invalid' });
+    }
+    if (!['watching', 'needed', 'suppressed'].includes(state)) {
+      return res.status(400).json({ error: 'state is invalid' });
+    }
+    if (remindOn && !/^\d{4}-\d{2}-\d{2}$/.test(remindOn)) {
+      return res.status(400).json({ error: 'remind_on must be an ISO date' });
+    }
+    if (targetPrice != null && (!Number.isFinite(targetPrice) || targetPrice <= 0 || targetPrice > 1_000_000)) {
+      return res.status(400).json({ error: 'target_price must be a positive amount' });
+    }
+    const preference = await ItemPlanningPreference.upsert({
+      userId: user.id,
+      householdId: user.household_id || null,
+      groupKey,
+      state,
+      remindOn,
+      targetPrice,
+      notes,
+    });
+    await emitRecurringFreshnessEvent(user, 'item_planning_preference_saved', {
+      group_key: groupKey,
+      state,
+    });
+    res.json(preference);
+  } catch (err) { next(err); }
+});
+
+router.get('/planning-items', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const preferences = (await ItemPlanningPreference.findByUser(user.id, { state: 'needed' })).slice(0, 50);
+    const ownerId = user.household_id || user.id;
+    const scope = user.household_id ? 'household' : 'personal';
+    const rows = await Promise.all(preferences.map(async (preference) => {
+      const history = await getItemHistoryByGroupKey(ownerId, preference.group_key, {
+        scope,
+        requesterUserId: user.id,
+      });
+      if (!history) return null;
+      return {
+        ...preference,
+        scope,
+        item_name: history.item_name,
+        brand: history.brand,
+        median_amount: history.median_amount,
+        median_unit_price: history.median_unit_price,
+        price_basis_unit: history.price_basis_unit || history.normalized_total_size_unit,
+        usual_merchant: history.merchant_breakdown?.[0]?.merchant || history.merchants?.[0] || null,
+        last_purchased_at: history.last_purchased_at,
+      };
+    }));
+    res.json(rows.filter(Boolean));
   } catch (err) { next(err); }
 });
 

@@ -74,6 +74,9 @@ const MIGRATION_PLAN = [
   '078_expense_item_observation_provenance.sql',
   '079_item_match_memory_and_gmail_enrichment.sql',
   '080_freshness_event_cursor_index.sql',
+  '081_item_intelligence_preferences.sql',
+  '082_purchase_planning_foundation.sql',
+  '083_purchase_planning_ux.sql',
 ];
 
 module.exports = {

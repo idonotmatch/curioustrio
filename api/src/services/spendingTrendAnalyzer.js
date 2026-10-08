@@ -3,6 +3,7 @@ const BudgetSetting = require('../models/budgetSetting');
 const Household = require('../models/household');
 const { summarizeCategoryProvenance } = require('./categoryProvenance');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
+const { mergeMerchantRows } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -281,11 +282,11 @@ async function merchantSpendByPeriod({ scope, householdId, userId, from, toExclu
          AND e.date < $3
        GROUP BY merchant_key, merchant_name`
     );
-    return result.rows.map((row) => ({
+    return mergeMerchantRows(result.rows.map((row) => ({
       merchant_key: row.merchant_key,
       merchant_name: row.merchant_name,
       spent: Number(row.spent || 0),
-    }));
+    })));
   }
 
   const result = await queryBudgetRelevant(
@@ -312,11 +313,11 @@ async function merchantSpendByPeriod({ scope, householdId, userId, from, toExclu
        AND date < $3
      GROUP BY merchant_key, merchant_name`
   );
-  return result.rows.map((row) => ({
+  return mergeMerchantRows(result.rows.map((row) => ({
     merchant_key: row.merchant_key,
     merchant_name: row.merchant_name,
     spent: Number(row.spent || 0),
-  }));
+  })));
 }
 
 async function periodActivity({ scope, householdId, userId, from, toExclusive }) {

@@ -45,6 +45,7 @@ async function refreshConsideringScenarios(user, { limit = 5 } = {}) {
       month: item.month,
       proposedAmount: item.amount,
       label: item.label,
+      timingMode: item.timing_mode || 'now',
     });
     const materialChange = detectMaterialChange(item, result.scenario);
     const updated = await ScenarioMemory.updateEvaluation(item.id, user.id, result.scenario, materialChange);

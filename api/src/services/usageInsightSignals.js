@@ -1,4 +1,5 @@
 const db = require('../db');
+const { canonicalMerchantKey, cleanMerchantDisplayName } = require('./merchantIdentity');
 const { summarizeCategoryProvenance } = require('./categoryProvenance');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
 
@@ -314,10 +315,11 @@ function summarizeExpenseRows(rows = []) {
     category.expenses.push(row);
     byCategory.set(categoryKey, category);
 
-    const merchantKey = `${row.merchant_key || row.merchant || 'unknown'}`.trim().toLowerCase() || 'unknown';
+    const merchantName = cleanMerchantDisplayName(row.merchant_name || row.merchant || row.merchant_key) || 'Unknown';
+    const merchantKey = canonicalMerchantKey(merchantName) || 'unknown';
     const merchant = byMerchant.get(merchantKey) || {
       merchant_key: merchantKey,
-      merchant_name: row.merchant_name || row.merchant || 'Unknown',
+      merchant_name: merchantName,
       spend: 0,
       count: 0,
     };

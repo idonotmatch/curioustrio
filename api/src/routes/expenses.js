@@ -164,6 +164,7 @@ function parseStartDay(value, fallback) {
 }
 
 const { aiEndpoints } = require('../middleware/rateLimit');
+const { getItemQualitySummary } = require('../services/itemQualityService');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -176,6 +177,14 @@ router.get('/ingest-summary', async (req, res, next) => {
     const source = req.query.source ? `${req.query.source}`.trim() : null;
     const summary = await IngestAttemptLog.summarizeByUser(user.id, { source, days });
     res.json(summary || { counts: {}, reasons: [] });
+  } catch (err) { next(err); }
+});
+
+router.get('/item-quality-summary', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    res.json(await getItemQualitySummary(user, { days: req.query.days }));
   } catch (err) { next(err); }
 });
 
@@ -243,6 +252,7 @@ router.post('/confirm', async (req, res, next) => {
       category_status, location_status, category_user_owned, location_user_owned,
       payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
       ingest_attempt_id, parsed_payment_snapshot, idempotency_key, receipt_details,
+      purchase_plan_id,
     } = req.body;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
     confirmAttemptId = ingest_attempt_id || null;
@@ -296,6 +306,7 @@ router.post('/confirm', async (req, res, next) => {
         parsed_payment_snapshot,
         receipt_details,
         idempotency_key,
+        purchase_plan_id,
       },
       originalParsedItems,
     });

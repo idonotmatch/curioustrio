@@ -55,6 +55,15 @@ async function recordItemMatchDecision({ user, expenseId, itemId, decision }) {
           productMatchConfidence: null,
           productMatchReason: 'user_rejected_match',
         }, client);
+    if (decision === 'same') {
+      await ExpenseItem.applyConfirmedAlias({
+        householdId: user.household_id,
+        normalizedName: normalized.normalized_name,
+        merchant: expense.merchant,
+        productId: item.product_id,
+        excludeItemId: item.id,
+      }, client);
+    }
     await client.query('COMMIT');
     return { expense, item: updated };
   } catch (err) {

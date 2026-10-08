@@ -1,5 +1,6 @@
 const db = require('../db');
 const { normalizeItemMetadata } = require('../services/itemNormalizer');
+const { canonicalMerchantKey } = require('../services/merchantIdentity');
 
 async function findByUpc(upc) {
   if (!upc) return null;
@@ -12,9 +13,14 @@ async function findByUpc(upc) {
 
 async function findBySkuAndMerchant(sku, merchant) {
   if (!sku || !merchant) return null;
+  const merchantKey = canonicalMerchantKey(merchant);
+  if (!merchantKey) return null;
   const result = await db.query(
-    `SELECT * FROM products WHERE sku = $1 AND merchant = $2 LIMIT 1`,
-    [sku, merchant]
+    `SELECT * FROM products
+     WHERE sku = $1
+       AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') = $2
+     LIMIT 1`,
+    [sku, merchantKey]
   );
   return result.rows[0] || null;
 }
@@ -28,22 +34,24 @@ async function findByNormalizedDetails({ name, merchant, brand, productSize, pac
     pack_size: packSize,
     unit,
   });
+  const merchantKey = canonicalMerchantKey(merchant);
   const result = await db.query(
     `SELECT *
      FROM products
      WHERE comparable_key = $1
-       AND ($2::text IS NULL OR LOWER(merchant) = LOWER($2) OR $3::boolean = TRUE)
+       AND ($2::text = '' OR REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') = $2 OR $3::boolean = TRUE)
      ORDER BY
-       CASE WHEN $2::text IS NOT NULL AND LOWER(merchant) = LOWER($2) THEN 0 ELSE 1 END,
+       CASE WHEN $2::text <> '' AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') = $2 THEN 0 ELSE 1 END,
        created_at ASC
      LIMIT 1`,
-    [normalized.comparable_key, merchant || null, allowCrossMerchant]
+    [normalized.comparable_key, merchantKey, allowCrossMerchant]
   );
   return result.rows[0] || null;
 }
 
 async function findNameCandidates({ merchant, normalizedBrand, searchToken, limit = 12 }) {
   const merchantText = `${merchant || ''}`.trim();
+  const merchantKey = canonicalMerchantKey(merchantText);
   const brandText = `${normalizedBrand || ''}`.trim();
   const tokenText = `${searchToken || ''}`.trim();
   if ((!merchantText && !brandText) || !tokenText) return [];
@@ -52,16 +60,16 @@ async function findNameCandidates({ merchant, normalizedBrand, searchToken, limi
      FROM products
      WHERE normalized_name IS NOT NULL
        AND (
-         ($1::text <> '' AND LOWER(COALESCE(merchant, '')) = LOWER($1))
+         ($1::text <> '' AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') = $1)
          OR ($2::text <> '' AND normalized_brand = $2)
        )
        AND normalized_name ILIKE ('%' || $3 || '%')
      ORDER BY
-       CASE WHEN $1::text <> '' AND LOWER(COALESCE(merchant, '')) = LOWER($1) THEN 0 ELSE 1 END,
+       CASE WHEN $1::text <> '' AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') = $1 THEN 0 ELSE 1 END,
        updated_at DESC,
        created_at ASC
      LIMIT $4`,
-    [merchantText, brandText, tokenText, Math.max(1, Math.min(Number(limit) || 12, 25))]
+    [merchantKey, brandText, tokenText, Math.max(1, Math.min(Number(limit) || 12, 25))]
   );
   return result.rows;
 }

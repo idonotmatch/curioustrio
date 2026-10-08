@@ -112,11 +112,13 @@ function getCompletedHistoricalPeriods({
   firstConfirmedExpenseAt = null,
   monthsBack = 6,
   activityByMonth = {},
+  todayWithin = new Date(),
 }) {
   const periods = [];
   for (let i = 1; i <= monthsBack; i++) {
     const month = shiftPeriod(targetMonth, -i);
     const bounds = periodBounds(month, startDay);
+    if (bounds.toDate > todayWithin) continue;
     if (firstConfirmedExpenseAt && bounds.fromDate < firstConfirmedExpenseAt) continue;
     const activity = activityByMonth[month];
     if (activity && !qualifiesHistoricalPeriod(activity)) continue;
@@ -1087,6 +1089,7 @@ function projectOverallSpend({
   bounds,
   dayIndex,
   budgetLimit = null,
+  futurePeriod = false,
 }) {
   const totalDays = diffDays(bounds.fromDate, bounds.toDate);
   if (historicalPeriods.length === 0) {
@@ -1128,6 +1131,30 @@ function projectOverallSpend({
       historical_period_count: historicalPeriods.length,
       history_stage: historyStage(historicalPeriods.length),
       top_unusual_expenses: split.top_unusual_expenses,
+    };
+  }
+
+  if (futurePeriod) {
+    const historicalTotals = historicalPeriods.map((period) => (
+      (period.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
+    ));
+    const expectedTotal = median(historicalTotals);
+    return {
+      budget_limit: budgetLimit,
+      current_spend_to_date: 0,
+      normal_spend_to_date: 0,
+      unusual_spend_to_date: 0,
+      unusual_spend_share: 0,
+      historical_expected_share_by_day: null,
+      baseline_projected_total: expectedTotal,
+      adjusted_projected_total: expectedTotal,
+      projection_excluding_unusuals: expectedTotal,
+      projected_budget_delta: budgetLimit != null ? expectedTotal - budgetLimit : null,
+      confidence: historicalPeriods.length >= 5 ? 'high' : 'medium',
+      historical_period_count: historicalPeriods.length,
+      history_stage: historyStage(historicalPeriods.length),
+      top_unusual_expenses: [],
+      future_period_baseline: true,
     };
   }
 
@@ -1376,6 +1403,8 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
 
   const targetMonth = month || currentPeriod(startDay);
   const bounds = periodBounds(targetMonth, startDay);
+  const now = new Date();
+  const futurePeriod = bounds.fromDate > parseDateOnly(dateOnly(now));
   const firstConfirmedExpenseDate = await getFirstConfirmedExpenseDate({
     scope: effectiveScope,
     householdId: user.household_id,
@@ -1412,6 +1441,7 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
     firstConfirmedExpenseAt,
     monthsBack: 6,
     activityByMonth,
+    todayWithin: now,
   });
 
   const hydratedHistoricalPeriods = await Promise.all(
@@ -1450,6 +1480,7 @@ async function analyzeSpendProjection({ user, scope = 'personal', month = null }
       bounds,
       dayIndex,
       budgetLimit,
+      futurePeriod,
     }),
     current_activity: summarizeCurrentActivity(currentExpenses),
     categories: getTopProjectedCategoryPressures({

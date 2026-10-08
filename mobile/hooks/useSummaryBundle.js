@@ -26,7 +26,7 @@ export function useSummaryBundle(period, startDay) {
       startDay ? `start_day=${encodeURIComponent(startDay)}` : null,
     ].filter(Boolean).join('&');
     return loadWithCache(
-      `cache:summary-bundle:v2:${period}:${startDay || 'default'}`,
+      `cache:summary-bundle:v3:${period}:${startDay || 'default'}`,
       () => api.get(`/summary?${query}`),
       (data) => {
         if (requestVersion !== requestVersionRef.current) return;

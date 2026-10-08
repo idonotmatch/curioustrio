@@ -8,12 +8,14 @@ const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../models/receiptLineCorrection');
 const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
 const DuplicateFlag = require('../models/duplicateFlag');
+const ProductPriceObservation = require('../models/productPriceObservation');
 const BackgroundJob = require('../models/backgroundJob');
 const User = require('../models/user');
 const detectDuplicates = require('./duplicateDetector');
 const { resolveProductMatch } = require('./productResolver');
 const { assignCategory } = require('./categoryAssigner');
 const { searchPlace } = require('./mapkitService');
+const { refreshPlansForPriceObservations } = require('./purchasePlanningService');
 const { validateExpenseCoreFields } = require('./expenseValidation');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,6 +59,10 @@ function validateConfirmExpensePayload(payload = {}) {
 
   if (suggested_category_id !== undefined && suggested_category_id !== null && !UUID_RE.test(suggested_category_id)) {
     return { error: 'suggested_category_id must be a valid UUID', reason: 'invalid_suggested_category_id' };
+  }
+
+  if (payload.purchase_plan_id !== undefined && payload.purchase_plan_id !== null && !UUID_RE.test(payload.purchase_plan_id)) {
+    return { error: 'purchase_plan_id must be a valid UUID', reason: 'invalid_purchase_plan_id' };
   }
 
   if (idempotency_key !== undefined && idempotency_key !== null) {
@@ -554,6 +560,43 @@ async function enrichPersistedItems({ expenseId, items, merchant, householdId = 
   return resolvedItems;
 }
 
+async function recordItemPriceObservations({ user, expense, payload, items = [] }) {
+  if (payload.is_private === true || !Array.isArray(items) || items.length === 0) return [];
+  const merchant = `${expense.merchant || payload.merchant || ''}`.trim();
+  if (!merchant) return [];
+  const sourceType = payload.source === 'camera' || payload.source === 'refund'
+    ? 'receipt'
+    : payload.source === 'email' ? 'email' : 'manual';
+  const sourceTrust = sourceType === 'receipt' || sourceType === 'email'
+    ? sourceType
+    : 'user_provided';
+  const observedAt = /^\d{4}-\d{2}-\d{2}$/.test(`${expense.date || payload.date || ''}`)
+    ? `${expense.date || payload.date}T12:00:00.000Z`
+    : new Date().toISOString();
+  const observations = items
+    .map((item, index) => ({
+      productId: item.product_id || null,
+      comparableKey: item.comparable_key || null,
+      merchant,
+      observedPrice: Number(item.amount || 0),
+      observedUnitPrice: Number(item.estimated_unit_price || item.unit_price || 0) || null,
+      normalizedTotalSizeValue: item.normalized_total_size_value ?? null,
+      normalizedTotalSizeUnit: item.normalized_total_size_unit || null,
+      sourceType,
+      sourceKey: `expense:${expense.id}:item:${item.id || index}`,
+      observedAt,
+      submittedByUserId: user.id,
+      sourceTrust,
+      metadata: {
+        expense_item_id: item.id || null,
+        quantity: item.quantity ?? null,
+      },
+    }))
+    .filter((item) => (item.productId || item.comparableKey) && item.observedPrice > 0);
+  if (!observations.length) return [];
+  return ProductPriceObservation.createBatch(observations);
+}
+
 async function runPostConfirmSideEffects({
   user,
   payload,
@@ -576,6 +619,20 @@ async function runPostConfirmSideEffects({
     merchant: enrichedExpense.merchant || resolvedPayload.merchant,
     householdId: user?.household_id || null,
   });
+
+  try {
+    const observations = await recordItemPriceObservations({
+      user,
+      expense: enrichedExpense,
+      payload: resolvedPayload,
+      items: resolvedItems,
+    });
+    if (observations.length) {
+      await refreshPlansForPriceObservations({ user, observations });
+    }
+  } catch (priceObservationErr) {
+    console.error('Price observation capture failed (non-fatal):', priceObservationErr.message);
+  }
 
   if (resolvedPayload.source === 'camera' && resolvedItems.length > 0 && resolvedPayload.is_private !== true) {
     await captureReceiptLineCorrections({
@@ -717,12 +774,35 @@ async function createConfirmedExpense({
       categoryConfidence: payload.category_confidence ?? null,
       categoryReasoning: payload.category_reasoning || null,
       idempotencyKey: payload.idempotency_key || null,
+      purchasePlanId: payload.purchase_plan_id || null,
       queryable: client,
     });
 
     idempotentReplay = createdExpense?._idempotent_replay === true;
     const { _idempotent_replay: ignoredReplayMarker, ...persistedExpense } = createdExpense;
     expense = persistedExpense;
+    if (payload.purchase_plan_id) {
+      const completedPlan = await client.query(
+        `UPDATE purchase_plans
+         SET state = 'purchased',
+             purchase_expense_id = $3,
+             updated_at = NOW()
+         WHERE id = $1
+           AND user_id = $2
+           AND (state IN ('considering', 'ready', 'deferred') OR purchase_expense_id = $3)
+         RETURNING id`,
+        [payload.purchase_plan_id, user.id, expense.id]
+      );
+      if (!completedPlan.rows[0]) {
+        throw new Error('Purchase plan is unavailable or already linked to another expense');
+      }
+      await client.query(
+        `UPDATE purchase_plan_allocations
+         SET state = 'spent', updated_at = NOW()
+         WHERE plan_id = $1 AND state = 'reserved'`,
+        [payload.purchase_plan_id]
+      );
+    }
     if (!idempotentReplay) {
       createdItems = Array.isArray(payload.items) && payload.items.length > 0
         ? await ExpenseItem.createBulk(expense.id, payload.items.map((item) => ({
@@ -799,6 +879,7 @@ module.exports = {
   runPostConfirmJob,
   runPostConfirmSideEffects,
   queuePostConfirmSideEffects: enqueuePostConfirmSideEffects,
+  recordItemPriceObservations,
   updateMerchantMemory,
   validateConfirmExpensePayload,
 };

@@ -144,6 +144,34 @@ describe('productResolver', () => {
     expect(productId).toBe('product-123');
   });
 
+  it('uses package size inferred from receipt text for product identity', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue({
+      id: 'product-olipop',
+      name: 'OLIPOP Crisp Apple Soda',
+      merchant: 'Target',
+      product_size: '12',
+      unit: 'fl_oz',
+    });
+
+    const resolution = await resolveProductMatch({
+      description: 'OLIPOP Crisp Apple Soda 12 FZ',
+      amount: 2.49,
+    }, 'Target');
+
+    expect(Product.findByNormalizedDetails).toHaveBeenCalledWith(expect.objectContaining({
+      productSize: '12',
+      unit: 'fl_oz',
+      allowCrossMerchant: true,
+    }));
+    expect(resolution).toEqual({
+      product_id: 'product-olipop',
+      confidence: 'high',
+      reason: 'normalized_match',
+    });
+  });
+
   it('finds a medium-confidence product candidate by normalized description when merchant context is strong', async () => {
     Product.findByUpc.mockResolvedValue(null);
     Product.findBySkuAndMerchant.mockResolvedValue(null);

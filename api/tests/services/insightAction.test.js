@@ -74,14 +74,21 @@ describe('insightAction', () => {
       id: 'bundle-1',
       type: 'recurring_repurchase_due',
       entity_type: 'item_bundle',
-      metadata: { bundle_item_count: 3, usual_merchant: 'Market' },
+      metadata: {
+        bundle_item_count: 3,
+        bundle_group_keys: ['product:one', 'product:two', 'product:three'],
+        usual_merchant: 'Market',
+      },
     });
 
     expect(action).toMatchObject({
       next_step_type: 'review_item_bundle',
       reason: 'Shared timing signal',
       cta: 'Review usual basket',
-      route: null,
+      route: {
+        pathname: '/recurring-bundle',
+        params: { group_keys: 'product:one,product:two,product:three' },
+      },
     });
     expect(action.body).toContain('shared purchases');
   });

@@ -90,7 +90,7 @@ export default function SummaryScreen() {
   const displayWatchedPlans = usingSnapshotWatchedPlans ? (summarySnapshot?.watched_plans || []) : watchedPlans;
   const watchedHouseholdCount = displayWatchedPlans.filter((plan) => plan.scope === 'household').length;
   const watchedPersonalCount = displayWatchedPlans.filter((plan) => plan.scope !== 'household').length;
-  const watchedPreferenceNote = displayWatchedPlans.find((plan) => plan?.timing_preference_note)?.timing_preference_note || '';
+  const readyPlanCount = displayWatchedPlans.filter((plan) => plan.state === 'ready').length;
   const displayInsights = useMemo(() => (
     allowMockInsights && !insightsLoading && insights.length === 0
       ? buildMockInsights(currentMonthStr).filter((insight) => !dismissedMockInsightIds.includes(insight.id))
@@ -552,30 +552,43 @@ export default function SummaryScreen() {
         <TouchableOpacity
           style={styles.watchingCard}
           activeOpacity={0.88}
-          onPress={() => router.push('/watching-plans')}
+          onPress={() => router.push('/plans')}
         >
           <View style={styles.watchingText}>
-            <Text style={styles.watchingTitle}>Watching</Text>
+            <Text style={styles.watchingTitle}>Planning</Text>
             <Text style={styles.watchingMeta}>
               {displayWatchedPlans.length} active {displayWatchedPlans.length === 1 ? 'plan' : 'plans'}
             </Text>
             <Text style={styles.watchingBody}>
               {watchedImprovedCount > 0 || watchedWorsenedCount > 0
                 ? `${watchedImprovedCount > 0 ? `${watchedImprovedCount} got easier` : ''}${watchedImprovedCount > 0 && watchedWorsenedCount > 0 ? ' · ' : ''}${watchedWorsenedCount > 0 ? `${watchedWorsenedCount} got tighter` : ''}`
-                : 'Plans you asked Adlo to keep an eye on.'}
+                : readyPlanCount > 0
+                  ? `${readyPlanCount} ${readyPlanCount === 1 ? 'plan is' : 'plans are'} ready.`
+                  : 'Purchases you are considering and ways to fund them.'}
               {(watchedHouseholdCount > 0 || watchedPersonalCount > 0)
                 ? ` ${watchedHouseholdCount > 0 ? `${watchedHouseholdCount} shared` : ''}${watchedHouseholdCount > 0 && watchedPersonalCount > 0 ? ' · ' : ''}${watchedPersonalCount > 0 ? `${watchedPersonalCount} personal` : ''}.`
                 : ''}
             </Text>
-            {watchedPreferenceNote ? (
-              <Text style={styles.watchingNote}>{watchedPreferenceNote}</Text>
-            ) : null}
           </View>
           <View style={styles.watchingCTA}>
             <Text style={styles.watchingCTAText}>See plans</Text>
           </View>
         </TouchableOpacity>
-      ) : null}
+      ) : (
+        <TouchableOpacity
+          style={styles.watchingCard}
+          activeOpacity={0.88}
+          onPress={() => router.push('/plans')}
+        >
+          <View style={styles.watchingText}>
+            <Text style={styles.watchingTitle}>Planning</Text>
+            <Text style={styles.watchingBody}>Consider a purchase, map out how to pay for it, and watch the funding picture change.</Text>
+          </View>
+          <View style={styles.watchingCTA}>
+            <Text style={styles.watchingCTAText}>Open</Text>
+          </View>
+        </TouchableOpacity>
+      )}
     </ScrollView>
 
     <SummaryMonthPicker

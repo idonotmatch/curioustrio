@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const ProductPriceObservation = require('../models/productPriceObservation');
+const { refreshPlansForPriceObservations } = require('../services/purchasePlanningService');
 
 router.use(authenticate);
 
@@ -40,15 +41,29 @@ router.post('/', async (req, res, next) => {
       if (error) return res.status(400).json({ error });
     }
 
-    const created = batch.length === 1
-      ? await ProductPriceObservation.create(batch[0])
-      : await ProductPriceObservation.createBatch(batch);
-
-    if (batch.length === 1) {
-      return res.status(created ? 201 : 200).json({ observation: created, deduped: !created });
+    const scopedBatch = batch.map((observation) => ({
+      ...observation,
+      submitted_by_user_id: user.id,
+      source_trust: 'user_provided',
+    }));
+    const created = scopedBatch.length === 1
+      ? await ProductPriceObservation.create(scopedBatch[0])
+      : await ProductPriceObservation.createBatch(scopedBatch);
+    const createdItems = Array.isArray(created) ? created : created ? [created] : [];
+    let plansRefreshed = 0;
+    if (createdItems.length) {
+      try {
+        plansRefreshed = await refreshPlansForPriceObservations({ user, observations: createdItems });
+      } catch (refreshError) {
+        console.error('[price observations] plan refresh failed (non-fatal):', refreshError.message);
+      }
     }
 
-    return res.status(201).json({ observations: created, received: batch.length, inserted: created.length });
+    if (batch.length === 1) {
+      return res.status(created ? 201 : 200).json({ observation: created, deduped: !created, plans_refreshed: plansRefreshed });
+    }
+
+    return res.status(201).json({ observations: created, received: batch.length, inserted: created.length, plans_refreshed: plansRefreshed });
   } catch (err) {
     next(err);
   }

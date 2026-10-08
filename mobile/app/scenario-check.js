@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMonth, currentPeriod, periodLabel } from '../contexts/MonthContext';
 import { useHousehold } from '../hooks/useHousehold';
 import { api } from '../services/api';
@@ -37,7 +37,11 @@ import {
 } from '../services/scenarioCheckPresentation';
 
 export default function ScenarioCheckScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
+  const preloadedScenarioMemoryId = typeof params.scenario_memory_id === 'string'
+    ? params.scenario_memory_id
+    : Array.isArray(params.scenario_memory_id) ? params.scenario_memory_id[0] : null;
   const payloadKey = typeof params.payload_key === 'string' ? params.payload_key : Array.isArray(params.payload_key) ? params.payload_key[0] : '';
   const preloadedPayload = useMemo(() => consumeNavigationPayload(payloadKey, null), [payloadKey]);
   const planningInsight = preloadedPayload?.planningInsight || null;
@@ -64,6 +68,7 @@ export default function ScenarioCheckScreen() {
   const [recentPlans, setRecentPlans] = useState([]);
   const [intentLoading, setIntentLoading] = useState('');
   const [watchLoading, setWatchLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
   const [resolutionLoading, setResolutionLoading] = useState('');
   const [showComposer, setShowComposer] = useState(false);
   const [plannerFeedback, setPlannerFeedback] = useState(null);
@@ -168,8 +173,8 @@ export default function ScenarioCheckScreen() {
         proposed_amount: parsedAmount,
         label: label.trim() || 'purchase',
         timing_mode: nextTimingMode,
-        scenario_memory_id: scenarioMemory?.id || null,
-        choice_source: scenarioMemory?.id ? 'compare_option' : 'initial',
+        scenario_memory_id: scenarioMemory?.id || preloadedScenarioMemoryId || null,
+        choice_source: scenarioMemory?.id || preloadedScenarioMemoryId ? 'compare_option' : 'initial',
         followed_recommendation: selectedOption ? Boolean(selectedOption.is_recommended) : null,
       });
       setResult(data);
@@ -256,6 +261,25 @@ export default function ScenarioCheckScreen() {
       setError(err?.message || 'Could not update this watch right now.');
     } finally {
       setWatchLoading(false);
+    }
+  }
+
+  async function handleStartPlan() {
+    if (!(displayAmount > 0) || planLoading) return;
+    try {
+      setPlanLoading(true);
+      setError('');
+      const data = await api.post('/plans', {
+        label: displayLabel,
+        estimated_amount: displayAmount,
+        scope,
+        recovery_months: 2,
+      });
+      router.push(`/plan/${data.plan.id}`);
+    } catch (err) {
+      setError(err?.message || 'Could not start this plan right now.');
+    } finally {
+      setPlanLoading(false);
     }
   }
 
@@ -544,72 +568,14 @@ export default function ScenarioCheckScreen() {
               </View>
             ) : null}
 
-            <View style={styles.watchCard}>
-              <Text style={styles.watchTitle}>
-                {scenarioMemory?.watch_enabled
-                  ? (scope === 'household' ? 'Keeping an eye on this for the household' : 'Keeping an eye on this')
-                  : (scope === 'household' ? 'Keep an eye on this for the household' : 'Keep an eye on this')}
-              </Text>
-              <Text style={styles.watchMeta}>
-                {scenarioMemory?.watch_enabled
-                  ? (scope === 'household'
-                    ? 'Adlo will keep checking the shared household outlook to see whether this gets easier or tighter.'
-                    : 'Adlo will hold onto this plan longer and keep checking whether it gets easier or tighter.')
-                  : (scope === 'household'
-                    ? 'Watched household plans stick around so Adlo can keep checking the shared budget room.'
-                    : 'Only watched plans stick around longer for ongoing re-checks.')}
-              </Text>
-              <TouchableOpacity
-                style={[styles.watchButton, scenarioMemory?.watch_enabled && styles.watchButtonActive]}
-                onPress={() => handleWatchToggle(!scenarioMemory?.watch_enabled)}
-                disabled={watchLoading || !scenarioMemory?.id}
-              >
-                {watchLoading ? (
-                  <ActivityIndicator color={scenarioMemory?.watch_enabled ? colors.text : colors.textInverse} size="small" />
-                ) : (
-                  <Text style={[styles.watchButtonText, scenarioMemory?.watch_enabled && styles.watchButtonTextActive]}>
-                    {scenarioMemory?.watch_enabled ? 'Stop watching' : 'Watch this plan'}
-                  </Text>
-                )}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Keep considering this</Text>
+              <Text style={styles.bodyRow}>Move beyond a one-time check. Map current budget room, savings, and a recovery window without committing the money yet.</Text>
+              <TouchableOpacity style={styles.watchButton} onPress={handleStartPlan} disabled={planLoading}>
+                {planLoading ? <ActivityIndicator color={colors.textInverse} size="small" /> : <Text style={styles.watchButtonText}>Plan how to pay</Text>}
               </TouchableOpacity>
             </View>
 
-            {scenarioMemory?.id ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>What happened next?</Text>
-                <Text style={styles.bodyRow}>
-                  This closes the loop so Adlo can learn whether the recommendation was useful in real life, not just on paper.
-                </Text>
-                {currentPlanDecisionNote ? (
-                  <Text style={styles.followUpMeta}>{currentPlanDecisionNote}</Text>
-                ) : null}
-                {currentPlanResolutionNote ? (
-                  <Text style={styles.followUpMeta}>{currentPlanResolutionNote}</Text>
-                ) : null}
-                <View style={styles.followUpRow}>
-                  {[
-                    { key: 'bought', label: 'I bought it' },
-                    { key: 'revisit_next_month', label: 'Next month instead' },
-                    { key: 'not_buying', label: 'Skipping it' },
-                  ].map((option) => {
-                    const isActive = scenarioMemory?.resolution_action === option.key;
-                    const isBusy = resolutionLoading === option.key;
-                    return (
-                      <TouchableOpacity
-                        key={option.key}
-                        style={[styles.intentChip, isActive && styles.intentChipActive]}
-                        onPress={() => handleResolve(option.key)}
-                        disabled={Boolean(resolutionLoading)}
-                      >
-                        <Text style={[styles.intentChipText, isActive && styles.intentChipTextActive]}>
-                          {isBusy ? 'Saving...' : option.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
           </>
         )}
 

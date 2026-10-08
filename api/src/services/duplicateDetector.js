@@ -1,20 +1,39 @@
 const Expense = require('../models/expense');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
+const ExpenseItem = require('../models/expenseItem');
+const { canonicalMerchantKey } = require('./merchantIdentity');
+const { normalizeComparableDescription } = require('./itemNormalizer');
 
 function normalizeDate(d) {
   return new Date(d).toISOString().split('T')[0];
 }
 
 function normalizeMerchant(value) {
-  return `${value || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return canonicalMerchantKey(value);
+}
+
+function basketItemKey(item = {}) {
+  if (item.product_id) return `product:${item.product_id}`;
+  if (item.comparable_key) return `comparable:${item.comparable_key}`;
+  const normalized = item.normalized_name || normalizeComparableDescription(item.description || item.raw_description);
+  return normalized ? `name:${normalized}` : null;
+}
+
+function basketSimilarity(leftItems = [], rightItems = []) {
+  const left = new Set(leftItems.map(basketItemKey).filter(Boolean));
+  const right = new Set(rightItems.map(basketItemKey).filter(Boolean));
+  if (!left.size || !right.size) return 0;
+  let overlap = 0;
+  left.forEach((key) => { if (right.has(key)) overlap += 1; });
+  return Number((overlap / Math.max(left.size, right.size)).toFixed(3));
 }
 
 function dateDistanceDays(left, right) {
   return Math.abs((new Date(`${normalizeDate(left)}T12:00:00Z`) - new Date(`${normalizeDate(right)}T12:00:00Z`)) / 86400000);
 }
 
-function scoreCandidate(expense, candidate, { locationMatch = false, transactionIdMatch = false } = {}) {
+function scoreCandidate(expense, candidate, { locationMatch = false, transactionIdMatch = false, basketMatch = 0 } = {}) {
   const reasons = [];
   let score = 0;
   const amountDistance = Math.abs(Number(candidate.amount) - Number(expense.amount));
@@ -54,6 +73,13 @@ function scoreCandidate(expense, candidate, { locationMatch = false, transaction
     score += 100;
     reasons.push('Same receipt transaction ID');
   }
+  if (basketMatch >= 0.6) {
+    score += 35;
+    reasons.push(`Same basket (${Math.round(basketMatch * 100)}%)`);
+  } else if (basketMatch >= 0.4) {
+    score += 15;
+    reasons.push(`Similar basket (${Math.round(basketMatch * 100)}%)`);
+  }
 
   const exact = transactionIdMatch || (merchantMatch && amountDistance < 0.005 && dateDistance === 0);
   return {
@@ -78,13 +104,23 @@ async function detectDuplicates(expense) {
     amount,
     date,
     excludeId: id,
+    allowMerchantMismatch: true,
   });
 
   // Track found ids to deduplicate location matches
   const foundIds = new Set(fuzzyCandidates.map(c => c.id));
 
   // Step 3: Determine confidence for each fuzzy candidate
-  const matches = fuzzyCandidates.map(candidate => ({ candidate, ...scoreCandidate(expense, candidate) }));
+  const currentItems = id ? await ExpenseItem.findByExpenseId(id).catch(() => []) : [];
+  const matches = (await Promise.all(fuzzyCandidates.map(async (candidate) => {
+    const candidateItems = candidate?.id
+      ? await ExpenseItem.findByExpenseId(candidate.id).catch(() => [])
+      : [];
+    const basketMatch = basketSimilarity(currentItems, candidateItems);
+    const merchantMatch = normalizeMerchant(candidate.merchant) === normalizeMerchant(expense.merchant);
+    if (!merchantMatch && basketMatch < 0.6) return null;
+    return { candidate, ...scoreCandidate(expense, candidate, { basketMatch }) };
+  }))).filter(Boolean);
 
   // Step 4: Location-based matches via mapkit_stable_id
   if (mapkit_stable_id) {
@@ -141,3 +177,4 @@ async function detectDuplicates(expense) {
 
 module.exports = detectDuplicates;
 module.exports.scoreCandidate = scoreCandidate;
+module.exports.basketSimilarity = basketSimilarity;

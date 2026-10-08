@@ -44,6 +44,11 @@ function compactNumber(value) {
   return Number.isFinite(amount) ? `${amount}` : '0';
 }
 
+function formatPercent(value) {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) ? `${Math.round(ratio * 100)}%` : '0%';
+}
+
 function summarizeDiagnostics(debug = null) {
   const rawCount = Number(debug?.raw?.count || 0);
   const finalCount = Number(debug?.final?.count || 0);
@@ -159,6 +164,7 @@ export default function InsightDiagnosticsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [debug, setDebug] = useState(null);
+  const [itemQuality, setItemQuality] = useState(null);
 
   useEffect(() => {
     if (!INTERNAL_TOOLS_ENABLED) {
@@ -172,10 +178,16 @@ export default function InsightDiagnosticsScreen() {
     else setLoading(true);
     setError('');
     try {
-      const data = await api.get('/insights/debug?limit=10');
-      setDebug(data);
+      const [debugResult, qualityResult] = await Promise.allSettled([
+        api.get('/insights/debug?limit=10'),
+        api.get('/expenses/item-quality-summary?days=180'),
+      ]);
+      if (debugResult.status === 'rejected') throw debugResult.reason;
+      setDebug(debugResult.value);
+      setItemQuality(qualityResult.status === 'fulfilled' ? qualityResult.value : null);
     } catch (err) {
       setDebug(null);
+      setItemQuality(null);
       setError(err?.message || 'Could not load insight diagnostics.');
     } finally {
       if (silent) setRefreshing(false);
@@ -242,6 +254,19 @@ export default function InsightDiagnosticsScreen() {
               ]}
             />
           </DiagnosticsSection>
+
+          {itemQuality ? (
+            <DiagnosticsSection title="Item data quality">
+              <MetricStrip
+                items={[
+                  { label: 'Identity coverage', value: formatPercent(itemQuality.coverage?.history_eligible) },
+                  { label: 'Comparable prices', value: formatPercent(itemQuality.coverage?.comparable_price) },
+                  { label: 'Insight-ready groups', value: compactNumber(itemQuality.counts?.insight_ready_groups) },
+                  { label: 'Cross-store groups', value: compactNumber(itemQuality.counts?.cross_merchant_groups) },
+                ]}
+              />
+            </DiagnosticsSection>
+          ) : null}
 
           {currentRows.length > 0 ? (
             <DiagnosticsSection title="Surfaced insights">

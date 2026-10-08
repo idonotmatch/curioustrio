@@ -1,8 +1,7 @@
 const db = require('../db');
 const Expense = require('../models/expense');
 const Household = require('../models/household');
-const ScenarioMemory = require('../models/scenarioMemory');
-const { decoratePlansWithTimingPreference } = require('./scenarioMemoryService');
+const PurchasePlan = require('../models/purchasePlan');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
 
 const SUMMARY_EXPENSE_LIMIT = 12;
@@ -87,10 +86,15 @@ async function householdContext(user) {
 
 async function watchedPlans(userId) {
   try {
-    const items = await ScenarioMemory.listWatchedByUser(userId, { limit: 5 });
-    return decoratePlansWithTimingPreference(userId, items);
+    const items = await PurchasePlan.listByUser(userId);
+    return items.slice(0, 8).map((plan) => ({
+      ...plan,
+      last_material_change: plan.latest_snapshot?.material_change || null,
+      reserved_amount: Number(plan.latest_snapshot?.reserved_amount || 0),
+      funding_gap: Number(plan.latest_snapshot?.funding_gap || 0),
+    }));
   } catch (err) {
-    if (err?.code === '42P01' || /scenario_memory/i.test(`${err?.message || ''}`)) return [];
+    if (err?.code === '42P01' || /purchase_plans/i.test(`${err?.message || ''}`)) return [];
     throw err;
   }
 }
@@ -114,6 +118,7 @@ async function buildSummaryBundle({ user, period, startDay }) {
   ]);
 
   return {
+    schema_version: 3,
     period,
     start_day: startDay,
     generated_at: new Date().toISOString(),

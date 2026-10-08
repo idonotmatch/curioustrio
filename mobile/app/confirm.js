@@ -91,7 +91,8 @@ export default function ConfirmScreen() {
   const router = useRouter();
   const { categories, refresh: refreshCategories } = useCategories();
   const isWatchedPlanFlow = Boolean(parsed?.scenario_memory_id);
-  const isManualScratchFlow = parsed?.source === 'manual' && !parsed?.merchant && !parsed?.description && !parsed?.scenario_memory_id;
+  const isPurchasePlanFlow = Boolean(parsed?.purchase_plan_id);
+  const isManualScratchFlow = parsed?.source === 'manual' && !parsed?.merchant && !parsed?.description && !parsed?.scenario_memory_id && !parsed?.purchase_plan_id;
 
   const [expense, setExpense] = useState(parsed);
   const [amountText, setAmountText] = useState(String(Math.abs(parsed?.amount ?? 0)));
@@ -458,6 +459,7 @@ export default function ConfirmScreen() {
       );
       const result = await api.post('/expenses/confirm', {
         idempotency_key: confirmRequestKeyRef.current,
+        purchase_plan_id: parsed?.purchase_plan_id || null,
         merchant: merchant.trim() || null,
         description: description.trim() || null,
         amount: expense.amount,
@@ -537,7 +539,9 @@ export default function ConfirmScreen() {
         ].filter(Boolean),
       });
 
-      if (isWatchedPlanFlow) {
+      if (isPurchasePlanFlow) {
+        router.replace('/plans');
+      } else if (isWatchedPlanFlow) {
         router.replace({
           pathname: '/watching-plans',
           params: {
@@ -557,7 +561,12 @@ export default function ConfirmScreen() {
 
   return (
     <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {isWatchedPlanFlow ? (
+      {isPurchasePlanFlow ? (
+        <View style={styles.watchBanner}>
+          <Text style={styles.watchBannerTitle}>Logging a planned purchase</Text>
+          <Text style={styles.watchBannerBody}>Once saved, the plan will be marked purchased and linked to this expense.</Text>
+        </View>
+      ) : isWatchedPlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a watched plan</Text>
           <Text style={styles.watchBannerBody}>

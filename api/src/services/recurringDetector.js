@@ -1,6 +1,9 @@
 const db = require('../db');
 const RecurringPreference = require('../models/recurringPreference');
+const ItemPlanningPreference = require('../models/itemPlanningPreference');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
+const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -31,9 +34,9 @@ function classifyFrequency(medianGap) {
 function summarizeUsualMerchant(occurrences = []) {
   const merchants = new Map();
   occurrences.forEach((occurrence, index) => {
-    const merchant = `${occurrence?.merchant || ''}`.trim();
+    const merchant = cleanMerchantDisplayName(occurrence?.merchant);
     if (!merchant) return;
-    const key = merchant.toLowerCase();
+    const key = canonicalMerchantKey(merchant);
     const current = merchants.get(key) || { merchant, count: 0, latest_index: -1 };
     current.count += 1;
     current.latest_index = index;
@@ -136,9 +139,9 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
       product_match_confidence: row.product_match_confidence || null,
-      item_name: row.item_name,
+      item_name: cleanItemDescription(row.item_name) || row.item_name,
       brand: row.brand || null,
-      merchant: row.merchant,
+      merchant: cleanMerchantDisplayName(row.merchant) || row.merchant,
       item_amount: row.item_amount == null ? null : Number(row.item_amount),
       estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
       normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
@@ -412,8 +415,7 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
         normalized_total_size_value: item.normalized_total_size_value,
         normalized_total_size_unit: item.normalized_total_size_unit,
       };
-    })
-    .filter((item) => item.days_until_due <= windowDays && item.days_until_due >= -maxOverdueDays);
+    });
 
   const preferences = scope === 'household'
     ? await RecurringPreference.findByHousehold(ownerId, options.requesterUserId || null)
@@ -495,6 +497,33 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
       notes: pref.notes || null,
       manual_preference_id: pref.id,
     });
+  }
+
+  const planningPreferences = options.requesterUserId
+    ? await ItemPlanningPreference.findByUser(options.requesterUserId)
+    : [];
+  for (const preference of planningPreferences) {
+    const candidate = automaticByKey.get(preference.group_key);
+    if (!candidate) continue;
+    if (preference.state === 'suppressed') {
+      automaticByKey.delete(preference.group_key);
+      continue;
+    }
+    candidate.planning_preference = preference;
+    candidate.target_price = preference.target_price == null ? null : Number(preference.target_price);
+    if (preference.state === 'needed') {
+      candidate.status = 'due_today';
+      candidate.days_until_due = 0;
+      candidate.next_expected_date = today.toISOString().split('T')[0];
+      candidate.source = 'user_needed';
+    } else if (preference.remind_on) {
+      const reminderDate = parseDateOnly(preference.remind_on);
+      const daysUntilDue = diffDays(today, reminderDate);
+      candidate.days_until_due = daysUntilDue;
+      candidate.next_expected_date = reminderDate.toISOString().split('T')[0];
+      candidate.status = daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'due_today' : daysUntilDue <= windowDays ? 'watching' : 'upcoming';
+      candidate.source = 'user_reminder';
+    }
   }
 
   return [...automaticByKey.values()]

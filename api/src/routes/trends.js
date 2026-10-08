@@ -138,7 +138,7 @@ router.post('/scenario-memory/:id/intent', async (req, res, next) => {
 
     await emitWatchedPlanFreshnessEvent(user, 'watched_plan_updated', {
       scenario_memory_id: req.params.id,
-      enabled,
+      intent_signal: intentSignal,
     });
     res.json({ scenario_memory: memory });
   } catch (err) {
@@ -162,9 +162,9 @@ router.post('/scenario-memory/:id/watch', async (req, res, next) => {
     }
     if (!memory) return res.status(404).json({ error: 'Scenario memory not found' });
 
-    await emitWatchedPlanFreshnessEvent(user, 'watched_plan_resolved', {
+    await emitWatchedPlanFreshnessEvent(user, 'watched_plan_updated', {
       scenario_memory_id: req.params.id,
-      action,
+      enabled,
     });
     res.json({ scenario_memory: memory });
   } catch (err) {
@@ -193,8 +193,9 @@ router.post('/scenario-memory/:id/resolve', async (req, res, next) => {
     }
     if (!memory) return res.status(404).json({ error: 'Scenario memory not found' });
 
-    await emitWatchedPlanFreshnessEvent(user, 'watched_plan_deferred', {
+    await emitWatchedPlanFreshnessEvent(user, 'watched_plan_resolved', {
       scenario_memory_id: req.params.id,
+      action,
     });
     res.json({ scenario_memory: memory });
   } catch (err) {

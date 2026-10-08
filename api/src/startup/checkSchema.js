@@ -40,6 +40,11 @@ const REQUIRED_COLUMNS = [
   ['scenario_memory', 'last_recommended_timing_mode'],
   ['scenario_memory', 'last_choice_followed_recommendation'],
   ['scenario_memory', 'last_choice_source'],
+  ['expenses', 'purchase_plan_id'],
+  ['purchase_plans', 'selected_strategy'],
+  ['purchase_plans', 'decision_criteria'],
+  ['purchase_plans', 'revisit_on'],
+  ['purchase_plan_snapshots', 'reserved_amount'],
 ];
 
 const REQUIRED_TABLES = [
@@ -47,6 +52,11 @@ const REQUIRED_TABLES = [
   'email_import_feedback',
   'products',
   'scenario_memory',
+  'purchase_plans',
+  'planning_funding_pools',
+  'purchase_plan_allocations',
+  'purchase_plan_snapshots',
+  'product_offer_watches',
 ];
 
 const OPTIONAL_TABLES = [

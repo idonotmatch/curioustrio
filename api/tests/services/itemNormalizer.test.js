@@ -3,6 +3,8 @@ const {
   normalizeUnit,
   parsePackSize,
   normalizeComparableDescription,
+  cleanItemDescription,
+  extractStructuredSize,
 } = require('../../src/services/itemNormalizer');
 
 describe('itemNormalizer', () => {
@@ -111,5 +113,32 @@ describe('itemNormalizer', () => {
   it('parses multiplier-style pack sizes', () => {
     expect(parsePackSize('2 x 6')).toBe(12);
     expect(parsePackSize('3×4')).toBe(12);
+  });
+
+  it('extracts package size from common receipt abbreviations', () => {
+    expect(extractStructuredSize('OLIPOP Crisp Apple Soda 12 FZ')).toMatchObject({
+      product_size: '12',
+      unit: 'fl_oz',
+    });
+    expect(extractStructuredSize('Paper Towels 6 PK')).toMatchObject({ pack_size: '6' });
+  });
+
+  it('uses printed unit price when package size is unavailable', () => {
+    const normalized = normalizeItemMetadata({
+      description: 'Sparkling Water',
+      amount: 6.5,
+      quantity: 2,
+      unit_price: 3.25,
+      pricing_unit: 'each',
+    });
+    expect(normalized.estimated_unit_price).toBe(3.25);
+    expect(normalized.normalized_total_size_value).toBe(2);
+    expect(normalized.normalized_total_size_unit).toBe('ea');
+    expect(normalized.comparison_price_source).toBe('printed_unit_price');
+  });
+
+  it('cleans item survey boilerplate while retaining the raw product name', () => {
+    expect(cleanItemDescription('Sourdough Loaf Share your feedback')).toBe('Sourdough Loaf');
+    expect(cleanItemDescription('Let us know how your visit went')).toBe('');
   });
 });

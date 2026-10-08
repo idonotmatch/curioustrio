@@ -12,8 +12,13 @@ function safeNumeric(value, max, { positive = false } = {}) {
 }
 
 function hydrateItem(item = {}, index = 0) {
+  const normalized = normalizeItemMetadata(item);
   const hydrated = {
     ...item,
+    description: normalized.cleaned_description || item.description,
+    product_size: item.product_size || normalized.inferred_product_size || null,
+    pack_size: item.pack_size || normalized.inferred_pack_size || null,
+    unit: item.unit || normalized.inferred_unit || null,
     sort_order: item.sort_order ?? index,
     item_type: item.item_type || classifyExpenseItemType(item.description),
     product_match_confidence: item.product_match_confidence || null,
@@ -22,7 +27,7 @@ function hydrateItem(item = {}, index = 0) {
     source_type: item.source_type || null,
     raw_description: item.raw_description || item.description || null,
     extraction_confidence: item.extraction_confidence || null,
-    ...normalizeItemMetadata(item),
+    ...normalized,
   };
   return {
     ...hydrated,
@@ -205,4 +210,39 @@ async function updateResolution(id, expenseId, {
   return result.rows[0] || null;
 }
 
-module.exports = { createBulk, findByExpenseId, findByIdForExpense, replaceItems, updateResolution };
+async function applyConfirmedAlias({
+  householdId,
+  normalizedName,
+  merchant,
+  productId,
+  excludeItemId = null,
+} = {}, queryable = db) {
+  if (!householdId || !normalizedName || !merchant || !productId) return 0;
+  const result = await queryable.query(
+    `UPDATE expense_items ei
+     SET product_id = $4,
+         product_match_confidence = 'high',
+         product_match_reason = 'household_confirmed_alias'
+     FROM expenses e
+     WHERE e.id = ei.expense_id
+       AND e.household_id = $1
+       AND ei.normalized_name = $2
+       AND REGEXP_REPLACE(LOWER(COALESCE(e.merchant, '')), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER($3), '[^a-z0-9]+', '', 'g')
+       AND ($5::uuid IS NULL OR ei.id <> $5)
+       AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
+       AND (ei.product_id IS NULL OR ei.product_match_confidence = 'medium')
+     RETURNING ei.id`,
+    [householdId, normalizedName, merchant, productId, excludeItemId]
+  );
+  return result.rows.length;
+}
+
+module.exports = {
+  createBulk,
+  findByExpenseId,
+  findByIdForExpense,
+  replaceItems,
+  updateResolution,
+  applyConfirmedAlias,
+};

@@ -5,6 +5,7 @@ jest.mock('../../src/models/expense', () => ({ findById: jest.fn() }));
 jest.mock('../../src/models/expenseItem', () => ({
   findByIdForExpense: jest.fn(),
   updateResolution: jest.fn(),
+  applyConfirmedAlias: jest.fn(),
 }));
 jest.mock('../../src/models/itemMatchDecision', () => ({ upsert: jest.fn() }));
 
@@ -36,6 +37,7 @@ describe('itemMatchReviewService', () => {
     ExpenseItem.findByIdForExpense.mockResolvedValue(item);
     ItemMatchDecision.upsert.mockResolvedValue({ id: 'decision-1' });
     ExpenseItem.updateResolution.mockResolvedValue({ ...item, product_match_confidence: 'high' });
+    ExpenseItem.applyConfirmedAlias.mockResolvedValue(2);
   });
 
   it('promotes a confirmed candidate and stores household memory atomically', async () => {
@@ -56,6 +58,12 @@ describe('itemMatchReviewService', () => {
       productMatchConfidence: 'high',
       productMatchReason: 'user_confirmed_match',
     }, client);
+    expect(ExpenseItem.applyConfirmedAlias).toHaveBeenCalledWith(expect.objectContaining({
+      householdId: 'household-1',
+      normalizedName: 'organic banana',
+      merchant: 'Whole Foods',
+      productId: 'product-1',
+    }), client);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -73,6 +81,7 @@ describe('itemMatchReviewService', () => {
       productMatchConfidence: null,
       productMatchReason: 'user_rejected_match',
     }, client);
+    expect(ExpenseItem.applyConfirmedAlias).not.toHaveBeenCalled();
   });
 
   it('refuses stale decisions after a candidate has already been resolved', async () => {

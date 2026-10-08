@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 const {
   buildCandidateBaseUrls,
   missingApiBaseUrlMessage,
+  parseHttpErrorResponse,
 } = require('./apiConfig');
 
 // Use 127.0.0.1 (not localhost) as the local fallback to force IPv4.
@@ -79,7 +80,8 @@ async function request(path, options = {}, tokenOverride) {
       activeBaseUrl = baseUrl;
 
       if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: 'Request failed' }));
+        const responseBody = await res.text().catch(() => '');
+        const error = parseHttpErrorResponse({ status: res.status, body: responseBody });
         // Do NOT call supabase.auth.signOut() on 401 — the server may return 401
         // due to misconfiguration (e.g. missing SUPABASE_PROJECT_REF) rather than
         // a truly expired token. Supabase handles token refresh natively via

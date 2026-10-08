@@ -293,7 +293,7 @@ async function updateEvaluation(id, userId, scenario, materialChange = 'unchange
 async function summarizeChoiceFeedback(userId) {
   const result = await db.query(
     `SELECT
-       COUNT(*)::int AS total_choices,
+       COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS NOT NULL)::int AS total_choices,
        COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS TRUE)::int AS followed_recommendation_count,
        COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS FALSE)::int AS deviated_from_recommendation_count,
        COUNT(*) FILTER (WHERE last_choice_source = 'compare_option')::int AS compare_option_count,
@@ -325,7 +325,7 @@ async function summarizeTimingPreferences(userId) {
   const result = await db.query(
     `SELECT
        last_recommended_timing_mode AS timing_mode,
-       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS NOT NULL)::int AS total,
        COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS TRUE)::int AS followed,
        COUNT(*) FILTER (WHERE last_choice_followed_recommendation IS FALSE)::int AS deviated,
        COUNT(*) FILTER (WHERE last_choice_source = 'compare_option')::int AS compare_option_count

@@ -39,8 +39,41 @@ function missingApiBaseUrlMessage({ allowLocalFallback = false, explicitBaseUrl 
   return 'This build is missing EXPO_PUBLIC_API_URL. Set it before shipping a user-ready build.';
 }
 
+function parseHttpErrorResponse({ status, body = '' } = {}) {
+  const normalizedStatus = Number(status) || 0;
+  const normalizedBody = `${body || ''}`.trim();
+
+  if (normalizedBody) {
+    try {
+      const parsed = JSON.parse(normalizedBody);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return {
+          ...parsed,
+          error: parsed.error || parsed.message || `Request failed (HTTP ${normalizedStatus})`,
+        };
+      }
+    } catch {
+      // Some hosts return HTML or plain text for routing and proxy failures.
+    }
+  }
+
+  if (normalizedStatus === 404) {
+    return {
+      error: 'This feature is not available on the current server version yet.',
+      code: 'server_route_unavailable',
+    };
+  }
+
+  return {
+    error: normalizedStatus
+      ? `Request failed (HTTP ${normalizedStatus})`
+      : 'Request failed',
+  };
+}
+
 module.exports = {
   buildCandidateBaseUrls,
   deriveExpoHostBaseUrlsFromCandidates,
   missingApiBaseUrlMessage,
+  parseHttpErrorResponse,
 };

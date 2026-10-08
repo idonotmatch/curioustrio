@@ -10,6 +10,7 @@ const SUMMARY_MAX_AGE_MS = Math.max(30000, Number(process.env.SUMMARY_SNAPSHOT_M
 const refreshesInFlight = new Map();
 
 function isFreshSnapshot(snapshot) {
+  if (snapshot?.payload?.schema_version !== 3) return false;
   const generatedAt = Date.parse(snapshot?.generated_at || '');
   return Number.isFinite(generatedAt) && Date.now() - generatedAt < SUMMARY_MAX_AGE_MS;
 }
@@ -50,7 +51,7 @@ router.get('/', async (req, res, next) => {
       return res.json(snapshot.payload);
     }
 
-    if (snapshot?.payload) {
+    if (snapshot?.payload?.schema_version === 3) {
       const key = `${user.id}:${period}:${requestedStartDay}`;
       refreshSnapshotInBackground(key, { user, period, startDay: requestedStartDay });
       res.setHeader('x-adlo-summary-source', 'stale-projection');

@@ -157,6 +157,13 @@ export default function AddScreen() {
       ) : null}
       <View style={styles.scanRow}>
         <ActionRow
+          icon="compass-outline"
+          title="Consider a purchase"
+          body="Check whether it fits, compare funding paths, and revisit it later."
+          onPress={() => router.push('/plan/new')}
+          disabled={scanLoading || loading}
+        />
+        <ActionRow
           icon="create-outline"
           title="Manual add"
           body="Use the structured form when you want exact fields."
@@ -170,22 +177,12 @@ export default function AddScreen() {
           onPress={() => handleScan(false)}
           disabled={scanLoading}
         />
-        <View style={styles.secondaryRow}>
-          <SecondaryButton
-            title="Camera roll"
-            icon="images-outline"
-            onPress={() => handleScan(true)}
-            disabled={scanLoading}
-            style={styles.secondaryButton}
-          />
-          <SecondaryButton
-            title="Check purchase"
-            icon="sparkles-outline"
-            onPress={() => router.push('/scenario-check')}
-            disabled={scanLoading || loading}
-            style={styles.secondaryButton}
-          />
-        </View>
+        <SecondaryButton
+          title="Choose from camera roll"
+          icon="images-outline"
+          onPress={() => handleScan(true)}
+          disabled={scanLoading}
+        />
       </View>
     </View>
   );
@@ -207,6 +204,4 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   scanRow: { marginTop: 24, gap: spacing.md },
-  secondaryRow: { flexDirection: 'row', gap: spacing.md },
-  secondaryButton: { flex: 1, paddingHorizontal: spacing.md },
 });

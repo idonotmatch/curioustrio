@@ -10,6 +10,11 @@ it('whitelists and bounds client-provided receipt details', () => {
     purchase_time: '14:05',
     store_number: '104',
     validation: {
+      raw_merchant: null,
+      canonical_merchant: null,
+      merchant_key: null,
+      merchant_identity_confidence: null,
+      merchant_normalization_reason: null,
       total_components_match: true,
       issues: ['item_sum_mismatch', 'unknown_issue'],
       uncertain_fields: ['amount', 'secret'],
@@ -31,6 +36,11 @@ it('whitelists and bounds client-provided receipt details', () => {
     purchase_time: '14:05',
     store_number: '104',
     validation: {
+      raw_merchant: null,
+      canonical_merchant: null,
+      merchant_key: null,
+      merchant_identity_confidence: null,
+      merchant_normalization_reason: null,
       total_components_match: true,
       item_sum_matches_subtotal: null,
       issues: ['item_sum_mismatch'],

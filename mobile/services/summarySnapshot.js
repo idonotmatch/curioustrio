@@ -5,7 +5,7 @@ const {
 } = require('./storageSanitizers');
 const { scopedCacheKey } = require('./cacheIdentity');
 
-const SUMMARY_SNAPSHOT_PREFIX = 'cache:summary-snapshot:v2';
+const SUMMARY_SNAPSHOT_PREFIX = 'cache:summary-snapshot:v3';
 const MAX_RECENT_EXPENSES = 8;
 const MAX_PENDING_EXPENSES = 8;
 const MAX_WATCHED_PLANS = 5;
@@ -50,8 +50,10 @@ function sanitizeWatchedPlans(plans = []) {
   return plans.slice(0, MAX_WATCHED_PLANS).map((plan) => ({
     id: plan.id || null,
     scope: plan.scope || 'personal',
+    state: plan.state || 'considering',
     last_material_change: plan.last_material_change || null,
-    timing_preference_note: plan.timing_preference_note || '',
+    reserved_amount: Number(plan.reserved_amount || 0),
+    funding_gap: Number(plan.funding_gap || 0),
   })).filter((plan) => plan.id);
 }
 

@@ -1,5 +1,7 @@
 const db = require('../db');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
+const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanMerchantDisplayName } = require('./merchantIdentity');
 
 function formatCurrency(amount) {
   const value = Number(amount);
@@ -10,8 +12,9 @@ function buildPriorSummary(rows = []) {
   return rows
     .filter(Boolean)
     .map((row) => {
-      const pieces = [row.item_name || row.description || 'Unknown item'];
-      if (row.merchant) pieces.push(`at ${row.merchant}`);
+      const pieces = [cleanItemDescription(row.item_name || row.description) || 'Unknown item'];
+      const merchant = cleanMerchantDisplayName(row.merchant);
+      if (merchant) pieces.push(`at ${merchant}`);
       if (row.occurrence_count) pieces.push(`${row.occurrence_count}x`);
       const amount = formatCurrency(row.last_amount || row.median_amount);
       if (amount) pieces.push(amount);
@@ -53,7 +56,8 @@ async function listMerchantAliasPriors(householdId, requesterUserId, merchantHin
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
-       AND LOWER(e.merchant) = LOWER($2)
+       AND REGEXP_REPLACE(LOWER(e.merchant), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER($2), '[^a-z0-9]+', '', 'g')
        AND LOWER(TRIM(COALESCE(ei.description, ''))) <> LOWER(TRIM(COALESCE(p.name, '')))
      GROUP BY ei.description, p.name, e.merchant
      ORDER BY occurrence_count DESC, last_seen_at DESC
@@ -82,7 +86,8 @@ async function listRecentMerchantItemPriors(householdId, requesterUserId, mercha
        AND COALESCE(ei.item_type, 'product') = 'product'
        AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
        AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
-       AND LOWER(e.merchant) = LOWER($2)
+       AND REGEXP_REPLACE(LOWER(e.merchant), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER($2), '[^a-z0-9]+', '', 'g')
      GROUP BY COALESCE(p.name, ei.description), e.merchant
      ORDER BY occurrence_count DESC, last_seen_at DESC
      LIMIT $3`,

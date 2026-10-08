@@ -54,6 +54,13 @@ function normalizeValidation(validation = {}) {
     item_math_mismatch_count: Number.isFinite(Number(validation.item_math_mismatch_count))
       ? Math.max(0, Math.floor(Number(validation.item_math_mismatch_count)))
       : null,
+    raw_merchant: boundedText(validation.raw_merchant, 240),
+    canonical_merchant: boundedText(validation.canonical_merchant, 160),
+    merchant_key: boundedText(validation.merchant_key, 180),
+    merchant_identity_confidence: confidenceValues.has(validation.merchant_identity_confidence)
+      ? validation.merchant_identity_confidence
+      : null,
+    merchant_normalization_reason: boundedText(validation.merchant_normalization_reason, 80),
     user_corrected_fields: Array.isArray(validation.user_corrected_fields)
       ? validation.user_corrected_fields.filter((value) => allowedFields.includes(value))
       : [],

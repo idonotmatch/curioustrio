@@ -14,6 +14,9 @@ function normalizeObservation(input = {}) {
     source_key: input.sourceKey || input.source_key || null,
     metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : null,
     observed_at: input.observedAt || input.observed_at || null,
+    submitted_by_user_id: input.submittedByUserId || input.submitted_by_user_id || null,
+    offer_watch_id: input.offerWatchId || input.offer_watch_id || null,
+    source_trust: input.sourceTrust || input.source_trust || 'user_provided',
   };
 }
 
@@ -37,9 +40,12 @@ class ProductPriceObservation {
          source_type,
          source_key,
          metadata,
-         observed_at
+         observed_at,
+         submitted_by_user_id,
+         offer_watch_id,
+         source_trust
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT DO NOTHING
        RETURNING *`,
       [
@@ -55,6 +61,9 @@ class ProductPriceObservation {
         row.source_key,
         row.metadata,
         row.observed_at,
+        row.submitted_by_user_id,
+        row.offer_watch_id,
+        row.source_trust,
       ]
     );
     return result.rows[0] || null;
@@ -69,7 +78,7 @@ class ProductPriceObservation {
 
     const values = [];
     const placeholders = clean.map((row, index) => {
-      const offset = index * 12;
+      const offset = index * 15;
       values.push(
         row.product_id,
         row.comparable_key,
@@ -82,9 +91,12 @@ class ProductPriceObservation {
         row.source_type,
         row.source_key,
         row.metadata,
-        row.observed_at
+        row.observed_at,
+        row.submitted_by_user_id,
+        row.offer_watch_id,
+        row.source_trust
       );
-      return `($${offset + 1},$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5},$${offset + 6},$${offset + 7},$${offset + 8},$${offset + 9},$${offset + 10},$${offset + 11},$${offset + 12})`;
+      return `($${offset + 1},$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5},$${offset + 6},$${offset + 7},$${offset + 8},$${offset + 9},$${offset + 10},$${offset + 11},$${offset + 12},$${offset + 13},$${offset + 14},$${offset + 15})`;
     });
 
     const result = await db.query(
@@ -100,7 +112,10 @@ class ProductPriceObservation {
          source_type,
          source_key,
          metadata,
-         observed_at
+         observed_at,
+         submitted_by_user_id,
+         offer_watch_id,
+         source_trust
        )
        VALUES ${placeholders.join(', ')}
        ON CONFLICT DO NOTHING
@@ -110,8 +125,8 @@ class ProductPriceObservation {
     return result.rows;
   }
 
-  static async findRecentByIdentity({ productId = null, comparableKey = null, since = null, limit = 10 } = {}) {
-    if (!productId && !comparableKey) return [];
+  static async findRecentByIdentity({ productId = null, comparableKey = null, offerWatchId = null, since = null, limit = 10, userId = null } = {}) {
+    if (!productId && !comparableKey && !offerWatchId) return [];
     const clauses = [];
     const values = [];
 
@@ -123,17 +138,31 @@ class ProductPriceObservation {
       values.push(comparableKey);
       clauses.push(`comparable_key = $${values.length}`);
     }
+    if (offerWatchId) {
+      values.push(offerWatchId);
+      clauses.push(`offer_watch_id = $${values.length}`);
+    }
     if (since) {
       values.push(since);
       clauses.push(`observed_at >= $${values.length}`);
     }
+    if (userId) {
+      values.push(userId);
+      clauses.push(`(source_trust = 'trusted_provider' OR submitted_by_user_id = $${values.length})`);
+    } else {
+      clauses.push(`source_trust = 'trusted_provider'`);
+    }
     values.push(limit);
+
+    const identityClauseCount = Number(Boolean(productId)) + Number(Boolean(comparableKey)) + Number(Boolean(offerWatchId));
+    const identityClause = identityClauseCount > 1 ? clauses.slice(0, identityClauseCount).join(' OR ') : clauses[0];
+    const filterClauses = clauses.slice(identityClauseCount);
 
     const result = await db.query(
       `SELECT *
        FROM product_price_observations
-       WHERE (${productId && comparableKey ? clauses.slice(0, 2).join(' OR ') : clauses[0]})
-       ${since ? `AND ${clauses[clauses.length - 1]}` : ''}
+       WHERE (${identityClause})
+       ${filterClauses.map((clause) => `AND ${clause}`).join('\n       ')}
        ORDER BY observed_at DESC
        LIMIT $${values.length}`,
       values
@@ -141,8 +170,8 @@ class ProductPriceObservation {
     return result.rows;
   }
 
-  static async findBestRecentByIdentity({ productId = null, comparableKey = null, since = null } = {}) {
-    const rows = await this.findRecentByIdentity({ productId, comparableKey, since, limit: 25 });
+  static async findBestRecentByIdentity({ productId = null, comparableKey = null, offerWatchId = null, since = null, userId = null } = {}) {
+    const rows = await this.findRecentByIdentity({ productId, comparableKey, offerWatchId, since, limit: 25, userId });
     if (!rows.length) return null;
 
     return rows.reduce((best, current) => {

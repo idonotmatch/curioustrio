@@ -3,9 +3,11 @@ jest.mock('../../src/models/expense', () => ({
   findByMapkitStableId: jest.fn(),
 }));
 jest.mock('../../src/models/duplicateFlag', () => ({ create: jest.fn() }));
+jest.mock('../../src/models/expenseItem', () => ({ findByExpenseId: jest.fn() }));
 
 const Expense = require('../../src/models/expense');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
+const ExpenseItem = require('../../src/models/expenseItem');
 const detectDuplicates = require('../../src/services/duplicateDetector');
 const { scoreCandidate } = require('../../src/services/duplicateDetector');
 
@@ -13,6 +15,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   Expense.findPotentialDuplicates.mockResolvedValue([]);
   Expense.findByMapkitStableId.mockResolvedValue([]);
+  ExpenseItem.findByExpenseId.mockResolvedValue([]);
 });
 
 it('scores exact matches with readable evidence', () => {
@@ -64,4 +67,26 @@ it('detects duplicates for users without a household', async () => {
     matchReasons: ['Same merchant', 'Same amount', 'Same date'],
   }));
   expect(flags).toHaveLength(1);
+});
+
+it('uses basket overlap to connect OCR merchant variants', async () => {
+  const candidate = { id: 'expense-1', merchant: 'Bobby Boy Bakeshop', amount: '20.00', date: '2026-09-02' };
+  Expense.findPotentialDuplicates.mockResolvedValue([candidate]);
+  ExpenseItem.findByExpenseId
+    .mockResolvedValueOnce([{ comparable_key: 'croissant' }, { comparable_key: 'sourdough' }])
+    .mockResolvedValueOnce([{ comparable_key: 'croissant' }, { comparable_key: 'sourdough' }]);
+  DuplicateFlag.create.mockResolvedValue({ id: 'flag-1', confidence: 'fuzzy' });
+
+  await detectDuplicates({
+    id: 'expense-2',
+    user_id: 'user-1',
+    merchant: 'Bobby Boy Bake Shop Let us know how your visit went',
+    amount: '20.00',
+    date: '2026-09-02',
+  });
+
+  expect(DuplicateFlag.create).toHaveBeenCalledWith(expect.objectContaining({
+    score: 135,
+    matchReasons: expect.arrayContaining(['Same basket (100%)']),
+  }));
 });

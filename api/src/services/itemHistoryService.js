@@ -1,5 +1,7 @@
 const db = require('../db');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
+const { cleanItemDescription } = require('./itemNormalizer');
+const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -62,9 +64,9 @@ function summarizeHistoryRows(rows = []) {
       product_match_reason: row.product_match_reason || null,
       extraction_confidence: row.extraction_confidence || null,
       source_type: row.source_type || null,
-      item_name: row.item_name || row.description || null,
+      item_name: cleanItemDescription(row.item_name || row.description) || null,
       brand: row.brand || null,
-      merchant: row.merchant || null,
+      merchant: cleanMerchantDisplayName(row.merchant) || null,
       amount: row.item_amount == null ? null : Number(row.item_amount),
       estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
       normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
@@ -88,19 +90,37 @@ function summarizeIdentity(entries = []) {
   const latest = sorted[sorted.length - 1];
   const first = sorted[0];
   const amounts = sorted.map((entry) => entry.amount).filter((value) => value != null);
-  const unitPrices = sorted.map((entry) => entry.estimated_unit_price).filter((value) => value != null);
+  const basisCounts = new Map();
+  sorted.forEach((entry) => {
+    if (entry.estimated_unit_price == null || !entry.normalized_total_size_unit) return;
+    basisCounts.set(entry.normalized_total_size_unit, (basisCounts.get(entry.normalized_total_size_unit) || 0) + 1);
+  });
+  const priceBasisUnit = [...basisCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || Number(latest.normalized_total_size_unit === b[0]) - Number(latest.normalized_total_size_unit === a[0]))[0]?.[0] || null;
+  const comparableUnitPrice = (entry) => (
+    priceBasisUnit && entry.normalized_total_size_unit === priceBasisUnit
+      ? entry.estimated_unit_price
+      : null
+  );
+  const unitPrices = sorted.map(comparableUnitPrice).filter((value) => value != null);
   const priorAmounts = sorted.slice(0, -1).map((entry) => entry.amount).filter((value) => value != null);
-  const priorUnitPrices = sorted.slice(0, -1).map((entry) => entry.estimated_unit_price).filter((value) => value != null);
-  const merchants = [...new Set(sorted.map((entry) => entry.merchant).filter(Boolean))];
+  const priorUnitPrices = sorted.slice(0, -1).map(comparableUnitPrice).filter((value) => value != null);
+  const merchantMap = new Map();
+  sorted.forEach((entry) => {
+    const merchant = cleanMerchantDisplayName(entry.merchant);
+    const key = canonicalMerchantKey(merchant);
+    if (key && merchant) merchantMap.set(key, merchant);
+  });
+  const merchants = [...merchantMap.values()];
   const dateObjs = sorted.map((entry) => parseDateOnly(entry.date));
   const gaps = [];
   for (let i = 1; i < dateObjs.length; i += 1) {
     gaps.push(Math.round((dateObjs[i] - dateObjs[i - 1]) / (1000 * 60 * 60 * 24)));
   }
-  const merchantBreakdown = merchants.map((merchant) => {
-    const merchantEntries = sorted.filter((entry) => entry.merchant === merchant);
+  const merchantBreakdown = [...merchantMap.entries()].map(([merchantKey, merchant]) => {
+    const merchantEntries = sorted.filter((entry) => canonicalMerchantKey(entry.merchant) === merchantKey);
     const merchantAmounts = merchantEntries.map((entry) => entry.amount).filter((value) => value != null);
-    const merchantUnitPrices = merchantEntries.map((entry) => entry.estimated_unit_price).filter((value) => value != null);
+    const merchantUnitPrices = merchantEntries.map(comparableUnitPrice).filter((value) => value != null);
     return {
       merchant,
       occurrence_count: merchantEntries.length,
@@ -108,6 +128,7 @@ function summarizeIdentity(entries = []) {
       unit_price_observation_count: merchantUnitPrices.length,
       median_amount: median(merchantAmounts),
       median_unit_price: median(merchantUnitPrices),
+      price_basis_unit: merchantUnitPrices.length ? priceBasisUnit : null,
       last_purchased_at: merchantEntries[merchantEntries.length - 1]?.date || null,
     };
   }).sort((a, b) => b.occurrence_count - a.occurrence_count || a.merchant.localeCompare(b.merchant));
@@ -138,6 +159,7 @@ function summarizeIdentity(entries = []) {
     average_gap_days: gaps.length ? median(gaps) : null,
     median_amount: median(amounts),
     median_unit_price: median(unitPrices),
+    price_basis_unit: priceBasisUnit,
     prior_median_amount: median(priorAmounts),
     prior_median_unit_price: median(priorUnitPrices),
     baseline_purchase_count: sorted.length - 1,
@@ -148,7 +170,7 @@ function summarizeIdentity(entries = []) {
     merchant_breakdown: merchantBreakdown,
     merchant_price_history: merchantBreakdown,
     normalized_total_size_value: latest.normalized_total_size_value,
-    normalized_total_size_unit: latest.normalized_total_size_unit,
+    normalized_total_size_unit: priceBasisUnit || latest.normalized_total_size_unit,
     purchases: sorted.map((entry) => ({
       expense_item_id: entry.expense_item_id,
       id: entry.expense_id || null,

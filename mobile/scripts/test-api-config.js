@@ -3,6 +3,7 @@ const {
   buildCandidateBaseUrls,
   deriveExpoHostBaseUrlsFromCandidates,
   missingApiBaseUrlMessage,
+  parseHttpErrorResponse,
 } = require('../services/apiConfig');
 
 function run() {
@@ -44,6 +45,30 @@ function run() {
     missingApiBaseUrlMessage({ allowLocalFallback: true, explicitBaseUrl: null }),
     null,
     'dev fallback mode should not emit a release config error'
+  );
+
+  assert.deepStrictEqual(
+    parseHttpErrorResponse({ status: 404, body: '<pre>Cannot GET /plans</pre>' }),
+    {
+      error: 'This feature is not available on the current server version yet.',
+      code: 'server_route_unavailable',
+    },
+    'HTML routing failures should identify a server-version mismatch'
+  );
+
+  assert.deepStrictEqual(
+    parseHttpErrorResponse({
+      status: 429,
+      body: JSON.stringify({ error: 'Too many requests', code: 'rate_limited' }),
+    }),
+    { error: 'Too many requests', code: 'rate_limited' },
+    'structured API errors should preserve server context'
+  );
+
+  assert.deepStrictEqual(
+    parseHttpErrorResponse({ status: 502, body: 'Bad Gateway' }),
+    { error: 'Request failed (HTTP 502)' },
+    'plain-text proxy failures should retain their HTTP status'
   );
 
   process.stdout.write('[mobile-logic] api config checks passed\n');

@@ -84,13 +84,14 @@ function isMeaningfulOpportunity(candidate, observation, comparison) {
   return comparison.savings_amount >= minimumSavings;
 }
 
-async function findBestObservationForCandidate(candidate, { freshnessHours = 72 } = {}) {
+async function findBestObservationForCandidate(candidate, { freshnessHours = 72, userId = null } = {}) {
   const since = hoursAgo(freshnessHours);
   const rows = await ProductPriceObservation.findRecentByIdentity({
     productId: candidate.product_id || null,
     comparableKey: candidate.group_key?.startsWith('comparable:') ? candidate.group_key.slice('comparable:'.length) : null,
     since,
     limit: 25,
+    userId,
   });
 
   const comparisons = rows
@@ -128,7 +129,7 @@ async function findObservationOpportunities(ownerId, {
     for (let offset = 0; offset < activeCandidates.length; offset += OBSERVATION_LOOKUP_CONCURRENCY) {
       const batch = activeCandidates.slice(offset, offset + OBSERVATION_LOOKUP_CONCURRENCY);
       const batchResults = await Promise.all(batch.map(async (candidate) => {
-        const best = await findBestObservationForCandidate(candidate, { freshnessHours });
+        const best = await findBestObservationForCandidate(candidate, { freshnessHours, userId: requesterUserId });
         if (!best) return null;
         return {
           kind: 'watch_opportunity',

@@ -138,6 +138,7 @@ function normalizeExpenseItemPayload(item = {}) {
     amount: item.amount ? parseItemNumber(item.amount) : null,
     quantity: item.quantity ? parseItemNumber(item.quantity) : null,
     unit_price: item.unit_price ? parseItemNumber(item.unit_price) : null,
+    pricing_unit: item.pricing_unit || null,
     item_type: item.item_type || null,
     upc: item.upc || null,
     sku: item.sku || null,

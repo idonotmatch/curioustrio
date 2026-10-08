@@ -2,10 +2,12 @@ const { completeWithImageDetailed } = require('./ai');
 const {
   receiptFamilyStrategiesMode,
 } = require('./parsingOptimizationConfig');
+const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
+const { cleanItemDescription } = require('./itemNormalizer');
 
 const SYSTEM_PROMPT = `You are a receipt parser. Extract structured data from a receipt image.
 Return only the JSON object required by the response schema. Extract:
-- merchant (string): the store, restaurant, or service name only. Do not use a payment processor, slogan, address, or store number as the merchant.
+- merchant (string): the store, restaurant, or service name only. Do not use a payment processor, slogan, address, store number, survey prompt, or feedback request as the merchant. Stop before phrases such as "let us know how your visit went", "share your feedback", or "take our survey".
 - amount (number): the final amount actually paid, including tax, tip, and fees. Do not use subtotal, cash tendered, change, balance, savings, or a pre-authorization. Use a negative amount only for a clearly printed refund or return total.
 - date (ISO date string YYYY-MM-DD): the transaction date, not a print date, loyalty date, or promotion date
 - notes (string): only explicit purchase context that does not belong in another field; otherwise use an empty string
@@ -18,7 +20,7 @@ Return only the JSON object required by the response schema. Extract:
 - card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
 - store_address (string or null): the physical store address if clearly visible on the receipt
 - store_number (string or null): the store/location number if clearly visible on the receipt
-- items (array): up to 30 legible purchased product or service rows, or an empty array when no rows are legible. Do not include subtotal, total, tax, tip, fees, discounts, coupons, payment, cash tendered, or change rows. amount is the row's extended line total after any line-level discount, not the unit price. quantity is the printed count or weight and unit_price is the printed price per count or weight; keep either at 0 when it is not visible. For unknown numeric item fields use 0; for unknown text item fields use an empty string. When clearly visible, also include item_type, brand, product_size, pack_size, unit, upc, and sku. Never infer UPC or SKU.
+- items (array): up to 30 legible purchased product or service rows, or an empty array when no rows are legible. Do not include subtotal, total, tax, tip, fees, discounts, coupons, payment, cash tendered, change, slogans, or survey prompts. description is the purchased item name only. amount is the row's extended line total after any line-level discount, not the unit price. quantity is the printed count or weight and unit_price is the printed price per count or weight. pricing_unit is the visible basis for unit_price such as each, lb, oz, or kg. Keep unknown numeric fields at 0 and unknown text fields as an empty string. When clearly visible, also include item_type, brand, product_size, pack_size, unit, upc, and sku. Never infer UPC or SKU.
 - items_truncated (boolean): true when more legible product rows are visible than fit in the items array
 - visible_item_count (number): best count of visible product rows, including rows omitted because of the 30-item limit
 - uncertain_fields (array): every field whose value is ambiguous in the image
@@ -88,6 +90,7 @@ const RECEIPT_OUTPUT_SCHEMA = {
           amount: { type: 'number' },
           quantity: { type: 'number' },
           unit_price: { type: 'number' },
+          pricing_unit: { type: 'string' },
           item_type: { type: 'string', enum: ['product', 'fee', 'tax', 'discount', 'summary', ''] },
           brand: { type: 'string' },
           product_size: { type: 'string' },
@@ -97,7 +100,7 @@ const RECEIPT_OUTPUT_SCHEMA = {
           sku: { type: 'string' },
         },
         required: [
-          'description', 'amount', 'quantity', 'unit_price', 'item_type', 'brand',
+          'description', 'amount', 'quantity', 'unit_price', 'pricing_unit', 'item_type', 'brand',
           'product_size', 'pack_size', 'unit', 'upc', 'sku',
         ],
       },
@@ -284,7 +287,8 @@ function inferredReceiptItemType(item = {}) {
 function normalizeReceiptItems(items) {
   if (!Array.isArray(items)) return null;
   const normalized = items.slice(0, 30).map((item) => {
-    const description = optionalString(item?.description);
+    const rawDescription = optionalString(item?.description);
+    const description = cleanItemDescription(rawDescription);
     if (!description) return null;
     const itemType = inferredReceiptItemType(item);
     if (itemType !== 'product') return null;
@@ -303,6 +307,7 @@ function normalizeReceiptItems(items) {
       amount,
       quantity: quantity != null && quantity > 0 ? quantity : null,
       unit_price: unitPrice,
+      pricing_unit: optionalString(item?.pricing_unit),
       item_type: 'product',
       brand: optionalString(item?.brand),
       product_size: optionalString(item?.product_size),
@@ -311,7 +316,7 @@ function normalizeReceiptItems(items) {
       upc: optionalString(item?.upc),
       sku: optionalString(item?.sku),
       source_type: 'camera',
-      raw_description: description,
+      raw_description: rawDescription,
       extraction_confidence: amount != null && !hasItemMathMismatch ? 'medium' : 'low',
     };
   }).filter(Boolean);
@@ -393,7 +398,8 @@ function modelDiagnostics(result = {}) {
 function cleanParsedReceipt(parsed, todayDate) {
   if (!parsed || typeof parsed !== 'object') return null;
 
-  const merchant = typeof parsed.merchant === 'string' ? parsed.merchant.trim() : '';
+  const rawMerchant = typeof parsed.merchant === 'string' ? parsed.merchant.trim() : '';
+  const merchant = cleanMerchantDisplayName(rawMerchant) || '';
   const amount = Number(parsed.amount);
   const rawDate = typeof parsed.date === 'string' ? parsed.date.trim() : '';
   const hasValidDate = isPlausibleReceiptDate(rawDate, todayDate);
@@ -414,6 +420,8 @@ function cleanParsedReceipt(parsed, todayDate) {
 
   const normalized = {
     merchant: merchant || null,
+    raw_merchant: rawMerchant || null,
+    merchant_key: canonicalMerchantKey(merchant) || null,
     amount: Number.isFinite(amount) && amount !== 0 ? amount : null,
     date: hasValidDate ? rawDate : todayDate,
     notes: typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : null,
@@ -443,6 +451,12 @@ function cleanParsedReceipt(parsed, todayDate) {
   receiptValidation.items_truncated = itemsTruncated;
   receiptValidation.visible_item_count = normalized.visible_item_count;
   receiptValidation.extracted_item_count = items?.length || 0;
+  receiptValidation.raw_merchant = rawMerchant || null;
+  receiptValidation.canonical_merchant = merchant || null;
+  receiptValidation.merchant_key = normalized.merchant_key;
+  receiptValidation.merchant_normalization_reason = rawMerchant && rawMerchant !== merchant
+    ? 'boilerplate_removed'
+    : 'normalized_only';
   const totalIsInconsistent = receiptValidation.total_components_match === false;
   const receiptTotalsUncertain = ['currency', 'subtotal', 'tax', 'tip', 'fees', 'discounts']
     .some((field) => uncertainFields.includes(field));

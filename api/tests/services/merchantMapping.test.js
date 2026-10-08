@@ -27,11 +27,11 @@ describe('MerchantMapping', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  it('trims merchant names before lookup and upsert', async () => {
+  it('uses canonical merchant keys for lookup and upsert', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
     await MerchantMapping.findByMerchant('household-1', '  Amazon  ');
 
-    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 'Amazon']);
+    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 'amazon']);
 
     db.query.mockResolvedValueOnce({ rows: [] });
     await expect(MerchantMapping.upsert({
@@ -40,6 +40,6 @@ describe('MerchantMapping', () => {
       categoryId: 'category-1',
     })).resolves.toBe(true);
 
-    expect(db.query.mock.calls[1][1]).toEqual(['household-1', 'Target', 'category-1']);
+    expect(db.query.mock.calls[1][1]).toEqual(['household-1', 'target', 'category-1']);
   });
 });
