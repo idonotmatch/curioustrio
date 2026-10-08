@@ -1,22 +1,18 @@
-const ONLINE_OR_GENERIC_MERCHANTS = new Set([
-  'amazon',
-  'amazon.com',
-  'apple',
-  'apple.com',
-  'chewy',
-  'etsy',
-  'gas',
-  'groceries',
-  'haircut',
-  'instacart',
-  'lunch',
-  'lyft',
-  'online',
-  'paypal',
-  'shopping',
-  'subscription',
-  'uber',
-]);
+const {
+  normalizeMerchant,
+  isLikelyOnlineOrGenericMerchant,
+  isPlaceLikeMerchant,
+  scoreLocationCandidate,
+  selectSuggestedLocationCandidate,
+} = require('./locationIntent');
+
+export {
+  normalizeMerchant,
+  isLikelyOnlineOrGenericMerchant,
+  isPlaceLikeMerchant,
+  scoreLocationCandidate,
+  selectSuggestedLocationCandidate,
+};
 
 const CATEGORY_PATTERNS = [
   ['Groceries', /\b(grocer(?:y|ies)?|supermarket|market|trader joe'?s|whole foods|aldi|kroger|safeway|publix|wegmans|food lion|costco|milk|eggs|produce|bananas?)\b/i],
@@ -31,61 +27,6 @@ const CATEGORY_PATTERNS = [
   ['Travel', /\b(uber|lyft|taxi|hotel|flight|airline|train|parking|toll|rental car|travel)\b/i],
 ];
 
-function normalizeToken(value = '') {
-  return `${value || ''}`
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function normalizeMerchant(value = '') {
-  return normalizeToken(value);
-}
-
-export function isLikelyOnlineOrGenericMerchant(value = '') {
-  const normalized = normalizeMerchant(value);
-  return !normalized || ONLINE_OR_GENERIC_MERCHANTS.has(normalized);
-}
-
-export function isPlaceLikeMerchant(value = '') {
-  const normalized = normalizeMerchant(value);
-  if (!normalized) return false;
-  if (normalized.length < 3) return false;
-  if (/^\d+$/.test(normalized)) return false;
-  if (isLikelyOnlineOrGenericMerchant(normalized)) return false;
-  const parts = normalized.split(' ').filter(Boolean);
-  if (!parts.length) return false;
-  const genericLead = ['coffee', 'food', 'gas', 'groceries', 'restaurant', 'store'];
-  if (parts.length === 1 && genericLead.includes(parts[0])) return false;
-  return true;
-}
-
-function overlapScore(merchant, placeName) {
-  const merchantTokens = new Set(normalizeMerchant(merchant).split(' ').filter(Boolean));
-  const placeTokens = new Set(normalizeMerchant(placeName).split(' ').filter(Boolean));
-  if (!merchantTokens.size || !placeTokens.size) return 0;
-  let matches = 0;
-  for (const token of merchantTokens) {
-    if (placeTokens.has(token)) matches += 1;
-  }
-  return matches / merchantTokens.size;
-}
-
-export function scoreLocationCandidate(merchant, candidate) {
-  const merchantNorm = normalizeMerchant(merchant);
-  const placeNorm = normalizeMerchant(candidate?.place_name || '');
-  if (!merchantNorm || !placeNorm) return 0;
-  const distance = Number(candidate?.distance_meters);
-  if (Number.isFinite(distance) && distance > 5000) return 0;
-  let score = 0;
-  if (merchantNorm === placeNorm) score = 1;
-  else if (placeNorm.includes(merchantNorm) || merchantNorm.includes(placeNorm)) score = 0.9;
-  else score = overlapScore(merchantNorm, placeNorm);
-  if (Number.isFinite(distance) && distance > 2000) score *= 0.75;
-  return score;
-}
-
 export function shouldSuggestLocationFromMerchant({
   merchant,
   hasAcceptedLocation = false,
@@ -97,27 +38,6 @@ export function shouldSuggestLocationFromMerchant({
   if (!isPlaceLikeMerchant(normalizedMerchant)) return false;
   if (dismissedMerchantSuggestion && normalizedMerchant === dismissedMerchantSuggestion) return false;
   return true;
-}
-
-export function selectSuggestedLocationCandidate(merchant, results = []) {
-  const ranked = (Array.isArray(results) ? results : [])
-    .map((candidate) => ({
-      candidate,
-      score: scoreLocationCandidate(merchant, candidate),
-    }))
-    .sort((a, b) => b.score - a.score);
-
-  const best = ranked[0];
-  if (!best) return null;
-  if (best.score < 0.72) return null;
-
-  return {
-    type: 'location',
-    value: best.candidate,
-    confidence: best.score,
-    reason: 'merchant_nearby_match',
-    key: `${normalizeMerchant(merchant)}::${best.candidate?.mapkit_stable_id || best.candidate?.place_name || 'candidate'}`,
-  };
 }
 
 function findCategoryByName(categories = [], targetName = '') {

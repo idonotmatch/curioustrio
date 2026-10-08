@@ -52,14 +52,9 @@ export async function getCoords(options = {}) {
 }
 
 export async function getLocation(options = {}) {
-  const { status } = await resolveForegroundPermission(options);
-  if (status !== 'granted') {
-    if (options.throwOnDenied) throw locationError('permission_denied', 'Location permission is off.');
-    return null;
-  }
-
-  const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-  const { latitude, longitude } = position.coords;
+  const coords = options.coords || await getCoords(options);
+  if (!coords) return null;
+  const { latitude, longitude } = coords;
 
   const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
 

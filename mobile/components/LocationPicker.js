@@ -9,6 +9,10 @@ import { colors } from '../theme/tokens';
 import { locationStatusPresentation } from '../services/provenancePresentation';
 import { normalizeLocationData } from '../services/locationData';
 const { buildMapsUrl, formatPlaceDistance } = require('../services/locationPresentation');
+const {
+  currentLocationAction,
+  selectSuggestedLocationCandidate,
+} = require('../services/locationIntent');
 
 export function LocationPicker({ onLocation, locationData, merchant }) {
   const [loading, setLoading] = useState(false);
@@ -19,7 +23,13 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
   const [searchError, setSearchError] = useState('');
   const [resolvingKey, setResolvingKey] = useState('');
   const [status, setStatus] = useState(locationStatusPresentation(locationData || {}));
+  const [currentCoordsFallback, setCurrentCoordsFallback] = useState(null);
   const lastCoordsRef = useRef(null);
+  const merchantName = `${merchant || ''}`.trim();
+  const locationAction = currentLocationAction(merchantName);
+  const statusDetail = locationAction.mode === 'merchant_nearby' && status.label === 'Optional'
+    ? `Find ${merchantName} near your current location.`
+    : status.detail;
 
   useEffect(() => {
     setStatus(locationStatusPresentation(locationData || {}));
@@ -73,27 +83,30 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     };
   }, [query, searchMode]);
 
-  function beginSearch(nextQuery = '') {
+  function beginSearch(nextQuery = '', { preserveCurrentFallback = false } = {}) {
     setSearchMode(true);
     setQuery(nextQuery);
     setSearchError('');
+    if (!preserveCurrentFallback) setCurrentCoordsFallback(null);
   }
 
   function endSearch() {
     setSearchMode(false);
     setSearchResults([]);
     setSearchError('');
+    setCurrentCoordsFallback(null);
   }
 
   function commitLocation(result) {
-    onLocation(normalizeLocationData({
+    const normalized = normalizeLocationData({
       ...result,
       source: result.source || (result.search_strategy === 'user_history' ? 'history' : 'search'),
       status: 'enriched',
       confidence: result.confidence ?? 1,
       location_user_owned: true,
-    }));
-    setStatus(locationStatusPresentation({ source: result.search_strategy === 'user_history' ? 'history' : 'search' }));
+    });
+    onLocation(normalized);
+    setStatus(locationStatusPresentation(normalized));
     endSearch();
   }
 
@@ -147,7 +160,54 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
     setLoading(true);
     setStatus(locationStatusPresentation({ status: 'deferred' }));
     try {
-      const result = await getLocation({ requestIfNeeded: true, throwOnDenied: true, throwOnFailure: true });
+      const coords = await getCoords({
+        requestIfNeeded: true,
+        throwOnDenied: true,
+        throwOnFailure: true,
+        maxAgeMs: 15000,
+      });
+      lastCoordsRef.current = coords;
+      if (locationAction.mode === 'merchant_nearby') {
+        let results = [];
+        try {
+          const params = new URLSearchParams({
+            q: merchantName,
+            intent: 'auto',
+            radius: '2000',
+            lat: String(coords.latitude),
+            lng: String(coords.longitude),
+          });
+          const lookup = await api.get(`/places/search?${params.toString()}`);
+          results = Array.isArray(lookup?.results)
+            ? lookup.results
+            : (lookup?.result ? [lookup.result] : []);
+          const suggestion = selectSuggestedLocationCandidate(merchantName, results);
+          if (suggestion?.value) {
+            commitLocation({
+              ...suggestion.value,
+              source: suggestion.value.search_strategy === 'user_history' ? 'history' : 'merchant_suggestion',
+              confidence: suggestion.confidence,
+            });
+            return;
+          }
+        } catch {
+          results = [];
+        }
+
+        setCurrentCoordsFallback(coords);
+        beginSearch(merchantName, { preserveCurrentFallback: true });
+        setSearchResults(results);
+        setSearchError(results.length ? '' : `No nearby match found for ${merchantName}.`);
+        setStatus({
+          label: 'Choose a place',
+          detail: results.length
+            ? `Choose the ${merchantName} location you visited.`
+            : 'Search for the merchant or use your current position instead.',
+        });
+        return;
+      }
+
+      const result = await getLocation({ coords, throwOnFailure: true });
       if (result) {
         onLocation(result);
         setStatus(locationStatusPresentation(result));
@@ -156,6 +216,19 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
       }
     } catch (e) {
       setStatus(locationStatusPresentation({ status: e?.code || 'lookup_failed' }));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function useCurrentPositionFallback() {
+    if (!currentCoordsFallback || loading) return;
+    setLoading(true);
+    try {
+      const result = await getLocation({ coords: currentCoordsFallback, throwOnFailure: true });
+      if (result) commitLocation(result);
+    } catch (error) {
+      setStatus(locationStatusPresentation({ status: error?.code || 'lookup_failed' }));
     } finally {
       setLoading(false);
     }
@@ -235,7 +308,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
                 ? <ActivityIndicator color={colors.textSubtle} size="small" />
                 : <Ionicons name="navigate" size={17} color={colors.textMuted} />
               }
-              <Text style={styles.buttonText} numberOfLines={1}>{loading ? 'Locating…' : 'Current location'}</Text>
+              <Text style={styles.buttonText} numberOfLines={1}>{loading ? 'Locating…' : locationAction.label}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.button, searchMode && styles.buttonActive]}
@@ -253,7 +326,7 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
         </View>
       )}
       {!locationData ? (
-        <Text style={styles.statusText}>{status.detail}</Text>
+        <Text style={styles.statusText}>{statusDetail}</Text>
       ) : null}
 
       {searchMode ? (
@@ -278,6 +351,18 @@ export function LocationPicker({ onLocation, locationData, merchant }) {
           {locationData ? (
             <TouchableOpacity style={styles.searchCancel} onPress={endSearch}>
               <Text style={styles.searchCancelText}>Cancel search</Text>
+            </TouchableOpacity>
+          ) : null}
+          {currentCoordsFallback ? (
+            <TouchableOpacity
+              style={styles.positionFallback}
+              onPress={useCurrentPositionFallback}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Use current position instead of matching the merchant"
+            >
+              <Ionicons name="navigate-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.positionFallbackText}>Use current position instead</Text>
             </TouchableOpacity>
           ) : null}
           {searching ? (
@@ -438,6 +523,8 @@ const styles = StyleSheet.create({
   emptySearch: { marginTop: 10, color: colors.textDisabled, fontSize: 12 },
   manualResult: { marginTop: 10, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.borderStrong },
   manualResultText: { flex: 1, color: colors.textSubtle, fontSize: 13, fontWeight: '500' },
+  positionFallback: { marginTop: 10, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.borderStrong },
+  positionFallbackText: { flexShrink: 1, color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   selectedActions: { flexDirection: 'row', gap: 8 },
   secondaryAction: {
     minHeight: 38,

@@ -10,10 +10,11 @@ const {
 const { captureException } = require('../services/observability');
 const User = require('../models/user');
 const db = require('../db');
+const { withPlaceDistances, learnedPlacesForIntent } = require('../services/placeSearchPolicy');
 
 router.use(authenticate);
 
-async function findLearnedPlaces(userId, query) {
+async function findLearnedPlaces(userId, query, lat = null, lng = null) {
   if (!userId || !`${query || ''}`.trim()) return [];
   const result = await db.query(
     `SELECT place_name, address, mapkit_stable_id,
@@ -35,13 +36,13 @@ async function findLearnedPlaces(userId, query) {
      LIMIT 3`,
     [userId, query]
   );
-  return result.rows.map((row) => ({
+  return withPlaceDistances(result.rows.map((row) => ({
     ...row,
     provider: 'user_history',
     source: 'history',
     search_strategy: 'user_history',
     confidence: Number(row.confirmation_count || 0) > 1 ? 1 : 0.92,
-  }));
+  })), lat, lng);
 }
 
 function mergePlaceResults(learned = [], searched = []) {
@@ -81,7 +82,7 @@ router.get('/autocomplete', async (req, res, next) => {
     if (!coordinates) return res.status(400).json({ error: 'lat and lng must be numbers' });
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const learned = await findLearnedPlaces(user.id, q);
+    const learned = await findLearnedPlaces(user.id, q, coordinates.lat, coordinates.lng);
     let suggestions = [];
     try {
       suggestions = await autocompletePlaces(q, coordinates.lat, coordinates.lng, 5000, 5);
@@ -144,16 +145,22 @@ router.get('/search', async (req, res, next) => {
     const intent = req.query.intent === 'auto' ? 'auto' : 'manual';
     const user = await User.findByProviderUid(req.userId);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const learned = await findLearnedPlaces(user.id, q);
+    const learned = await findLearnedPlaces(user.id, q, parsedLat, parsedLng);
+    const relevantLearned = learnedPlacesForIntent(learned, {
+      intent,
+      lat: parsedLat,
+      lng: parsedLng,
+      radiusMeters,
+    });
     let searched = [];
-    if (!(intent === 'auto' && learned.length > 0)) {
+    if (!(intent === 'auto' && relevantLearned.length > 0)) {
       try {
         searched = await searchPlaces(q, parsedLat, parsedLng, radiusMeters, 5, { intent });
       } catch (err) {
-        if (!learned.length) throw err;
+        if (!relevantLearned.length) throw err;
       }
     }
-    const results = mergePlaceResults(learned, searched);
+    const results = mergePlaceResults(relevantLearned, searched);
     res.json({ result: results[0] || null, results });
     } catch (err) {
       if (err instanceof MapkitSearchUnavailableError || err?.name === 'MapkitSearchUnavailableError') {
