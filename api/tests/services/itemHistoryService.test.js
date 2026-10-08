@@ -193,6 +193,30 @@ describe('listItemHistorySummaries', () => {
     expect(db.query.mock.calls[0][0]).toContain("COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'");
     expect(db.query.mock.calls[0][1]).toEqual(['household-1', 180, 'user-1']);
   });
+
+  it('suppresses dining items from automatic insight summaries', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [1, 2, 3].map((index) => ({
+        expense_id: `expense-${index}`,
+        comparable_key: 'margherita pizza',
+        product_match_confidence: 'high',
+        item_name: 'Margherita Pizza',
+        item_amount: 16,
+        merchant: 'Neighborhood Pizza',
+        date: `2026-04-${`${index * 7}`.padStart(2, '0')}`,
+        expense_category_name: 'Dining Out',
+        category_group_name: 'Dining Out',
+      })),
+    });
+
+    const results = await listItemHistorySummaries('household-1', {
+      minOccurrences: 3,
+      requesterUserId: 'user-1',
+      automaticInsightsOnly: true,
+    });
+
+    expect(results).toEqual([]);
+  });
 });
 
 describe('getItemHistoryByGroupKey', () => {
@@ -246,5 +270,36 @@ describe('getItemHistoryByGroupKey', () => {
       expect.objectContaining({ id: 'expense-2' }),
     ]));
     expect(db.query.mock.calls[0][1]).toEqual(['household-1', 180, 'user-1', 'product-123']);
+  });
+
+  it('keeps dining item history available with its suppression reason', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [1, 2, 3].map((index) => ({
+        expense_id: `expense-${index}`,
+        comparable_key: 'margherita pizza',
+        product_match_confidence: 'high',
+        item_name: 'Margherita Pizza',
+        item_amount: 16,
+        merchant: 'Neighborhood Pizza',
+        date: `2026-04-${`${index * 7}`.padStart(2, '0')}`,
+        expense_category_name: 'Dining Out',
+        category_group_name: 'Dining Out',
+      })),
+    });
+
+    const result = await getItemHistoryByGroupKey(
+      'household-1',
+      'comparable:margherita pizza',
+      { requesterUserId: 'user-1' }
+    );
+
+    expect(result).toMatchObject({
+      item_name: 'Margherita Pizza',
+      occurrence_count: 3,
+      insight_eligibility: {
+        eligible: false,
+        suppressed_reason: 'dining_context',
+      },
+    });
   });
 });

@@ -627,6 +627,7 @@ async function loadItemHistoryInsightsBestEffort(ownerId, {
       minOccurrences,
       limit,
       requesterUserId,
+      automaticInsightsOnly: true,
     });
     return buildItemHistoryInsights(histories, scope);
   } catch (err) {

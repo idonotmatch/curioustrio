@@ -12,6 +12,7 @@ const Product = require('../../src/models/product');
 let testHouseholdId;
 let testUserId;
 let otherUserId;
+let diningCategoryId;
 
 beforeAll(async () => {
   const hResult = await db.query(
@@ -36,6 +37,14 @@ beforeAll(async () => {
     [testHouseholdId]
   );
   otherUserId = otherResult.rows[0].id;
+
+  const categoryResult = await db.query(
+    `INSERT INTO categories (household_id, name)
+     VALUES ($1, 'Dining Out')
+     RETURNING id`,
+    [testHouseholdId]
+  );
+  diningCategoryId = categoryResult.rows[0].id;
 });
 
 afterAll(async () => {
@@ -44,6 +53,7 @@ afterAll(async () => {
   await db.query(`UPDATE users SET household_id = NULL WHERE id = $1`, [otherUserId]);
   await db.query(`DELETE FROM users WHERE id = $1`, [testUserId]);
   await db.query(`DELETE FROM users WHERE id = $1`, [otherUserId]);
+  await db.query(`DELETE FROM categories WHERE id = $1`, [diningCategoryId]);
   await db.query(`DELETE FROM households WHERE id = $1`, [testHouseholdId]);
   await db.pool.end();
 });
@@ -59,12 +69,19 @@ afterEach(async () => {
   await db.query(`DELETE FROM products WHERE merchant IN ('Target') OR name IN ('Pampers Pure')`);
 });
 
-async function insertExpense(merchant, amount, date, userId = testUserId, isPrivate = false) {
+async function insertExpense(
+  merchant,
+  amount,
+  date,
+  userId = testUserId,
+  isPrivate = false,
+  categoryId = null
+) {
   const result = await db.query(
-    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, is_private)
-     VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed', $6)
+    `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status, is_private, category_id)
+     VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed', $6, $7)
      RETURNING id`,
-    [userId, testHouseholdId, merchant, amount, date, isPrivate]
+    [userId, testHouseholdId, merchant, amount, date, isPrivate, categoryId]
   );
   return result.rows[0].id;
 }
@@ -237,6 +254,36 @@ describe('detectRecurringItems', () => {
 
     const candidates = await detectRecurringItems(testHouseholdId);
     expect(candidates.find((item) => item.item_name === 'Delivery Fee')).toBeFalsy();
+  });
+
+  it('does not turn repeated dining line items into recurring product candidates', async () => {
+    const today = new Date();
+    const dates = [42, 28, 14].map((daysAgo) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    });
+
+    for (const date of dates) {
+      const expenseId = await insertExpense(
+        'Neighborhood Pizza',
+        16,
+        date,
+        testUserId,
+        false,
+        diningCategoryId
+      );
+      await ExpenseItem.createBulk(expenseId, [{
+        description: 'Margherita Pizza',
+        amount: 16,
+      }]);
+    }
+
+    const candidates = await detectRecurringItems(testHouseholdId);
+    const signals = await detectRecurringItemSignals(testHouseholdId);
+
+    expect(candidates.find((item) => item.item_name === 'Margherita Pizza')).toBeFalsy();
+    expect(signals.find((item) => item.item_name === 'Margherita Pizza')).toBeFalsy();
   });
 });
 

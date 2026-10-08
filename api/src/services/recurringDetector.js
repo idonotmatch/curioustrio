@@ -8,6 +8,11 @@ const {
   normalizeItemDisplayName,
 } = require('./itemNormalizer');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
+const {
+  automaticItemInsightDecision,
+  insightEligibilityMetadata,
+} = require('./itemInsightEligibility');
+const { getItemHistoryByGroupKey } = require('./itemHistoryService');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -87,6 +92,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        ei.product_id,
        ei.comparable_key,
        ei.product_match_confidence,
+       ei.product_match_reason,
        COALESCE(p.name, ei.description) AS item_name,
        COALESCE(p.brand, ei.brand) AS brand,
        ei.normalized_total_size_value,
@@ -94,10 +100,15 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        ei.estimated_unit_price,
        ei.amount AS item_amount,
        e.merchant,
-       e.date
+       e.date,
+       c.name AS expense_category_name,
+       pc.name AS parent_category_name,
+       COALESCE(pc.name, c.name) AS category_group_name
      FROM expense_items ei
      JOIN expenses e ON e.id = ei.expense_id
      LEFT JOIN products p ON p.id = ei.product_id
+     LEFT JOIN categories c ON c.id = e.category_id
+     LEFT JOIN categories pc ON pc.id = c.parent_id
      WHERE ${recurringExpenseScopeClause(scope, 1)}
        ${visibilityClause}
        AND e.status = 'confirmed'
@@ -115,6 +126,7 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        ei.product_id,
        ei.comparable_key,
        ei.product_match_confidence,
+       ei.product_match_reason,
        COALESCE(p.name, ei.description) AS item_name,
        COALESCE(p.brand, ei.brand) AS brand,
        ei.normalized_total_size_value,
@@ -122,10 +134,15 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
        ei.estimated_unit_price,
        ei.amount AS item_amount,
        e.merchant,
-       e.date
+       e.date,
+       c.name AS expense_category_name,
+       pc.name AS parent_category_name,
+       COALESCE(pc.name, c.name) AS category_group_name
      FROM expense_items ei
      JOIN expenses e ON e.id = ei.expense_id
      LEFT JOIN products p ON p.id = ei.product_id
+     LEFT JOIN categories c ON c.id = e.category_id
+     LEFT JOIN categories pc ON pc.id = c.parent_id
      WHERE ${recurringExpenseScopeClause(scope, 1)}
        ${visibilityClause}
        AND e.status = 'confirmed'
@@ -155,9 +172,13 @@ async function loadRecurringItemOccurrences(ownerId, options = {}) {
       product_id: row.product_id || null,
       comparable_key: row.comparable_key || null,
       product_match_confidence: row.product_match_confidence || null,
+      product_match_reason: row.product_match_reason || null,
       item_name: itemName,
       brand: row.brand || null,
       merchant: cleanMerchantDisplayName(row.merchant) || row.merchant,
+      expense_category_name: row.expense_category_name || null,
+      parent_category_name: row.parent_category_name || null,
+      category_group_name: row.category_group_name || null,
       item_amount: row.item_amount == null ? null : Number(row.item_amount),
       estimated_unit_price: row.estimated_unit_price == null ? null : Number(row.estimated_unit_price),
       normalized_total_size_value: row.normalized_total_size_value == null ? null : Number(row.normalized_total_size_value),
@@ -240,7 +261,10 @@ async function detectRecurringItems(ownerId, options = {}) {
 
   const candidates = [];
   for (const [groupKey, groupOccurrences] of groups.entries()) {
-    const occurrences = insightEligibleOccurrences(groupOccurrences);
+    const identityEligible = insightEligibleOccurrences(groupOccurrences);
+    const eligibility = automaticItemInsightDecision(identityEligible, { minOccurrences: 3 });
+    const occurrences = eligibility.eligible_rows;
+    if (!eligibility.eligible) continue;
     const hasStrongProductIdentity = occurrences.some((entry) => entry.product_id);
     const hasOnlyMediumComparableIdentity = !hasStrongProductIdentity
       && occurrences.every((entry) => entry.comparable_key && entry.product_match_confidence === 'medium');
@@ -280,6 +304,7 @@ async function detectRecurringItems(ownerId, options = {}) {
       product_id: occurrences[0].product_id,
       comparable_key: occurrences[0].comparable_key,
       identity_confidence: hasStrongProductIdentity ? 'high' : 'medium',
+      insight_eligibility: insightEligibilityMetadata(eligibility),
       item_name: occurrences[0].item_name,
       brand: occurrences[0].brand,
       frequency: classifyFrequency(medianGap),
@@ -520,12 +545,63 @@ async function detectRecurringWatchCandidates(ownerId, options = {}) {
     ? await ItemPlanningPreference.findByUser(options.requesterUserId)
     : [];
   for (const preference of planningPreferences) {
-    const candidate = automaticByKey.get(preference.group_key);
-    if (!candidate) continue;
+    let candidate = automaticByKey.get(preference.group_key);
     if (preference.state === 'suppressed') {
       automaticByKey.delete(preference.group_key);
       continue;
     }
+
+    if (!candidate) {
+      const history = await getItemHistoryByGroupKey(ownerId, preference.group_key, {
+        scope,
+        requesterUserId: options.requesterUserId,
+      });
+      if (!history) continue;
+
+      let nextExpectedDate = null;
+      if (preference.state === 'needed') {
+        nextExpectedDate = new Date(today);
+      } else if (preference.remind_on) {
+        nextExpectedDate = parseDateOnly(preference.remind_on);
+      } else if (history.last_purchased_at && Number(history.average_gap_days) > 0) {
+        nextExpectedDate = parseDateOnly(history.last_purchased_at);
+        nextExpectedDate.setDate(nextExpectedDate.getDate() + Number(history.average_gap_days));
+      }
+      if (!nextExpectedDate) continue;
+
+      const daysUntilDue = diffDays(today, nextExpectedDate);
+      const watchStartsAt = new Date(nextExpectedDate);
+      watchStartsAt.setDate(watchStartsAt.getDate() - windowDays);
+      candidate = {
+        kind: 'watch_candidate',
+        group_key: preference.group_key,
+        product_id: history.product_id || null,
+        identity_confidence: history.identity_confidence || null,
+        item_name: history.item_name,
+        brand: history.brand || null,
+        occurrence_count: Number(history.occurrence_count || 0),
+        average_gap_days: history.average_gap_days == null ? null : Number(history.average_gap_days),
+        median_amount: history.median_amount == null ? null : Number(history.median_amount),
+        median_unit_price: history.median_unit_price == null ? null : Number(history.median_unit_price),
+        last_purchased_at: history.last_purchased_at || null,
+        next_expected_date: nextExpectedDate.toISOString().split('T')[0],
+        watch_starts_at: watchStartsAt.toISOString().split('T')[0],
+        days_until_watch: diffDays(today, watchStartsAt),
+        days_until_due: daysUntilDue,
+        status: daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'due_today' : daysUntilDue <= windowDays ? 'watching' : 'upcoming',
+        merchants: history.merchants || [],
+        usual_merchant: history.merchant_breakdown?.[0]?.merchant || history.merchants?.[0] || null,
+        usual_merchant_count: Number(history.merchant_breakdown?.[0]?.occurrence_count || 0),
+        usual_merchant_share: history.occurrence_count > 0
+          ? Number(((history.merchant_breakdown?.[0]?.occurrence_count || 0) / history.occurrence_count).toFixed(2))
+          : 0,
+        normalized_total_size_value: history.normalized_total_size_value,
+        normalized_total_size_unit: history.normalized_total_size_unit,
+        source: 'user_preference',
+      };
+      automaticByKey.set(preference.group_key, candidate);
+    }
+
     candidate.planning_preference = preference;
     candidate.target_price = preference.target_price == null ? null : Number(preference.target_price);
     if (preference.state === 'needed') {
@@ -554,8 +630,10 @@ async function detectRecurringItemSignals(ownerId, options = {}) {
     : await loadRecurringItemOccurrences(ownerId, options);
   const signals = [];
   for (const [groupKey, groupHistory] of groups.entries()) {
-    const history = insightEligibleOccurrences(groupHistory);
-    if (history.length < 3) continue;
+    const identityEligible = insightEligibleOccurrences(groupHistory);
+    const eligibility = automaticItemInsightDecision(identityEligible, { minOccurrences: 3 });
+    const history = eligibility.eligible_rows;
+    if (!eligibility.eligible) continue;
 
     const sorted = [...history].sort((a, b) => a.date - b.date);
     const latest = sorted[sorted.length - 1];
@@ -597,6 +675,7 @@ async function detectRecurringItemSignals(ownerId, options = {}) {
         product_id: latest.product_id,
         comparable_key: latest.comparable_key,
         identity_confidence: latest.product_id ? 'high' : (latest.product_match_confidence || null),
+        insight_eligibility: insightEligibilityMetadata(eligibility),
         item_name: latest.item_name,
         brand: latest.brand,
         latest_merchant: latest.merchant,
@@ -639,6 +718,7 @@ async function detectRecurringItemSignals(ownerId, options = {}) {
             product_id: latest.product_id,
             comparable_key: latest.comparable_key,
             identity_confidence: latest.product_id ? 'high' : (latest.product_match_confidence || null),
+            insight_eligibility: insightEligibilityMetadata(eligibility),
             item_name: latest.item_name,
             brand: latest.brand,
             latest_merchant: latest.merchant,

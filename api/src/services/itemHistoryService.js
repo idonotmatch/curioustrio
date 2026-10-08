@@ -6,6 +6,11 @@ const {
   normalizeItemDisplayName,
 } = require('./itemNormalizer');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
+const {
+  automaticItemInsightDecision,
+  classifyItemInsightContext,
+  insightEligibilityMetadata,
+} = require('./itemInsightEligibility');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -72,6 +77,9 @@ function summarizeHistoryRows(rows = []) {
       product_match_reason: row.product_match_reason || null,
       extraction_confidence: row.extraction_confidence || null,
       source_type: row.source_type || null,
+      expense_category_name: row.expense_category_name || null,
+      parent_category_name: row.parent_category_name || null,
+      category_group_name: row.category_group_name || null,
       item_name: normalizeItemDisplayName(cleanItemDescription(row.item_name || row.description)) || null,
       brand: row.brand || null,
       merchant: cleanMerchantDisplayName(row.merchant) || null,
@@ -153,6 +161,7 @@ function summarizeIdentity(entries = []) {
     : (sorted.every((entry) => entry.product_match_confidence === 'high') ? 'high' : 'medium');
   const nextExpected = gaps.length ? new Date(`${latest.date}T12:00:00`) : null;
   if (nextExpected) nextExpected.setDate(nextExpected.getDate() + median(gaps));
+  const insightEligibility = automaticItemInsightDecision(sorted, { minOccurrences: 3 });
 
   return {
     kind: 'item_history',
@@ -179,6 +188,7 @@ function summarizeIdentity(entries = []) {
     merchant_price_history: merchantBreakdown,
     normalized_total_size_value: latest.normalized_total_size_value,
     normalized_total_size_unit: priceBasisUnit || latest.normalized_total_size_unit,
+    insight_eligibility: insightEligibilityMetadata(insightEligibility),
     purchases: sorted.map((entry) => ({
       expense_item_id: entry.expense_item_id,
       id: entry.expense_id || null,
@@ -241,10 +251,15 @@ async function loadItemHistoryRows(ownerId, {
       ei.normalized_total_size_value,
       ei.normalized_total_size_unit,
       e.merchant,
-      e.date
+      e.date,
+      c.name AS expense_category_name,
+      pc.name AS parent_category_name,
+      COALESCE(pc.name, c.name) AS category_group_name
     FROM expense_items ei
     JOIN expenses e ON e.id = ei.expense_id
     LEFT JOIN products p ON p.id = ei.product_id
+    LEFT JOIN categories c ON c.id = e.category_id
+    LEFT JOIN categories pc ON pc.id = c.parent_id
     WHERE ${expenseScopeClause(scope, 1)}
       ${visibilityClause}
       AND e.status = 'confirmed'
@@ -275,10 +290,17 @@ async function listItemHistorySummaries(ownerId, {
   minOccurrences = 2,
   limit = 25,
   requesterUserId = null,
+  automaticInsightsOnly = false,
 } = {}) {
   const rows = await loadItemHistoryRows(ownerId, { scope, lookbackDays, requesterUserId });
-  return summarizeHistoryRows(rows)
-    .filter((entry) => entry.occurrence_count >= Math.max(1, Number(minOccurrences) || 2))
+  const historyRows = automaticInsightsOnly
+    ? rows.filter((row) => classifyItemInsightContext(row).eligible)
+    : rows;
+  return summarizeHistoryRows(historyRows)
+    .filter((entry) => {
+      const meetsRequestedMinimum = entry.occurrence_count >= Math.max(1, Number(minOccurrences) || 2);
+      return meetsRequestedMinimum && (!automaticInsightsOnly || entry.insight_eligibility?.eligible);
+    })
     .slice(0, Math.max(1, Math.min(Number(limit) || 25, 100)));
 }
 
