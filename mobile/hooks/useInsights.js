@@ -46,7 +46,7 @@ export function useInsights(limit = 5, options = {}) {
   const initialRefreshCompletedRef = useRef(false);
   const refreshInFlightRef = useRef(null);
   const lastRefreshStartedAtRef = useRef(0);
-  const cacheKey = `cache:insights:v4:${limit}:${fetchLimit}`;
+  const cacheKey = `cache:insights:v5:${limit}:${fetchLimit}`;
 
   const refresh = useCallback(async (context = {}) => {
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
