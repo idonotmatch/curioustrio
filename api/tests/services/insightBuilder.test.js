@@ -27,6 +27,7 @@ const {
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,
   pruneGeneratedInsights,
+  dedupeInsights,
   bundleRepurchaseCandidates,
 } = require('../../src/services/insightBuilder');
 
@@ -42,6 +43,24 @@ function buildInsight(overrides = {}) {
     ...overrides,
   };
 }
+
+describe('dedupeInsights', () => {
+  it('preserves equivalent personal and household candidates for scope consolidation', () => {
+    const personal = buildInsight({
+      id: 'personal',
+      title: 'One purchase is skewing the month',
+      body: 'Same explanation',
+      metadata: { scope: 'personal', month: '2026-10' },
+    });
+    const household = buildInsight({
+      ...personal,
+      id: 'household',
+      metadata: { scope: 'household', month: '2026-10' },
+    });
+
+    expect(dedupeInsights([personal, household])).toHaveLength(2);
+  });
+});
 
 describe('insightBuilder orchestration', () => {
   afterEach(() => {
@@ -243,6 +262,44 @@ describe('insightBuilder orchestration', () => {
 
     expect(decision.eligible).toBe(false);
     expect(decision.suppression_reasons).toContain('below_surface_threshold');
+  });
+
+  it('suppresses anomaly cards whose transaction evidence is unresolved', () => {
+    const decision = insightSurfaceDecision(buildInsight({
+      type: 'one_off_expense_skewing_projection',
+      severity: 'high',
+      metadata: {
+        scope: 'personal',
+        month: '2026-10',
+        confidence: 'low',
+        evidence_confidence: 'low',
+        historical_period_count: 4,
+        unusual_spend_to_date: 400,
+        unusual_spend_share: 0.5,
+      },
+    }));
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.suppression_reasons).toContain('weak_anomaly_evidence');
+  });
+
+  it('keeps an anomaly actionable when forecast confidence is low but evidence is identified', () => {
+    const decision = insightSurfaceDecision(buildInsight({
+      type: 'one_off_expense_skewing_projection',
+      severity: 'high',
+      metadata: {
+        scope: 'personal',
+        month: '2026-10',
+        confidence: 'low',
+        evidence_confidence: 'medium',
+        historical_period_count: 4,
+        unusual_spend_to_date: 400,
+        unusual_spend_share: 0.5,
+        top_unusual_expense: { id: 'expense-1', merchant: 'Wedding Present', amount: 400 },
+      },
+    }));
+
+    expect(decision.suppression_reasons).not.toContain('weak_anomaly_evidence');
   });
 
   it('keeps strong early anchored insights eligible even with lower maturity', () => {

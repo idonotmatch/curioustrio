@@ -400,6 +400,13 @@ function surfaceGuardReasons(insight, preferenceSummary = {}) {
     reasons.push('unknown_merchant_anchor');
   }
 
+  if (
+    (type === 'one_offs_driving_variance' || type === 'one_off_expense_skewing_projection')
+    && `${metadata.evidence_confidence || ''}`.trim() === 'low'
+  ) {
+    reasons.push('weak_anomaly_evidence');
+  }
+
   if (role === 'explain' && evidenceScore < 18) {
     reasons.push('thin_explanatory_evidence');
   }

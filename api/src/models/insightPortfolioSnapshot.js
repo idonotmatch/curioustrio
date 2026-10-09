@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const INSIGHT_LOGIC_VERSION = 'item-intelligence-v5';
+const INSIGHT_LOGIC_VERSION = 'evidence-quality-v6';
 const SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 function isMissingTable(err) {

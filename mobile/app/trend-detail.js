@@ -425,8 +425,16 @@ function buildTrendFromInsightMetadata(metadata = {}, scope = 'personal', month 
   } : null;
 
   const topUnusualExpenses = [];
-  if (metadata.top_unusual_expense) topUnusualExpenses.push(metadata.top_unusual_expense);
-  if (Array.isArray(metadata.top_unusual_expenses)) topUnusualExpenses.push(...metadata.top_unusual_expenses);
+  const unusualExpenseKeys = new Set();
+  const addUnusualExpense = (expense) => {
+    if (!expense) return;
+    const key = expense.id || `${expense.merchant || ''}:${expense.amount || ''}:${expense.date || ''}`;
+    if (!key || unusualExpenseKeys.has(key)) return;
+    unusualExpenseKeys.add(key);
+    topUnusualExpenses.push(expense);
+  };
+  addUnusualExpense(metadata.top_unusual_expense);
+  if (Array.isArray(metadata.top_unusual_expenses)) metadata.top_unusual_expenses.forEach(addUnusualExpense);
 
   return {
     period: {
@@ -540,6 +548,7 @@ export default function TrendDetailScreen() {
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
   const [unusualReviewStatus, setUnusualReviewStatus] = useState('');
+  const [unusualExpenseReviews, setUnusualExpenseReviews] = useState({});
   const [categoryReviewStatus, setCategoryReviewStatus] = useState('');
   const [recurringReviewStatus, setRecurringReviewStatus] = useState('');
   const [showSupportingDetail, setShowSupportingDetail] = useState(false);
@@ -836,10 +845,12 @@ export default function TrendDetailScreen() {
     }
   }
 
-  async function submitUnusualReview(review) {
-    if (!insightId || !review || unusualReviewStatus === review) return;
+  async function submitUnusualReview(review, expense = null) {
+    const expenseKey = expense?.id || (expense ? `${expense.merchant}:${expense.amount}:${expense.date || ''}` : '');
+    const currentReview = expenseKey ? unusualExpenseReviews[expenseKey] : unusualReviewStatus;
+    if (!insightId || !review || currentReview === review) return;
     try {
-      const reviewTargetType = unusualExpenses.length ? 'expense' : oneOffMerchants.length ? 'merchant' : 'unknown';
+      const reviewTargetType = expense ? 'expense' : oneOffMerchants.length ? 'merchant' : 'unknown';
       await api.post('/insights/events', {
         events: [{
           insight_id: `${insightId}`,
@@ -853,18 +864,65 @@ export default function TrendDetailScreen() {
             review_type: 'unusual_purchase_review',
             unusual_review: review,
             review_target_type: reviewTargetType,
-            review_target_count: unusualExpenses.length || oneOffMerchants.length || 0,
+            review_target_count: expense ? 1 : oneOffMerchants.length || 0,
             historical_period_count: Number(trend?.projection?.overall?.historical_period_count || 0),
             projected_budget_delta: Number(trend?.projection?.overall?.projected_budget_delta || 0),
-            top_unusual_expense_ids: unusualExpenses.map((expense) => expense.id).filter(Boolean),
-            top_one_off_merchants: oneOffMerchants.map((merchant) => merchant.merchant_key).filter(Boolean),
+            unusual_expense_id: expense?.id || null,
+            unusual_expense_merchant: expense?.merchant || null,
+            top_unusual_expense_ids: expense?.id ? [expense.id] : [],
+            top_one_off_merchants: expense ? [] : oneOffMerchants.map((merchant) => merchant.merchant_key).filter(Boolean),
           },
         }],
       });
-      setUnusualReviewStatus(review);
+      if (expenseKey) {
+        setUnusualExpenseReviews((current) => ({ ...current, [expenseKey]: review }));
+      } else {
+        setUnusualReviewStatus(review);
+      }
     } catch {
       // non-fatal
     }
+  }
+
+  function renderUnusualExpenseReview(expense, prefix) {
+    const expenseKey = expense.id || `${expense.merchant}:${expense.amount}:${expense.date || ''}`;
+    const selectedReview = unusualExpenseReviews[expenseKey] || '';
+    return (
+      <View key={`${prefix}:${expenseKey}`} style={styles.expenseReviewGroup}>
+        <TouchableOpacity
+          style={styles.reviewRow}
+          activeOpacity={expense.id ? 0.82 : 1}
+          disabled={!expense.id}
+          onPress={() => handleOpenExpense(expense)}
+        >
+          <View style={styles.driverText}>
+            <Text style={styles.driverName}>{expense.merchant}</Text>
+            <Text style={styles.driverMeta}>
+              {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+            </Text>
+          </View>
+          <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+        </TouchableOpacity>
+        <View style={styles.expenseReasonList}>
+          {[
+            { key: 'truly_one_off', label: 'One-off' },
+            { key: 'expected', label: 'Expected' },
+            { key: 'becoming_normal', label: 'Recurring' },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.key}
+              style={[styles.expenseReasonChip, selectedReview === option.key && styles.reasonChipActive]}
+              onPress={() => submitUnusualReview(option.key, expense)}
+              accessibilityLabel={`Mark ${expense.merchant} as ${option.label}`}
+            >
+              <Text style={[styles.expenseReasonChipText, selectedReview === option.key && styles.reasonChipTextActive]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
   }
 
   async function submitCategoryReview(review) {
@@ -1001,23 +1059,7 @@ export default function TrendDetailScreen() {
                           Probably safe to mentally discount: these look more like isolated one-offs than a real shift in your normal month shape.
                         </Text>
                         <View style={styles.reviewList}>
-                          {unusualDecisionBuckets.likelyDiscount.map((expense) => (
-                            <TouchableOpacity
-                              key={`discount:${expense.id || `${expense.merchant}:${expense.amount}`}`}
-                              style={styles.reviewRow}
-                              activeOpacity={expense.id ? 0.82 : 1}
-                              disabled={!expense.id}
-                              onPress={() => handleOpenExpense(expense)}
-                            >
-                              <View style={styles.driverText}>
-                                <Text style={styles.driverName}>{expense.merchant}</Text>
-                                <Text style={styles.driverMeta}>
-                                  {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
-                                </Text>
-                              </View>
-                              <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                            </TouchableOpacity>
-                          ))}
+                          {unusualDecisionBuckets.likelyDiscount.map((expense) => renderUnusualExpenseReview(expense, 'discount'))}
                         </View>
                       </>
                     ) : null}
@@ -1027,49 +1069,13 @@ export default function TrendDetailScreen() {
                           Worth watching if it repeats: these are unusual, but they may be closer to a real spending-pattern shift if they show up again.
                         </Text>
                         <View style={styles.reviewList}>
-                          {unusualDecisionBuckets.worthWatching.map((expense) => (
-                            <TouchableOpacity
-                              key={`watch:${expense.id || `${expense.merchant}:${expense.amount}`}`}
-                              style={styles.reviewRow}
-                              activeOpacity={expense.id ? 0.82 : 1}
-                              disabled={!expense.id}
-                              onPress={() => handleOpenExpense(expense)}
-                            >
-                              <View style={styles.driverText}>
-                                <Text style={styles.driverName}>{expense.merchant}</Text>
-                                <Text style={styles.driverMeta}>
-                                  {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
-                                </Text>
-                              </View>
-                              <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                            </TouchableOpacity>
-                          ))}
+                          {unusualDecisionBuckets.worthWatching.map((expense) => renderUnusualExpenseReview(expense, 'watch'))}
                         </View>
                       </>
                     ) : null}
                   </>
                 ) : null}
-                {unusualExpenses.length ? (
-                  <View style={styles.reviewList}>
-                    {unusualExpenses.map((expense) => (
-                      <TouchableOpacity
-                        key={expense.id || `${expense.merchant}:${expense.amount}`}
-                        style={styles.reviewRow}
-                        activeOpacity={expense.id ? 0.82 : 1}
-                        disabled={!expense.id}
-                        onPress={() => handleOpenExpense(expense)}
-                      >
-                        <View style={styles.driverText}>
-                          <Text style={styles.driverName}>{expense.merchant}</Text>
-                          <Text style={styles.driverMeta}>
-                            {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
-                          </Text>
-                        </View>
-                        <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : oneOffMerchants.length ? (
+                {!unusualExpenses.length && oneOffMerchants.length ? (
                   <View style={styles.reviewList}>
                     {oneOffMerchants.map((merchant) => (
                       <View key={merchant.merchant_key} style={styles.reviewRow}>
@@ -1082,24 +1088,26 @@ export default function TrendDetailScreen() {
                     ))}
                   </View>
                 ) : null}
-                <View style={styles.reasonList}>
-                  {[
-                    { key: 'truly_one_off', label: 'Truly one-off' },
-                    { key: 'expected', label: 'Expected spend' },
-                    { key: 'becoming_normal', label: 'Becoming normal' },
-                  ].map((option) => (
-                    <TouchableOpacity
-                      key={option.key}
-                      style={[styles.reasonChip, unusualReviewStatus === option.key && styles.reasonChipActive]}
-                      onPress={() => submitUnusualReview(option.key)}
-                    >
-                      <Text style={[styles.reasonChipText, unusualReviewStatus === option.key && styles.reasonChipTextActive]}>
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                {unusualReviewStatus ? (
+                {!unusualExpenses.length && oneOffMerchants.length ? (
+                  <View style={styles.reasonList}>
+                    {[
+                      { key: 'truly_one_off', label: 'Truly one-off' },
+                      { key: 'expected', label: 'Expected spend' },
+                      { key: 'becoming_normal', label: 'Becoming normal' },
+                    ].map((option) => (
+                      <TouchableOpacity
+                        key={option.key}
+                        style={[styles.reasonChip, unusualReviewStatus === option.key && styles.reasonChipActive]}
+                        onPress={() => submitUnusualReview(option.key)}
+                      >
+                        <Text style={[styles.reasonChipText, unusualReviewStatus === option.key && styles.reasonChipTextActive]}>
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                {unusualReviewStatus || Object.keys(unusualExpenseReviews).length ? (
                   <Text style={styles.feedbackNote}>Saved. Adlo can use this to get better at spotting what should and should not shape future guidance.</Text>
                 ) : null}
               </View>
@@ -1617,6 +1625,7 @@ const styles = StyleSheet.create({
   oneOffList: { gap: 6, marginTop: 4 },
   oneOffRow: { fontSize: 14, color: colors.text },
   reviewList: { gap: 10 },
+  expenseReviewGroup: { gap: 8 },
   reviewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1625,6 +1634,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
+  },
+  expenseReasonList: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: 4,
+  },
+  expenseReasonChip: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfacePressed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  expenseReasonChipText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
   emptyText: { fontSize: 13, color: colors.textDisabled },
   feedbackRow: { flexDirection: 'row', gap: 10 },

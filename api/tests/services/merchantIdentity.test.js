@@ -6,6 +6,7 @@ const {
   canonicalizeMerchantForHousehold,
   cleanMerchantDisplayName,
   mergeMerchantRows,
+  resolveExpenseInsightLabel,
 } = require('../../src/services/merchantIdentity');
 
 describe('merchantIdentity', () => {
@@ -44,5 +45,30 @@ describe('merchantIdentity', () => {
     ])).toEqual([
       expect.objectContaining({ merchant_key: 'bobbyboybakeshop', spent: 20 }),
     ]);
+  });
+
+  it('uses peer-payment recipients instead of polluted parsed merchant labels for insights', () => {
+    expect(resolveExpenseInsightLabel({
+      merchant: 'Coros Apex 4 Statisfy',
+      source: 'email',
+      notes: 'Payment sent to Jennifer A Stoops',
+    })).toMatchObject({
+      merchant_name: 'Jennifer A Stoops',
+      confidence: 'high',
+      reason: 'peer_payment_recipient',
+      raw_merchant: 'Coros Apex 4 Statisfy',
+    });
+  });
+
+  it('uses a manual description when the expense has no merchant', () => {
+    expect(resolveExpenseInsightLabel({
+      merchant: null,
+      source: 'manual',
+      description: 'wedding present',
+    })).toMatchObject({
+      merchant_name: 'Wedding Present',
+      confidence: 'medium',
+      reason: 'description_fallback',
+    });
   });
 });

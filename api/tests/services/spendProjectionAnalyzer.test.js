@@ -131,6 +131,26 @@ describe('spendProjectionAnalyzer', () => {
     expect(split.top_unusual_expenses[0].merchant).toBe('Airline');
   });
 
+  it('uses useful transaction context for unusual-expense labels', () => {
+    const split = splitNormalVsUnusualSpend(
+      [
+        { id: 'gift', merchant: null, description: 'wedding present', amount: 400, date: '2026-04-03', category_key: 'household', category_name: 'Household' },
+        { id: 'paypal', merchant: 'Coros Apex 4 Statisfy', notes: 'Payment sent to Jennifer A Stoops', amount: 390, date: '2026-04-04', category_key: 'shopping', category_name: 'Shopping' },
+      ],
+      {
+        historicalExpenses: [
+          { merchant: 'Grocer', amount: 40, date: '2026-03-01', category_key: 'groceries', category_name: 'Groceries' },
+          { merchant: 'Cafe', amount: 18, date: '2026-03-02', category_key: 'dining', category_name: 'Dining' },
+        ],
+      }
+    );
+
+    expect(split.top_unusual_expenses).toEqual([
+      expect.objectContaining({ id: 'gift', merchant: 'Wedding Present', evidence_confidence: 'medium' }),
+      expect.objectContaining({ id: 'paypal', merchant: 'Jennifer A Stoops', evidence_confidence: 'high' }),
+    ]);
+  });
+
   it('projects baseline and adjusted spend separately', () => {
     const bounds = periodBounds('2026-04', 1);
     const projection = projectOverallSpend({

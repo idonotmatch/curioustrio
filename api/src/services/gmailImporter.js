@@ -32,6 +32,7 @@ const { requestProjectionRefresh } = require('./projectionRefreshService');
 const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { pushNotificationsEnabled } = require('./pushPreferences');
 const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
+const { extractPeerPaymentRecipient } = require('./merchantIdentity');
 const detectDuplicates = require('./duplicateDetector');
 
 function guessMerchant(subject = '', fromAddress = '') {
@@ -67,6 +68,18 @@ function findLikelyAmount(...parts) {
   const allMoney = [...body.matchAll(/\$\s?(-?\d+(?:\.\d{2})?)/g)];
   if (allMoney.length > 0) return Number(allMoney[allMoney.length - 1][1]);
   return null;
+}
+
+function normalizePeerPaymentExpense(parsed = {}) {
+  const recipient = extractPeerPaymentRecipient(
+    [parsed?.notes, parsed?.description].filter(Boolean).join(' ')
+  );
+  if (!recipient) return parsed;
+  return {
+    ...parsed,
+    merchant: recipient,
+    items: null,
+  };
 }
 
 function hasValidParsedAmount(parsed) {
@@ -381,6 +394,7 @@ async function processMessageImport(user, msgId, {
       importedAsPendingReview = true;
     }
 
+    parsed = normalizePeerPaymentExpense(parsed);
     parsed.date = clampExpenseDate(parsed.date, maxExpenseDate);
     if (!hasValidParsedAmount(parsed)) {
       const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';
@@ -801,6 +815,7 @@ module.exports = {
   retryFailedImportsForUser,
   reprocessImportLog,
   findLikelyAmount,
+  normalizePeerPaymentExpense,
   normalizeParsedAmountAgainstDeterministicTotal,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,

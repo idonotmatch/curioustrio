@@ -35,6 +35,11 @@ describe('parseGroupKeyFromInsight', () => {
     expect(parseGroupKeyFromInsight({
       insight_id: 'buy_soon_better_price:comparable:diapers:Target:2026-04-05',
     })).toBe('comparable:diapers');
+
+    expect(parseGroupKeyFromInsight({
+      insight_id: 'recurring_restock_window:product:abc:2026-04:consolidated',
+      metadata: { type: 'recurring_restock_window' },
+    })).toBe('product:abc');
   });
 });
 
@@ -54,6 +59,15 @@ describe('parseProjectionContextFromInsight', () => {
       scope: 'personal',
       month: '2026-04',
       categoryKey: null,
+    });
+
+    expect(parseProjectionContextFromInsight({
+      insight_id: 'projected_category_under:household:2026-04:30fe2ad2-e0d8-4e1b-9c85-117a2cfb8852:consolidated',
+      metadata: { type: 'projected_category_under_baseline' },
+    })).toEqual({
+      scope: 'household',
+      month: '2026-04',
+      categoryKey: '30fe2ad2-e0d8-4e1b-9c85-117a2cfb8852',
     });
   });
 });

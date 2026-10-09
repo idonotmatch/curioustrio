@@ -50,6 +50,24 @@ const {
   orchestrateInsightPortfolio,
 } = require('./insightSelectionService');
 
+function anomalyEvidenceConfidence(expenses = [], historicalPeriodCount = 0) {
+  const evidence = (expenses || []).filter(Boolean);
+  if (!evidence.length) return 'low';
+  if (evidence.some((expense) => !expense.id || expense.evidence_confidence === 'low')) return 'low';
+  if (historicalPeriodCount >= 5 && evidence.every((expense) => expense.evidence_confidence === 'high')) return 'high';
+  return 'medium';
+}
+
+function merchantVarianceEvidenceConfidence(merchants = [], historicalPeriodCount = 0) {
+  const named = (merchants || []).filter((merchant) => {
+    const key = `${merchant?.merchant_key || ''}`.trim().toLowerCase();
+    const name = `${merchant?.merchant_name || ''}`.trim().toLowerCase();
+    return key && key !== 'unknown' && name && name !== 'unknown';
+  });
+  if (!named.length) return 'low';
+  return historicalPeriodCount >= 5 ? 'high' : 'medium';
+}
+
 function severityForSignal(signal, deltaPercent) {
   const pct = Math.abs(Number(deltaPercent || 0));
   if (signal === 'price_spike' && pct >= 20) return 'high';
@@ -843,6 +861,8 @@ function buildTrendInsights(trend, scope) {
         one_off_delta_amount: oneOffDeltaAmount,
         recurring_delta_amount: recurringDeltaAmount,
         top_one_off_merchants: topOneOffMerchants,
+        evidence_confidence: merchantVarianceEvidenceConfidence(topOneOffMerchants, paceHistoryCount),
+        historical_period_count: paceHistoryCount,
         continuity_key: `one_off_variance:${scopeLabel}:${trend.month}`,
       },
       actions: [],
@@ -1013,9 +1033,12 @@ function buildProjectionInsights(projection, scope) {
         unusual_spend_to_date: unusualSpendToDate,
         unusual_spend_share: unusualSpendShare,
         top_unusual_expense: topExpense,
+        top_unusual_expenses: overall.top_unusual_expenses.slice(0, 3),
         adjusted_projected_total: adjustedProjectedTotal,
         baseline_projected_total: Number(overall.baseline_projected_total || 0),
         confidence: overall.confidence,
+        evidence_confidence: anomalyEvidenceConfidence(overall.top_unusual_expenses, historicalPeriodCount),
+        historical_period_count: historicalPeriodCount,
         continuity_key: `projection_one_off:${scopeLabel}:${projection.month}`,
       },
       actions: [],
@@ -1178,8 +1201,10 @@ function dedupeInsights(insights) {
   const picked = new Map();
   for (const insight of insights) {
     const key = (() => {
+      const scope = insight.metadata?.scope || 'global';
       if (insight.type === 'spend_pace_ahead' || insight.type === 'spend_pace_behind') {
         return [
+          scope,
           insight.type,
           insight.metadata?.month,
           insight.metadata?.delta_percent,
@@ -1189,6 +1214,7 @@ function dedupeInsights(insights) {
       }
       if (insight.type === 'budget_too_low' || insight.type === 'budget_too_high') {
         return [
+          scope,
           insight.type,
           insight.metadata?.month,
           insight.metadata?.budget_limit,
@@ -1198,6 +1224,7 @@ function dedupeInsights(insights) {
       }
       if (insight.type === 'top_category_driver') {
         return [
+          scope,
           insight.type,
           insight.metadata?.month,
           insight.metadata?.category_key,
@@ -1206,6 +1233,7 @@ function dedupeInsights(insights) {
       }
       if (insight.type === 'one_offs_driving_variance') {
         return [
+          scope,
           insight.type,
           insight.metadata?.month,
           insight.metadata?.one_off_delta_amount,
@@ -1214,12 +1242,13 @@ function dedupeInsights(insights) {
       }
       if (insight.type === 'recurring_repurchase_due') {
         return [
+          scope,
           insight.type,
           insight.metadata?.group_key,
           insight.metadata?.next_expected_date,
         ].join(':');
       }
-      return `${insight.title}:${insight.body}`;
+      return `${scope}:${insight.title}:${insight.body}`;
     })();
     const existing = picked.get(key);
     if (!existing) {
@@ -2180,6 +2209,7 @@ module.exports = {
   scopeHierarchyAdjustment,
   promoteExplorationCandidate,
   pruneGeneratedInsights,
+  dedupeInsights,
   bundleRepurchaseCandidates,
   insightDestinationAdjustment,
   portfolioRole,

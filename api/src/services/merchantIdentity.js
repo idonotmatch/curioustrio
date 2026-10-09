@@ -52,6 +52,71 @@ function cleanMerchantDisplayName(value) {
   return titleCaseMerchant(withoutTail).slice(0, 160);
 }
 
+function extractPeerPaymentRecipient(value) {
+  const text = collapseWhitespace(value);
+  if (!text) return null;
+  const match = text.match(/\b(?:payment sent to|paid to|sent money to)\s+(.+?)(?:[.;|]|$)/i);
+  if (!match?.[1]) return null;
+  return cleanMerchantDisplayName(match[1]);
+}
+
+function resolveExpenseInsightLabel(expense = {}) {
+  const rawMerchant = collapseWhitespace(expense.merchant) || null;
+  const peerPaymentRecipient = extractPeerPaymentRecipient(
+    [expense.notes, expense.description].filter(Boolean).join(' ')
+  );
+  if (peerPaymentRecipient) {
+    return {
+      merchant_name: peerPaymentRecipient,
+      merchant_key: canonicalMerchantKey(peerPaymentRecipient) || 'peerpayment',
+      confidence: 'high',
+      reason: 'peer_payment_recipient',
+      raw_merchant: rawMerchant,
+    };
+  }
+
+  const merchant = cleanMerchantDisplayName(rawMerchant);
+  if (merchant && canonicalMerchantKey(merchant) !== 'unknown') {
+    return {
+      merchant_name: merchant,
+      merchant_key: canonicalMerchantKey(merchant),
+      confidence: 'high',
+      reason: merchant === rawMerchant ? 'merchant' : 'normalized_merchant',
+      raw_merchant: rawMerchant,
+    };
+  }
+
+  const description = cleanMerchantDisplayName(expense.description);
+  if (description) {
+    return {
+      merchant_name: description,
+      merchant_key: `description:${canonicalMerchantKey(description) || 'purchase'}`,
+      confidence: 'medium',
+      reason: 'description_fallback',
+      raw_merchant: rawMerchant,
+    };
+  }
+
+  const place = cleanMerchantDisplayName(expense.place_name);
+  if (place) {
+    return {
+      merchant_name: place,
+      merchant_key: `place:${canonicalMerchantKey(place) || 'purchase'}`,
+      confidence: 'medium',
+      reason: 'place_fallback',
+      raw_merchant: rawMerchant,
+    };
+  }
+
+  return {
+    merchant_name: 'Unlabeled purchase',
+    merchant_key: 'unknown',
+    confidence: 'low',
+    reason: 'missing_identity',
+    raw_merchant: rawMerchant,
+  };
+}
+
 function canonicalMerchantKey(value) {
   const cleaned = cleanMerchantDisplayName(value);
   if (!cleaned) return '';
@@ -160,5 +225,7 @@ module.exports = {
   canonicalMerchantKey,
   canonicalizeMerchantForHousehold,
   cleanMerchantDisplayName,
+  extractPeerPaymentRecipient,
   mergeMerchantRows,
+  resolveExpenseInsightLabel,
 };

@@ -57,11 +57,15 @@ function maturityRankForInsight(insight) {
 }
 
 function insightContinuityKey(insight) {
-  if (insight?.metadata?.continuity_key) return insight.metadata.continuity_key;
-
   const type = `${insight?.type || ''}`.trim();
   const scope = insight?.metadata?.scope || 'global';
   const month = insight?.metadata?.month || 'current';
+
+  if (isAnomalyInsight(insight)) {
+    return `unusual_spend:${scope}:${month}`;
+  }
+
+  if (insight?.metadata?.continuity_key) return insight.metadata.continuity_key;
 
   if (
     type === 'early_top_category'
@@ -118,7 +122,97 @@ function isScopeConsolidatableInsight(insight) {
     'projected_category_under_baseline',
     'projected_month_end_over_budget',
     'projected_month_end_under_budget',
+    'one_offs_driving_variance',
+    'one_off_expense_skewing_projection',
   ].includes(type);
+}
+
+function isAnomalyInsight(insight) {
+  const type = `${insight?.type || ''}`.trim();
+  return type === 'one_offs_driving_variance' || type === 'one_off_expense_skewing_projection';
+}
+
+function evidenceConfidenceRank(insight) {
+  const confidence = `${insight?.metadata?.evidence_confidence || ''}`.trim();
+  if (confidence === 'high') return 3;
+  if (confidence === 'medium') return 2;
+  if (confidence === 'low') return 1;
+  return 0;
+}
+
+function uniqueEvidenceRows(insights = []) {
+  const rows = insights.flatMap((insight) => {
+    const metadata = insight?.metadata || {};
+    const values = Array.isArray(metadata.top_unusual_expenses) ? metadata.top_unusual_expenses : [];
+    return metadata.top_unusual_expense ? [metadata.top_unusual_expense, ...values] : values;
+  });
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = row?.id || `${row?.merchant || ''}:${row?.amount || ''}:${row?.date || ''}`;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 3);
+}
+
+function mergeAnomalyMetadata(primary, companions = []) {
+  const all = [primary, ...companions];
+  const evidence = uniqueEvidenceRows(all);
+  const merchantRows = all.flatMap((insight) => insight?.metadata?.top_one_off_merchants || []);
+  const merchantSeen = new Set();
+  const topMerchants = merchantRows.filter((merchant) => {
+    const key = merchant?.merchant_key || merchant?.merchant_name;
+    if (!key || merchantSeen.has(key)) return false;
+    merchantSeen.add(key);
+    return true;
+  }).slice(0, 3);
+
+  return {
+    ...(primary?.metadata || {}),
+    ...(evidence.length ? {
+      top_unusual_expense: evidence[0],
+      top_unusual_expenses: evidence,
+    } : {}),
+    ...(topMerchants.length ? { top_one_off_merchants: topMerchants } : {}),
+  };
+}
+
+function anomalySort(a, b) {
+  return evidenceConfidenceRank(b) - evidenceConfidenceRank(a)
+    || Number(b?.type === 'one_off_expense_skewing_projection') - Number(a?.type === 'one_off_expense_skewing_projection')
+    || severityRank(b?.severity) - severityRank(a?.severity)
+    || new Date(b?.created_at || 0) - new Date(a?.created_at || 0);
+}
+
+function resolveAnomalyCompetition(insights = []) {
+  const grouped = new Map();
+  const passthrough = [];
+
+  for (const insight of insights || []) {
+    if (!isAnomalyInsight(insight)) {
+      passthrough.push(insight);
+      continue;
+    }
+    const key = insightContinuityKey(insight);
+    const group = grouped.get(key) || [];
+    group.push(insight);
+    grouped.set(key, group);
+  }
+
+  const resolved = [];
+  for (const group of grouped.values()) {
+    const sorted = [...group].sort(anomalySort);
+    const primary = sorted[0];
+    resolved.push({
+      ...primary,
+      metadata: {
+        ...mergeAnomalyMetadata(primary, sorted.slice(1)),
+        related_insight_ids: sorted.slice(1).map((insight) => insight.id),
+      },
+    });
+  }
+
+  return [...passthrough, ...resolved];
 }
 
 function buildScopeLineageMetadata(metadata = {}) {
@@ -224,7 +318,8 @@ function consolidateScopedInsightGroup(group = []) {
 
   const sorted = [...group].sort((a, b) => {
     const scopeRank = (insight) => (insight?.metadata?.scope === 'personal' ? 1 : 0);
-    return scopeRank(b) - scopeRank(a)
+    return evidenceConfidenceRank(b) - evidenceConfidenceRank(a)
+      || scopeRank(b) - scopeRank(a)
       || maturityRankForInsight(b) - maturityRankForInsight(a)
       || severityRank(b.severity) - severityRank(a.severity)
       || insightDestinationAdjustment(b) - insightDestinationAdjustment(a)
@@ -248,7 +343,13 @@ function consolidateScopedInsightGroup(group = []) {
   const consolidatedScopes = [];
   if (hasPersonal) consolidatedScopes.push('personal');
   if (hasHousehold) consolidatedScopes.push('household');
-  const relatedInsightIds = companions.map((insight) => insight.id);
+  const relatedInsightIds = [...new Set([
+    ...(primary.metadata?.related_insight_ids || []),
+    ...companions.flatMap((insight) => [insight.id, ...(insight.metadata?.related_insight_ids || [])]),
+  ].filter(Boolean))];
+  const mergedAnomalyMetadata = isAnomalyInsight(primary)
+    ? mergeAnomalyMetadata(primary, companions)
+    : primary.metadata;
 
   return annotateInsightScopeLineage({
     ...primary,
@@ -256,7 +357,7 @@ function consolidateScopedInsightGroup(group = []) {
     title,
     body,
     metadata: {
-      ...primary.metadata,
+      ...mergedAnomalyMetadata,
       consolidated_scopes: consolidatedScopes,
       consolidated_from: [primary, ...companions].map((insight) => ({
         id: insight.id,
@@ -382,7 +483,9 @@ function resolveMaturityCompetition(insights) {
 }
 
 function resolveInsightCompetition(insights) {
-  return resolveScopeOverlapCompetition(resolveMaturityCompetition(resolveOpportunityCompetition(insights)));
+  return resolveScopeOverlapCompetition(
+    resolveAnomalyCompetition(resolveMaturityCompetition(resolveOpportunityCompetition(insights)))
+  );
 }
 
 module.exports = {
@@ -394,7 +497,10 @@ module.exports = {
   insightContinuityKey,
   scopeAgnosticContinuityKey,
   isScopeConsolidatableInsight,
+  isAnomalyInsight,
+  evidenceConfidenceRank,
   consolidateScopedInsightGroup,
+  resolveAnomalyCompetition,
   resolveScopeOverlapCompetition,
   resolveOpportunityCompetition,
   resolveMaturityCompetition,

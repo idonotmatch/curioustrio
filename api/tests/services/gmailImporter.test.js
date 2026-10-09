@@ -1,5 +1,6 @@
 const {
   findLikelyAmount,
+  normalizePeerPaymentExpense,
   normalizeParsedAmountAgainstDeterministicTotal,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
@@ -23,6 +24,22 @@ describe('normalizeParsedAmountAgainstDeterministicTotal', () => {
       'Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84',
       { disposition: 'expense' }
     )).toEqual(expect.objectContaining({ amount: 19.84 }));
+  });
+});
+
+describe('normalizePeerPaymentExpense', () => {
+  it('uses the recipient as merchant and discards non-product payment-email rows', () => {
+    expect(normalizePeerPaymentExpense({
+      merchant: 'Coros Apex 4 Statisfy',
+      notes: 'Payment sent to Jennifer A Stoops',
+      items: [
+        { description: 'Hello, Dang Nguyen', amount: 390 },
+        { description: 'Paid with: AMEX x-1005', amount: 390 },
+      ],
+    })).toEqual(expect.objectContaining({
+      merchant: 'Jennifer A Stoops',
+      items: null,
+    }));
   });
 });
 

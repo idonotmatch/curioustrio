@@ -91,7 +91,7 @@ function summarizeOutcomeWindows(events = [], now = new Date()) {
 function parseGroupKeyFromInsight(event = {}) {
   const insightType = `${event?.metadata?.insight_type || event?.metadata?.type || ''}`.trim()
     || `${event?.insight_id || ''}`.trim().split(':')[0];
-  const insightId = `${event?.insight_id || ''}`.trim();
+  const insightId = `${event?.insight_id || ''}`.trim().replace(/:consolidated$/, '');
   if (!insightId) return '';
 
   if (insightType === 'recurring_restock_window') {
@@ -106,7 +106,7 @@ function parseGroupKeyFromInsight(event = {}) {
 }
 
 function parseProjectionContextFromInsight(event = {}) {
-  const insightId = `${event?.insight_id || ''}`.trim();
+  const insightId = `${event?.insight_id || ''}`.trim().replace(/:consolidated$/, '');
   if (!insightId) return null;
 
   if (

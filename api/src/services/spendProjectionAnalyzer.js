@@ -4,6 +4,7 @@ const Household = require('../models/household');
 const { loadTimingPreferences, plannerRecommendationNote } = require('./planningProfileService');
 const { summarizeCategoryProvenance } = require('./categoryProvenance');
 const { householdExpenseVisibilitySql } = require('./expenseAccessPolicy');
+const { resolveExpenseInsightLabel } = require('./merchantIdentity');
 
 function isMissingExcludeFromBudgetError(err) {
   return err?.code === '42703' && /exclude_from_budget/i.test(`${err?.message || ''}`);
@@ -263,16 +264,23 @@ function getTopUnusualExpenses(unusualExpenses, limit = 3) {
   return [...unusualExpenses]
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     .slice(0, limit)
-    .map((expense) => ({
-      id: expense.id || null,
-      merchant: expense.merchant,
-      amount: Number(expense.amount || 0),
-      category_key: expense.category_key || 'uncategorized',
-      category_name: expense.category_name || 'Uncategorized',
-      norm_status: expense.norm_status,
-      norm_reason: expense.norm_reason,
-      date: expense.date,
-    }));
+    .map((expense) => {
+      const identity = resolveExpenseInsightLabel(expense);
+      return {
+        id: expense.id || null,
+        merchant: identity.merchant_name,
+        merchant_key: identity.merchant_key,
+        raw_merchant: identity.raw_merchant,
+        evidence_confidence: identity.confidence,
+        identity_reason: identity.reason,
+        amount: Number(expense.amount || 0),
+        category_key: expense.category_key || 'uncategorized',
+        category_name: expense.category_name || 'Uncategorized',
+        norm_status: expense.norm_status,
+        norm_reason: expense.norm_reason,
+        date: expense.date,
+      };
+    });
 }
 
 function splitNormalVsUnusualSpend(currentExpenses, context = {}) {
@@ -1216,6 +1224,11 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
       `SELECT
          e.id,
          e.merchant,
+         e.description,
+         e.notes,
+         e.place_name,
+         e.source,
+         e.review_source,
          e.amount,
          e.date,
          e.category_source,
@@ -1235,6 +1248,11 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
       `SELECT
          e.id,
          e.merchant,
+         e.description,
+         e.notes,
+         e.place_name,
+         e.source,
+         e.review_source,
          e.amount,
          e.date,
          NULL::text AS category_source,
@@ -1257,6 +1275,11 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
     `SELECT
        e.id,
        e.merchant,
+       e.description,
+       e.notes,
+       e.place_name,
+       e.source,
+       e.review_source,
        e.amount,
        e.date,
        e.category_source,
@@ -1275,6 +1298,11 @@ async function listExpensesInPeriod({ scope, householdId, userId, from, toExclus
     `SELECT
        e.id,
        e.merchant,
+       e.description,
+       e.notes,
+       e.place_name,
+       e.source,
+       e.review_source,
        e.amount,
        e.date,
        NULL::text AS category_source,
