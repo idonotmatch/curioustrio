@@ -167,6 +167,7 @@ describe('itemNormalizer', () => {
     const normalized = normalizeItemMetadata({ description: 'Local sales tax', amount: 1.42 });
 
     expect(isInsightEligibleItemIdentity({ description: 'Local sales tax' })).toBe(false);
+    expect(isInsightEligibleItemIdentity({ description: 'Back of House Support Charge (6%)' })).toBe(false);
     expect(normalized.normalized_name).toBeNull();
     expect(normalized.comparable_key).toBeNull();
   });

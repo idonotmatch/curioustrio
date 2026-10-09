@@ -1,6 +1,6 @@
 const ITEM_TYPE_PATTERNS = {
   discount: /^(discount|coupon|promo(?:tion)?|savings|reward|credit|markdown|sale discount)/i,
-  fee: /^(?:(?:local|state|county|city|municipal|regional)\s+)?(?:(?:sales|lodging|occupancy|hotel|room)\s+)?(?:tax|hst|gst|pst|vat)\b|^(?:tip|gratuity|service charge|service fee|delivery fee|shipping|handling|bag fee|surcharge|platform fee|processing fee)\b/i,
+  fee: /^(?:(?:local|state|county|city|municipal|regional)\s+)?(?:(?:sales|lodging|occupancy|hotel|room)\s+)?(?:tax|hst|gst|pst|vat)\b|^(?:tip|gratuity|service charge|service fee|(?:back of house\s+)?support charge|delivery fee|shipping|handling|bag fee|surcharge|platform fee|processing fee)\b/i,
   summary: /^(subtotal|total|order total|amount paid|amount charged|grand total)/i,
 };
 
