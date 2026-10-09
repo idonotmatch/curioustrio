@@ -45,6 +45,21 @@ const REDACTED_IDENTITY_PATTERN = /(?:\[|#\[)?\s*redacted(?:[-_\s]+)(?:address|e
 const DISPLAY_LOWERCASE_WORDS = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']);
 const DISPLAY_UPPERCASE_WORDS = new Set(['BBQ', 'BLT', 'IPA', 'EVOO', 'GF', 'PBJ']);
 const DISPLAY_UNIT_WORDS = new Set(['CT', 'EA', 'FL', 'G', 'KG', 'L', 'LB', 'ML', 'OZ', 'PK']);
+const ITEM_ABBREVIATIONS = new Map([
+  ['strawbry', 'strawberry'],
+  ['strawbrry', 'strawberry'],
+]);
+
+function expandItemAbbreviations(value = '') {
+  return `${value || ''}`.split(/(\s+)/).map((part, index, parts) => {
+    if (/^\s+$/.test(part)) return part;
+    const token = part.toLowerCase().replace(/[^a-z]/g, '');
+    const wordIndex = parts.slice(0, index).filter((entry) => entry && !/^\s+$/.test(entry)).length;
+    if (token === 'org' && wordIndex === 0) return part.replace(/org/i, 'organic');
+    const expanded = ITEM_ABBREVIATIONS.get(token);
+    return expanded ? part.replace(/[a-z]+/i, expanded) : part;
+  }).join('');
+}
 
 function cleanItemDescription(value = '') {
   let text = `${value || ''}`.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -62,7 +77,7 @@ function cleanItemDescription(value = '') {
 }
 
 function normalizeItemDisplayName(value = '') {
-  const text = cleanItemDescription(value);
+  const text = expandItemAbbreviations(cleanItemDescription(value));
   if (!text) return '';
 
   const letters = [...text].filter((character) => /[a-z]/i.test(character));
@@ -213,7 +228,7 @@ function singularizeToken(token = '') {
 }
 
 function normalizeComparableDescription(description = '', brand = '') {
-  let text = normalizeText(cleanItemDescription(description));
+  let text = normalizeText(expandItemAbbreviations(cleanItemDescription(description)));
   if (!text) return '';
 
   text = text

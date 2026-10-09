@@ -1,6 +1,7 @@
 const db = require('../db');
 
-const INSIGHT_LOGIC_VERSION = 'item-evidence-v4';
+const INSIGHT_LOGIC_VERSION = 'item-intelligence-v5';
+const SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 function isMissingTable(err) {
   return err?.code === '42P01' || /insight_portfolio_snapshots/i.test(`${err?.message || ''}`);
@@ -29,7 +30,22 @@ async function sourceFingerprint(userId) {
      SELECT jsonb_build_object(
        'logic_version', '${INSIGHT_LOGIC_VERSION}',
        'expenses', (
-         SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(e.created_at), 'epoch'::timestamptz), COALESCE(SUM(e.amount), 0))
+         SELECT jsonb_build_array(
+           COUNT(*),
+           COALESCE(MAX(e.created_at), 'epoch'::timestamptz),
+           COALESCE(SUM(e.amount), 0),
+           COALESCE(SUM(hashtextextended(CONCAT_WS('|',
+             e.id::text,
+             e.merchant,
+             e.amount::text,
+             e.date::text,
+             COALESCE(e.category_id::text, ''),
+             e.source,
+             e.status,
+             COALESCE(e.is_private, FALSE)::text,
+             COALESCE(e.exclude_from_budget, FALSE)::text
+           ), 0)::numeric), 0)
+         )
          FROM expenses e, user_context c
          WHERE e.user_id = $1
             OR (c.household_id IS NOT NULL
@@ -37,7 +53,21 @@ async function sourceFingerprint(userId) {
                 AND COALESCE(e.is_private, FALSE) = FALSE)
        ),
        'items', (
-         SELECT jsonb_build_array(COUNT(*), COALESCE(MAX(i.created_at), 'epoch'::timestamptz))
+         SELECT jsonb_build_array(
+           COUNT(*),
+           COALESCE(MAX(i.created_at), 'epoch'::timestamptz),
+           COALESCE(SUM(hashtextextended(CONCAT_WS('|',
+             i.id::text,
+             i.description,
+             COALESCE(i.amount::text, ''),
+             COALESCE(i.product_id::text, ''),
+             COALESCE(i.comparable_key, ''),
+             COALESCE(i.product_match_confidence, ''),
+             COALESCE(i.product_match_reason, ''),
+             COALESCE(i.source_type, ''),
+             COALESCE(i.extraction_confidence, '')
+           ), 0)::numeric), 0)
+         )
          FROM expense_items i
          JOIN expenses e ON e.id = i.expense_id
          CROSS JOIN user_context c
@@ -71,8 +101,20 @@ async function sourceFingerprint(userId) {
   return result.rows[0]?.fingerprint || {};
 }
 
-function matchesFingerprint(snapshot, fingerprint) {
+function matchesFingerprint(snapshot, fingerprint, {
+  now = Date.now(),
+  maxAgeMs = SNAPSHOT_MAX_AGE_MS,
+} = {}) {
   if (!snapshot?.source_fingerprint || !fingerprint) return false;
+  const generatedAt = new Date(snapshot.generated_at).getTime();
+  if (!Number.isFinite(generatedAt) || now - generatedAt > maxAgeMs) return false;
+  const containsExpiredInsight = (Array.isArray(snapshot.insights) ? snapshot.insights : [])
+    .some((insight) => {
+      if (!insight?.expires_at) return false;
+      const expiresAt = new Date(insight.expires_at).getTime();
+      return Number.isFinite(expiresAt) && expiresAt <= now;
+    });
+  if (containsExpiredInsight) return false;
   return JSON.stringify(snapshot.source_fingerprint) === JSON.stringify(fingerprint);
 }
 
@@ -112,6 +154,7 @@ async function invalidate(userId) {
 
 module.exports = {
   INSIGHT_LOGIC_VERSION,
+  SNAPSHOT_MAX_AGE_MS,
   findByUser,
   invalidate,
   matchesFingerprint,

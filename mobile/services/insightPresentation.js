@@ -470,10 +470,18 @@ export function getInsightPrimaryMetric(insight, context = {}) {
     switch (type) {
       case 'item_staple_merchant_opportunity':
       case 'item_merchant_variance':
+        if (Number(metadata.delta_amount || 0) >= 1) {
+          return metric(formatTypicalCost(metadata.delta_amount), 'less per buy');
+        }
+        return metric(formatPercentShort(metadata.delta_percent), 'price difference');
       case 'recurring_price_spike':
       case 'item_recent_price_jump':
-      case 'buy_soon_better_price':
         return metric(formatPercentShort(metadata.delta_percent ?? metadata.discount_percent), 'price difference');
+      case 'buy_soon_better_price':
+        if (Number(metadata.savings_amount || 0) >= 1) {
+          return metric(formatTypicalCost(metadata.savings_amount), 'potential savings');
+        }
+        return metric(formatPercentShort(metadata.discount_percent), 'price difference');
       case 'item_repurchase_accelerating':
         if (Number.isFinite(Number(metadata.latest_gap_days))) {
           return metric(`${Number(metadata.latest_gap_days)}d`, 'latest gap');
@@ -612,6 +620,8 @@ export function getInsightSupportRows(insight, context = {}) {
       case 'item_staple_merchant_opportunity':
       case 'item_merchant_variance':
         addRow(rows, 'Best merchant', metadata.cheaper_merchant);
+        addRow(rows, 'Estimated savings', formatTypicalCost(metadata.delta_amount));
+        addRow(rows, `Typical at ${metadata.cheaper_merchant || 'best merchant'}`, formatTypicalCost(metadata.cheaper_value));
         addRow(rows, 'Price difference', formatPercentShort(metadata.delta_percent));
         addRow(rows, 'Compared', formatCountLabel(metadata.merchant_evidence_count ?? metadata.occurrence_count, 'purchase'));
         break;
@@ -619,7 +629,8 @@ export function getInsightSupportRows(insight, context = {}) {
       case 'recurring_price_spike':
         addRow(rows, 'Latest merchant', metadata.latest_merchant);
         addRow(rows, 'Price jump', formatPercentShort(metadata.delta_percent));
-        addRow(rows, 'Prior baseline', formatCurrencyShort(metadata.baseline_amount ?? metadata.prior_median_amount ?? metadata.median_amount));
+        addRow(rows, 'Latest price', formatTypicalCost(metadata.latest_amount));
+        addRow(rows, 'Usual price', formatTypicalCost(metadata.baseline_amount ?? metadata.prior_median_amount ?? metadata.median_amount));
         break;
       case 'item_repurchase_accelerating':
         if (Number.isFinite(Number(metadata.latest_gap_days))) {
@@ -644,6 +655,9 @@ export function getInsightSupportRows(insight, context = {}) {
         break;
       case 'buy_soon_better_price':
         addRow(rows, 'Lower-price merchant', metadata.merchant);
+        addRow(rows, 'Observed price', formatTypicalCost(metadata.observed_price ?? metadata.observed_unit_price));
+        addRow(rows, 'Usual price', formatTypicalCost(metadata.baseline_price ?? metadata.baseline_unit_price));
+        addRow(rows, 'Potential savings', formatTypicalCost(metadata.savings_amount));
         addRow(rows, 'Price difference', formatPercentShort(metadata.discount_percent));
         if (Number.isFinite(Number(metadata.days_until_due))) {
           const days = Number(metadata.days_until_due);

@@ -214,6 +214,7 @@ function itemMatchReasonText(reason) {
     normalized_match: 'Same merchant and product details',
     normalized_backfill: 'Matched from prior product details',
     name_variant_match: 'Similar name at the same merchant',
+    cross_merchant_variant_match: 'Same brand and package across merchants',
     household_confirmed_alias: 'Confirmed from an earlier review',
     user_confirmed_match: 'Confirmed by you',
     user_rejected_match: 'Marked as a different item',

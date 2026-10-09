@@ -35,9 +35,31 @@ const merchantSummary = getItemInsightSummary('item_merchant_variance', {
   cheaper_merchant: 'Target',
   pricier_merchant: 'Whole Foods',
   delta_percent: 20,
+  delta_amount: 2.5,
+  cheaper_value: 10,
   merchant_evidence_count: 4,
 });
 assert.ok(merchantSummary.whyItMatters.includes('across 4 comparable purchases'));
+assert.ok(merchantSummary.whyItMatters.includes('$2.50 per buy'));
+
+const merchantInsight = {
+  type: 'item_merchant_variance',
+  entity_type: 'item',
+  metadata: {
+    group_key: 'product:towels',
+    cheaper_merchant: 'Target',
+    cheaper_value: 10,
+    delta_amount: 2.5,
+    delta_percent: 20,
+    merchant_evidence_count: 4,
+  },
+};
+assert.deepStrictEqual(getInsightPrimaryMetric(merchantInsight), { value: '$2.50', label: 'less per buy' });
+assert.deepStrictEqual(getInsightSupportRows(merchantInsight, { limit: 3 }), [
+  { label: 'Best merchant', value: 'Target' },
+  { label: 'Estimated savings', value: '$2.50' },
+  { label: 'Typical at Target', value: '$10.00' },
+]);
 
 const dueSummary = getItemInsightSummary('recurring_repurchase_due', {
   item_name: 'Greek Yogurt',
@@ -89,6 +111,10 @@ assert.strictEqual(
 assert.strictEqual(
   itemSubmeta({ product_match_reason: 'name_variant_match' }),
   'Similar name at the same merchant'
+);
+assert.strictEqual(
+  itemSubmeta({ product_match_reason: 'cross_merchant_variant_match' }),
+  'Same brand and package across merchants'
 );
 assert.strictEqual(
   itemMatchLabel({ comparable_key: 'paper towel', product_match_reason: 'user_rejected_match' }),

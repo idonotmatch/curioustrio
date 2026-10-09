@@ -51,6 +51,14 @@ function normalizeLineageKey(source = {}) {
   return 'default';
 }
 
+function normalizeEntityKey(source = {}) {
+  const entityId = `${source?.metadata?.entity_id || source?.entity_id || source?.metadata?.group_key || source?.group_key || ''}`.trim();
+  if (!entityId) return '';
+  const entityType = `${source?.metadata?.entity_type || source?.entity_type || (source?.metadata?.group_key || source?.group_key ? 'item' : '')}`.trim();
+  if (entityType !== 'item' && entityType !== 'item_bundle') return '';
+  return `${entityType}:${entityId}`;
+}
+
 function createEmptyStats() {
   return {
     helpful: 0,
@@ -103,31 +111,39 @@ function summarizeFeedbackEvents(events = []) {
     const current = summary.get(insightType) || {
       ...createEmptyStats(),
       lineage: {},
+      entities: {},
     };
     const lineageKey = normalizeLineageKey(event);
     const lineageStats = current.lineage[lineageKey] || createEmptyStats();
+    const entityKey = normalizeEntityKey(event);
+    const entityStats = entityKey ? (current.entities[entityKey] || createEmptyStats()) : null;
 
     current[event.event_type] = (current[event.event_type] || 0) + 1;
     lineageStats[event.event_type] = (lineageStats[event.event_type] || 0) + 1;
+    if (entityStats) entityStats[event.event_type] = (entityStats[event.event_type] || 0) + 1;
 
     if (event.event_type === 'not_helpful') {
       const reason = `${event?.metadata?.reason || ''}`.trim();
       if (reason) {
         current.reasons[reason] = (current.reasons[reason] || 0) + 1;
         lineageStats.reasons[reason] = (lineageStats.reasons[reason] || 0) + 1;
+        if (entityStats) entityStats.reasons[reason] = (entityStats.reasons[reason] || 0) + 1;
       }
       current.last_negative_at = event.created_at || current.last_negative_at;
       lineageStats.last_negative_at = event.created_at || lineageStats.last_negative_at;
+      if (entityStats) entityStats.last_negative_at = event.created_at || entityStats.last_negative_at;
     }
 
     if (event.event_type === 'dismissed') {
       current.last_negative_at = event.created_at || current.last_negative_at;
       lineageStats.last_negative_at = event.created_at || lineageStats.last_negative_at;
+      if (entityStats) entityStats.last_negative_at = event.created_at || entityStats.last_negative_at;
     }
 
     if (event.event_type === 'helpful') {
       current.last_helpful_at = event.created_at || current.last_helpful_at;
       lineageStats.last_helpful_at = event.created_at || lineageStats.last_helpful_at;
+      if (entityStats) entityStats.last_helpful_at = event.created_at || entityStats.last_helpful_at;
     }
 
     if (event.event_type === 'acted') {
@@ -135,6 +151,7 @@ function summarizeFeedbackEvents(events = []) {
       if (outcomeType) {
         current.outcomes[outcomeType] = (current.outcomes[outcomeType] || 0) + 1;
         lineageStats.outcomes[outcomeType] = (lineageStats.outcomes[outcomeType] || 0) + 1;
+        if (entityStats) entityStats.outcomes[outcomeType] = (entityStats.outcomes[outcomeType] || 0) + 1;
       }
       const reviewType = `${event?.metadata?.review_type || ''}`.trim();
       const unusualReview = `${event?.metadata?.unusual_review || ''}`.trim();
@@ -154,9 +171,11 @@ function summarizeFeedbackEvents(events = []) {
       }
       current.last_acted_at = event.created_at || current.last_acted_at;
       lineageStats.last_acted_at = event.created_at || lineageStats.last_acted_at;
+      if (entityStats) entityStats.last_acted_at = event.created_at || entityStats.last_acted_at;
     }
 
     current.lineage[lineageKey] = lineageStats;
+    if (entityStats) current.entities[entityKey] = entityStats;
     summary.set(insightType, current);
   }
 
@@ -192,9 +211,40 @@ function suppressionWindowDays(insightType, stats = {}) {
   return 0;
 }
 
+function subtractEntityStats(stats = {}) {
+  const entityTotals = Object.values(stats.entities || {})
+    .reduce((total, entityStats) => mergeStatCounts(total, entityStats), createEmptyStats());
+  const subtractBucket = (bucket = {}, entityBucket = {}) => Object.fromEntries(
+    Object.entries(bucket).map(([key, value]) => [key, Math.max(0, Number(value || 0) - Number(entityBucket[key] || 0))])
+  );
+  return {
+    helpful: Math.max(0, Number(stats.helpful || 0) - Number(entityTotals.helpful || 0)),
+    not_helpful: Math.max(0, Number(stats.not_helpful || 0) - Number(entityTotals.not_helpful || 0)),
+    tapped: Math.max(0, Number(stats.tapped || 0) - Number(entityTotals.tapped || 0)),
+    dismissed: Math.max(0, Number(stats.dismissed || 0) - Number(entityTotals.dismissed || 0)),
+    acted: Math.max(0, Number(stats.acted || 0) - Number(entityTotals.acted || 0)),
+    shown: Math.max(0, Number(stats.shown || 0) - Number(entityTotals.shown || 0)),
+    reasons: subtractBucket(stats.reasons, entityTotals.reasons),
+    outcomes: subtractBucket(stats.outcomes, entityTotals.outcomes),
+    reviews: subtractBucket(stats.reviews, entityTotals.reviews),
+    last_negative_at: null,
+    last_helpful_at: null,
+    last_acted_at: null,
+  };
+}
+
+function broadFeedbackStats(stats = {}) {
+  const negativeEntities = Object.values(stats.entities || {}).filter((entityStats) => (
+    Number(entityStats.not_helpful || 0) > 0 || Number(entityStats.dismissed || 0) > 0
+  )).length;
+  if (negativeEntities === 0 || negativeEntities >= 2) return stats;
+  return subtractEntityStats(stats);
+}
+
 function suppressionForInsightType(insightType, feedbackSummary = new Map()) {
-  const stats = feedbackSummary.get(insightType);
-  if (!stats) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
+  const rawStats = feedbackSummary.get(insightType);
+  if (!rawStats) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
+  const stats = broadFeedbackStats(rawStats);
 
   const cooldownDays = suppressionWindowDays(insightType, stats);
   if (!cooldownDays) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
@@ -221,16 +271,45 @@ function suppressionForInsightType(insightType, feedbackSummary = new Map()) {
   };
 }
 
+function suppressionForInsightEntity(insight, feedbackSummary = new Map()) {
+  const entityKey = normalizeEntityKey(insight);
+  const stats = feedbackSummary.get(insight?.type)?.entities?.[entityKey];
+  if (!entityKey || !stats) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
+
+  const reasons = stats.reasons || {};
+  let cooldownDays = 0;
+  if ((reasons.not_accurate || 0) >= 1 || (reasons.not_relevant || 0) >= 1) cooldownDays = 21;
+  else if ((reasons.wrong_timing || 0) >= 1) cooldownDays = 7;
+  else if ((stats.not_helpful || 0) >= 2 || (stats.dismissed || 0) >= 2) cooldownDays = 14;
+  if (!cooldownDays) return { suppressed: false, cooldown_days: 0, reason: null, until: null };
+
+  const recentNegativeDays = daysSince(stats.last_negative_at);
+  if (recentNegativeDays == null || recentNegativeDays > cooldownDays) {
+    return { suppressed: false, cooldown_days: cooldownDays, reason: null, until: null };
+  }
+  const lastNegativeAt = new Date(stats.last_negative_at);
+  const until = Number.isNaN(lastNegativeAt.getTime())
+    ? null
+    : new Date(lastNegativeAt.getTime() + cooldownDays * 24 * 60 * 60 * 1000).toISOString();
+  const reason = Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[0]
+    || ((stats.dismissed || 0) >= 2 ? 'dismissed' : 'not_helpful');
+  return { suppressed: true, cooldown_days: cooldownDays, reason, until, entity_key: entityKey };
+}
+
 function shouldSuppressInsight(insight, feedbackSummary = new Map()) {
-  return suppressionForInsightType(insight?.type, feedbackSummary).suppressed;
+  return suppressionForInsightEntity(insight, feedbackSummary).suppressed
+    || suppressionForInsightType(insight?.type, feedbackSummary).suppressed;
 }
 
 function feedbackAdjustmentForInsight(insight, feedbackSummary) {
-  const baseStats = feedbackSummary.get(insight.type);
-  if (!baseStats) return 0;
+  const rawStats = feedbackSummary.get(insight.type);
+  if (!rawStats) return 0;
+  const baseStats = broadFeedbackStats(rawStats);
   const lineageKey = normalizeLineageKey(insight);
-  const lineageStats = baseStats.lineage?.[lineageKey];
+  const entityKey = normalizeEntityKey(insight);
+  const lineageStats = entityKey ? null : rawStats.lineage?.[lineageKey];
   const stats = lineageStats ? mergeStatCounts(baseStats, lineageStats) : baseStats;
+  const entityStats = entityKey ? rawStats.entities?.[entityKey] : null;
   const actionRate = stats.shown > 0 ? stats.acted / stats.shown : 0;
 
   let score = 0;
@@ -239,6 +318,16 @@ function feedbackAdjustmentForInsight(insight, feedbackSummary) {
   score += stats.acted * 4;
   score -= stats.not_helpful * 3;
   score -= stats.dismissed * 2;
+  if (entityStats) {
+    score += Number(entityStats.helpful || 0) * 2;
+    score += Number(entityStats.tapped || 0) * 0.25;
+    score += Number(entityStats.acted || 0) * 3;
+    score -= Number(entityStats.not_helpful || 0) * 4;
+    score -= Number(entityStats.dismissed || 0) * 2;
+    score -= Number(entityStats.reasons?.not_accurate || 0) * 4;
+    score -= Number(entityStats.reasons?.not_relevant || 0) * 3;
+    score -= Number(entityStats.reasons?.wrong_timing || 0) * 1.5;
+  }
 
   if (isPositiveOpportunityType(insight.type)) {
     score += stats.helpful * 1;
@@ -337,6 +426,19 @@ function toSerializableSummary(feedbackSummary) {
       outcomes: stats.outcomes || {},
       reviews: stats.reviews || {},
       lineage: stats.lineage || {},
+      entity_summary: Object.entries(stats.entities || {})
+        .map(([entityKey, entityStats]) => ({
+          entity_key: entityKey,
+          shown: entityStats.shown || 0,
+          helpful: entityStats.helpful || 0,
+          not_helpful: entityStats.not_helpful || 0,
+          dismissed: entityStats.dismissed || 0,
+          acted: entityStats.acted || 0,
+          reasons: entityStats.reasons || {},
+        }))
+        .filter((row) => row.shown > 0 || row.helpful > 0 || row.not_helpful > 0 || row.dismissed > 0 || row.acted > 0)
+        .sort((a, b) => (b.helpful + b.acted - b.not_helpful - b.dismissed) - (a.helpful + a.acted - a.not_helpful - a.dismissed))
+        .slice(0, 20),
       lineage_summary: Object.entries(stats.lineage || {})
         .map(([lineageKey, lineageStats]) => ({
           lineage_key: lineageKey,
@@ -421,9 +523,11 @@ module.exports = {
   normalizeInsightType,
   normalizeOutcomeType,
   normalizeLineageKey,
+  normalizeEntityKey,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
   suppressionForInsightType,
+  suppressionForInsightEntity,
   shouldSuppressInsight,
   toSerializableSummary,
   extractRecentNotes,

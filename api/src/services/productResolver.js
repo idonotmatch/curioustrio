@@ -58,7 +58,6 @@ function hasStructuredConflict(input = {}, candidate = {}) {
 
 function scoreNameVariant({ normalized, merchant, candidate }) {
   if (!normalized?.normalized_name || !candidate?.normalized_name) return null;
-  if (!sameMerchant(merchant, candidate.merchant)) return null;
 
   const candidateNormalized = normalizeItemMetadata({
     description: candidate.name || candidate.normalized_name,
@@ -69,13 +68,28 @@ function scoreNameVariant({ normalized, merchant, candidate }) {
   });
   if (hasStructuredConflict(normalized, candidateNormalized)) return null;
 
-  const inputTokens = new Set(normalizedTokens(normalized.normalized_name));
-  const candidateTokens = new Set(normalizedTokens(candidateNormalized.normalized_name));
-  const confirmedBrandContext = Boolean(
+  const merchantMatches = sameMerchant(merchant, candidate.merchant);
+  const brandMatches = Boolean(
     normalized.normalized_brand
     && candidateNormalized.normalized_brand
     && normalized.normalized_brand === candidateNormalized.normalized_brand
   );
+  const sizeMatches = Boolean(
+    normalized.normalized_size_value != null
+    && candidateNormalized.normalized_size_value != null
+    && normalized.normalized_size_unit === candidateNormalized.normalized_size_unit
+    && Math.abs(Number(normalized.normalized_size_value) - Number(candidateNormalized.normalized_size_value)) <= 0.001
+  );
+  const packMatches = Boolean(
+    normalized.normalized_pack_size != null
+    && candidateNormalized.normalized_pack_size != null
+    && Math.abs(Number(normalized.normalized_pack_size) - Number(candidateNormalized.normalized_pack_size)) <= 0.001
+  );
+  if (!merchantMatches && !(brandMatches && (sizeMatches || packMatches))) return null;
+
+  const inputTokens = new Set(normalizedTokens(normalized.normalized_name));
+  const candidateTokens = new Set(normalizedTokens(candidateNormalized.normalized_name));
+  const confirmedBrandContext = brandMatches;
   if ((inputTokens.size < 2 || candidateTokens.size < 2) && !confirmedBrandContext) return null;
   const intersection = [...inputTokens].filter((token) => candidateTokens.has(token)).length;
   const containment = intersection / Math.min(inputTokens.size, candidateTokens.size);
@@ -84,7 +98,8 @@ function scoreNameVariant({ normalized, merchant, candidate }) {
   if (containment < 0.75 || jaccard < 0.5) return null;
 
   const score = Number((containment * 0.65 + jaccard * 0.35).toFixed(4));
-  return score >= 0.78 ? score : null;
+  const threshold = merchantMatches ? 0.78 : 0.86;
+  return score >= threshold ? score : null;
 }
 
 function confirmedAliasConflicts(normalized, alias = {}) {
@@ -127,7 +142,9 @@ async function findVariantMatch({ item, merchant, householdId, normalized }) {
   return {
     product_id: best.id,
     confidence: rememberedDecision?.decision === 'same' ? 'high' : 'medium',
-    reason: rememberedDecision?.decision === 'same' ? 'household_confirmed_alias' : 'name_variant_match',
+    reason: rememberedDecision?.decision === 'same'
+      ? 'household_confirmed_alias'
+      : (sameMerchant(merchant, best.merchant) ? 'name_variant_match' : 'cross_merchant_variant_match'),
   };
 }
 

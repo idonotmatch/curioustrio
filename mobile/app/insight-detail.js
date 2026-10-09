@@ -18,6 +18,7 @@ import { consumeNavigationPayload, stashNavigationPayload } from '../services/na
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { planningActionSummary } from '../services/planningPresentation';
 import { loadInsightDetailSnapshot, saveInsightDetailSnapshot } from '../services/insightLocalStore';
+import { refreshInsightsAfterFeedback } from '../services/insightFeedbackEffects';
 import {
   buildInsightPurchaseHistoryRows,
   getInsightEvidenceMode,
@@ -631,6 +632,7 @@ export default function InsightDetailScreen() {
             scope: metadata.scope || null,
             entity_type: `${entityType}` || null,
             entity_id: `${entityId}` || null,
+            group_key: metadata.group_key || null,
             category_key: metadata.category_key || null,
             merchant_key: metadata.merchant_key || null,
             scope_relationship: metadata.scope_relationship || null,
@@ -643,6 +645,7 @@ export default function InsightDetailScreen() {
           },
         }],
       });
+      await refreshInsightsAfterFeedback();
       setFeedbackStatus(eventType);
     } catch {
       // Non-fatal
@@ -668,6 +671,7 @@ export default function InsightDetailScreen() {
             scope: metadata.scope || null,
             entity_type: `${entityType}` || null,
             entity_id: `${entityId}` || null,
+            group_key: metadata.group_key || null,
             category_key: metadata.category_key || null,
             merchant_key: metadata.merchant_key || null,
             scope_relationship: metadata.scope_relationship || null,
@@ -682,6 +686,7 @@ export default function InsightDetailScreen() {
           },
         }],
       });
+      await refreshInsightsAfterFeedback();
       setFeedbackStatus('not_helpful');
       setFeedbackReason('');
       setFeedbackNote('');

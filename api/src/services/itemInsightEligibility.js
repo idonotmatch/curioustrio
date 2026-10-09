@@ -45,6 +45,8 @@ const SUPPRESSED_CATEGORY_PATTERNS = [
   ['subscription_context', /\b(subscriptions?|memberships?)\b/],
 ];
 
+const ITEM_INSIGHT_POLICY_VERSION = 'category-value-v2';
+
 function normalizeCategoryName(value) {
   return `${value || ''}`
     .trim()
@@ -141,6 +143,9 @@ function automaticItemInsightDecision(rows = [], { minOccurrences = 3 } = {}) {
   const suppressedReasons = [...new Set(
     classified.map(({ context }) => context.suppressed_reason).filter(Boolean)
   )];
+  const categoryNames = [...new Set(
+    classified.map(({ context }) => context.category_name).filter(Boolean)
+  )];
   const ambiguousOnly = eligibleContexts.length > 0
     && eligibleContexts.every((context) => context.tier === 'ambiguous');
   const minimumOccurrences = Math.max(
@@ -169,34 +174,78 @@ function automaticItemInsightDecision(rows = [], { minOccurrences = 3 } = {}) {
 
   return {
     eligible: suppressedReason == null,
+    policy_version: ITEM_INSIGHT_POLICY_VERSION,
+    observation_count: classified.length,
     eligible_rows: eligibleRows,
     eligible_occurrence_count: eligibleRows.length,
+    excluded_occurrence_count: Math.max(0, classified.length - eligibleRows.length),
     minimum_occurrences: minimumOccurrences,
     requires_strong_identity: ambiguousOnly,
     strong_identity: strongIdentity,
     tier,
     suppressed_reason: suppressedReason,
     excluded_reasons: suppressedReasons,
+    category_names: categoryNames,
   };
 }
 
 function insightEligibilityMetadata(decision = {}) {
   return {
     eligible: Boolean(decision.eligible),
+    policy_version: decision.policy_version || ITEM_INSIGHT_POLICY_VERSION,
+    observation_count: Number(decision.observation_count || 0),
     tier: decision.tier || 'suppressed',
     eligible_occurrence_count: Number(decision.eligible_occurrence_count || 0),
+    excluded_occurrence_count: Number(decision.excluded_occurrence_count || 0),
     minimum_occurrences: Number(decision.minimum_occurrences || 0),
     requires_strong_identity: Boolean(decision.requires_strong_identity),
     strong_identity: Boolean(decision.strong_identity),
     suppressed_reason: decision.suppressed_reason || null,
     excluded_reasons: Array.isArray(decision.excluded_reasons) ? decision.excluded_reasons : [],
+    category_names: Array.isArray(decision.category_names) ? decision.category_names : [],
   };
 }
 
+function summarizeItemInsightEligibility(histories = []) {
+  const summary = {
+    policy_version: ITEM_INSIGHT_POLICY_VERSION,
+    total_groups: 0,
+    eligible_groups: 0,
+    suppressed_groups: 0,
+    unclassified_groups: 0,
+    by_tier: {},
+    by_suppression_reason: {},
+    source_diverse_groups: 0,
+  };
+
+  for (const history of histories) {
+    const eligibility = history?.insight_eligibility || {};
+    const tier = `${eligibility.tier || 'unknown'}`;
+    const reason = `${eligibility.suppressed_reason || ''}`;
+    summary.total_groups += 1;
+    summary.by_tier[tier] = (summary.by_tier[tier] || 0) + 1;
+    if (tier === 'unclassified') summary.unclassified_groups += 1;
+    if (Array.isArray(history?.source_types) && history.source_types.length > 1) {
+      summary.source_diverse_groups += 1;
+    }
+    if (eligibility.eligible) {
+      summary.eligible_groups += 1;
+    } else {
+      summary.suppressed_groups += 1;
+      const key = reason || 'unknown';
+      summary.by_suppression_reason[key] = (summary.by_suppression_reason[key] || 0) + 1;
+    }
+  }
+
+  return summary;
+}
+
 module.exports = {
+  ITEM_INSIGHT_POLICY_VERSION,
   normalizeCategoryName,
   classifyItemInsightContext,
   hasStrongItemIdentity,
   automaticItemInsightDecision,
   insightEligibilityMetadata,
+  summarizeItemInsightEligibility,
 };

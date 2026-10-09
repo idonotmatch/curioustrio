@@ -128,6 +128,12 @@ function summarizeIdentity(entries = []) {
     if (key && merchant) merchantMap.set(key, merchant);
   });
   const merchants = [...merchantMap.values()];
+  const sourceTypes = [...new Set(sorted.map((entry) => `${entry.source_type || ''}`.trim()).filter(Boolean))]
+    .sort();
+  const sourceBreakdown = sourceTypes.map((sourceType) => ({
+    source_type: sourceType,
+    occurrence_count: sorted.filter((entry) => entry.source_type === sourceType).length,
+  }));
   const dateObjs = sorted.map((entry) => parseDateOnly(entry.date));
   const gaps = [];
   for (let i = 1; i < dateObjs.length; i += 1) {
@@ -184,6 +190,9 @@ function summarizeIdentity(entries = []) {
     last_purchased_at: latest.date,
     next_expected_date: nextExpected ? nextExpected.toISOString().slice(0, 10) : null,
     merchants,
+    source_types: sourceTypes,
+    source_breakdown: sourceBreakdown,
+    cross_source_identity: sourceTypes.length > 1,
     merchant_breakdown: merchantBreakdown,
     merchant_price_history: merchantBreakdown,
     normalized_total_size_value: latest.normalized_total_size_value,
@@ -243,7 +252,7 @@ async function loadItemHistoryRows(ownerId, {
       ei.product_match_confidence,
       ei.product_match_reason,
       ei.extraction_confidence,
-      ei.source_type,
+      COALESCE(ei.source_type, e.source) AS source_type,
       COALESCE(p.name, ei.description) AS item_name,
       COALESCE(p.brand, ei.brand) AS brand,
       ei.amount AS item_amount,
@@ -301,7 +310,7 @@ async function listItemHistorySummaries(ownerId, {
       const meetsRequestedMinimum = entry.occurrence_count >= Math.max(1, Number(minOccurrences) || 2);
       return meetsRequestedMinimum && (!automaticInsightsOnly || entry.insight_eligibility?.eligible);
     })
-    .slice(0, Math.max(1, Math.min(Number(limit) || 25, 100)));
+    .slice(0, Math.max(1, Math.min(Number(limit) || 25, 2000)));
 }
 
 async function getItemHistoryByGroupKey(ownerId, groupKey, {

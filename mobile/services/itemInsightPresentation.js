@@ -43,7 +43,7 @@ export function getItemInsightSummary(insightType, metadata = {}, history = null
       return {
         whatChanged: fallbackBody || `${itemName} has a repeatable merchant price difference.`,
         whyItMatters: cheapestMerchant && pricierMerchant
-          ? `${cheapestMerchant} has been about ${deltaPercent} lower than ${pricierMerchant} across ${metadata.merchant_evidence_count || 'multiple'} comparable purchases.`
+          ? `${cheapestMerchant} has been about ${metadata.delta_amount != null ? `${formatCurrency(metadata.delta_amount)} per buy` : deltaPercent} lower than ${pricierMerchant} across ${metadata.merchant_evidence_count || 'multiple'} comparable purchases.`
           : 'Repeated purchases show a meaningful difference between merchants.',
         nextStep: 'Compare the sample counts below before changing stores. Open any purchase that looks mismatched or unusually priced.',
       };

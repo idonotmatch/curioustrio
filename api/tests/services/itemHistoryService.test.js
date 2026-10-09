@@ -28,6 +28,7 @@ describe('summarizeHistoryRows', () => {
         normalized_total_size_value: 96,
         normalized_total_size_unit: 'oz',
         merchant: 'Target',
+        source_type: 'camera',
         date: '2026-04-01',
       },
       {
@@ -42,6 +43,7 @@ describe('summarizeHistoryRows', () => {
         normalized_total_size_value: 96,
         normalized_total_size_unit: 'oz',
         merchant: 'Whole Foods',
+        source_type: 'email',
         date: '2026-04-10',
       },
       {
@@ -56,6 +58,7 @@ describe('summarizeHistoryRows', () => {
         normalized_total_size_value: 96,
         normalized_total_size_unit: 'oz',
         merchant: 'Target',
+        source_type: 'camera',
         date: '2026-04-20',
       },
     ]);
@@ -70,6 +73,8 @@ describe('summarizeHistoryRows', () => {
       prior_median_amount: 6.24,
       baseline_purchase_count: 2,
       merchants: ['Target', 'Whole Foods'],
+      source_types: ['camera', 'email'],
+      cross_source_identity: true,
       last_purchased_at: '2026-04-20',
       next_expected_date: '2026-04-29',
     });

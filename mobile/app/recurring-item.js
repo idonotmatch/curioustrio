@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { refreshInsightsAfterFeedback } from '../services/insightFeedbackEffects';
 import { loadWithCache } from '../services/cache';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
@@ -201,10 +202,15 @@ export default function RecurringItemScreen() {
           event_type: eventType,
           metadata: {
             surface: 'recurring_item_detail',
+            type: `${insightType || ''}` || null,
+            insight_type: `${insightType || ''}` || null,
+            entity_type: 'item',
+            entity_id: `${groupKey || ''}` || null,
             group_key: `${groupKey || ''}`,
           },
         }],
       });
+      await refreshInsightsAfterFeedback();
       setFeedbackStatus(eventType);
     } catch {
       // non-fatal
@@ -220,12 +226,17 @@ export default function RecurringItemScreen() {
           event_type: 'not_helpful',
           metadata: {
             surface: 'recurring_item_detail',
+            type: `${insightType || ''}` || null,
+            insight_type: `${insightType || ''}` || null,
+            entity_type: 'item',
+            entity_id: `${groupKey || ''}` || null,
             group_key: `${groupKey || ''}`,
             reason: feedbackReason,
             note: feedbackNote.trim() || null,
           },
         }],
       });
+      await refreshInsightsAfterFeedback();
       setFeedbackStatus('not_helpful');
       setFeedbackReason('');
       setFeedbackNote('');

@@ -1,6 +1,7 @@
 const {
   classifyItemInsightContext,
   automaticItemInsightDecision,
+  summarizeItemInsightEligibility,
 } = require('../../src/services/itemInsightEligibility');
 
 function occurrence(overrides = {}) {
@@ -94,6 +95,31 @@ describe('itemInsightEligibility', () => {
       eligible: true,
       tier: 'unclassified',
       minimum_occurrences: 3,
+    });
+  });
+
+  it('summarizes eligible, suppressed, uncategorized, and cross-source identity groups', () => {
+    expect(summarizeItemInsightEligibility([
+      {
+        source_types: ['camera', 'email'],
+        insight_eligibility: { eligible: true, tier: 'product_friendly' },
+      },
+      {
+        source_types: ['manual'],
+        insight_eligibility: { eligible: false, tier: 'suppressed', suppressed_reason: 'dining_context' },
+      },
+      {
+        source_types: [],
+        insight_eligibility: { eligible: true, tier: 'unclassified' },
+      },
+    ])).toMatchObject({
+      total_groups: 3,
+      eligible_groups: 2,
+      suppressed_groups: 1,
+      unclassified_groups: 1,
+      source_diverse_groups: 1,
+      by_tier: { product_friendly: 1, suppressed: 1, unclassified: 1 },
+      by_suppression_reason: { dining_context: 1 },
     });
   });
 });

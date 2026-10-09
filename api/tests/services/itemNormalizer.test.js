@@ -170,5 +170,8 @@ describe('itemNormalizer', () => {
     expect(normalizeItemDisplayName('organic feta crumbles')).toBe('Organic Feta Crumbles');
     expect(normalizeItemDisplayName('LaCroix Sparkling Water')).toBe('LaCroix Sparkling Water');
     expect(normalizeItemDisplayName('iPhone USB-C Cable')).toBe('iPhone USB-C Cable');
+    expect(normalizeItemDisplayName('ORG STRAWBRY')).toBe('Organic Strawberry');
+    expect(normalizeItemDisplayName('Org Strawbry')).toBe('Organic Strawberry');
+    expect(normalizeComparableDescription('Org Strawbry')).toBe('organic strawberry');
   });
 });

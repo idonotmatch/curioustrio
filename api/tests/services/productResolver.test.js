@@ -320,6 +320,55 @@ describe('productResolver', () => {
     });
   });
 
+  it('connects a cross-merchant name variant only when brand and package evidence agree', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue(null);
+    Product.findNameCandidates.mockResolvedValue([{
+      id: 'product-water',
+      name: 'Water Co Sparkling Water',
+      normalized_name: 'water co sparkling water',
+      merchant: 'Target',
+      brand: 'Water Co',
+      product_size: '12',
+      unit: 'oz',
+    }]);
+
+    const resolution = await resolveProductMatch({
+      description: 'Water Co Sparkling Water Lime',
+      brand: 'Water Co',
+      product_size: '12',
+      unit: 'oz',
+      source_type: 'email',
+    }, 'Whole Foods', { householdId: 'household-1' });
+
+    expect(resolution).toEqual({
+      product_id: 'product-water',
+      confidence: 'medium',
+      reason: 'cross_merchant_variant_match',
+    });
+  });
+
+  it('does not connect a cross-merchant variant from brand alone', async () => {
+    Product.findByUpc.mockResolvedValue(null);
+    Product.findBySkuAndMerchant.mockResolvedValue(null);
+    Product.findByNormalizedDetails.mockResolvedValue(null);
+    Product.findNameCandidates.mockResolvedValue([{
+      id: 'product-water',
+      name: 'Water Co Sparkling Water',
+      normalized_name: 'water co sparkling water',
+      merchant: 'Target',
+      brand: 'Water Co',
+    }]);
+
+    const resolution = await resolveProductMatch({
+      description: 'Water Co Sparkling Water Lime',
+      brand: 'Water Co',
+    }, 'Whole Foods', { householdId: 'household-1' });
+
+    expect(resolution).toBeNull();
+  });
+
   it('does not offer a name variant when equally strong candidates are ambiguous', async () => {
     Product.findByUpc.mockResolvedValue(null);
     Product.findBySkuAndMerchant.mockResolvedValue(null);

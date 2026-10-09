@@ -5,6 +5,7 @@ const {
   loadRecurringItemOccurrences,
 } = require('./recurringDetector');
 const { listItemHistorySummaries } = require('./itemHistoryService');
+const { summarizeItemInsightEligibility } = require('./itemInsightEligibility');
 const { analyzeSpendingTrend } = require('./spendingTrendAnalyzer');
 const { analyzeSpendProjection } = require('./spendProjectionAnalyzer');
 const { findObservationOpportunities } = require('./priceObservationService');
@@ -465,7 +466,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         id: `item_staple_merchant_opportunity:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
         type: 'item_staple_merchant_opportunity',
         title: `${itemName} is becoming a regular buy`,
-        body: `${itemName} has shown up ${occurrenceCount} times recently, and ${merchantVariance.cheapest.merchant} has been about ${merchantVariance.deltaPercent}% cheaper than ${merchantVariance.priciest.merchant} across repeated purchases.`,
+        body: `${merchantVariance.cheapest.merchant} has been about $${merchantVariance.deltaAmount.toFixed(2)} less per comparable purchase than ${merchantVariance.priciest.merchant}.`,
         severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 || occurrenceCount >= 4 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
@@ -528,7 +529,7 @@ function buildItemHistoryInsights(histories = [], scope = 'household') {
         id: `item_merchant_variance:${scope}:${history.group_key}:${merchantVariance.cheapest.merchant}:${merchantVariance.priciest.merchant}`,
         type: 'item_merchant_variance',
         title: `${itemName} tends to cost less at ${merchantVariance.cheapest.merchant}`,
-        body: `${itemName} has run about ${merchantVariance.deltaPercent}% lower at ${merchantVariance.cheapest.merchant} than at ${merchantVariance.priciest.merchant} across ${merchantVariance.evidenceCount} comparable purchases.`,
+        body: `${merchantVariance.cheapest.merchant} has been about $${merchantVariance.deltaAmount.toFixed(2)} less per comparable purchase than ${merchantVariance.priciest.merchant}.`,
         severity: merchantVariance.deltaPercent >= 20 || merchantVariance.deltaAmount >= 4 ? 'medium' : 'low',
         entity_type: 'item',
         entity_id: history.group_key,
@@ -1385,13 +1386,20 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
 
   const scopeReports = [];
   for (const scope of scopes) {
-    const [trend, projection, budgetSettings, rollingActivity] = await Promise.all([
+    const itemOwnerId = scope === 'household' ? user.household_id : user.id;
+    const [trend, projection, budgetSettings, rollingActivity, itemHistories] = await Promise.all([
       analyzeSpendingTrend({ user, scope }),
       analyzeSpendProjection({ user, scope }),
       scope === 'household' && user.household_id
         ? BudgetSetting.findByHousehold(user.household_id)
         : BudgetSetting.findByUser(user.id),
       analyzeRollingActivity({ user, scope }),
+      listItemHistorySummaries(itemOwnerId, {
+        scope,
+        minOccurrences: 1,
+        limit: 2000,
+        requesterUserId: scope === 'household' ? user.id : null,
+      }).catch(() => []),
     ]);
     const budgetLimit = budgetSettings.find((row) => row.category_id == null)?.monthly_limit ?? null;
     const early = buildEarlyUsageInsights({ projection, budgetLimit, scope });
@@ -1401,6 +1409,19 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
       ...buildProjectionInsights(projection, scope),
     ];
     const merged = resolveInsightCompetition(dedupeInsights([...early, ...developing, ...mature]));
+    const itemEligibilitySummary = summarizeItemInsightEligibility(itemHistories);
+    const suppressedItemGroups = itemHistories
+      .filter((history) => !history?.insight_eligibility?.eligible)
+      .slice(0, 12)
+      .map((history) => ({
+        group_key: history.group_key,
+        item_name: history.item_name,
+        occurrence_count: history.occurrence_count,
+        source_types: history.source_types || [],
+        tier: history.insight_eligibility?.tier || null,
+        reason: history.insight_eligibility?.suppressed_reason || null,
+        categories: history.insight_eligibility?.category_names || [],
+      }));
 
     scopeReports.push({
       scope,
@@ -1416,6 +1437,10 @@ async function buildInsightDebugForUser({ user, limit = 10 }) {
         developing: insightDebugRows(developing),
         mature: insightDebugRows(mature),
         after_maturity_competition: insightDebugRows(merged),
+      },
+      item_intelligence: {
+        ...itemEligibilitySummary,
+        top_suppressed_groups: suppressedItemGroups,
       },
     });
   }

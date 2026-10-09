@@ -149,6 +149,22 @@ function surfacedRows(debug = null) {
   return (Array.isArray(debug?.final_insights) ? debug.final_insights : []).slice(0, 4);
 }
 
+function itemEligibilityDiagnostics(debug = null) {
+  const reports = (Array.isArray(debug?.scopes) ? debug.scopes : [])
+    .map((scope) => ({ scope: scope.scope, ...(scope.item_intelligence || {}) }))
+    .filter((scope) => Number(scope.total_groups || 0) > 0);
+  return {
+    reports,
+    totals: reports.reduce((totals, report) => ({
+      total: totals.total + Number(report.total_groups || 0),
+      eligible: totals.eligible + Number(report.eligible_groups || 0),
+      suppressed: totals.suppressed + Number(report.suppressed_groups || 0),
+      unclassified: totals.unclassified + Number(report.unclassified_groups || 0),
+      crossSource: totals.crossSource + Number(report.source_diverse_groups || 0),
+    }), { total: 0, eligible: 0, suppressed: 0, unclassified: 0, crossSource: 0 }),
+  };
+}
+
 function DiagnosticsSection({ title, children }) {
   return (
     <View style={styles.section}>
@@ -210,6 +226,7 @@ export default function InsightDiagnosticsScreen() {
   const reasonRows = sortedReasonRows(debug);
   const suppressedRows = topSuppressedRows(debug);
   const currentRows = surfacedRows(debug);
+  const itemEligibility = itemEligibilityDiagnostics(debug);
 
   return (
     <ScrollView
@@ -265,6 +282,37 @@ export default function InsightDiagnosticsScreen() {
                   { label: 'Cross-store groups', value: compactNumber(itemQuality.counts?.cross_merchant_groups) },
                 ]}
               />
+            </DiagnosticsSection>
+          ) : null}
+
+          {itemEligibility.totals.total > 0 ? (
+            <DiagnosticsSection title="Item insight eligibility">
+              <MetricStrip
+                items={[
+                  { label: 'Eligible groups', value: compactNumber(itemEligibility.totals.eligible) },
+                  { label: 'Filtered groups', value: compactNumber(itemEligibility.totals.suppressed) },
+                  { label: 'Needs category', value: compactNumber(itemEligibility.totals.unclassified) },
+                  { label: 'Cross-source', value: compactNumber(itemEligibility.totals.crossSource) },
+                ]}
+              />
+              <View style={styles.stack}>
+                {itemEligibility.reports.map((report) => (
+                  <View key={report.scope} style={styles.listCard}>
+                    <Text style={styles.listTitle}>{report.scope === 'household' ? 'Household items' : 'Your items'}</Text>
+                    <Text style={styles.listMeta}>
+                      {`${compactNumber(report.eligible_groups)} eligible / ${compactNumber(report.total_groups)} groups`}
+                    </Text>
+                    {Object.keys(report.by_suppression_reason || {}).length > 0 ? (
+                      <Text style={styles.listBody}>
+                        {Object.entries(report.by_suppression_reason)
+                          .sort((a, b) => Number(b[1]) - Number(a[1]))
+                          .map(([reason, count]) => `${reasonLabel(reason)} ${count}`)
+                          .join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
             </DiagnosticsSection>
           ) : null}
 

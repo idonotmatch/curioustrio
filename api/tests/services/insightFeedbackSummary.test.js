@@ -4,9 +4,11 @@ const {
   normalizeInsightType,
   normalizeOutcomeType,
   normalizeLineageKey,
+  normalizeEntityKey,
   summarizeFeedbackEvents,
   feedbackAdjustmentForInsight,
   suppressionForInsightType,
+  suppressionForInsightEntity,
   shouldSuppressInsight,
 } = require('../../src/services/insightFeedbackSummary');
 const { insightRankScore } = require('../../src/services/insightBuilder');
@@ -74,6 +76,17 @@ describe('normalizeLineageKey', () => {
     expect(normalizeLineageKey({
       metadata: { scope_origin: 'household', rolls_up_from_personal: true },
     })).toBe('household_rollup');
+  });
+});
+
+describe('normalizeEntityKey', () => {
+  it('uses item group metadata to preserve item-specific feedback', () => {
+    expect(normalizeEntityKey({
+      metadata: { entity_type: 'item', entity_id: 'product:abc' },
+    })).toBe('item:product:abc');
+    expect(normalizeEntityKey({
+      metadata: { group_key: 'comparable:paper towels' },
+    })).toBe('item:comparable:paper towels');
   });
 });
 
@@ -215,6 +228,39 @@ describe('summarizeFeedbackEvents', () => {
       not_helpful: 1,
       reasons: expect.objectContaining({ not_relevant: 1 }),
     }));
+  });
+
+  it('tracks feedback for the specific item identity', () => {
+    const summary = summarizeFeedbackEvents([{
+      insight_id: 'item_recent_price_jump:personal:product:abc:2026-10-08',
+      event_type: 'not_helpful',
+      metadata: {
+        type: 'item_recent_price_jump',
+        entity_type: 'item',
+        entity_id: 'product:abc',
+        reason: 'not_accurate',
+      },
+      created_at: new Date().toISOString(),
+    }]);
+
+    expect(summary.get('item_recent_price_jump').entities['item:product:abc']).toEqual(expect.objectContaining({
+      not_helpful: 1,
+      reasons: { not_accurate: 1 },
+    }));
+    expect(suppressionForInsightEntity({
+      type: 'item_recent_price_jump',
+      entity_type: 'item',
+      entity_id: 'product:abc',
+    }, summary)).toEqual(expect.objectContaining({
+      suppressed: true,
+      reason: 'not_accurate',
+      entity_key: 'item:product:abc',
+    }));
+    expect(shouldSuppressInsight({
+      type: 'item_recent_price_jump',
+      entity_type: 'item',
+      entity_id: 'product:different',
+    }, summary)).toBe(false);
   });
 });
 
