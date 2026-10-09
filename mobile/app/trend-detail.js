@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { loadWithCache } from '../services/cache';
 import { consumeNavigationPayload, stashNavigationPayload } from '../services/navigationPayloadStore';
@@ -41,9 +42,52 @@ function formatDriverDelta(driver = {}) {
 
 function formatShortDate(value) {
   if (!value) return '—';
-  const date = new Date(value);
+  const raw = `${value}`.slice(0, 10);
+  const date = new Date(`${raw}T12:00:00`);
   if (Number.isNaN(date.getTime())) return `${value}`;
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function unusualReasonCopy(expense = {}) {
+  const reason = `${expense.norm_reason || ''}`.toLowerCase();
+  if (reason.includes('amount') || reason.includes('outlier') || reason.includes('range')) {
+    return 'This amount is much higher than your recent purchases in this category.';
+  }
+  if (reason.includes('novel') && reason.includes('merchant')) {
+    return 'This merchant has not appeared in your recent spending history.';
+  }
+  if (reason.includes('rare') && reason.includes('merchant')) {
+    return 'You rarely spend with this merchant.';
+  }
+  if (reason.includes('novel') && reason.includes('category')) {
+    return 'This category has not appeared in your recent spending history.';
+  }
+  return 'This purchase sits outside your recent spending pattern.';
+}
+
+function anomalyImpactCopy(trend, unusualExpenses = [], primaryExpense = null) {
+  const projection = trend?.projection?.overall || {};
+  const adjusted = Number(projection.adjusted_projected_total);
+  const withoutUnusual = Number(
+    projection.projection_excluding_unusuals
+    ?? projection.baseline_projected_total
+  );
+  const unusualTotal = Number(projection.unusual_spend_to_date);
+  const primaryAmount = Number(primaryExpense?.amount);
+  const purchaseLead = Number.isFinite(primaryAmount) && primaryAmount > 0
+    ? `This purchase adds ${formatCurrency(primaryAmount)} to the month.`
+    : 'This purchase is a meaningful part of the month.';
+  const unusualContext = unusualExpenses.length > 1 && Number.isFinite(unusualTotal) && unusualTotal > 0
+    ? ` All unusual spend this month totals ${formatCurrency(unusualTotal)}.`
+    : '';
+
+  if (Number.isFinite(adjusted) && adjusted > 0 && Number.isFinite(withoutUnusual) && withoutUnusual > 0) {
+    return `${purchaseLead}${unusualContext} The all-in projection is ${formatCurrency(adjusted)}, versus ${formatCurrency(withoutUnusual)} without unusual spend.`;
+  }
+  if (Number.isFinite(unusualTotal) && unusualTotal > 0) {
+    return `${purchaseLead}${unusualContext} That makes the forecast look heavier than your normal pace.`;
+  }
+  return 'This purchase is large enough to distort the month-end forecast, but it may not represent a lasting change in your normal spending.';
 }
 
 function titleForInsightType(type, fallbackTitle) {
@@ -629,6 +673,8 @@ export default function TrendDetailScreen() {
     () => trend?.projection?.overall?.top_unusual_expenses || [],
     [trend]
   );
+  const primaryUnusualExpense = unusualExpenses[0] || null;
+  const additionalUnusualExpenses = unusualExpenses.slice(1);
   const oneOffMerchants = useMemo(
     () => trend?.pace?.variance_breakdown?.top_one_off_merchants || [],
     [trend]
@@ -673,24 +719,6 @@ export default function TrendDetailScreen() {
     });
   }
   const supportsRecurringReview = `${insightType}` === 'recurring_cost_pressure';
-  const unusualDecisionBuckets = useMemo(() => {
-    const likelyDiscount = [];
-    const worthWatching = [];
-
-    for (const expense of unusualExpenses) {
-      const reason = `${expense.norm_reason || ''}`;
-      if (reason.includes('novel') || reason.includes('rare')) {
-        likelyDiscount.push(expense);
-      } else {
-        worthWatching.push(expense);
-      }
-    }
-
-    return {
-      likelyDiscount: likelyDiscount.slice(0, 3),
-      worthWatching: worthWatching.slice(0, 3),
-    };
-  }, [unusualExpenses]);
   const recurringSpikeSignals = useMemo(() => {
     if (allowMockTrend) {
       return [
@@ -884,25 +912,42 @@ export default function TrendDetailScreen() {
     }
   }
 
-  function renderUnusualExpenseReview(expense, prefix) {
+  function renderUnusualExpenseReview(expense, prefix, { prominent = false } = {}) {
     const expenseKey = expense.id || `${expense.merchant}:${expense.amount}:${expense.date || ''}`;
     const selectedReview = unusualExpenseReviews[expenseKey] || '';
     return (
-      <View key={`${prefix}:${expenseKey}`} style={styles.expenseReviewGroup}>
+      <View
+        key={`${prefix}:${expenseKey}`}
+        style={[styles.expenseReviewGroup, prominent && styles.primaryExpenseReviewGroup]}
+      >
         <TouchableOpacity
-          style={styles.reviewRow}
+          style={prominent ? styles.primaryExpenseRow : styles.reviewRow}
           activeOpacity={expense.id ? 0.82 : 1}
           disabled={!expense.id}
           onPress={() => handleOpenExpense(expense)}
+          accessibilityRole={expense.id ? 'button' : undefined}
+          accessibilityLabel={`${expense.merchant || 'Unusual purchase'}, ${formatCurrency(expense.amount)}`}
+          accessibilityHint={expense.id ? 'Opens the expense details' : undefined}
         >
           <View style={styles.driverText}>
-            <Text style={styles.driverName}>{expense.merchant}</Text>
-            <Text style={styles.driverMeta}>
-              {expense.category_name || 'Uncategorized'} · {expense.norm_reason?.replace(/_/g, ' ') || 'unusual'}
+            <Text style={prominent ? styles.primaryExpenseName : styles.driverName}>
+              {expense.merchant || 'Unusual purchase'}
+            </Text>
+            <Text style={prominent ? styles.primaryExpenseMeta : styles.driverMeta}>
+              {[formatShortDate(expense.date), expense.category_name || 'Uncategorized'].filter(Boolean).join(' · ')}
             </Text>
           </View>
-          <Text style={styles.driverDelta}>{formatCurrency(expense.amount)}</Text>
+          <View style={styles.expenseAmountGroup}>
+            <Text style={prominent ? styles.primaryExpenseAmount : styles.driverDelta}>
+              {formatCurrency(expense.amount)}
+            </Text>
+            {expense.id ? <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} /> : null}
+          </View>
         </TouchableOpacity>
+        <Text style={prominent ? styles.primaryExpenseReason : styles.secondaryExpenseReason}>
+          {unusualReasonCopy(expense)}
+        </Text>
+        <Text style={styles.classificationPrompt}>How should Adlo treat this purchase?</Text>
         <View style={styles.expenseReasonList}>
           {[
             { key: 'truly_one_off', label: 'One-off' },
@@ -921,6 +966,18 @@ export default function TrendDetailScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        {prominent && expense.id ? (
+          <TouchableOpacity
+            style={styles.viewExpenseButton}
+            activeOpacity={0.78}
+            onPress={() => handleOpenExpense(expense)}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${expense.merchant || 'purchase'} expense details`}
+          >
+            <Text style={styles.viewExpenseButtonText}>View expense</Text>
+            <Ionicons name="arrow-forward" size={15} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   }
@@ -1004,12 +1061,36 @@ export default function TrendDetailScreen() {
           <>
             <View style={styles.hero}>
               <Text style={styles.scopeChip}>{subjectLabel(scope, insightMetadata)}</Text>
-              <Text style={styles.heroTitle}>{titleForInsightType(`${insightType}`, title)}</Text>
-              <Text style={styles.heroCopy}>{summaryCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
-              <Text style={styles.heroContext}>{sharedContextCopy(scope, insightMetadata)}</Text>
+              <Text style={styles.heroTitle}>
+                {supportsUnusualReview && primaryUnusualExpense
+                  ? `${primaryUnusualExpense.merchant || 'This purchase'} is making the month look heavier`
+                  : titleForInsightType(`${insightType}`, title)}
+              </Text>
+              <Text style={styles.heroCopy}>
+                {supportsUnusualReview && primaryUnusualExpense
+                  ? `${formatCurrency(primaryUnusualExpense.amount)} on ${formatShortDate(primaryUnusualExpense.date)} · ${primaryUnusualExpense.category_name || 'Uncategorized'}`
+                  : summaryCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}
+              </Text>
+              {!supportsUnusualReview ? (
+                <Text style={styles.heroContext}>{sharedContextCopy(scope, insightMetadata)}</Text>
+              ) : null}
             </View>
 
-            {primaryAction ? (
+            {supportsUnusualReview && primaryUnusualExpense ? (
+              <View style={[styles.card, styles.purchaseFocusCard]}>
+                <Text style={styles.cardEyebrow}>Purchase behind this insight</Text>
+                {renderUnusualExpenseReview(primaryUnusualExpense, 'primary', { prominent: true })}
+                <View style={styles.impactBlock}>
+                  <Text style={styles.impactLabel}>Effect on this month</Text>
+                  <Text style={styles.impactCopy}>{anomalyImpactCopy(trend, unusualExpenses, primaryUnusualExpense)}</Text>
+                </View>
+                {unusualExpenseReviews[primaryUnusualExpense.id || `${primaryUnusualExpense.merchant}:${primaryUnusualExpense.amount}:${primaryUnusualExpense.date || ''}`] ? (
+                  <Text style={styles.feedbackNote}>Saved. Future forecasts will use this context.</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {!supportsUnusualReview && primaryAction ? (
               <View style={styles.card}>
                 <Text style={styles.cardEyebrow}>Next step</Text>
                 <Text style={styles.detailCardTitle}>{primaryAction.title}</Text>
@@ -1025,13 +1106,15 @@ export default function TrendDetailScreen() {
               </View>
             ) : null}
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>Why it matters</Text>
-              <Text style={styles.detailCardTitle}>What deserves attention</Text>
-              <Text style={styles.metricRow}>{whyItMattersCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
-            </View>
+            {!supportsUnusualReview ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Why it matters</Text>
+                <Text style={styles.detailCardTitle}>What deserves attention</Text>
+                <Text style={styles.metricRow}>{whyItMattersCopy({ insightType: `${insightType}`, trend, categoryKey: `${categoryKey}`, scope: `${scope}` })}</Text>
+              </View>
+            ) : null}
 
-            {(`${scope}` === 'household' || hasCombinedScope(insightMetadata)) ? (
+            {!supportsUnusualReview && (`${scope}` === 'household' || hasCombinedScope(insightMetadata)) ? (
               <View style={styles.sharedContextCard}>
                 <Text style={styles.cardEyebrow}>Shared context</Text>
                 <Text style={styles.detailCardTitle}>How this rolls up</Text>
@@ -1044,37 +1127,21 @@ export default function TrendDetailScreen() {
             ) : null}
 
             {supportsUnusualReview ? (
-              <View style={styles.card}>
-                <Text style={styles.cardEyebrow}>Feedback</Text>
-                <Text style={styles.detailCardTitle}>Review this unusual spend</Text>
-                <Text style={styles.feedbackCopy}>
-                  Help Adlo learn whether this really was a one-off, something expected, or a new normal to learn from.
-                </Text>
-                {unusualExpenses.length ? (
-                  <>
-                    <Text style={styles.sectionEyebrow}>How to think about this month</Text>
-                    {unusualDecisionBuckets.likelyDiscount.length ? (
-                      <>
-                        <Text style={styles.metricRow}>
-                          Probably safe to mentally discount: these look more like isolated one-offs than a real shift in your normal month shape.
-                        </Text>
-                        <View style={styles.reviewList}>
-                          {unusualDecisionBuckets.likelyDiscount.map((expense) => renderUnusualExpenseReview(expense, 'discount'))}
-                        </View>
-                      </>
-                    ) : null}
-                    {unusualDecisionBuckets.worthWatching.length ? (
-                      <>
-                        <Text style={styles.metricRow}>
-                          Worth watching if it repeats: these are unusual, but they may be closer to a real spending-pattern shift if they show up again.
-                        </Text>
-                        <View style={styles.reviewList}>
-                          {unusualDecisionBuckets.worthWatching.map((expense) => renderUnusualExpenseReview(expense, 'watch'))}
-                        </View>
-                      </>
-                    ) : null}
-                  </>
-                ) : null}
+              additionalUnusualExpenses.length ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardEyebrow}>Also affecting the signal</Text>
+                  <Text style={styles.detailCardTitle}>Other unusual purchases</Text>
+                  <Text style={styles.feedbackCopy}>
+                    These also make the month look heavier, but the purchase above is the main driver.
+                  </Text>
+                  <View style={styles.reviewList}>
+                    {additionalUnusualExpenses.map((expense) => renderUnusualExpenseReview(expense, 'additional'))}
+                  </View>
+                </View>
+              ) : !unusualExpenses.length && oneOffMerchants.length ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardEyebrow}>Unusual spend</Text>
+                  <Text style={styles.detailCardTitle}>Merchants behind this signal</Text>
                 {!unusualExpenses.length && oneOffMerchants.length ? (
                   <View style={styles.reviewList}>
                     {oneOffMerchants.map((merchant) => (
@@ -1110,7 +1177,8 @@ export default function TrendDetailScreen() {
                 {unusualReviewStatus || Object.keys(unusualExpenseReviews).length ? (
                   <Text style={styles.feedbackNote}>Saved. Adlo can use this to get better at spotting what should and should not shape future guidance.</Text>
                 ) : null}
-              </View>
+                </View>
+              ) : null
             ) : null}
 
             {supportsCategoryReview ? (
@@ -1283,30 +1351,32 @@ export default function TrendDetailScreen() {
               </View>
             ) : null}
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>Drivers</Text>
-              <Text style={styles.detailCardTitle}>What is moving this</Text>
-              {(trend.pace?.top_drivers || []).length ? (
-                trend.pace.top_drivers.map((driver) => (
-                  <View
-                    key={driver.category_key}
-                    style={[styles.driverRow, `${categoryKey}` && driver.category_key === `${categoryKey}` && styles.driverRowHighlight]}
-                  >
-                    <View style={styles.driverText}>
-                      <Text style={styles.driverName}>{driver.category_name}</Text>
-                      <Text style={styles.driverMeta}>
-                        {formatCurrency(driver.current_spend_to_date)} now vs {formatCurrency(driver.historical_spend_to_date_avg)} usual
+            {!supportsUnusualReview ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Drivers</Text>
+                <Text style={styles.detailCardTitle}>What is moving this</Text>
+                {(trend.pace?.top_drivers || []).length ? (
+                  trend.pace.top_drivers.map((driver) => (
+                    <View
+                      key={driver.category_key}
+                      style={[styles.driverRow, `${categoryKey}` && driver.category_key === `${categoryKey}` && styles.driverRowHighlight]}
+                    >
+                      <View style={styles.driverText}>
+                        <Text style={styles.driverName}>{driver.category_name}</Text>
+                        <Text style={styles.driverMeta}>
+                          {formatCurrency(driver.current_spend_to_date)} now vs {formatCurrency(driver.historical_spend_to_date_avg)} usual
+                        </Text>
+                      </View>
+                      <Text style={styles.driverDelta}>
+                        {formatDriverDelta(driver)}
                       </Text>
                     </View>
-                    <Text style={styles.driverDelta}>
-                      {formatDriverDelta(driver)}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>No strong category drivers yet.</Text>
-              )}
-            </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyText}>No strong category drivers yet.</Text>
+                )}
+              </View>
+            ) : null}
 
             {highlightedDriver ? (
               <View style={styles.card}>
@@ -1599,6 +1669,12 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
+  purchaseFocusCard: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderStrong,
+    padding: 16,
+    gap: 14,
+  },
   cardEyebrow: { color: colors.textSubtle, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
   detailCardTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
   cardCopy: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
@@ -1626,6 +1702,39 @@ const styles = StyleSheet.create({
   oneOffRow: { fontSize: 14, color: colors.text },
   reviewList: { gap: 10 },
   expenseReviewGroup: { gap: 8 },
+  primaryExpenseReviewGroup: { gap: 12 },
+  primaryExpenseRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  primaryExpenseName: { fontSize: 20, lineHeight: 25, color: colors.text, fontWeight: '700' },
+  primaryExpenseMeta: { fontSize: 13, lineHeight: 18, color: colors.textMuted, marginTop: 4 },
+  primaryExpenseAmount: { fontSize: 20, lineHeight: 25, color: colors.text, fontWeight: '700', textAlign: 'right' },
+  expenseAmountGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  primaryExpenseReason: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
+  secondaryExpenseReason: { fontSize: 12, lineHeight: 17, color: colors.textSubtle },
+  classificationPrompt: { fontSize: 12, lineHeight: 17, color: colors.textSubtle, fontWeight: '600', marginTop: 2 },
+  viewExpenseButton: {
+    minHeight: 44,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderStrong,
+    paddingTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewExpenseButtonText: { fontSize: 14, color: colors.text, fontWeight: '700' },
+  impactBlock: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderStrong,
+    paddingTop: 14,
+    gap: 5,
+  },
+  impactLabel: { fontSize: 11, color: colors.textSubtle, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  impactCopy: { fontSize: 14, lineHeight: 20, color: colors.text },
   reviewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

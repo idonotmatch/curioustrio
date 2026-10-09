@@ -1,4 +1,6 @@
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const { selectInsightEvidence } = require('../services/insightEvidence');
 const {
   getInsightCardCopy,
@@ -140,5 +142,14 @@ assert.deepStrictEqual(projectionAction.route, {
   pathname: '/scenario-check',
   params: { scope: 'household', month: '2026-09' },
 });
+
+const trendDetailSource = fs.readFileSync(path.join(__dirname, '../app/trend-detail.js'), 'utf8');
+const purchaseFocusIndex = trendDetailSource.indexOf('Purchase behind this insight');
+const supportingDetailIndex = trendDetailSource.indexOf('Supporting detail');
+assert(purchaseFocusIndex >= 0, 'anomaly detail should identify the purchase behind the insight');
+assert(trendDetailSource.includes('View expense'), 'anomaly detail should link to the source expense');
+assert(trendDetailSource.includes('How should Adlo treat this purchase?'), 'anomaly detail should collect purchase-level context');
+assert(purchaseFocusIndex < supportingDetailIndex, 'source purchase should appear before supporting forecast detail');
+assert(!trendDetailSource.includes('How to think about this month'), 'anomaly detail should avoid generic coaching copy');
 
 process.stdout.write('[mobile-logic] insight usefulness checks passed\n');
