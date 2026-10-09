@@ -216,6 +216,50 @@ function summarizeIdentity(entries = []) {
   };
 }
 
+function compactItemHistorySummary(history = {}) {
+  const purchases = Array.isArray(history.purchases) ? history.purchases : [];
+  const latestPurchase = purchases[purchases.length - 1] || null;
+  const latestUsesUnitPrice = Boolean(
+    history.price_basis_unit
+    && latestPurchase?.normalized_total_size_unit === history.price_basis_unit
+    && latestPurchase?.estimated_unit_price != null
+  );
+  const latestPrice = latestUsesUnitPrice
+    ? Number(latestPurchase.estimated_unit_price)
+    : latestPurchase?.item_amount == null
+      ? null
+      : Number(latestPurchase.item_amount);
+  const priorPrice = latestUsesUnitPrice
+    ? history.prior_median_unit_price
+    : history.prior_median_amount;
+  const normalizedPriorPrice = priorPrice == null ? null : Number(priorPrice);
+  const priceChangeAmount = latestPrice != null && normalizedPriorPrice != null
+    ? Number((latestPrice - normalizedPriorPrice).toFixed(4))
+    : null;
+  const priceChangePercent = priceChangeAmount != null && normalizedPriorPrice > 0
+    ? Number(((priceChangeAmount / normalizedPriorPrice) * 100).toFixed(1))
+    : null;
+
+  return {
+    kind: 'item_history_summary',
+    group_key: history.group_key || null,
+    item_name: history.item_name || null,
+    brand: history.brand || null,
+    identity_confidence: history.identity_confidence || null,
+    occurrence_count: Number(history.occurrence_count || 0),
+    last_purchased_at: history.last_purchased_at || null,
+    latest_merchant: latestPurchase?.merchant || history.merchants?.[0] || null,
+    merchant_count: Array.isArray(history.merchants) ? history.merchants.length : 0,
+    latest_price: latestPrice,
+    prior_price: normalizedPriorPrice,
+    price_change_amount: priceChangeAmount,
+    price_change_percent: priceChangePercent,
+    price_kind: latestUsesUnitPrice ? 'unit' : 'item',
+    price_basis_unit: latestUsesUnitPrice ? history.price_basis_unit : null,
+    cross_source_identity: history.cross_source_identity === true,
+  };
+}
+
 async function loadItemHistoryRows(ownerId, {
   scope = 'household',
   lookbackDays = 180,
@@ -325,6 +369,7 @@ async function getItemHistoryByGroupKey(ownerId, groupKey, {
 module.exports = {
   summarizeHistoryRows,
   summarizeIdentity,
+  compactItemHistorySummary,
   listItemHistorySummaries,
   getItemHistoryByGroupKey,
 };

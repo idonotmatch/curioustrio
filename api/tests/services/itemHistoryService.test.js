@@ -5,6 +5,7 @@ jest.mock('../../src/db', () => ({
 const db = require('../../src/db');
 const {
   summarizeHistoryRows,
+  compactItemHistorySummary,
   listItemHistorySummaries,
   getItemHistoryByGroupKey,
 } = require('../../src/services/itemHistoryService');
@@ -138,6 +139,66 @@ describe('summarizeHistoryRows', () => {
     ]);
 
     expect(summaries).toEqual([]);
+  });
+});
+
+describe('compactItemHistorySummary', () => {
+  it('returns a low-egress price summary without purchase history', () => {
+    const compact = compactItemHistorySummary({
+      group_key: 'comparable:sparkling water',
+      item_name: 'Sparkling Water',
+      brand: 'Water Co',
+      identity_confidence: 'medium',
+      occurrence_count: 3,
+      last_purchased_at: '2026-04-20',
+      merchants: ['Target', 'Whole Foods'],
+      prior_median_amount: 6.24,
+      cross_source_identity: true,
+      purchases: [
+        { item_amount: 5.99, merchant: 'Target', date: '2026-04-01' },
+        { item_amount: 6.49, merchant: 'Whole Foods', date: '2026-04-10' },
+        { item_amount: 5.79, merchant: 'Target', date: '2026-04-20' },
+      ],
+    });
+
+    expect(compact).toMatchObject({
+      kind: 'item_history_summary',
+      group_key: 'comparable:sparkling water',
+      item_name: 'Sparkling Water',
+      occurrence_count: 3,
+      latest_merchant: 'Target',
+      merchant_count: 2,
+      latest_price: 5.79,
+      prior_price: 6.24,
+      price_change_amount: -0.45,
+      price_change_percent: -7.2,
+      price_kind: 'item',
+      cross_source_identity: true,
+    });
+    expect(compact).not.toHaveProperty('purchases');
+    expect(compact).not.toHaveProperty('merchant_price_history');
+  });
+
+  it('compares unit prices only when the latest purchase uses the same basis', () => {
+    const compact = compactItemHistorySummary({
+      group_key: 'product:milk',
+      item_name: 'Whole Milk',
+      occurrence_count: 2,
+      price_basis_unit: 'fl_oz',
+      prior_median_unit_price: 0.07,
+      purchases: [
+        { item_amount: 4.49, estimated_unit_price: 0.07, normalized_total_size_unit: 'fl_oz' },
+        { item_amount: 4.99, estimated_unit_price: 0.078, normalized_total_size_unit: 'fl_oz' },
+      ],
+    });
+
+    expect(compact).toMatchObject({
+      latest_price: 0.078,
+      prior_price: 0.07,
+      price_change_percent: 11.4,
+      price_kind: 'unit',
+      price_basis_unit: 'fl_oz',
+    });
   });
 });
 

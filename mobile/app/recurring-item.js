@@ -10,6 +10,8 @@ import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { getItemInsightEvidence, getItemInsightSummary } from '../services/itemInsightPresentation';
 import { SecondaryButton } from '../components/ui/Buttons';
+import { InsightTrendVisual } from '../components/InsightTrendVisual';
+import { getItemPriceTrendVisual } from '../services/itemTrendPresentation';
 import { colors } from '../theme/tokens';
 
 const FEEDBACK_REASONS = [
@@ -105,6 +107,7 @@ export default function RecurringItemScreen() {
   const merchantPriceHistory = Array.isArray(history?.merchant_price_history) ? history.merchant_price_history : [];
   const purchaseHistory = Array.isArray(history?.purchases) ? history.purchases : [];
   const latestPurchase = purchaseHistory[purchaseHistory.length - 1] || null;
+  const priceTrendVisual = useMemo(() => getItemPriceTrendVisual(history || {}), [history]);
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -281,11 +284,21 @@ export default function RecurringItemScreen() {
               </View>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>What changed</Text>
-              <Text style={styles.detailTitle}>{summary.whatChanged}</Text>
-              <Text style={styles.cardCopy}>{summary.whyItMatters}</Text>
-            </View>
+            {insightId ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>What changed</Text>
+                <Text style={styles.detailTitle}>{summary.whatChanged}</Text>
+                <Text style={styles.cardCopy}>{summary.whyItMatters}</Text>
+              </View>
+            ) : null}
+
+            {priceTrendVisual ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Price trend</Text>
+                <Text style={styles.cardTitle}>How the matched price has moved</Text>
+                <InsightTrendVisual visual={priceTrendVisual} />
+              </View>
+            ) : null}
 
             <View style={styles.planningSection}>
               <Text style={styles.cardEyebrow}>Plan</Text>
@@ -353,19 +366,21 @@ export default function RecurringItemScreen() {
               {planningStatus ? <Text style={styles.planningStatus}>{planningStatus}</Text> : null}
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>Next step</Text>
-              <Text style={styles.cardTitle}>What to do next</Text>
-              <Text style={styles.cardCopy}>{summary.nextStep}</Text>
-              {latestPurchase?.id || latestPurchase?.expense_id ? (
-                <SecondaryButton
-                  title="Review latest purchase"
-                  icon="receipt-outline"
-                  onPress={() => handleOpenExpense(latestPurchase)}
-                  style={styles.reviewButton}
-                />
-              ) : null}
-            </View>
+            {insightId ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Next step</Text>
+                <Text style={styles.cardTitle}>What to do next</Text>
+                <Text style={styles.cardCopy}>{summary.nextStep}</Text>
+                {latestPurchase?.id || latestPurchase?.expense_id ? (
+                  <SecondaryButton
+                    title="Review latest purchase"
+                    icon="receipt-outline"
+                    onPress={() => handleOpenExpense(latestPurchase)}
+                    style={styles.reviewButton}
+                  />
+                ) : null}
+              </View>
+            ) : null}
 
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>Timing</Text>

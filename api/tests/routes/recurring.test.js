@@ -266,6 +266,49 @@ describe('GET /recurring/item-history', () => {
   });
 });
 
+describe('GET /recurring/item-histories', () => {
+  it('lists compact matched-item price summaries for direct browsing', async () => {
+    const dates = [20, 5].map((daysAgo) => {
+      const date = new Date();
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    });
+    const expenseIds = [];
+    for (const [index, date] of dates.entries()) {
+      const expense = await db.query(
+        `INSERT INTO expenses (user_id, household_id, merchant, amount, date, source, status)
+         VALUES ($1, $2, $3, $4, $5, 'manual', 'confirmed') RETURNING id`,
+        [userId, householdId, index === 0 ? 'Target' : 'Whole Foods', 5.99 + index, date]
+      );
+      expenseIds.push(expense.rows[0].id);
+    }
+    for (const [index, expenseId] of expenseIds.entries()) {
+      await db.query(
+        `INSERT INTO expense_items (expense_id, description, amount, brand, comparable_key, product_match_confidence)
+         VALUES ($1, 'Sparkling Water', $2, 'Water Co', 'sparkling water|brand:water co', 'high')`,
+        [expenseId, 5.99 + index]
+      );
+    }
+
+    const res = await request(app)
+      .get('/recurring/item-histories')
+      .query({ scope: 'personal' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      kind: 'item_history_summary',
+      item_name: 'Sparkling Water',
+      occurrence_count: 2,
+      latest_merchant: 'Whole Foods',
+      merchant_count: 2,
+      latest_price: 6.99,
+      prior_price: 5.99,
+    });
+    expect(res.body[0]).not.toHaveProperty('purchases');
+  });
+});
+
 describe('GET /recurring/watch-candidates', () => {
   it('returns recurring product candidates within the watch window', async () => {
     const product = await db.query(

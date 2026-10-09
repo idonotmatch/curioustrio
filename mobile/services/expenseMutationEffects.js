@@ -6,6 +6,8 @@ export const EXPENSE_MUTATION_CACHE_PREFIXES = [
   'cache:budget:',
   'cache:household-expenses:',
   'cache:insights:',
+  'cache:item-trends:',
+  'cache:recurring-item:',
 ];
 
 export async function invalidateExpenseMutationCaches({

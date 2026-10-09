@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
@@ -165,6 +166,7 @@ function SpendHeader({ myBudget, householdBudget, isMultiMember, selectedMonth, 
 }
 
 export default function FeedScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('mine');
   const [sortKey, setSortKey] = useState('newest');
@@ -288,8 +290,25 @@ export default function FeedScreen() {
         ListFooterComponent={loadingMore ? (
           <ActivityIndicator style={styles.loadingMore} color={colors.textMuted} />
         ) : null}
-        ListHeaderComponent={
-          (expenseError || budgetError) && listData.length > 0 ? (
+        ListHeaderComponent={(
+          <View style={styles.listHeader}>
+            <TouchableOpacity
+              style={styles.itemTrendsLink}
+              onPress={() => router.push('/item-trends')}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="Browse item price trends"
+            >
+              <View style={styles.itemTrendsIcon}>
+                <Ionicons name="trending-up-outline" size={18} color={colors.info} />
+              </View>
+              <View style={styles.itemTrendsCopy}>
+                <Text style={styles.itemTrendsTitle}>Item price trends</Text>
+                <Text style={styles.itemTrendsBody} numberOfLines={1}>Compare matched purchases across time and stores</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={17} color={colors.textDisabled} />
+            </TouchableOpacity>
+            {(expenseError || budgetError) && listData.length > 0 ? (
             <InlineError
               title="Showing saved transactions"
               body="The latest totals could not be refreshed. Your saved activity is still available."
@@ -297,8 +316,9 @@ export default function FeedScreen() {
               onAction={refresh}
               style={styles.feedErrorState}
             />
-          ) : null
-        }
+            ) : null}
+          </View>
+        )}
         ListEmptyComponent={
           loading ? (
             <View style={styles.loadingRows}>
@@ -425,6 +445,29 @@ const styles = StyleSheet.create({
   spendSub: { fontSize: 12, color: colors.textDisabled },
 
   list: { padding: 16, paddingBottom: 88 },
+  listHeader: { gap: 14, marginBottom: 4 },
+  itemTrendsLink: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  itemTrendsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.infoMuted,
+    borderWidth: 1,
+    borderColor: colors.infoBorder,
+  },
+  itemTrendsCopy: { flex: 1, minWidth: 0, gap: 2 },
+  itemTrendsTitle: { color: colors.text, fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  itemTrendsBody: { color: colors.textSubtle, fontSize: 12, lineHeight: 16 },
   loadingMore: { paddingVertical: 20 },
   loadingRows: { gap: 10, paddingTop: 12 },
   emptyState: { marginTop: 20 },

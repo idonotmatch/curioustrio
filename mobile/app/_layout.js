@@ -581,6 +581,7 @@ function AppNavigator() {
       <Stack.Screen name="plans" options={{ title: 'Planning', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="plan/[id]" options={{ title: 'Purchase plan', headerBackTitle: 'Planning' }} />
       <Stack.Screen name="funding-pools" options={{ title: 'Funding sources', headerBackTitle: 'Planning' }} />
+      <Stack.Screen name="item-trends" options={{ title: 'Item price trends', headerBackTitle: 'Activity' }} />
       <Stack.Screen name="trend-detail" options={{ title: 'Trend detail', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="insight-detail" options={{ title: 'Insight detail', headerBackTitle: 'Summary' }} />
       <Stack.Screen name="join" options={{ title: 'Join Household', headerBackTitle: 'Back' }} />

@@ -13,7 +13,11 @@ const {
   detectRecurringItemSignals,
   detectRecurringWatchCandidates,
 } = require('../services/recurringDetector');
-const { getItemHistoryByGroupKey } = require('../services/itemHistoryService');
+const {
+  compactItemHistorySummary,
+  getItemHistoryByGroupKey,
+  listItemHistorySummaries,
+} = require('../services/itemHistoryService');
 const { findObservationOpportunities } = require('../services/priceObservationService');
 const { emitRecurringFreshnessEvent } = require('../services/freshnessEvents');
 
@@ -54,6 +58,36 @@ router.post('/detect-item-signals', async (req, res, next) => {
     if (!user?.household_id) return res.status(403).json({ error: 'Must be in a household' });
     const signals = await detectRecurringItemSignals(user.household_id, { requesterUserId: user.id });
     res.json(signals);
+  } catch (err) { next(err); }
+});
+
+router.get('/item-histories', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const scope = `${req.query.scope || ''}`.trim() === 'personal' ? 'personal' : 'household';
+    if (scope === 'household' && !user.household_id) {
+      return res.status(403).json({ error: 'Must be in a household' });
+    }
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || 100, 200));
+    const lookbackDays = Math.max(30, Math.min(Number(req.query.lookback_days) || 180, 365));
+    const ownerId = scope === 'personal' ? user.id : user.household_id;
+    const histories = await listItemHistorySummaries(ownerId, {
+      scope,
+      lookbackDays,
+      minOccurrences: 2,
+      limit,
+      requesterUserId: user.id,
+      automaticInsightsOnly: false,
+    });
+    const summaries = histories
+      .map(compactItemHistorySummary)
+      .sort((a, b) => (
+        `${b.last_purchased_at || ''}`.localeCompare(`${a.last_purchased_at || ''}`)
+        || b.occurrence_count - a.occurrence_count
+        || `${a.item_name || ''}`.localeCompare(`${b.item_name || ''}`)
+      ));
+    res.json(summaries);
   } catch (err) { next(err); }
 });
 
