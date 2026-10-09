@@ -268,7 +268,7 @@ describe('GET /recurring/item-history', () => {
 
 describe('GET /recurring/item-histories', () => {
   it('lists compact matched-item price summaries for direct browsing', async () => {
-    const dates = [20, 5].map((daysAgo) => {
+    const dates = [30, 20, 5].map((daysAgo) => {
       const date = new Date();
       date.setDate(date.getDate() - daysAgo);
       return date.toISOString().split('T')[0];
@@ -302,8 +302,8 @@ describe('GET /recurring/item-histories', () => {
       occurrence_count: 2,
       latest_merchant: 'Whole Foods',
       merchant_count: 2,
-      latest_price: 6.99,
-      prior_price: 5.99,
+      latest_price: 7.99,
+      prior_price: 6.49,
     });
     expect(res.body[0]).not.toHaveProperty('purchases');
   });

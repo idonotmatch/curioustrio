@@ -29,6 +29,8 @@ function normalizeUnit(unit = '') {
 
 const ITEM_BOILERPLATE_MARKERS = [
   /\blet us know\b/i,
+  /\blet .{1,80} know how (?:your|the) (?:visit|experience|order) (?:was|went)\b/i,
+  /\bwe(?:'ll| will) let you know\b/i,
   /\btell us (?:about|how|what)\b/i,
   /\bshare your feedback\b/i,
   /\bhow (?:was|did) your (?:visit|experience|order)\b/i,
@@ -39,9 +41,12 @@ const ITEM_BOILERPLATE_MARKERS = [
   /\bjoin (?:our|the) rewards\b/i,
   /\bfollow us\b/i,
   /\bthanks? for (?:shopping|your purchase)\b/i,
+  /\bpopular in your interests\b/i,
 ];
 
 const REDACTED_IDENTITY_PATTERN = /(?:\[|#\[)?\s*redacted(?:[-_\s]+)(?:address|email|link|number)\s*\]?/i;
+const HTML_ENTITY_PATTERN = /&(?:#\d+|#x[a-f0-9]+|[a-z][a-z0-9]+);?/gi;
+const HTML_ENTITY_DETECT_PATTERN = /&(?:#\d+|#x[a-f0-9]+|[a-z][a-z0-9]+);?/i;
 const DISPLAY_LOWERCASE_WORDS = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']);
 const DISPLAY_UPPERCASE_WORDS = new Set(['BBQ', 'BLT', 'IPA', 'EVOO', 'GF', 'PBJ']);
 const DISPLAY_UNIT_WORDS = new Set(['CT', 'EA', 'FL', 'G', 'KG', 'L', 'LB', 'ML', 'OZ', 'PK']);
@@ -118,6 +123,11 @@ function isInsightEligibleItemIdentity(item = {}) {
     item.item_name,
   ].filter(Boolean);
   if (!values.length || values.some(hasRedactedIdentityMarker)) return false;
+  if (values.some((value) => {
+    if (!HTML_ENTITY_DETECT_PATTERN.test(`${value || ''}`)) return false;
+    const withoutEntities = `${value || ''}`.replace(HTML_ENTITY_PATTERN, ' ').replace(/[^a-z0-9]+/gi, ' ').trim();
+    return !/[a-z]{2,}/i.test(withoutEntities);
+  })) return false;
 
   const description = cleanItemDescription(item.description || item.item_name || item.normalized_name || '');
   const normalized = normalizeText(description);

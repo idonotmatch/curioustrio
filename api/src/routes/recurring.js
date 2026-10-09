@@ -78,7 +78,8 @@ router.get('/item-histories', async (req, res, next) => {
       minOccurrences: 2,
       limit,
       requesterUserId: user.id,
-      automaticInsightsOnly: false,
+      // Browse every eligible history; insight ranking is intentionally not involved.
+      automaticInsightsOnly: true,
     });
     const summaries = histories
       .map(compactItemHistorySummary)

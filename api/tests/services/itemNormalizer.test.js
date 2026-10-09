@@ -143,6 +143,14 @@ describe('itemNormalizer', () => {
   it('cleans item survey boilerplate while retaining the raw product name', () => {
     expect(cleanItemDescription('Sourdough Loaf Share your feedback')).toBe('Sourdough Loaf');
     expect(cleanItemDescription('Let us know how your visit went')).toBe('');
+    expect(cleanItemDescription('Let Bobby Boy Bakeshop know how your experience was')).toBe('');
+    expect(cleanItemDescription("We'll let you know when your order has shipped")).toBe('');
+    expect(cleanItemDescription('Popular in your interests See all')).toBe('');
+  });
+
+  it('does not create an insight identity from HTML entity noise', () => {
+    expect(isInsightEligibleItemIdentity({ description: '&#32; &#160' })).toBe(false);
+    expect(isInsightEligibleItemIdentity({ description: 'Bread &#160;' })).toBe(true);
   });
 
   it('does not create an insight identity from redacted transaction metadata', () => {
