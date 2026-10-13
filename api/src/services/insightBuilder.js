@@ -638,6 +638,7 @@ async function loadItemHistoryInsightsBestEffort(ownerId, {
   minOccurrences = 3,
   limit = 8,
   requesterUserId = null,
+  decisionHouseholdId = null,
 } = {}) {
   if (!ownerId) return [];
   try {
@@ -647,6 +648,8 @@ async function loadItemHistoryInsightsBestEffort(ownerId, {
       limit,
       requesterUserId,
       automaticInsightsOnly: true,
+      groupByFamily: true,
+      decisionHouseholdId,
     });
     return buildItemHistoryInsights(histories, scope);
   } catch (err) {
@@ -1830,6 +1833,7 @@ async function buildInsights({ user, limit = 10 }) {
         minOccurrences: 3,
         limit: 8,
         requesterUserId: user.id,
+        decisionHouseholdId: user.household_id,
       }),
       loadRecurringItemOccurrences(user.household_id, recurringOptions),
     ]);
@@ -1926,6 +1930,7 @@ async function buildInsights({ user, limit = 10 }) {
         scope: 'personal',
         minOccurrences: 3,
         limit: 8,
+        decisionHouseholdId: user.household_id || null,
       }),
       loadRecurringItemOccurrences(user.id, recurringOptions),
     ]);

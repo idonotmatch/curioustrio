@@ -5,6 +5,7 @@ const User = require('../models/user');
 const RecurringExpense = require('../models/recurringExpense');
 const RecurringPreference = require('../models/recurringPreference');
 const ItemPlanningPreference = require('../models/itemPlanningPreference');
+const ItemFamilyComparisonDecision = require('../models/itemFamilyComparisonDecision');
 const Expense = require('../models/expense');
 const ExpenseItem = require('../models/expenseItem');
 const {
@@ -80,6 +81,8 @@ router.get('/item-histories', async (req, res, next) => {
       requesterUserId: user.id,
       // Browse every eligible history; insight ranking is intentionally not involved.
       automaticInsightsOnly: true,
+      groupByFamily: true,
+      decisionHouseholdId: user.household_id || null,
     });
     const summaries = histories
       .map(compactItemHistorySummary)
@@ -103,7 +106,7 @@ router.get('/bundle-history', async (req, res, next) => {
     const groupKeys = `${req.query.group_keys || ''}`
       .split(',')
       .map((value) => value.trim())
-      .filter((value, index, values) => /^(product|comparable):.+/.test(value) && values.indexOf(value) === index)
+      .filter((value, index, values) => /^(product|comparable|family):.+/.test(value) && values.indexOf(value) === index)
       .slice(0, 8);
     if (groupKeys.length < 2) {
       return res.status(400).json({ error: 'At least two valid group_keys are required' });
@@ -112,6 +115,7 @@ router.get('/bundle-history', async (req, res, next) => {
     const histories = await Promise.all(groupKeys.map((groupKey) => getItemHistoryByGroupKey(ownerId, groupKey, {
       scope,
       requesterUserId: user.id,
+      decisionHouseholdId: user.household_id || null,
     })));
     const items = histories.filter(Boolean);
     if (items.length < 2) return res.status(404).json({ error: 'Basket history not found' });
@@ -145,11 +149,75 @@ router.get('/item-history', async (req, res, next) => {
     }
     const ownerId = scope === 'personal' ? user.id : user.household_id;
     const [history, planningPreference] = await Promise.all([
-      getItemHistoryByGroupKey(ownerId, groupKey, { scope, requesterUserId: user.id }),
+      getItemHistoryByGroupKey(ownerId, groupKey, {
+        scope,
+        requesterUserId: user.id,
+        decisionHouseholdId: user.household_id || null,
+      }),
       ItemPlanningPreference.findByUserAndGroup(user.id, groupKey),
     ]);
     if (!history) return res.status(404).json({ error: 'Recurring item history not found' });
     res.json({ ...history, planning_preference: planningPreference });
+  } catch (err) { next(err); }
+});
+
+router.post('/item-family-comparison', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!user.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const familyKey = `${req.body?.family_key || ''}`.trim();
+    const leftVariantKey = `${req.body?.left_variant_key || ''}`.trim();
+    const rightVariantKey = `${req.body?.right_variant_key || ''}`.trim();
+    const decision = `${req.body?.decision || ''}`.trim();
+    const scope = `${req.body?.scope || ''}`.trim() === 'personal' ? 'personal' : 'household';
+    if (!/^produce:[a-z0-9:_-]+$/.test(familyKey)) {
+      return res.status(400).json({ error: 'family_key is invalid' });
+    }
+    if (
+      !leftVariantKey
+      || !rightVariantKey
+      || leftVariantKey === rightVariantKey
+      || leftVariantKey.length > 500
+      || rightVariantKey.length > 500
+    ) {
+      return res.status(400).json({ error: 'Two distinct price variants are required' });
+    }
+    if (!['comparable', 'different'].includes(decision)) {
+      return res.status(400).json({ error: 'decision is invalid' });
+    }
+
+    const ownerId = scope === 'personal' ? user.id : user.household_id;
+    const groupKey = `family:${familyKey}`;
+    const history = await getItemHistoryByGroupKey(ownerId, groupKey, {
+      scope,
+      requesterUserId: user.id,
+      decisionHouseholdId: user.household_id,
+    });
+    if (!history) return res.status(404).json({ error: 'Item family history not found' });
+    const variantKeys = new Set((history.price_variants || []).map((variant) => variant.variant_key));
+    if (!variantKeys.has(leftVariantKey) || !variantKeys.has(rightVariantKey)) {
+      return res.status(400).json({ error: 'Price variant does not belong to this item family' });
+    }
+
+    await ItemFamilyComparisonDecision.upsert({
+      householdId: user.household_id,
+      userId: user.id,
+      familyKey,
+      leftVariantKey,
+      rightVariantKey,
+      decision,
+    });
+    await emitRecurringFreshnessEvent(user, 'item_family_comparison_saved', {
+      family_key: familyKey,
+      decision,
+    });
+    const refreshed = await getItemHistoryByGroupKey(ownerId, groupKey, {
+      scope,
+      requesterUserId: user.id,
+      decisionHouseholdId: user.household_id,
+    });
+    res.json(refreshed);
   } catch (err) { next(err); }
 });
 
@@ -181,7 +249,7 @@ router.put('/item-preferences', async (req, res, next) => {
       ? null
       : Number(req.body.target_price);
     const notes = req.body?.notes == null ? null : `${req.body.notes}`.trim().slice(0, 500);
-    if (!/^(product|comparable):.+/.test(groupKey)) {
+    if (!/^(product|comparable|family):.+/.test(groupKey)) {
       return res.status(400).json({ error: 'group_key is invalid' });
     }
     if (!['watching', 'needed', 'suppressed'].includes(state)) {
@@ -221,6 +289,7 @@ router.get('/planning-items', async (req, res, next) => {
       const history = await getItemHistoryByGroupKey(ownerId, preference.group_key, {
         scope,
         requesterUserId: user.id,
+        decisionHouseholdId: user.household_id || null,
       });
       if (!history) return null;
       return {

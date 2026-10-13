@@ -212,14 +212,18 @@ function deriveNormalizedTotalSize({
   normalizedSizeValue,
   normalizedSizeUnit,
   normalizedQuantity,
+  normalizedPackSize,
   purchaseQuantity,
 }) {
   if (normalizedSizeValue == null || !normalizedSizeUnit || normalizedQuantity == null) {
     return { normalizedTotalSizeValue: null, normalizedTotalSizeUnit: null };
   }
   const multiplier = purchaseQuantity != null && purchaseQuantity > 0 ? purchaseQuantity : 1;
+  const packageTotal = normalizedSizeUnit === 'ct' || normalizedSizeUnit === 'ea'
+    ? normalizedSizeValue * (normalizedPackSize || 1)
+    : normalizedSizeValue * normalizedQuantity;
   return {
-    normalizedTotalSizeValue: Number((normalizedSizeValue * normalizedQuantity * multiplier).toFixed(3)),
+    normalizedTotalSizeValue: Number((packageTotal * multiplier).toFixed(3)),
     normalizedTotalSizeUnit: normalizedSizeUnit,
   };
 }
@@ -300,6 +304,7 @@ function normalizeItemMetadata(item = {}) {
     normalizedSizeValue,
     normalizedSizeUnit,
     normalizedQuantity,
+    normalizedPackSize,
     purchaseQuantity,
   });
   let estimatedUnitPrice = deriveEstimatedUnitPrice(item.amount, normalizedTotalSizeValue);

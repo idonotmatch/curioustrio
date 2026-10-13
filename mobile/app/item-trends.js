@@ -38,7 +38,10 @@ function formatShortDate(value) {
 
 function ItemTrendRow({ item, onPress }) {
   const change = getItemTrendChange(item);
-  const changeColor = change.direction === 'up'
+  const needsPackageReview = item.price_comparison_status === 'needs_review';
+  const changeColor = needsPackageReview
+    ? colors.info
+    : change.direction === 'up'
     ? colors.warning
     : change.direction === 'down'
       ? colors.success
@@ -46,7 +49,8 @@ function ItemTrendRow({ item, onPress }) {
   const meta = [
     item.latest_merchant,
     formatShortDate(item.last_purchased_at),
-    `${item.occurrence_count} matches`,
+    `${item.occurrence_count} purchases`,
+    Number(item.price_variant_count || 0) > 1 ? `${item.price_variant_count} variants` : null,
   ].filter(Boolean).join(' · ');
 
   return (
@@ -64,7 +68,9 @@ function ItemTrendRow({ item, onPress }) {
       </View>
       <View style={styles.priceColumn}>
         <Text style={styles.itemPrice} numberOfLines={1}>{formatItemTrendPrice(item)}</Text>
-        <Text style={[styles.itemChange, { color: changeColor }]} numberOfLines={1}>{change.label}</Text>
+        <Text style={[styles.itemChange, { color: changeColor }]} numberOfLines={1}>
+          {needsPackageReview ? 'Check package match' : change.label}
+        </Text>
       </View>
       <Ionicons name="chevron-forward" size={17} color={colors.textDisabled} />
     </TouchableOpacity>

@@ -202,6 +202,105 @@ describe('compactItemHistorySummary', () => {
   });
 });
 
+describe('item family price comparisons', () => {
+  const familyRows = [
+    {
+      expense_item_id: 'costco-avocado-1',
+      expense_id: 'expense-1',
+      comparable_key: 'organic avocado bag',
+      product_match_confidence: 'medium',
+      item_name: 'Organic Avocados',
+      item_amount: 8.99,
+      normalized_total_size_value: 4,
+      normalized_total_size_unit: 'ct',
+      merchant: 'Costco',
+      date: '2026-09-01',
+    },
+    {
+      expense_item_id: 'trader-joes-avocado-1',
+      expense_id: 'expense-2',
+      comparable_key: 'avocado bag hass',
+      product_match_confidence: 'medium',
+      item_name: 'A-Avocado Bag Hass',
+      item_amount: 4.99,
+      merchant: "Trader Joe's",
+      date: '2026-09-08',
+    },
+    {
+      expense_item_id: 'trader-joes-avocado-2',
+      expense_id: 'expense-3',
+      comparable_key: 'avocado bag hass',
+      product_match_confidence: 'medium',
+      item_name: 'A-Avocado Bag Hass',
+      item_amount: 5.49,
+      merchant: "Trader Joe's",
+      date: '2026-09-15',
+    },
+  ];
+
+  it('groups produce labels into a family while keeping unknown packages out of price math', () => {
+    const [history] = summarizeHistoryRows(familyRows, { groupByFamily: true });
+
+    expect(history).toMatchObject({
+      kind: 'item_family_history',
+      group_key: 'family:produce:avocado',
+      item_name: 'Avocados',
+      occurrence_count: 3,
+      price_variant_count: 2,
+      price_comparable_purchase_count: 2,
+      median_amount: 5.24,
+      prior_median_amount: 4.99,
+      price_comparison_status: 'needs_review',
+    });
+    expect(history.merchants).toEqual(['Costco', "Trader Joe's"]);
+    expect(history.merchant_breakdown).toEqual([
+      expect.objectContaining({ merchant: "Trader Joe's", occurrence_count: 2, median_amount: 5.24 }),
+    ]);
+    expect(history.comparison_reviews).toHaveLength(1);
+  });
+
+  it('combines variants only after an explicit comparable-package decision', () => {
+    const initial = summarizeHistoryRows(familyRows, { groupByFamily: true })[0];
+    const [review] = initial.comparison_reviews;
+    const [history] = summarizeHistoryRows(familyRows, {
+      groupByFamily: true,
+      comparisonDecisions: [{
+        left_variant_key: review.left_variant_key,
+        right_variant_key: review.right_variant_key,
+        decision: 'comparable',
+      }],
+    });
+
+    expect(history).toMatchObject({
+      price_comparison_status: 'confirmed_comparable',
+      price_comparable_purchase_count: 3,
+      median_amount: 5.49,
+      baseline_purchase_count: 2,
+    });
+    expect(history.merchant_breakdown).toEqual(expect.arrayContaining([
+      expect.objectContaining({ merchant: 'Costco', occurrence_count: 1 }),
+      expect.objectContaining({ merchant: "Trader Joe's", occurrence_count: 2 }),
+    ]));
+  });
+
+  it('preserves a different-size decision without prompting again', () => {
+    const initial = summarizeHistoryRows(familyRows, { groupByFamily: true })[0];
+    const [review] = initial.comparison_reviews;
+    const [history] = summarizeHistoryRows(familyRows, {
+      groupByFamily: true,
+      comparisonDecisions: [{
+        left_variant_key: review.left_variant_key,
+        right_variant_key: review.right_variant_key,
+        decision: 'different',
+      }],
+    });
+
+    expect(history.price_comparison_status).toBe('distinct_variants');
+    expect(history.comparison_reviews).toEqual([]);
+    expect(history.price_comparable_purchase_count).toBe(2);
+  });
+});
+
 describe('listItemHistorySummaries', () => {
   it('loads rows from db and applies the minimum occurrence threshold', async () => {
     db.query.mockResolvedValueOnce({

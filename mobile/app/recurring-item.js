@@ -5,7 +5,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { refreshInsightsAfterFeedback } from '../services/insightFeedbackEffects';
-import { loadWithCache } from '../services/cache';
+import { invalidateCacheByPrefix, loadWithCache } from '../services/cache';
 import { consumeNavigationPayload } from '../services/navigationPayloadStore';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { getItemInsightEvidence, getItemInsightSummary } from '../services/itemInsightPresentation';
@@ -95,6 +95,7 @@ export default function RecurringItemScreen() {
     ? ''
     : `${preloadHistory.planning_preference.target_price}`);
   const [planningStatus, setPlanningStatus] = useState('');
+  const [comparisonSaving, setComparisonSaving] = useState(false);
   const metadata = useMemo(
     () => navPayload?.metadata || parseMetadata(Array.isArray(metadataParam) ? metadataParam[0] : metadataParam),
     [metadataParam, navPayload]
@@ -106,6 +107,8 @@ export default function RecurringItemScreen() {
   const evidence = useMemo(() => getItemInsightEvidence(metadata, history), [history, metadata]);
   const merchantPriceHistory = Array.isArray(history?.merchant_price_history) ? history.merchant_price_history : [];
   const purchaseHistory = Array.isArray(history?.purchases) ? history.purchases : [];
+  const priceVariants = Array.isArray(history?.price_variants) ? history.price_variants : [];
+  const comparisonReview = Array.isArray(history?.comparison_reviews) ? history.comparison_reviews[0] : null;
   const latestPurchase = purchaseHistory[purchaseHistory.length - 1] || null;
   const priceTrendVisual = useMemo(() => getItemPriceTrendVisual(history || {}), [history]);
   function handleOpenExpense(expense) {
@@ -169,6 +172,27 @@ export default function RecurringItemScreen() {
       Alert.alert('Could not update item plan', err?.message || 'Try again in a moment.');
     } finally {
       setPlanningSaving(false);
+    }
+  }
+
+  async function saveFamilyComparison(decision) {
+    if (!comparisonReview || !history?.item_family_key || comparisonSaving) return;
+    const normalizedScope = `${Array.isArray(scope) ? scope[0] : scope}` === 'personal' ? 'personal' : 'household';
+    try {
+      setComparisonSaving(true);
+      const result = await api.post('/recurring/item-family-comparison', {
+        family_key: history.item_family_key,
+        left_variant_key: comparisonReview.left_variant_key,
+        right_variant_key: comparisonReview.right_variant_key,
+        decision,
+        scope: normalizedScope,
+      });
+      setHistory({ ...result, planning_preference: planningPreference });
+      await invalidateCacheByPrefix('cache:item-trends:');
+    } catch (err) {
+      Alert.alert('Could not save package match', err?.message || 'Try again in a moment.');
+    } finally {
+      setComparisonSaving(false);
     }
   }
 
@@ -270,7 +294,7 @@ export default function RecurringItemScreen() {
                 Every {history.average_gap_days || '—'} days · {history.occurrence_count} purchases
               </Text>
               <Text style={styles.heroStat}>
-                Median price {formatCurrency(history.median_amount)}
+                {history.item_family_key ? 'Current package median' : 'Median price'} {formatCurrency(history.median_amount)}
                 {history.median_unit_price != null
                   ? ` · ${formatCurrency(history.median_unit_price)} / ${formatPriceBasis(history.price_basis_unit)}`
                   : ''}
@@ -292,10 +316,77 @@ export default function RecurringItemScreen() {
               </View>
             ) : null}
 
+            {history.item_family_key && priceVariants.length > 1 ? (
+              <View style={styles.card}>
+                <Text style={styles.cardEyebrow}>Package matching</Text>
+                <Text style={styles.cardTitle}>
+                  {comparisonReview
+                    ? 'Are these the same package?'
+                    : (history.price_comparison_status === 'confirmed_comparable'
+                      ? 'Confirmed package matches'
+                      : 'Price variants are separated')}
+                </Text>
+                {comparisonReview ? (
+                  <>
+                    <Text style={styles.cardCopy}>
+                      Both look like {history.item_name?.toLowerCase()}, but the receipt labels do not prove the package size. Adlo will not compare their prices until you confirm.
+                    </Text>
+                    {[comparisonReview.left, comparisonReview.right].map((variant) => (
+                      <View key={variant.variant_key} style={styles.variantRow}>
+                        <View style={styles.purchaseLeft}>
+                          <Text style={styles.purchaseMerchant}>{variant.label}</Text>
+                          <Text style={styles.purchaseDate}>{variant.merchants.join(', ') || 'Unknown merchant'}</Text>
+                        </View>
+                        <Text style={styles.variantCount}>
+                          {variant.occurrence_count} purchase{variant.occurrence_count === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                    ))}
+                    <View style={styles.comparisonActions}>
+                      <TouchableOpacity
+                        style={[styles.comparisonButton, comparisonSaving && styles.comparisonButtonDisabled]}
+                        disabled={comparisonSaving}
+                        onPress={() => saveFamilyComparison('different')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Keep these as different package sizes"
+                      >
+                        <Text style={styles.comparisonButtonText}>Different size</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.comparisonButton,
+                          styles.comparisonButtonPrimary,
+                          comparisonSaving && styles.comparisonButtonDisabled,
+                        ]}
+                        disabled={comparisonSaving}
+                        onPress={() => saveFamilyComparison('comparable')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Confirm these are comparable packages"
+                      >
+                        {comparisonSaving ? (
+                          <ActivityIndicator size="small" color={colors.textInverse} />
+                        ) : (
+                          <Text style={styles.comparisonButtonPrimaryText}>Same package</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.cardCopy}>
+                    {history.price_comparison_status === 'confirmed_comparable'
+                      ? 'Confirmed equivalents are included together. Known size differences remain separate.'
+                      : 'Known package sizes remain separate so sticker prices are not compared incorrectly.'}
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
             {priceTrendVisual ? (
               <View style={styles.card}>
                 <Text style={styles.cardEyebrow}>Price trend</Text>
-                <Text style={styles.cardTitle}>How the matched price has moved</Text>
+                <Text style={styles.cardTitle}>
+                  {history.item_family_key ? 'How this package price has moved' : 'How the matched price has moved'}
+                </Text>
                 <InsightTrendVisual visual={priceTrendVisual} />
               </View>
             ) : null}
@@ -401,7 +492,7 @@ export default function RecurringItemScreen() {
               </View>
             </View>
 
-            {merchantPriceHistory.length > 0 ? (
+            {merchantPriceHistory.length > 1 ? (
               <View style={styles.card}>
                 <Text style={styles.cardEyebrow}>Merchant comparison</Text>
                 <Text style={styles.cardTitle}>Where this item tends to land</Text>
@@ -664,6 +755,32 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderSubtle,
     gap: 12,
   },
+  variantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  variantCount: { color: colors.textSubtle, fontSize: 12, flexShrink: 0 },
+  comparisonActions: { flexDirection: 'row', gap: 8, paddingTop: 2 },
+  comparisonButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 10,
+  },
+  comparisonButtonPrimary: { backgroundColor: colors.text, borderColor: colors.text },
+  comparisonButtonDisabled: { opacity: 0.55 },
+  comparisonButtonText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  comparisonButtonPrimaryText: { color: colors.textInverse, fontSize: 13, fontWeight: '600' },
   purchaseLeft: { flex: 1, minWidth: 0 },
   purchaseMerchant: { fontSize: 15, color: colors.text, fontWeight: '500' },
   purchaseDate: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },

@@ -78,6 +78,24 @@ describe('itemNormalizer', () => {
     expect(normalized.comparable_key).toBe('organic lasagne|size:16oz');
   });
 
+  it('does not square count-based package sizes', () => {
+    const singlePackage = normalizeItemMetadata({
+      description: 'Hass Avocados 4 ct',
+      amount: 5.49,
+    });
+    const twoPackages = normalizeItemMetadata({
+      description: 'Hass Avocados 4 ct',
+      amount: 10.98,
+      quantity: 2,
+    });
+
+    expect(singlePackage.normalized_quantity).toBe(4);
+    expect(singlePackage.normalized_total_size_value).toBe(4);
+    expect(singlePackage.estimated_unit_price).toBeCloseTo(1.3725, 4);
+    expect(twoPackages.normalized_total_size_value).toBe(8);
+    expect(twoPackages.estimated_unit_price).toBeCloseTo(1.3725, 4);
+  });
+
   it('keeps single-item products comparable even without package metadata', () => {
     const normalized = normalizeItemMetadata({
       description: 'Organic Bananas',

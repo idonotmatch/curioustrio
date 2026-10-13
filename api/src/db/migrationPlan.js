@@ -77,6 +77,8 @@ const MIGRATION_PLAN = [
   '081_item_intelligence_preferences.sql',
   '082_purchase_planning_foundation.sql',
   '083_purchase_planning_ux.sql',
+  '084_item_family_comparison_decisions.sql',
+  '085_count_unit_normalization_fix.sql',
 ];
 
 module.exports = {

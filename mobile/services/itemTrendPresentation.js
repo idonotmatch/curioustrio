@@ -46,7 +46,9 @@ export function filterItemTrendRows(rows = [], { query = '', filter = 'all' } = 
 }
 
 export function getItemPriceTrendVisual(history = {}) {
-  const purchases = Array.isArray(history.purchases) ? history.purchases : [];
+  const purchases = Array.isArray(history.comparison_purchases)
+    ? history.comparison_purchases
+    : (Array.isArray(history.purchases) ? history.purchases : []);
   const basisUnit = history.price_basis_unit || null;
   let observations = basisUnit
     ? purchases

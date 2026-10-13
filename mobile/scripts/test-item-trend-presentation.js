@@ -47,4 +47,20 @@ assert.strictEqual(visual.value, '$6.50');
 assert.deepStrictEqual(visual.points, [0, 0.5, 1]);
 assert.deepStrictEqual(visual.projection, { label: 'Typical', value: '$6.00' });
 
+const guardedVisual = getItemPriceTrendVisual({
+  median_amount: 5.5,
+  purchases: [
+    { date: '2026-08-01', item_amount: 8.99 },
+    { date: '2026-09-01', item_amount: 4.99 },
+    { date: '2026-10-01', item_amount: 5.49 },
+  ],
+  comparison_purchases: [
+    { date: '2026-09-01', item_amount: 4.99 },
+    { date: '2026-10-01', item_amount: 5.49 },
+  ],
+});
+assert.strictEqual(guardedVisual.label, 'Last 2 comparable prices');
+assert.strictEqual(guardedVisual.value, '$5.49');
+assert.deepStrictEqual(guardedVisual.points, [0, 1]);
+
 process.stdout.write('[mobile-logic] item trend presentation checks passed\n');
