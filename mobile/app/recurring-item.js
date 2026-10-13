@@ -72,6 +72,7 @@ export default function RecurringItemScreen() {
     metadata: metadataParam = '',
     preload_history: preloadHistoryParam = '',
     payload_key: payloadKeyParam = '',
+    origin = '',
   } = useLocalSearchParams();
   const navPayload = useMemo(
     () => consumeNavigationPayload(Array.isArray(payloadKeyParam) ? payloadKeyParam[0] : payloadKeyParam, null),
@@ -111,6 +112,9 @@ export default function RecurringItemScreen() {
   const comparisonReview = Array.isArray(history?.comparison_reviews) ? history.comparison_reviews[0] : null;
   const latestPurchase = purchaseHistory[purchaseHistory.length - 1] || null;
   const priceTrendVisual = useMemo(() => getItemPriceTrendVisual(history || {}), [history]);
+  const headerBackTitle = `${Array.isArray(origin) ? origin[0] : origin}` === 'item-trends'
+    ? 'Item trends'
+    : 'Summary';
   function handleOpenExpense(expense) {
     openExpenseDetail(router, expense);
   }
@@ -275,7 +279,7 @@ export default function RecurringItemScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen options={{ title: title || 'Recurring item', headerBackTitle: 'Summary' }} />
+      <Stack.Screen options={{ title: title || 'Recurring item', headerBackTitle }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
           <View style={styles.center}>
