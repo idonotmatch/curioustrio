@@ -95,7 +95,7 @@ export default function ItemTrendsScreen() {
     setError('');
     try {
       await loadWithCache(
-        `cache:item-trends:v1:${scope}`,
+        `cache:item-trends:v2:${scope}`,
         () => api.get(`/recurring/item-histories?scope=${encodeURIComponent(scope)}&limit=100`),
         (data) => {
           setRows(Array.isArray(data) ? data : []);

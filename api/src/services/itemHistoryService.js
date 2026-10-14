@@ -538,10 +538,11 @@ async function getItemHistoryByGroupKey(ownerId, groupKey, {
   const rows = await loadItemHistoryRows(ownerId, { scope, lookbackDays, groupKey, requesterUserId });
   if (`${groupKey}`.startsWith('family:')) {
     const familyKey = `${groupKey}`.slice('family:'.length);
+    const eligibleRows = rows.filter((row) => classifyItemInsightContext(row).eligible);
     const comparisonDecisions = decisionHouseholdId
       ? await ItemFamilyComparisonDecision.findByFamily(decisionHouseholdId, familyKey)
       : [];
-    return summarizeHistoryRows(rows, { groupByFamily: true, comparisonDecisions })
+    return summarizeHistoryRows(eligibleRows, { groupByFamily: true, comparisonDecisions })
       .find((entry) => entry.group_key === groupKey) || null;
   }
   return summarizeHistoryRows(rows)[0] || null;

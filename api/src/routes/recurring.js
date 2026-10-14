@@ -21,6 +21,7 @@ const {
 } = require('../services/itemHistoryService');
 const { findObservationOpportunities } = require('../services/priceObservationService');
 const { emitRecurringFreshnessEvent } = require('../services/freshnessEvents');
+const { isSupportedItemFamilyKey } = require('../services/itemFamilyService');
 
 router.use(authenticate);
 
@@ -171,7 +172,7 @@ router.post('/item-family-comparison', async (req, res, next) => {
     const rightVariantKey = `${req.body?.right_variant_key || ''}`.trim();
     const decision = `${req.body?.decision || ''}`.trim();
     const scope = `${req.body?.scope || ''}`.trim() === 'personal' ? 'personal' : 'household';
-    if (!/^produce:[a-z0-9:_-]+$/.test(familyKey)) {
+    if (!isSupportedItemFamilyKey(familyKey)) {
       return res.status(400).json({ error: 'family_key is invalid' });
     }
     if (
