@@ -137,6 +137,28 @@ describe('itemFamilyService', () => {
   it('rejects arbitrary family keys', () => {
     expect(isSupportedItemFamilyKey('produce:dragonfruit')).toBe(false);
     expect(isSupportedItemFamilyKey('anything:else')).toBe(false);
+    expect(isSupportedItemFamilyKey('learned:chicken-breast:1234abcd')).toBe(true);
+  });
+
+  it('resolves learned assignments before seeded rules and preserves variant safeguards', () => {
+    const learned = enrichWithItemFamily({
+      description: 'Boneless Chicken Breast 2 lb',
+      comparable_key: 'boneless chicken breast',
+      assigned_family_key: 'learned:chicken-breast:1234abcd',
+      assigned_family_name: 'Chicken Breast',
+      assigned_family_signature: 'chicken breast',
+      assigned_family_source: 'user_confirmed',
+      normalized_total_size_value: 32,
+      normalized_total_size_unit: 'oz',
+    });
+
+    expect(learned).toMatchObject({
+      family_key: 'learned:chicken-breast:1234abcd',
+      family_name: 'Chicken Breast',
+      family_source: 'user_confirmed',
+      price_variant_key: 'learned:chicken-breast:1234abcd|variant:boneless|size:32oz',
+      price_comparison_confidence: 'high',
+    });
   });
 
   it('normalizes comparison pairs deterministically', () => {

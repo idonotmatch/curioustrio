@@ -6,6 +6,7 @@ const RecurringExpense = require('../models/recurringExpense');
 const RecurringPreference = require('../models/recurringPreference');
 const ItemPlanningPreference = require('../models/itemPlanningPreference');
 const ItemFamilyComparisonDecision = require('../models/itemFamilyComparisonDecision');
+const ItemFamilyLearning = require('../models/itemFamilyLearning');
 const Expense = require('../models/expense');
 const ExpenseItem = require('../models/expenseItem');
 const {
@@ -22,6 +23,7 @@ const {
 const { findObservationOpportunities } = require('../services/priceObservationService');
 const { emitRecurringFreshnessEvent } = require('../services/freshnessEvents');
 const { isSupportedItemFamilyKey } = require('../services/itemFamilyService');
+const { discoverItemFamilyCandidates } = require('../services/itemFamilyLearningService');
 
 router.use(authenticate);
 
@@ -220,6 +222,51 @@ router.post('/item-family-comparison', async (req, res, next) => {
     });
     res.json(refreshed);
   } catch (err) { next(err); }
+});
+
+router.get('/item-family-suggestions', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!user.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 25));
+    const suggestions = await discoverItemFamilyCandidates({
+      householdId: user.household_id,
+      requesterUserId: user.id,
+      limit,
+    });
+    res.json(suggestions);
+  } catch (err) { next(err); }
+});
+
+router.post('/item-family-suggestions/:id/review', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!user.household_id) return res.status(403).json({ error: 'Must be in a household' });
+    const decision = `${req.body?.decision || ''}`.trim();
+    if (!['same', 'different', 'undo'].includes(decision)) {
+      return res.status(400).json({ error: 'decision is invalid' });
+    }
+    const reviewed = await ItemFamilyLearning.reviewCandidate({
+      householdId: user.household_id,
+      userId: user.id,
+      candidateId: req.params.id,
+      decision,
+    });
+    if (!reviewed) return res.status(404).json({ error: 'Item match suggestion not found' });
+    await emitRecurringFreshnessEvent(user, 'item_family_learning_reviewed', {
+      candidate_id: reviewed.id,
+      decision,
+      family_key: reviewed.suggested_family_key,
+    });
+    res.json(reviewed);
+  } catch (err) {
+    if (err?.code === 'ITEM_FAMILY_CONFLICT') {
+      return res.status(409).json({ error: err.message });
+    }
+    next(err);
+  }
 });
 
 router.get('/item-preferences', async (req, res, next) => {

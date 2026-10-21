@@ -79,6 +79,7 @@ const MIGRATION_PLAN = [
   '083_purchase_planning_ux.sql',
   '084_item_family_comparison_decisions.sql',
   '085_count_unit_normalization_fix.sql',
+  '086_item_family_learning.sql',
 ];
 
 module.exports = {

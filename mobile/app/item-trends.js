@@ -16,6 +16,7 @@ import { loadWithCache } from '../services/cache';
 import { useHousehold } from '../hooks/useHousehold';
 import { SegmentedControl } from '../components/ui/SegmentedControl';
 import { EmptyState, InlineError, SkeletonRow } from '../components/ui/States';
+import { ActionRow } from '../components/ui/Buttons';
 import {
   filterItemTrendRows,
   formatItemTrendPrice,
@@ -166,6 +167,12 @@ export default function ItemTrendsScreen() {
                 onChange={setScope}
               />
             ) : null}
+            <ActionRow
+              title="Review possible matches"
+              body="Confirm labels before histories are combined."
+              icon="git-compare-outline"
+              onPress={() => router.push('/item-family-review')}
+            />
             <View style={styles.searchBox}>
               <Ionicons name="search-outline" size={18} color={colors.textSubtle} />
               <TextInput

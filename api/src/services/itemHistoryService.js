@@ -447,7 +447,7 @@ async function loadItemHistoryRows(ownerId, {
     }
   }
 
-  const sharedSelect = `
+  const buildSharedSelect = (includeAssignments = true) => `
     SELECT
       ei.id AS expense_item_id,
       ei.expense_id,
@@ -468,6 +468,10 @@ async function loadItemHistoryRows(ownerId, {
       ei.estimated_unit_price,
       ei.normalized_total_size_value,
       ei.normalized_total_size_unit,
+      ${includeAssignments ? 'ifa.family_key' : 'NULL::text'} AS assigned_family_key,
+      ${includeAssignments ? 'ifa.family_name' : 'NULL::text'} AS assigned_family_name,
+      ${includeAssignments ? 'ifa.family_signature' : 'NULL::text'} AS assigned_family_signature,
+      ${includeAssignments ? 'ifa.source' : 'NULL::text'} AS assigned_family_source,
       e.merchant,
       e.date,
       c.name AS expense_category_name,
@@ -478,6 +482,10 @@ async function loadItemHistoryRows(ownerId, {
     LEFT JOIN products p ON p.id = ei.product_id
     LEFT JOIN categories c ON c.id = e.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
+    ${includeAssignments ? `LEFT JOIN item_family_assignments ifa
+      ON ifa.household_id = e.household_id
+     AND ifa.item_key = ei.comparable_key
+     AND ifa.active = TRUE` : ''}
     WHERE ${expenseScopeClause(scope, 1)}
       ${visibilityClause}
       AND e.status = 'confirmed'
@@ -489,15 +497,26 @@ async function loadItemHistoryRows(ownerId, {
       ${identityClause}
     ORDER BY e.date DESC`;
 
-  const result = await queryBudgetRelevant(
-    sharedSelect.replace(
-      `AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')`,
-      `AND e.exclude_from_budget = FALSE
-      AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')`
-    ),
-    values,
-    sharedSelect
-  );
+  const runHistoryQuery = (includeAssignments) => {
+    const sharedSelect = buildSharedSelect(includeAssignments);
+    return queryBudgetRelevant(
+      sharedSelect.replace(
+        `AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')`,
+        `AND e.exclude_from_budget = FALSE
+        AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')`
+      ),
+      values,
+      sharedSelect
+    );
+  };
+
+  let result;
+  try {
+    result = await runHistoryQuery(true);
+  } catch (err) {
+    if (err?.code !== '42P01' || !/item_family_assignments/i.test(`${err?.message || ''}`)) throw err;
+    result = await runHistoryQuery(false);
+  }
 
   return result.rows;
 }
@@ -552,6 +571,7 @@ module.exports = {
   summarizeHistoryRows,
   summarizeIdentity,
   compactItemHistorySummary,
+  loadItemHistoryRows,
   listItemHistorySummaries,
   getItemHistoryByGroupKey,
 };

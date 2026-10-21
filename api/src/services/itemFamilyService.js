@@ -114,13 +114,22 @@ function findFamilyRule(item = {}) {
 }
 
 function deriveItemFamilyIdentity(item = {}) {
+  if (item.assigned_family_key && item.assigned_family_name) {
+    return {
+      family_key: `${item.assigned_family_key}`,
+      family_name: `${item.assigned_family_name}`,
+      family_signature: `${item.assigned_family_signature || item.assigned_family_name}`,
+      family_source: `${item.assigned_family_source || 'user_confirmed'}`,
+    };
+  }
   const rule = findFamilyRule(item);
   if (!rule) return null;
   return { family_key: rule.key, family_name: rule.name };
 }
 
 function isSupportedItemFamilyKey(value) {
-  return FAMILY_RULES_BY_KEY.has(`${value || ''}`);
+  const key = `${value || ''}`;
+  return FAMILY_RULES_BY_KEY.has(key) || /^learned:[a-z0-9-]{1,64}:[a-f0-9]{8}$/.test(key);
 }
 
 function formatComparableNumber(value) {
@@ -140,13 +149,22 @@ function variantDescriptor(normalizedName, rule) {
     .slice(0, 120);
 }
 
+function dynamicFamilyRule(familyIdentity) {
+  const tokens = normalizeText(familyIdentity?.family_signature || familyIdentity?.family_name)
+    .split(' ')
+    .filter((token) => token.length >= 2)
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!tokens.length) return null;
+  return { stripIdentity: new RegExp(`\\b(?:${tokens.join('|')})\\b`, 'gi') };
+}
+
 function formatSizeLabel(formattedSize, sizeUnit) {
   return `${formattedSize} ${sizeUnit === 'ct' || sizeUnit === 'ea' ? 'count' : sizeUnit.replace(/_/g, ' ')}`;
 }
 
 function derivePriceVariant(item = {}, familyIdentity = deriveItemFamilyIdentity(item)) {
   if (!familyIdentity) return null;
-  const rule = FAMILY_RULES_BY_KEY.get(familyIdentity.family_key);
+  const rule = FAMILY_RULES_BY_KEY.get(familyIdentity.family_key) || dynamicFamilyRule(familyIdentity);
   if (!rule) return null;
   const normalized = normalizeItemMetadata({
     description: sourceDescription(item),
