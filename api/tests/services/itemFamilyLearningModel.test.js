@@ -24,8 +24,25 @@ describe('itemFamilyLearning model', () => {
     )).resolves.toHaveLength(1);
 
     expect(db.query.mock.calls[0][0]).toContain('COUNT(*)::int AS occurrence_count');
+    expect(db.query.mock.calls[0][0]).not.toContain('JSONB_BUILD_OBJECT');
     expect(db.query.mock.calls[0][0]).toContain('GROUP BY');
-    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 365, 'user-1']);
+    expect(db.query.mock.calls[0][0]).toContain('COALESCE(e.is_private, FALSE) = FALSE');
+    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 365]);
+  });
+
+  it('loads rich purchase evidence only for selected identity keys', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ comparable_key: 'chicken breast', purchases: [] }] });
+
+    await ItemFamilyLearning.loadCandidateEvidence(
+      'household-1',
+      ['chicken breast', 'chicken breast'],
+      365
+    );
+
+    expect(db.query.mock.calls[0][0]).toContain('JSONB_BUILD_OBJECT');
+    expect(db.query.mock.calls[0][0]).toContain('ei.comparable_key = ANY($3::text[])');
+    expect(db.query.mock.calls[0][0]).toContain('COALESCE(e.is_private, FALSE) = FALSE');
+    expect(db.query.mock.calls[0][1]).toEqual(['household-1', 365, ['chicken breast']]);
   });
 
   it('stores generated candidates as one bounded JSON batch', async () => {
@@ -44,8 +61,19 @@ describe('itemFamilyLearning model', () => {
 
     await ItemFamilyLearning.saveCandidates('household-1', [candidate]);
 
+    expect(db.query.mock.calls[0][0]).toContain('removed_stale');
     expect(db.query.mock.calls[0][1][0]).toBe('household-1');
     expect(JSON.parse(db.query.mock.calls[0][1][1])).toEqual([candidate]);
+  });
+
+  it('clears stale pending candidates even when no suggestions remain', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await ItemFamilyLearning.saveCandidates('household-1', []);
+
+    expect(db.query).toHaveBeenCalledTimes(1);
+    expect(db.query.mock.calls[0][0]).toContain("existing.status = 'pending'");
+    expect(JSON.parse(db.query.mock.calls[0][1][1])).toEqual([]);
   });
 
   it('accepts a candidate transactionally and writes learned assignments', async () => {

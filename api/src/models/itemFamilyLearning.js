@@ -1,5 +1,4 @@
 const db = require('../db');
-const { householdExpenseVisibilitySql } = require('../services/expenseAccessPolicy');
 
 function isMissingTableError(err) {
   return err?.code === '42P01' || /item_family_(?:learning_candidates|assignments)/i.test(`${err?.message || ''}`);
@@ -14,13 +13,14 @@ async function loadCandidateGroups(householdId, requesterUserId, lookbackDays = 
   const params = [
     householdId,
     Math.max(1, Math.min(Number(lookbackDays) || 365, 365)),
-    requesterUserId,
   ];
   const buildQuery = (includeBudgetFilter) => `
     SELECT
       ei.comparable_key,
       (ARRAY_AGG(COALESCE(p.name, ei.description) ORDER BY e.date DESC))[1] AS item_name,
       COUNT(*)::int AS occurrence_count,
+      MIN(e.date) AS first_purchased_at,
+      MAX(e.date) AS last_purchased_at,
       ARRAY_REMOVE(
         ARRAY_AGG(DISTINCT NULLIF(BTRIM(e.merchant), '')),
         NULL
@@ -34,7 +34,7 @@ async function loadCandidateGroups(householdId, requesterUserId, lookbackDays = 
     LEFT JOIN categories c ON c.id = e.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
     WHERE e.household_id = $1
-      AND ${householdExpenseVisibilitySql(3)}
+      AND COALESCE(e.is_private, FALSE) = FALSE
       AND e.status = 'confirmed'
       ${includeBudgetFilter ? 'AND e.exclude_from_budget = FALSE' : ''}
       AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')
@@ -49,6 +49,57 @@ async function loadCandidateGroups(householdId, requesterUserId, lookbackDays = 
       COALESCE(pc.name, c.name)
     ORDER BY COUNT(*) DESC, MAX(e.date) DESC
     LIMIT 1000`;
+
+  try {
+    return (await queryable.query(buildQuery(true), params)).rows;
+  } catch (err) {
+    if (!isMissingExcludeFromBudgetError(err)) throw err;
+    return (await queryable.query(buildQuery(false), params)).rows;
+  }
+}
+
+async function loadCandidateEvidence(householdId, itemKeys = [], lookbackDays = 365, queryable = db) {
+  const keys = [...new Set(itemKeys.map((key) => `${key || ''}`.trim()).filter(Boolean))].slice(0, 500);
+  if (!householdId || !keys.length) return [];
+  const params = [
+    householdId,
+    Math.max(1, Math.min(Number(lookbackDays) || 365, 365)),
+    keys,
+  ];
+  const buildQuery = (includeBudgetFilter) => `
+    SELECT
+      ei.comparable_key,
+      (ARRAY_AGG(
+        JSONB_BUILD_OBJECT(
+          'expense_id', e.id,
+          'expense_amount', e.amount,
+          'label', COALESCE(p.name, ei.description),
+          'merchant', e.merchant,
+          'date', e.date,
+          'amount', ei.amount,
+          'quantity', ei.quantity,
+          'unit', ei.unit,
+          'product_size', ei.product_size,
+          'pack_size', ei.pack_size,
+          'normalized_total_size_value', ei.normalized_total_size_value,
+          'normalized_total_size_unit', ei.normalized_total_size_unit,
+          'source_type', COALESCE(ei.source_type, e.source)
+        )
+        ORDER BY e.date DESC, e.created_at DESC
+      ))[1:3] AS purchases
+    FROM expense_items ei
+    JOIN expenses e ON e.id = ei.expense_id
+    LEFT JOIN products p ON p.id = ei.product_id
+    WHERE e.household_id = $1
+      AND COALESCE(e.is_private, FALSE) = FALSE
+      AND e.status = 'confirmed'
+      ${includeBudgetFilter ? 'AND e.exclude_from_budget = FALSE' : ''}
+      AND e.date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')
+      AND COALESCE(ei.item_type, 'product') = 'product'
+      AND COALESCE(ei.extraction_confidence, 'medium') <> 'low'
+      AND COALESCE(ei.product_match_reason, '') <> 'user_rejected_match'
+      AND ei.comparable_key = ANY($3::text[])
+    GROUP BY ei.comparable_key`;
 
   try {
     return (await queryable.query(buildQuery(true), params)).rows;
@@ -77,10 +128,34 @@ async function findAssignments(householdId, queryable = db) {
 }
 
 async function saveCandidates(householdId, candidates = [], queryable = db) {
-  if (!householdId || !candidates.length) return [];
+  if (!householdId) return [];
   try {
     const result = await queryable.query(
-      `INSERT INTO item_family_learning_candidates (
+      `WITH incoming AS (
+         SELECT *
+         FROM jsonb_to_recordset($2::jsonb) AS candidate(
+           left_item_key TEXT,
+           right_item_key TEXT,
+           left_label TEXT,
+           right_label TEXT,
+           suggested_family_key TEXT,
+           suggested_family_name TEXT,
+           family_signature TEXT,
+           similarity_score NUMERIC,
+           evidence JSONB
+         )
+       ), removed_stale AS (
+         DELETE FROM item_family_learning_candidates existing
+         WHERE existing.household_id = $1
+           AND existing.status = 'pending'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM incoming
+             WHERE incoming.left_item_key = existing.left_item_key
+               AND incoming.right_item_key = existing.right_item_key
+           )
+       )
+       INSERT INTO item_family_learning_candidates (
          household_id, left_item_key, right_item_key, left_label, right_label,
          suggested_family_key, suggested_family_name, family_signature,
          similarity_score, evidence
@@ -96,17 +171,7 @@ async function saveCandidates(householdId, candidates = [], queryable = db) {
          candidate.family_signature,
          candidate.similarity_score,
          candidate.evidence
-       FROM jsonb_to_recordset($2::jsonb) AS candidate(
-         left_item_key TEXT,
-         right_item_key TEXT,
-         left_label TEXT,
-         right_label TEXT,
-         suggested_family_key TEXT,
-         suggested_family_name TEXT,
-         family_signature TEXT,
-         similarity_score NUMERIC,
-         evidence JSONB
-       )
+       FROM incoming candidate
        ON CONFLICT (household_id, left_item_key, right_item_key)
        DO UPDATE SET
          left_label = EXCLUDED.left_label,
@@ -279,6 +344,7 @@ module.exports = {
   findAssignments,
   isMissingTableError,
   listPending,
+  loadCandidateEvidence,
   loadCandidateGroups,
   reviewCandidate,
   saveCandidates,

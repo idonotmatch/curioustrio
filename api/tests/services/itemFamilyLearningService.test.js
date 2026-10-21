@@ -1,12 +1,15 @@
 jest.mock('../../src/models/itemFamilyLearning', () => ({
   findAssignments: jest.fn(),
   listPending: jest.fn(),
+  loadCandidateEvidence: jest.fn(),
   loadCandidateGroups: jest.fn(),
   saveCandidates: jest.fn(),
 }));
 
+const ItemFamilyLearning = require('../../src/models/itemFamilyLearning');
 const {
   buildItemFamilyCandidates,
+  discoverItemFamilyCandidates,
   learnedFamilyKey,
   scoreLabelPair,
 } = require('../../src/services/itemFamilyLearningService');
@@ -24,6 +27,8 @@ function repeatedRows(itemName, comparableKey, merchant = 'Market') {
 }
 
 describe('itemFamilyLearningService', () => {
+  beforeEach(() => jest.clearAllMocks());
+
   it('scores a specific contained identity while normalizing common spelling variants', () => {
     expect(scoreLabelPair('Salmon Filet', 'Atlantic Salmon Fillet')).toMatchObject({
       signature: 'salmon filet',
@@ -33,6 +38,14 @@ describe('itemFamilyLearningService', () => {
 
   it('does not suggest a match from a flavor-level overlap', () => {
     expect(scoreLabelPair('Greek Yogurt Strawberry', 'Greek Yogurt Blueberry')).toBeNull();
+  });
+
+  it('does not treat a numeric SKU prefix plus a brand-only label as product evidence', () => {
+    expect(scoreLabelPair('081229062 Mondo Llama', 'Mondo Llama')).toBeNull();
+    expect(scoreLabelPair(
+      'Stationery & Office Supplies 081228295 Mondo Llama',
+      'Mondo Llama'
+    )).toBeNull();
   });
 
   it.each([
@@ -127,7 +140,10 @@ describe('itemFamilyLearningService', () => {
       {
         ...repeatedRows('Chicken Breast', 'chicken breast')[0],
         occurrence_count: 4,
-        merchants: ['Market', 'Warehouse Club'],
+        merchants: ['Market', 'Warehouse Club', 'MARKET'],
+        first_purchased_at: '2026-07-01',
+        last_purchased_at: '2026-10-01',
+        purchases: [{ expense_id: 'expense-1', merchant: 'Warehouse Club', date: '2026-10-01', amount: 8.99 }],
       },
       {
         ...repeatedRows('Boneless Chicken Breast', 'boneless chicken breast')[0],
@@ -141,7 +157,40 @@ describe('itemFamilyLearningService', () => {
         left_occurrence_count: 1,
         right_occurrence_count: 4,
         right_merchants: ['Market', 'Warehouse Club'],
+        right_first_purchased_at: '2026-07-01',
+        right_last_purchased_at: '2026-10-01',
+        right_purchases: [{ expense_id: 'expense-1', merchant: 'Warehouse Club', date: '2026-10-01', amount: 8.99 }],
       },
+    });
+  });
+
+  it('fetches rich evidence only after compact candidate selection', async () => {
+    ItemFamilyLearning.loadCandidateGroups.mockResolvedValueOnce([
+      { ...repeatedRows('Chicken Breast', 'chicken breast')[0], occurrence_count: 2, merchants: ['Market'] },
+      { ...repeatedRows('Boneless Chicken Breast', 'boneless chicken breast')[0], occurrence_count: 1, merchants: ['Club'] },
+    ]);
+    ItemFamilyLearning.findAssignments.mockResolvedValueOnce([]);
+    ItemFamilyLearning.loadCandidateEvidence.mockResolvedValueOnce([
+      { comparable_key: 'chicken breast', purchases: [{ expense_id: 'expense-1' }] },
+      { comparable_key: 'boneless chicken breast', purchases: [{ expense_id: 'expense-2' }] },
+    ]);
+    ItemFamilyLearning.saveCandidates.mockResolvedValueOnce([]);
+    ItemFamilyLearning.listPending.mockResolvedValueOnce([{ id: 'candidate-1' }]);
+
+    await expect(discoverItemFamilyCandidates({
+      householdId: 'household-1',
+      requesterUserId: 'user-1',
+      limit: 12,
+    })).resolves.toEqual([{ id: 'candidate-1' }]);
+
+    expect(ItemFamilyLearning.loadCandidateEvidence).toHaveBeenCalledWith(
+      'household-1',
+      ['boneless chicken breast', 'chicken breast'],
+      365
+    );
+    expect(ItemFamilyLearning.saveCandidates.mock.calls[0][1][0].evidence).toMatchObject({
+      left_purchases: [{ expense_id: 'expense-2' }],
+      right_purchases: [{ expense_id: 'expense-1' }],
     });
   });
 });

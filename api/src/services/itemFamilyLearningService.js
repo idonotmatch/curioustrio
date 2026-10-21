@@ -42,6 +42,12 @@ function scoreLabelPair(leftLabel, rightLabel) {
   const rightSet = new Set(rightTokens);
   const common = leftTokens.filter((token) => rightSet.has(token));
   if (!common.length) return null;
+  const sharedSet = new Set(common);
+  const unmatched = [...leftTokens, ...rightTokens].filter((token) => !sharedSet.has(token));
+  const oneSideIsOnlySharedIdentity = leftTokens.every((token) => sharedSet.has(token))
+    || rightTokens.every((token) => sharedSet.has(token));
+  const hasSkuLikeToken = unmatched.some((token) => /^\d{5,}$/.test(token));
+  if (common.length <= 2 && oneSideIsOnlySharedIdentity && hasSkuLikeToken) return null;
   const unionSize = new Set([...leftTokens, ...rightTokens]).size;
   const containment = common.length / Math.min(leftTokens.length, rightTokens.length);
   const jaccard = common.length / unionSize;
@@ -82,19 +88,38 @@ function groupIdentityRows(rows = []) {
         label: normalizeItemDisplayName(label) || label,
         rows: [],
         occurrence_count: 0,
-        merchants: new Set(),
+        merchants: new Map(),
+        purchases: [],
+        first_purchased_at: null,
+        last_purchased_at: null,
       });
     }
     const group = groups.get(itemKey);
     group.rows.push(row);
     group.occurrence_count += Math.max(1, Number(row.occurrence_count) || 1);
     const merchants = Array.isArray(row.merchants) ? row.merchants : [row.merchant];
-    merchants.filter(Boolean).forEach((merchant) => group.merchants.add(merchant));
+    merchants.filter(Boolean).forEach((merchant) => {
+      const display = `${merchant}`.trim();
+      const key = display.toLowerCase().replace(/[^a-z0-9]+/g, '');
+      if (key && !group.merchants.has(key)) group.merchants.set(key, display);
+    });
+    if (Array.isArray(row.purchases)) group.purchases.push(...row.purchases.filter(Boolean));
+    const firstPurchasedAt = `${row.first_purchased_at || row.date || ''}`.slice(0, 10) || null;
+    const lastPurchasedAt = `${row.last_purchased_at || row.date || ''}`.slice(0, 10) || null;
+    if (firstPurchasedAt && (!group.first_purchased_at || firstPurchasedAt < group.first_purchased_at)) {
+      group.first_purchased_at = firstPurchasedAt;
+    }
+    if (lastPurchasedAt && (!group.last_purchased_at || lastPurchasedAt > group.last_purchased_at)) {
+      group.last_purchased_at = lastPurchasedAt;
+    }
   });
   return [...groups.values()]
     .map((group) => ({
       ...group,
-      merchants: [...group.merchants],
+      merchants: [...group.merchants.values()],
+      purchases: group.purchases
+        .sort((left, right) => `${right?.date || ''}`.localeCompare(`${left?.date || ''}`))
+        .slice(0, 3),
     }));
 }
 
@@ -153,6 +178,12 @@ function buildItemFamilyCandidates(rows = [], assignments = [], { limit = 10 } =
           right_occurrence_count: pair[1].occurrence_count,
           left_merchants: pair[0].merchants.slice(0, 5),
           right_merchants: pair[1].merchants.slice(0, 5),
+          left_first_purchased_at: pair[0].first_purchased_at,
+          right_first_purchased_at: pair[1].first_purchased_at,
+          left_last_purchased_at: pair[0].last_purchased_at,
+          right_last_purchased_at: pair[1].last_purchased_at,
+          left_purchases: pair[0].purchases,
+          right_purchases: pair[1].purchases,
           common_tokens: labelMatch.common_tokens,
           established_family_source: establishedFamily?.source || null,
         },
@@ -184,7 +215,21 @@ async function discoverItemFamilyCandidates({ householdId, requesterUserId, look
     ItemFamilyLearning.findAssignments(householdId),
   ]);
   const generated = buildItemFamilyCandidates(rows, assignments, { limit: 250 });
-  await ItemFamilyLearning.saveCandidates(householdId, generated);
+  const itemKeys = generated.flatMap((candidate) => [candidate.left_item_key, candidate.right_item_key]);
+  const evidenceRows = await ItemFamilyLearning.loadCandidateEvidence(householdId, itemKeys, lookbackDays);
+  const purchasesByKey = new Map(evidenceRows.map((row) => [
+    row.comparable_key,
+    Array.isArray(row.purchases) ? row.purchases : [],
+  ]));
+  const enriched = generated.map((candidate) => ({
+    ...candidate,
+    evidence: {
+      ...candidate.evidence,
+      left_purchases: purchasesByKey.get(candidate.left_item_key) || [],
+      right_purchases: purchasesByKey.get(candidate.right_item_key) || [],
+    },
+  }));
+  await ItemFamilyLearning.saveCandidates(householdId, enriched);
   return ItemFamilyLearning.listPending(householdId, limit);
 }
 
