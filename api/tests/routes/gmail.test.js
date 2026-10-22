@@ -129,6 +129,7 @@ describe('GET /gmail/status', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       connected: false,
+      needs_reconnect: false,
       email: 'test@example.com',
       last_synced_at: null,
       last_sync_attempted_at: null,
@@ -136,6 +137,8 @@ describe('GET /gmail/status', () => {
       last_sync_error: null,
       last_sync_source: null,
       last_sync_status: null,
+      sync_in_progress: false,
+      gmail_history_updated_at: null,
     });
   });
 
@@ -152,6 +155,23 @@ describe('GET /gmail/status', () => {
     expect(res.body.last_synced_at).toBeNull();
     expect(res.body.last_sync_attempted_at).toBeNull();
     expect(res.body.last_sync_error).toBeNull();
+    expect(res.body.needs_reconnect).toBe(false);
+  });
+
+  it('only asks for reconnection after a recorded OAuth credential failure', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (
+         user_id, provider, access_token, refresh_token, scope,
+         last_sync_status, last_sync_error, last_sync_error_at
+       ) VALUES ($1, 'google', NULL, $2, 'gmail.readonly', 'failed', 'invalid_grant', NOW())`,
+      [userId, encrypt('expired_ref_tok')]
+    );
+    const res = await request(app).get('/gmail/status');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(expect.objectContaining({
+      connected: true,
+      needs_reconnect: true,
+    }));
   });
 });
 
@@ -211,6 +231,33 @@ describe('POST /gmail/import', () => {
     const res = await request(app).post('/gmail/import');
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/Gmail not connected/);
+  });
+
+  it('queues current-client imports instead of parsing Gmail on the request', async () => {
+    await db.query(
+      `INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, scope)
+       VALUES ($1, 'google', NULL, $2, 'gmail.readonly')`,
+      [userId, encrypt('ref_tok')]
+    );
+
+    const res = await request(app)
+      .post('/gmail/import')
+      .send({ source: 'manual', async: true });
+
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual(expect.objectContaining({
+      queued: true,
+      sync_status: 'queued',
+    }));
+    expect(listRecentMessages).not.toHaveBeenCalled();
+    const token = await db.query(
+      `SELECT last_sync_status, last_sync_source FROM oauth_tokens WHERE user_id = $1`,
+      [userId]
+    );
+    expect(token.rows[0]).toEqual(expect.objectContaining({
+      last_sync_status: 'queued',
+      last_sync_source: 'manual',
+    }));
   });
 
   it('returns { imported, skipped, failed } counts', async () => {

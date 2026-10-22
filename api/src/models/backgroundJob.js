@@ -5,6 +5,7 @@ const JOB_TYPES = Object.freeze({
   projectionRefresh: 'projection_refresh',
   postConfirm: 'post_confirm',
   gmailEnrichment: 'gmail_enrichment',
+  gmailSync: 'gmail_sync',
 });
 
 function cleanDelayMs(value) {

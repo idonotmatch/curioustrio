@@ -80,6 +80,8 @@ const MIGRATION_PLAN = [
   '084_item_family_comparison_decisions.sql',
   '085_count_unit_normalization_fix.sql',
   '086_item_family_learning.sql',
+  '087_email_item_quality_backfill.sql',
+  '088_gmail_incremental_sync.sql',
 ];
 
 module.exports = {

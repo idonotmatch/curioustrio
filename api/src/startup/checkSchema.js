@@ -21,6 +21,8 @@ const REQUIRED_COLUMNS = [
   ['oauth_tokens', 'last_sync_error'],
   ['oauth_tokens', 'last_sync_source'],
   ['oauth_tokens', 'last_sync_status'],
+  ['oauth_tokens', 'gmail_history_id'],
+  ['oauth_tokens', 'gmail_history_updated_at'],
   ['users', 'push_gmail_review_enabled'],
   ['users', 'push_insights_enabled'],
   ['users', 'push_recurring_enabled'],

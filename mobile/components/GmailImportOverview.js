@@ -57,6 +57,8 @@ export function GmailImportOverview({
           <Text style={styles.rowSub}>
             {displayGmailStatus == null
               ? (gmailStatusError ? 'Status unavailable' : 'Checking connection…')
+              : displayGmailStatus.needs_reconnect
+                ? 'Connection needs attention'
               : displayGmailStatus.connected
                 ? (displayGmailStatus.email ? `Connected to ${displayGmailStatus.email}` : 'Connected')
                 : 'Not connected'}
@@ -71,7 +73,7 @@ export function GmailImportOverview({
               {syncErrorMessage(displayGmailStatus, displayImportSummary)}
             </Text>
           ) : null}
-          {displayGmailStatus?.connected && !isUsingMockData ? (
+          {displayGmailStatus?.connected && !displayGmailStatus?.needs_reconnect && !isUsingMockData ? (
             <TouchableOpacity
               style={styles.inlineDangerLink}
               onPress={disconnectGmail}
@@ -94,15 +96,17 @@ export function GmailImportOverview({
               <Text style={styles.actionBtnText}>{gmailSyncing ? 'Syncing…' : 'Sync'}</Text>
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity
-            style={[styles.actionBtn, isUsingMockData && styles.actionBtnDisabled]}
-            onPress={connectGmail}
-            disabled={isUsingMockData}
-          >
-            <Text style={styles.actionBtnText}>
-              {displayGmailStatus?.connected ? 'Reconnect' : 'Connect'}
-            </Text>
-          </TouchableOpacity>
+          {!displayGmailStatus?.connected || displayGmailStatus?.needs_reconnect ? (
+            <TouchableOpacity
+              style={[styles.actionBtn, isUsingMockData && styles.actionBtnDisabled]}
+              onPress={connectGmail}
+              disabled={isUsingMockData}
+            >
+              <Text style={styles.actionBtnText}>
+                {displayGmailStatus?.needs_reconnect ? 'Reconnect' : 'Connect'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View> : null}
       </View>
       {gmailStatusError ? (

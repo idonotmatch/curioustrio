@@ -5,6 +5,7 @@ const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const BackgroundJob = require('../models/backgroundJob');
 const PushToken = require('../models/pushToken');
+const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
 const { listRecentMessages, getMessage, createGmailSession } = require('./gmailClient');
 const {
@@ -34,6 +35,46 @@ const { pushNotificationsEnabled } = require('./pushPreferences');
 const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
 const { extractPeerPaymentRecipient } = require('./merchantIdentity');
 const detectDuplicates = require('./duplicateDetector');
+
+function amountsApproximatelyEqual(left, right) {
+  const expected = Math.abs(Number(right) || 0);
+  return Math.abs(Number(left) - Number(right)) <= Math.max(0.05, expected * 0.01);
+}
+
+function buildEmailItemsForPersistence(items = [], deterministicItems = []) {
+  const deterministic = Array.isArray(deterministicItems) ? deterministicItems : [];
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => `${item?.description || ''}`.trim())
+    .map((item) => {
+      const amount = item.amount == null ? null : Number(item.amount);
+      const quantity = item.quantity == null ? null : Number(item.quantity);
+      const unitPrice = item.unit_price == null ? null : Number(item.unit_price);
+      const hasMathMismatch = Number.isFinite(amount)
+        && Number.isFinite(quantity)
+        && quantity > 0
+        && Number.isFinite(unitPrice)
+        && !amountsApproximatelyEqual(quantity * unitPrice, amount);
+      const normalizedDescription = `${item.description}`.trim().toLowerCase();
+      const deterministicMatch = deterministic.some((candidate) => (
+        `${candidate?.description || ''}`.trim().toLowerCase() === normalizedDescription
+        && Number.isFinite(amount)
+        && Number.isFinite(Number(candidate?.amount))
+        && amountsApproximatelyEqual(amount, Number(candidate.amount))
+      ));
+
+      return {
+        ...item,
+        source_type: 'email',
+        raw_description: item.description,
+        extraction_confidence: !Number.isFinite(amount) || hasMathMismatch
+          ? 'low'
+          : (deterministicMatch ? 'high' : 'medium'),
+        product_id: null,
+        product_match_confidence: null,
+        product_match_reason: null,
+      };
+    });
+}
 
 function guessMerchant(subject = '', fromAddress = '') {
   const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
@@ -184,6 +225,20 @@ function shouldSoftenSkipBehavior(senderQuality = {}) {
   );
 }
 
+function shouldSkipTemplateBeforeClassification({
+  templateQuality = {},
+  signals = {},
+  forceReview = false,
+  senderForceReview = false,
+} = {}) {
+  if (!templateQuality.should_skip_prequeue || forceReview || senderForceReview) return false;
+  const learnedExplicitExclusion = Number(templateQuality.filtering_dismissals || 0) >= 2;
+  if (learnedExplicitExclusion) return true;
+  return !signals.shouldSurfaceToReview
+    && !signals.strongMoneySignal
+    && !signals.mediumMoneySignal;
+}
+
 function buildItemHistoryReviewAdjustment(expenseLike = {}, itemHistories = []) {
   const contexts = Array.isArray(itemHistories) ? itemHistories : [];
   if (!contexts.length) return null;
@@ -316,14 +371,12 @@ async function processMessageImport(user, msgId, {
     const signals = analyzeEmailSignals(subject, from, body);
     const structuredItemSignal = summarizeStructuredItemBlock(body);
 
-    if (
-      templateQuality.should_skip_prequeue
-      && !forceReview
-      && !senderQuality?.sender_preference?.force_review
-      && !signals.shouldSurfaceToReview
-      && !signals.strongMoneySignal
-      && !signals.mediumMoneySignal
-    ) {
+    if (shouldSkipTemplateBeforeClassification({
+      templateQuality,
+      signals,
+      forceReview,
+      senderForceReview: senderQuality?.sender_preference?.force_review,
+    })) {
       const skipReason = `template_skip_${templateQuality.subject_pattern || 'non_transactional'}`;
       await EmailImportLog.upsertResult({
         userId: user.id, messageId: msgId, status: 'skipped',
@@ -425,18 +478,7 @@ async function processMessageImport(user, msgId, {
       skipAiFallback: true,
     });
     const { category_id } = categoryAssignment;
-    let itemsForPersistence = [];
-    if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-      itemsForPersistence = parsed.items.filter(it => it.description).map((item) => ({
-        ...item,
-        source_type: 'email',
-        raw_description: item.description,
-        extraction_confidence: item.amount != null ? 'medium' : 'low',
-        product_id: null,
-        product_match_confidence: null,
-        product_match_reason: null,
-      }));
-    }
+    const itemsForPersistence = buildEmailItemsForPersistence(parsed.items, deterministicFallbackItems);
 
     let effectiveSenderQuality = senderQuality;
 
@@ -620,6 +662,44 @@ async function processMessageImportWithLock(user, msgId, options = {}) {
   }
 }
 
+function isRecoverableHistoryCursorError(error) {
+  const status = Number(error?.response?.status || error?.status || error?.statusCode || 0);
+  return status === 404 || error?.code === 'gmail_history_backlog_too_large';
+}
+
+async function discoverGmailMessages(userId, gmailSession, token = null) {
+  const historyId = `${token?.gmail_history_id || ''}`.trim();
+  if (historyId && typeof gmailSession?.listHistoryMessages === 'function') {
+    try {
+      const incremental = await gmailSession.listHistoryMessages(historyId);
+      return {
+        messages: incremental.messages || [],
+        nextHistoryId: incremental.historyId || historyId,
+        syncMode: 'incremental',
+      };
+    } catch (error) {
+      if (!isRecoverableHistoryCursorError(error)) throw error;
+      console.warn('[gmail import] incremental cursor unavailable; running recovery scan', {
+        reason: error?.code || error?.response?.status || 'history_cursor_expired',
+      });
+    }
+  }
+
+  // Capture the baseline before listing. Messages arriving during the recovery scan
+  // will be replayed on the next incremental sync and safely deduplicated.
+  const nextHistoryId = typeof gmailSession?.getProfileHistoryId === 'function'
+    ? await gmailSession.getProfileHistoryId()
+    : null;
+  const messages = gmailSession
+    ? await gmailSession.listRecentMessages()
+    : await listRecentMessages(userId);
+  return {
+    messages,
+    nextHistoryId,
+    syncMode: historyId ? 'recovery' : 'initial',
+  };
+}
+
 /**
  * Run a Gmail import for a single user.
  * Returns { imported, skipped, failed, outcomes }.
@@ -629,9 +709,9 @@ async function importForUser(user) {
   const gmailSession = typeof createGmailSession === 'function'
     ? await createGmailSession(user.id)
     : null;
-  const messages = gmailSession
-    ? await gmailSession.listRecentMessages()
-    : await listRecentMessages(user.id);
+  const token = await OAuthToken.findByUserId(user.id);
+  const discovery = await discoverGmailMessages(user.id, gmailSession, token);
+  const messages = discovery.messages;
   const categories = await Category.findByHousehold(user.household_id);
   const todayDate = new Date().toISOString().split('T')[0];
 
@@ -650,6 +730,10 @@ async function importForUser(user) {
     imported += result.imported;
     skipped += result.skipped;
     failed += result.failed;
+  }
+
+  if (discovery.nextHistoryId) {
+    await OAuthToken.updateGmailHistoryCursor(user.id, discovery.nextHistoryId);
   }
 
   // Send push notification if new expenses were imported
@@ -679,7 +763,14 @@ async function importForUser(user) {
     }
   }
 
-  return { imported, skipped, failed, outcomes };
+  return {
+    imported,
+    skipped,
+    failed,
+    outcomes,
+    sync_mode: discovery.syncMode,
+    discovered: messages.length,
+  };
 }
 
 async function recoverImportLog(user, log, {
@@ -820,5 +911,9 @@ module.exports = {
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
+  buildEmailItemsForPersistence,
+  shouldSkipTemplateBeforeClassification,
+  discoverGmailMessages,
+  isRecoverableHistoryCursorError,
   resolveEmailLocation,
 };

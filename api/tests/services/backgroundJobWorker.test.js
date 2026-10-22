@@ -3,6 +3,7 @@ jest.mock('../../src/models/backgroundJob', () => ({
     projectionRefresh: 'projection_refresh',
     postConfirm: 'post_confirm',
     gmailEnrichment: 'gmail_enrichment',
+    gmailSync: 'gmail_sync',
   },
   claimNext: jest.fn(),
   complete: jest.fn().mockResolvedValue({ status: 'completed' }),
@@ -21,6 +22,9 @@ jest.mock('../../src/services/expenseConfirmService', () => ({
 jest.mock('../../src/services/gmailEnrichmentService', () => ({
   runGmailEnrichmentJob: jest.fn().mockResolvedValue({}),
 }));
+jest.mock('../../src/services/gmailSyncService', () => ({
+  runGmailSyncJob: jest.fn().mockResolvedValue({}),
+}));
 jest.mock('../../src/services/observability', () => ({ captureException: jest.fn() }));
 
 const BackgroundJob = require('../../src/models/backgroundJob');
@@ -28,6 +32,7 @@ const User = require('../../src/models/user');
 const { refreshProjectionNow } = require('../../src/services/projectionRefreshService');
 const { runPostConfirmJob } = require('../../src/services/expenseConfirmService');
 const { runGmailEnrichmentJob } = require('../../src/services/gmailEnrichmentService');
+const { runGmailSyncJob } = require('../../src/services/gmailSyncService');
 const { captureException } = require('../../src/services/observability');
 const { processJob } = require('../../src/services/backgroundJobWorker');
 
@@ -69,6 +74,18 @@ describe('background job worker', () => {
     await processJob(job);
     expect(runGmailEnrichmentJob).toHaveBeenCalledWith(job.payload);
     expect(BackgroundJob.complete).toHaveBeenCalledWith('job-gmail', 'worker-1');
+  });
+
+  it('delegates Gmail mailbox work to the durable sync handler', async () => {
+    const job = {
+      id: 'job-gmail-sync',
+      job_type: 'gmail_sync',
+      attempt_count: 1,
+      payload: { user_id: 'user-1', source: 'manual' },
+    };
+    await processJob(job);
+    expect(runGmailSyncJob).toHaveBeenCalledWith(job.payload);
+    expect(BackgroundJob.complete).toHaveBeenCalledWith('job-gmail-sync', 'worker-1');
   });
 
   it('records a retry and captures failures without crashing the worker', async () => {

@@ -5,7 +5,91 @@ const {
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
+  buildEmailItemsForPersistence,
+  shouldSkipTemplateBeforeClassification,
+  discoverGmailMessages,
 } = require('../../src/services/gmailImporter');
+
+describe('discoverGmailMessages', () => {
+  it('uses Gmail history after an initial cursor has been stored', async () => {
+    const gmailSession = {
+      listHistoryMessages: jest.fn().mockResolvedValue({
+        messages: [{ id: 'new-message' }],
+        historyId: '103',
+      }),
+      listRecentMessages: jest.fn(),
+      getProfileHistoryId: jest.fn(),
+    };
+
+    await expect(discoverGmailMessages('user-1', gmailSession, { gmail_history_id: '100' }))
+      .resolves.toEqual({
+        messages: [{ id: 'new-message' }],
+        nextHistoryId: '103',
+        syncMode: 'incremental',
+      });
+    expect(gmailSession.listRecentMessages).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a bounded recovery scan when Gmail expires the cursor', async () => {
+    const expired = Object.assign(new Error('history expired'), { response: { status: 404 } });
+    const gmailSession = {
+      listHistoryMessages: jest.fn().mockRejectedValue(expired),
+      getProfileHistoryId: jest.fn().mockResolvedValue('205'),
+      listRecentMessages: jest.fn().mockResolvedValue([{ id: 'recovered-message' }]),
+    };
+
+    await expect(discoverGmailMessages('user-1', gmailSession, { gmail_history_id: '100' }))
+      .resolves.toEqual({
+        messages: [{ id: 'recovered-message' }],
+        nextHistoryId: '205',
+        syncMode: 'recovery',
+      });
+  });
+});
+
+describe('buildEmailItemsForPersistence', () => {
+  it('trusts deterministic item matches and lowers confidence for inconsistent item math', () => {
+    const result = buildEmailItemsForPersistence([
+      { description: 'Avocados', amount: 6, quantity: 2, unit_price: 3 },
+      { description: 'Strawberries', amount: 9, quantity: 2, unit_price: 3 },
+    ], [
+      { description: 'Avocados', amount: 6, quantity: 2, unit_price: 3 },
+    ]);
+
+    expect(result[0]).toEqual(expect.objectContaining({
+      source_type: 'email',
+      extraction_confidence: 'high',
+    }));
+    expect(result[1]).toEqual(expect.objectContaining({
+      source_type: 'email',
+      extraction_confidence: 'low',
+    }));
+  });
+});
+
+describe('shouldSkipTemplateBeforeClassification', () => {
+  it('honors repeated explicit exclusion feedback even when the email contains a total', () => {
+    expect(shouldSkipTemplateBeforeClassification({
+      templateQuality: { should_skip_prequeue: true, filtering_dismissals: 2 },
+      signals: { shouldSurfaceToReview: true, strongMoneySignal: true, mediumMoneySignal: true },
+    })).toBe(true);
+  });
+
+  it('does not apply learned filtering when the user forces review', () => {
+    expect(shouldSkipTemplateBeforeClassification({
+      templateQuality: { should_skip_prequeue: true, filtering_dismissals: 3 },
+      signals: { shouldSurfaceToReview: true, strongMoneySignal: true },
+      senderForceReview: true,
+    })).toBe(false);
+  });
+
+  it('only applies baseline template filtering when transaction signals are absent', () => {
+    expect(shouldSkipTemplateBeforeClassification({
+      templateQuality: { should_skip_prequeue: true, filtering_dismissals: 0 },
+      signals: { shouldSurfaceToReview: true, strongMoneySignal: true },
+    })).toBe(false);
+  });
+});
 
 describe('findLikelyAmount', () => {
   it('prefers an explicit total over trailing savings-like amounts', () => {

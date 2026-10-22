@@ -229,7 +229,16 @@ export function syncStatusMessage(status = {}, summary = {}) {
   const lastAttempt = formatRelativeTime(summary?.last_sync_attempted_at || status?.last_sync_attempted_at);
   const lastError = summary?.last_sync_error || status?.last_sync_error;
   const source = summary?.last_sync_source || status?.last_sync_source;
-  const syncStatus = summary?.last_sync_status || status?.last_sync_status;
+  const syncStatus = status?.sync_in_progress
+    ? status?.last_sync_status
+    : (summary?.last_sync_status || status?.last_sync_status);
+
+  if (syncStatus === 'queued') {
+    return 'Waiting to check for new receipts.';
+  }
+  if (syncStatus === 'running') {
+    return 'Checking for new receipts.';
+  }
 
   if (syncStatus === 'partial' && lastAttempt) {
     return `Last ${formatSyncSource(source)} completed with an issue ${lastAttempt}.`;

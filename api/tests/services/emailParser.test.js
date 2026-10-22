@@ -78,6 +78,30 @@ describe('emailParser', () => {
     expect(result.items).toEqual([expect.objectContaining({ description: 'Avocados' })]);
   });
 
+  it('drops summary rows and fills derivable item arithmetic', async () => {
+    complete.mockResolvedValue(JSON.stringify({
+      merchant: 'Market',
+      amount: 8,
+      date: '2026-09-11',
+      notes: null,
+      items: [
+        { description: 'AVOCADOS', amount: null, quantity: 2, unit_price: 4 },
+        { description: 'Subtotal', amount: 8 },
+      ],
+    }));
+
+    const result = await parseEmailExpense(
+      'Avocados Qty 2 at $4.00 each. Order total $8.00',
+      'Your receipt',
+      'orders@example.com',
+      '2026-09-11'
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ description: 'Avocados', amount: 8, quantity: 2, unit_price: 4 }),
+    ]);
+  });
+
   it('returns null for non-receipt emails', async () => {
     complete.mockResolvedValue('null');
     const result = await parseEmailExpense('Hi, how are you?', 'Hey', 'friend@example.com', '2026-03-21');
@@ -102,6 +126,17 @@ describe('emailParser', () => {
       merchant: null,
       reason: 'heuristic_skip',
     });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('skips shipping updates even when they repeat the original order total', async () => {
+    const result = await classifyEmailExpense(
+      'Your order has shipped. Order total: $84.21. Track your package here.',
+      'Your order has shipped',
+      'shipment@store.example',
+      '2026-03-21'
+    );
+    expect(result.disposition).toBe('not_expense');
     expect(complete).not.toHaveBeenCalled();
   });
 

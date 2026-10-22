@@ -1,5 +1,6 @@
 const User = require('../models/user');
 const OAuthToken = require('../models/oauthToken');
+const BackgroundJob = require('../models/backgroundJob');
 const { importForUser } = require('./gmailImporter');
 
 function failureReasonCounts(result = {}) {
@@ -29,6 +30,48 @@ async function recordGmailSyncResult(userId, result = {}, { source } = {}) {
   return 'success';
 }
 
+function normalizeSyncSource(source) {
+  return ['app_open', 'manual', 'scheduler', 'oauth_connect'].includes(source)
+    ? source
+    : 'manual';
+}
+
+async function enqueueGmailSync(userId, { source = 'manual' } = {}) {
+  const normalizedSource = normalizeSyncSource(source);
+  const job = await BackgroundJob.enqueue({
+    jobType: BackgroundJob.JOB_TYPES.gmailSync,
+    dedupeKey: userId,
+    payload: {
+      user_id: userId,
+      source: normalizedSource,
+    },
+    maxAttempts: 4,
+  });
+  await OAuthToken.markSyncQueued(userId, { source: normalizedSource });
+  return job;
+}
+
+async function runGmailSyncJob(payload = {}) {
+  const userId = `${payload.user_id || ''}`.trim();
+  const source = normalizeSyncSource(payload.source);
+  if (!userId) throw new Error('Gmail sync job is missing user_id');
+  const user = await User.findById(userId);
+  if (!user) throw new Error('Connected Gmail account has no user record');
+
+  await OAuthToken.markSyncAttempt(userId, { source });
+  try {
+    const result = await importForUser(user);
+    const syncStatus = await recordGmailSyncResult(userId, result, { source });
+    return { ...result, sync_status: syncStatus };
+  } catch (error) {
+    await OAuthToken.markSyncFailure(userId, {
+      source,
+      error: `${error?.message || 'Unknown Gmail sync error'}`.slice(0, 500),
+    });
+    throw error;
+  }
+}
+
 function createSchedulerResult(accountCount) {
   return {
     ok: true,
@@ -37,17 +80,12 @@ function createSchedulerResult(accountCount) {
     users_succeeded: 0,
     users_partial: 0,
     users_failed: 0,
+    users_queued: 0,
     total_imported: 0,
     total_skipped: 0,
     total_failed: 0,
     failure_reasons: {},
   };
-}
-
-function incrementReasons(target, source = {}) {
-  for (const [reason, count] of Object.entries(source || {})) {
-    target[reason] = (target[reason] || 0) + Number(count || 0);
-  }
 }
 
 async function runScheduledGmailSync({ onAccountError = null } = {}) {
@@ -56,20 +94,10 @@ async function runScheduledGmailSync({ onAccountError = null } = {}) {
 
   for (const userId of userIds) {
     try {
-      const user = await User.findById(userId);
-      if (!user) throw new Error('Connected Gmail account has no user record');
-
-      await OAuthToken.markSyncAttempt(userId, { source: 'scheduler' });
-      const result = await importForUser(user);
-      const status = await recordGmailSyncResult(userId, result, { source: 'scheduler' });
-
+      await enqueueGmailSync(userId, { source: 'scheduler' });
       summary.users_processed += 1;
-      summary.total_imported += Number(result.imported || 0);
-      summary.total_skipped += Number(result.skipped || 0);
-      summary.total_failed += Number(result.failed || 0);
-      incrementReasons(summary.failure_reasons, result?.outcomes?.failed_reasons);
-      if (status === 'partial') summary.users_partial += 1;
-      else summary.users_succeeded += 1;
+      summary.users_queued += 1;
+      summary.users_succeeded += 1;
     } catch (error) {
       summary.users_failed += 1;
       summary.failure_reasons.account_sync_failed = (summary.failure_reasons.account_sync_failed || 0) + 1;
@@ -90,8 +118,10 @@ async function runScheduledGmailSync({ onAccountError = null } = {}) {
 }
 
 module.exports = {
+  enqueueGmailSync,
   failureReasonCounts,
   partialSyncMessage,
   recordGmailSyncResult,
+  runGmailSyncJob,
   runScheduledGmailSync,
 };

@@ -270,8 +270,11 @@ function selectMoneyContextLines(structured = '', limit = 24) {
 
 function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   const text = `${subject}\n${fromAddress}\n${emailBody}`.toLowerCase();
+  const subjectText = `${subject || ''}`.toLowerCase();
   const senderLooksTransactional = /@(amazon|walmart|target|uber|lyft|lyftmail|ubereats|instacart|doordash|stripe|shopify|square|paypal|venmo|apple|google|expedia|delta|united|airbnb|booking|hilton|marriott|costco|bestbuy|etsy|ebay|wayfair|chewy|seamless|grubhub)\./i.test(fromAddress);
   const negativeSignals = /(tracking|shipped|out for delivery|delivered|newsletter|unsubscribe|promotion|sale ends|weekly digest|security alert|sign in|password reset|view in browser|manage preferences|review your recent (?:order|purchase)|recent .* meet your expectations|share your experience|seller .* requests you to share)/i.test(text);
+  const nonTransactionalSubject = /(tracking|has shipped|was shipped|shipment|out for delivery|delivered|delivery update|review (?:your|this)|share your experience|meet your expectations|how was your (?:order|purchase|visit)|newsletter|weekly digest|security alert|password reset)/i.test(subjectText);
+  const explicitTransactionSubject = /(receipt|invoice|order confirmation|purchase confirmation|payment (?:received|confirmed|successful)|charged|amount paid|refund (?:issued|processed|confirmed)|return confirmation)/i.test(subjectText);
   const transactionalContext = /(receipt|order|confirmation|purchase|charged|invoice|payment|paid|refund|return|renewal|booking|subscription|trip|reservation)/i.test(text);
   const strongMoneySignal = /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund amount|refund total|you paid|paid .*?@|charged to)[^$\d]{0,50}\$?\s?-?\d+(?:\.\d{2})?/i.test(text);
   const mediumMoneySignal = /(?:\btotal\b|\binvoice amount\b|\bpayment received\b|\bamount\b)[^$\d]{0,20}\$?\s?-?\d+(?:\.\d{2})?/i.test(text)
@@ -279,9 +282,10 @@ function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   const weakMoneySignal = /(?:save|from|starting at|under|up to|earn|credit|discount)[^$\d]{0,20}\$?\s?\d+(?:\.\d{2})?/i.test(text)
     || /\$\s?\d+(?:\.\d{2})?/.test(text);
 
-  const shouldSurfaceToReview = strongMoneySignal
+  const updateOnly = nonTransactionalSubject && !explicitTransactionSubject;
+  const shouldSurfaceToReview = !updateOnly && (strongMoneySignal
     || (mediumMoneySignal && (transactionalContext || senderLooksTransactional))
-    || (transactionalContext && senderLooksTransactional && /\$\s?-?\d+(?:\.\d{2})?/.test(text));
+    || (transactionalContext && senderLooksTransactional && /\$\s?-?\d+(?:\.\d{2})?/.test(text)));
 
   return {
     senderLooksTransactional,
@@ -290,6 +294,9 @@ function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
     strongMoneySignal,
     mediumMoneySignal,
     weakMoneySignal,
+    nonTransactionalSubject,
+    explicitTransactionSubject,
+    updateOnly,
     shouldSurfaceToReview,
   };
 }
@@ -404,6 +411,7 @@ function selectRelevantEmailText(emailBody, snippet = '', familyOverride = null)
 
 function heuristicDisposition(subject = '', fromAddress = '', emailBody = '') {
   const signals = analyzeEmailSignals(subject, fromAddress, emailBody);
+  if (signals.updateOnly) return 'not_expense';
   if (!signals.shouldSurfaceToReview && signals.negativeSignals && !signals.strongMoneySignal && !signals.mediumMoneySignal) {
     return 'not_expense';
   }
@@ -766,15 +774,27 @@ function sanitizeParsedItems(items = [], familyOverride = null) {
   if (!Array.isArray(items)) return null;
 
   const sanitized = items
-    .map((item) => ({
-      ...item,
-      description: normalizeItemDisplayName(`${item?.description || ''}`.trim()),
-      amount: sanitizeParsedNumeric(item?.amount, MAX_DATABASE_MONEY),
-      quantity: sanitizeParsedNumeric(item?.quantity, 9_999_999.999, { positive: true }),
-      unit_price: sanitizeParsedNumeric(item?.unit_price, 999_999.9999, { positive: true }),
-    }))
+    .map((item) => {
+      const quantity = sanitizeParsedNumeric(item?.quantity, 9_999_999.999, { positive: true });
+      let amount = sanitizeParsedNumeric(item?.amount, MAX_DATABASE_MONEY);
+      let unitPrice = sanitizeParsedNumeric(item?.unit_price, 999_999.9999, { positive: true });
+      if (amount == null && quantity != null && unitPrice != null) {
+        amount = Number((quantity * unitPrice).toFixed(2));
+      }
+      if (unitPrice == null && amount != null && quantity != null) {
+        unitPrice = Number((Math.abs(amount) / quantity).toFixed(4));
+      }
+      return {
+        ...item,
+        description: normalizeItemDisplayName(`${item?.description || ''}`.trim()),
+        amount,
+        quantity,
+        unit_price: unitPrice,
+      };
+    })
     .filter((item) => item.description)
-    .filter((item) => !isClearlyNonItemLine(item.description));
+    .filter((item) => !isClearlyNonItemLine(item.description))
+    .filter((item) => classifyExpenseItemType(item.description) !== 'summary');
 
   const familySanitized = sanitized.filter((item) => isAllowedParsedItemForFamily(item.description, family));
 

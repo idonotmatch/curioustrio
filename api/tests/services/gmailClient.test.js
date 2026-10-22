@@ -1,6 +1,8 @@
 jest.mock('node-fetch', () => jest.fn());
 const mockGmailList = jest.fn();
 const mockGmailGet = jest.fn();
+const mockGmailGetProfile = jest.fn();
+const mockGmailHistoryList = jest.fn();
 const mockRefreshAccessToken = jest.fn();
 const mockSetCredentials = jest.fn();
 const mockOAuth2 = jest.fn(() => ({
@@ -9,7 +11,11 @@ const mockOAuth2 = jest.fn(() => ({
   refreshAccessToken: mockRefreshAccessToken,
 }));
 const mockGoogleGmail = jest.fn(() => ({
-  users: { messages: { list: mockGmailList, get: mockGmailGet } },
+  users: {
+    getProfile: mockGmailGetProfile,
+    history: { list: mockGmailHistoryList },
+    messages: { list: mockGmailList, get: mockGmailGet },
+  },
 }));
 jest.mock('googleapis', () => ({
   google: {
@@ -36,6 +42,7 @@ const {
   bodyRichnessScore,
   createGmailSession,
   disconnectGmailConnection,
+  listHistoryMessages,
 } = require('../../src/services/gmailClient');
 
 describe('gmailClient helpers', () => {
@@ -203,7 +210,49 @@ describe('createGmailSession', () => {
     expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1);
     expect(mockGoogleGmail).toHaveBeenCalledTimes(1);
     expect(mockGmailList).toHaveBeenCalledTimes(1);
+    expect(mockGmailList.mock.calls[0][0]).toEqual(expect.objectContaining({ maxResults: 100 }));
     expect(mockGmailGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads incremental message additions across Gmail history pages', async () => {
+    OAuthToken.findCredentialsByUserId.mockResolvedValue({
+      refresh_token: 'refresh-token',
+      scope: 'gmail.readonly',
+    });
+    OAuthToken.upsert.mockResolvedValue({});
+    mockRefreshAccessToken.mockResolvedValue({
+      credentials: { access_token: 'access-token', expiry_date: Date.now() + 3600000 },
+    });
+    mockGmailHistoryList
+      .mockResolvedValueOnce({
+        data: {
+          history: [{ messagesAdded: [{ message: { id: 'message-1', threadId: 'thread-1' } }] }],
+          historyId: '102',
+          nextPageToken: 'next',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          history: [{ messagesAdded: [
+            { message: { id: 'message-1', threadId: 'thread-1' } },
+            { message: { id: 'message-2', threadId: 'thread-2' } },
+          ] }],
+          historyId: '105',
+        },
+      });
+
+    await expect(listHistoryMessages('user-1', '100')).resolves.toEqual({
+      messages: [
+        { id: 'message-1', threadId: 'thread-1' },
+        { id: 'message-2', threadId: 'thread-2' },
+      ],
+      historyId: '105',
+      pageCount: 2,
+    });
+    expect(mockGmailHistoryList).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      startHistoryId: '100',
+      pageToken: 'next',
+    }), expect.any(Object));
   });
 });
 

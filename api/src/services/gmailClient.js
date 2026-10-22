@@ -145,11 +145,11 @@ async function disconnectGmailConnection(userId) {
   return { disconnected: true, revoked, had_token: true };
 }
 
-async function listRecentMessages(userId, options = 50) {
+async function listRecentMessages(userId, options = 100) {
   const config = typeof options === 'number'
     ? { maxResults: options }
     : (options || {});
-  const maxResults = Math.max(1, Math.min(Number(config.maxResults) || 50, 100));
+  const maxResults = Math.max(1, Math.min(Number(config.maxResults) || 100, 100));
   const query = `${config.query || GMAIL_SEARCH_QUERY}`.trim() || GMAIL_SEARCH_QUERY;
   const gmail = config.gmailClient || google.gmail({
     version: 'v1',
@@ -163,6 +163,72 @@ async function listRecentMessages(userId, options = 50) {
     timeout: GOOGLE_REQUEST_TIMEOUT_MS,
   });
   return response.data.messages || [];
+}
+
+async function getProfileHistoryId(userId, { gmailClient = null } = {}) {
+  const gmail = gmailClient || google.gmail({
+    version: 'v1',
+    auth: await getAuthenticatedClient(userId),
+  });
+  const response = await gmail.users.getProfile({ userId: 'me' }, {
+    timeout: GOOGLE_REQUEST_TIMEOUT_MS,
+  });
+  return `${response.data.historyId || ''}`.trim() || null;
+}
+
+async function listHistoryMessages(userId, startHistoryId, {
+  gmailClient = null,
+  maxPages = 10,
+  maxMessages = 500,
+} = {}) {
+  const cleanStartHistoryId = `${startHistoryId || ''}`.trim();
+  if (!cleanStartHistoryId) throw new Error('Gmail history cursor is required');
+  const gmail = gmailClient || google.gmail({
+    version: 'v1',
+    auth: await getAuthenticatedClient(userId),
+  });
+  const seen = new Set();
+  const messages = [];
+  let pageToken = null;
+  let historyId = cleanStartHistoryId;
+  let pageCount = 0;
+
+  do {
+    const response = await gmail.users.history.list({
+      userId: 'me',
+      startHistoryId: cleanStartHistoryId,
+      historyTypes: ['messageAdded'],
+      maxResults: 500,
+      ...(pageToken ? { pageToken } : {}),
+    }, {
+      timeout: GOOGLE_REQUEST_TIMEOUT_MS,
+    });
+    pageCount += 1;
+    historyId = `${response.data.historyId || historyId}`.trim();
+
+    for (const entry of response.data.history || []) {
+      for (const added of entry.messagesAdded || []) {
+        const message = added?.message;
+        if (!message?.id || seen.has(message.id)) continue;
+        seen.add(message.id);
+        messages.push({ id: message.id, threadId: message.threadId || null });
+        if (messages.length > maxMessages) {
+          const error = new Error('Gmail history backlog exceeds the safe incremental limit');
+          error.code = 'gmail_history_backlog_too_large';
+          throw error;
+        }
+      }
+    }
+
+    pageToken = response.data.nextPageToken || null;
+    if (pageToken && pageCount >= maxPages) {
+      const error = new Error('Gmail history pagination exceeds the safe incremental limit');
+      error.code = 'gmail_history_backlog_too_large';
+      throw error;
+    }
+  } while (pageToken);
+
+  return { messages, historyId, pageCount };
 }
 
 function htmlToReadableText(html = '') {
@@ -310,11 +376,16 @@ async function createGmailSession(userId) {
   const auth = await getAuthenticatedClient(userId);
   const gmailClient = google.gmail({ version: 'v1', auth });
   return {
-    listRecentMessages: (options = 50) => listRecentMessages(userId, {
+    listRecentMessages: (options = 100) => listRecentMessages(userId, {
       ...(typeof options === 'number' ? { maxResults: options } : options),
       gmailClient,
     }),
     getMessage: (messageId) => getMessage(userId, messageId, { gmailClient }),
+    getProfileHistoryId: () => getProfileHistoryId(userId, { gmailClient }),
+    listHistoryMessages: (startHistoryId, options = {}) => listHistoryMessages(userId, startHistoryId, {
+      ...options,
+      gmailClient,
+    }),
   };
 }
 
@@ -326,6 +397,8 @@ module.exports = {
   createGmailSession,
   disconnectGmailConnection,
   listRecentMessages,
+  getProfileHistoryId,
+  listHistoryMessages,
   getMessage,
   htmlToReadableText,
   chooseBestMessageBody,

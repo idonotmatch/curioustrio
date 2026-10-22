@@ -11,6 +11,7 @@ import {
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { invalidateCache, loadWithCache } from '../services/cache';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { FRESHNESS_DOMAINS } from '../services/freshnessRegistry';
 import { useFreshnessRefresh } from '../hooks/useFreshnessRefresh';
@@ -40,9 +41,25 @@ import { colors } from '../theme/tokens';
 const { startGmailConnectFlow } = require('../services/gmailAuthFlow');
 
 const SUMMARY_WINDOW_DAYS = 90;
+const GMAIL_STATUS_CACHE_KEY = 'cache:gmail:status';
+const GMAIL_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
 const FORCE_MOCK_GMAIL_IMPORT_PREVIEW = false;
 
 const MOCK_GMAIL_IMPORT_STATE = buildMockGmailImportState();
+
+function sanitizeCachedGmailStatus(status = {}) {
+  return {
+    connected: status.connected === true,
+    needs_reconnect: status.needs_reconnect === true,
+    email: null,
+    last_synced_at: status.last_synced_at || null,
+    last_sync_attempted_at: status.last_sync_attempted_at || null,
+    last_sync_error_at: status.last_sync_error_at || null,
+    last_sync_error: null,
+    last_sync_source: status.last_sync_source || null,
+    last_sync_status: status.last_sync_status || null,
+  };
+}
 
 export default function GmailImportScreen() {
   const router = useRouter();
@@ -78,34 +95,29 @@ export default function GmailImportScreen() {
     ? buildMockPendingExpenses().filter((item) => item.review_source === 'gmail' || item.source === 'email')
     : pendingReviewItems;
 
-  const loadGmailStatus = useCallback(async () => {
-    try {
-      const data = await api.get('/gmail/status');
-      setGmailStatus(data);
-      setGmailStatusError('');
-    } catch (error) {
-      setGmailStatus(null);
-      setGmailStatusError(error?.message || 'Could not check the Gmail connection.');
-    }
+  const loadGmailStatus = useCallback(async ({ forceRefresh = false } = {}) => {
+    return loadWithCache(
+      GMAIL_STATUS_CACHE_KEY,
+      () => api.get('/gmail/status'),
+      (data) => {
+        setGmailStatus(data);
+        setGmailStatusError('');
+      },
+      (error) => {
+        setGmailStatus(null);
+        setGmailStatusError(error?.message || 'Could not check the Gmail connection.');
+      },
+      {
+        maxAgeMs: GMAIL_STATUS_MAX_AGE_MS,
+        forceRefresh,
+        serialize: sanitizeCachedGmailStatus,
+      },
+    );
   }, []);
 
-  useEffect(() => {
-    loadGmailStatus();
-  }, [loadGmailStatus]);
-
   useFocusEffect(useCallback(() => {
-    loadGmailStatus();
-    if (displayGmailStatus?.connected || gmailStatus?.connected) {
-      loadImportSummary();
-      loadPendingQueue();
-      if (importLogExpanded) loadImportLog();
-    }
-  }, [
-    loadGmailStatus,
-    importLogExpanded,
-    displayGmailStatus?.connected,
-    gmailStatus?.connected,
-  ]));
+    loadGmailStatus({ forceRefresh: true });
+  }, [loadGmailStatus]));
 
   useEffect(() => {
     if (gmailStatus?.connected) {
@@ -113,6 +125,41 @@ export default function GmailImportScreen() {
       loadPendingQueue();
     }
   }, [gmailStatus?.connected]);
+
+  useEffect(() => {
+    if (gmailStatus?.connected && importLogExpanded) loadImportLog();
+  }, [gmailStatus?.connected, importLogExpanded]);
+
+  useEffect(() => {
+    if (!gmailStatus?.connected || !gmailStatus?.sync_in_progress) return undefined;
+    let cancelled = false;
+    let polling = false;
+    const interval = setInterval(async () => {
+      if (polling || cancelled) return;
+      polling = true;
+      try {
+        const status = await api.get('/gmail/status');
+        if (cancelled) return;
+        setGmailStatus(status);
+        if (!status?.sync_in_progress) {
+          await invalidateExpenseMutationCaches();
+          await Promise.all([
+            loadImportSummary(),
+            loadPendingQueue(),
+            importLogExpanded ? loadImportLog() : Promise.resolve(),
+          ]);
+        }
+      } catch {
+        // The next poll or a screen revisit can recover status.
+      } finally {
+        polling = false;
+      }
+    }, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [gmailStatus?.connected, gmailStatus?.sync_in_progress, importLogExpanded]);
 
   function senderTrustTone(level) {
     switch (level) {
@@ -164,7 +211,8 @@ export default function GmailImportScreen() {
     try {
       const { completed } = await startGmailConnectFlow();
       if (completed) {
-        await Promise.all([loadGmailStatus(), loadImportSummary(), loadPendingQueue()]);
+        await invalidateCache(GMAIL_STATUS_CACHE_KEY);
+        await Promise.all([loadGmailStatus({ forceRefresh: true }), loadImportSummary(), loadPendingQueue()]);
       }
     } catch (e) {
       Alert.alert('Gmail', e?.message || 'Could not start Gmail connection');
@@ -190,7 +238,8 @@ export default function GmailImportScreen() {
               setPendingReviewItems([]);
               setPendingReviewError(null);
               setImportLogExpanded(false);
-              await loadGmailStatus();
+              await invalidateCache(GMAIL_STATUS_CACHE_KEY);
+              setGmailStatus({ connected: false, email: null, needs_reconnect: false });
               Alert.alert('Gmail disconnected', 'You can reconnect Gmail anytime from this screen.');
             } catch (e) {
               Alert.alert('Could not disconnect Gmail', e?.message || 'Please try again.');
@@ -244,19 +293,15 @@ export default function GmailImportScreen() {
   async function syncGmail() {
     setGmailSyncing(true);
     try {
-      const result = await api.post('/gmail/import', { source: 'manual' });
-      await invalidateExpenseMutationCaches();
-      await Promise.all([loadImportLog(), loadImportSummary(), loadGmailStatus(), loadPendingQueue()]);
-      const pendingReview = result?.outcomes?.imported_pending_review ?? 0;
-      Alert.alert('Gmail sync',
-        `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${result.failed ? `, failed ${result.failed}` : ''}${pendingReview ? `, ${pendingReview} added to your review queue` : ''}`,
-        pendingReview > 0
-          ? [
-              { text: 'Later', style: 'cancel' },
-              { text: 'Open review queue', onPress: () => router.push('/review-queue') },
-            ]
-          : [{ text: 'OK' }]
-      );
+      await api.post('/gmail/import', { source: 'manual', async: true });
+      setGmailStatus((current) => ({
+        ...(current || {}),
+        connected: true,
+        last_sync_status: 'queued',
+        last_sync_source: 'manual',
+        sync_in_progress: true,
+      }));
+      Alert.alert('Checking Gmail', 'New receipts will appear in your review queue as they are processed.');
     } catch (e) {
       Alert.alert('Gmail sync failed', e?.message || 'Something went wrong');
     } finally {
@@ -326,12 +371,12 @@ export default function GmailImportScreen() {
           styles={styles}
           displayGmailStatus={displayGmailStatus}
           gmailStatusError={gmailStatusError}
-          retryGmailStatus={loadGmailStatus}
+          retryGmailStatus={() => loadGmailStatus({ forceRefresh: true })}
           isUsingMockData={isUsingMockData}
           connectGmail={connectGmail}
           disconnectGmail={disconnectGmail}
           disconnectingGmail={disconnectingGmail}
-          gmailSyncing={gmailSyncing}
+          gmailSyncing={gmailSyncing || !!displayGmailStatus?.sync_in_progress}
           syncGmail={syncGmail}
           importSummaryLoading={importSummaryLoading}
           displayImportSummary={displayImportSummary}

@@ -10,7 +10,7 @@ const { getAuthUrl, exchangeCode, disconnectGmailConnection, getMessage } = requ
 const { importForUser, retryFailedImportLog, retryFailedImportsForUser, reviewSkippedImportLog } = require('../services/gmailImporter');
 const { getGmailImportQualitySummary } = require('../services/gmailImportQualityService');
 const { getGmailImportHealth } = require('../services/gmailImportHealthService');
-const { recordGmailSyncResult } = require('../services/gmailSyncService');
+const { enqueueGmailSync, recordGmailSyncResult } = require('../services/gmailSyncService');
 const { aiEndpoints } = require('../middleware/rateLimit');
 
 function gmailAppReturnUrl() {
@@ -51,8 +51,18 @@ function classifyGmailImportError(err) {
 }
 
 function serializeSyncStatus(token, email = null) {
+  const lastError = `${token?.last_sync_error || ''}`.toLowerCase();
+  const needsReconnect = !!token
+    && token.last_sync_status === 'failed'
+    && (
+      lastError.includes('invalid_grant')
+      || lastError.includes('invalid credentials')
+      || lastError.includes('token has been expired')
+      || lastError.includes('gmail_auth_expired')
+    );
   return {
     connected: !!token,
+    needs_reconnect: needsReconnect,
     email: email || null,
     last_synced_at: token?.last_synced_at || null,
     last_sync_attempted_at: token?.last_sync_attempted_at || null,
@@ -60,6 +70,8 @@ function serializeSyncStatus(token, email = null) {
     last_sync_error: token?.last_sync_error || null,
     last_sync_source: token?.last_sync_source || null,
     last_sync_status: token?.last_sync_status || null,
+    sync_in_progress: ['queued', 'running'].includes(token?.last_sync_status),
+    gmail_history_updated_at: token?.gmail_history_updated_at || null,
   };
 }
 
@@ -102,6 +114,8 @@ router.get('/callback', async (req, res, next) => {
     const userId = stateRow.rows[0].user_id;
     const tokens = await exchangeCode(code);
     await OAuthToken.upsert({ userId, ...tokens, accessToken: null }); // do not persist access_token
+    await OAuthToken.resetGmailHistoryCursor(userId);
+    await enqueueGmailSync(userId, { source: 'oauth_connect' });
     const returnUrl = gmailAppReturnUrl();
     const escapedReturnUrl = returnUrl.replace(/"/g, '&quot;');
     res.send(`<!doctype html>
@@ -149,7 +163,7 @@ router.delete('/connection', authenticate, async (req, res, next) => {
 });
 
 // POST /gmail/import — trigger email import for authenticated user
-router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
+router.post('/import', authenticate, async (req, res, next) => {
   let user = null;
   const source = req.body?.source === 'app_open' ? 'app_open' : 'manual';
   try {
@@ -157,10 +171,21 @@ router.post('/import', authenticate, aiEndpoints, async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'User not synced' });
     const token = await OAuthToken.findByUserId(user.id);
     if (!token) return res.status(403).json({ error: 'Gmail not connected. Visit GET /gmail/auth first.' });
+    if (req.body?.async === true) {
+      const job = await enqueueGmailSync(user.id, { source });
+      return res.status(202).json({
+        queued: true,
+        job_id: job?.id || null,
+        sync_status: 'queued',
+      });
+    }
+
+    // Compatibility path for older clients. Current clients enqueue the sync so
+    // inbox work never sits on the request lifecycle.
     await OAuthToken.markSyncAttempt(user.id, { source });
     const result = await importForUser(user);
     const syncStatus = await recordGmailSyncResult(user.id, result, { source });
-    res.json({ ...result, sync_status: syncStatus });
+    return res.json({ ...result, sync_status: syncStatus });
   } catch (err) {
     const classified = classifyGmailImportError(err);
     if (user?.id) {

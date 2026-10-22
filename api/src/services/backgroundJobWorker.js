@@ -37,6 +37,11 @@ async function handleGmailEnrichment(payload = {}) {
   return runGmailEnrichmentJob(payload);
 }
 
+async function handleGmailSync(payload = {}) {
+  const { runGmailSyncJob } = require('./gmailSyncService');
+  return runGmailSyncJob(payload);
+}
+
 async function runJob(job) {
   if (job.job_type === BackgroundJob.JOB_TYPES.projectionRefresh) {
     return handleProjectionRefresh(job.payload);
@@ -46,6 +51,9 @@ async function runJob(job) {
   }
   if (job.job_type === BackgroundJob.JOB_TYPES.gmailEnrichment) {
     return handleGmailEnrichment(job.payload);
+  }
+  if (job.job_type === BackgroundJob.JOB_TYPES.gmailSync) {
+    return handleGmailSync(job.payload);
   }
   throw new Error(`No handler registered for background job type: ${job.job_type}`);
 }
@@ -131,6 +139,7 @@ module.exports = {
   drainAvailableJobs,
   handlePostConfirm,
   handleGmailEnrichment,
+  handleGmailSync,
   handleProjectionRefresh,
   processJob,
   startBackgroundJobWorker,

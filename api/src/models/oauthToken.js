@@ -64,6 +64,47 @@ async function markSyncAttempt(userId, { provider = 'google', source = null } = 
   return serializeTokenRow(result.rows[0]);
 }
 
+async function markSyncQueued(userId, { provider = 'google', source = null } = {}) {
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET last_sync_status = 'queued',
+         last_sync_source = COALESCE($3, last_sync_source),
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider, source]
+  );
+  return serializeTokenRow(result.rows[0]);
+}
+
+async function updateGmailHistoryCursor(userId, historyId, { provider = 'google' } = {}) {
+  const cleanHistoryId = `${historyId || ''}`.trim();
+  if (!cleanHistoryId) return null;
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET gmail_history_id = $3,
+         gmail_history_updated_at = NOW(),
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider, cleanHistoryId]
+  );
+  return serializeTokenRow(result.rows[0]);
+}
+
+async function resetGmailHistoryCursor(userId, { provider = 'google' } = {}) {
+  const result = await db.query(
+    `UPDATE oauth_tokens
+     SET gmail_history_id = NULL,
+         gmail_history_updated_at = NULL,
+         updated_at = NOW()
+     WHERE user_id = $1 AND provider = $2
+     RETURNING *`,
+    [userId, provider]
+  );
+  return serializeTokenRow(result.rows[0]);
+}
+
 async function markSynced(userId, { provider = 'google', source = null } = {}) {
   const result = await db.query(
     `UPDATE oauth_tokens
@@ -130,8 +171,11 @@ module.exports = {
   findCredentialsByUserId,
   findAllWithGmail,
   markSyncAttempt,
+  markSyncQueued,
   markSynced,
   markSyncPartial,
   markSyncFailure,
+  resetGmailHistoryCursor,
+  updateGmailHistoryCursor,
   deleteByUserId,
 };
