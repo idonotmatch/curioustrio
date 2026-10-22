@@ -82,8 +82,9 @@ router.get('/item-histories', async (req, res, next) => {
       minOccurrences: 2,
       limit,
       requesterUserId: user.id,
-      // Browse every eligible history; insight ranking is intentionally not involved.
-      automaticInsightsOnly: true,
+      // Browsing starts after two clean observations; stricter automatic-insight
+      // thresholds should not hide an otherwise useful price history.
+      excludeSuppressedContexts: true,
       groupByFamily: true,
       decisionHouseholdId: user.household_id || null,
     });

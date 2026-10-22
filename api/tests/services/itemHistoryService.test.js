@@ -382,6 +382,62 @@ describe('listItemHistorySummaries', () => {
 
     expect(results).toEqual([]);
   });
+
+  it('keeps clean two-purchase histories browseable without promoting them to insights', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [1, 2].map((index) => ({
+        expense_id: `expense-${index}`,
+        comparable_key: 'sparkling water lime',
+        product_match_confidence: 'medium',
+        item_name: 'Sparkling Water Lime',
+        item_amount: 6 + index,
+        merchant: index === 1 ? 'Target' : 'Whole Foods',
+        date: `2026-04-${`${index * 7}`.padStart(2, '0')}`,
+        expense_category_name: 'Groceries',
+        category_group_name: 'Groceries',
+      })),
+    });
+
+    const results = await listItemHistorySummaries('household-1', {
+      minOccurrences: 2,
+      requesterUserId: 'user-1',
+      excludeSuppressedContexts: true,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      group_key: 'comparable:sparkling water lime',
+      occurrence_count: 2,
+      insight_eligibility: {
+        eligible: false,
+        suppressed_reason: 'insufficient_product_observations',
+      },
+    });
+  });
+
+  it('still removes suppressed contexts from the browseable history list', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [1, 2].map((index) => ({
+        expense_id: `expense-${index}`,
+        comparable_key: 'margherita pizza',
+        product_match_confidence: 'high',
+        item_name: 'Margherita Pizza',
+        item_amount: 16,
+        merchant: 'Neighborhood Pizza',
+        date: `2026-04-${`${index * 7}`.padStart(2, '0')}`,
+        expense_category_name: 'Dining Out',
+        category_group_name: 'Dining Out',
+      })),
+    });
+
+    const results = await listItemHistorySummaries('household-1', {
+      minOccurrences: 2,
+      requesterUserId: 'user-1',
+      excludeSuppressedContexts: true,
+    });
+
+    expect(results).toEqual([]);
+  });
 });
 
 describe('getItemHistoryByGroupKey', () => {

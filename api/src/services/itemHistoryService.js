@@ -528,6 +528,7 @@ async function listItemHistorySummaries(ownerId, {
   limit = 25,
   requesterUserId = null,
   automaticInsightsOnly = false,
+  excludeSuppressedContexts = false,
   groupByFamily = false,
   decisionHouseholdId = null,
 } = {}) {
@@ -537,7 +538,7 @@ async function listItemHistorySummaries(ownerId, {
       ? ItemFamilyComparisonDecision.findByHousehold(decisionHouseholdId)
       : Promise.resolve([]),
   ]);
-  const historyRows = automaticInsightsOnly
+  const historyRows = automaticInsightsOnly || excludeSuppressedContexts
     ? rows.filter((row) => classifyItemInsightContext(row).eligible)
     : rows;
   return summarizeHistoryRows(historyRows, { groupByFamily, comparisonDecisions })
