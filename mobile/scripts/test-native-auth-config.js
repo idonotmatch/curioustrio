@@ -7,6 +7,11 @@ const googlePlugin = expo.plugins.find(
 
 assert.equal(expo.scheme, 'adlo');
 assert.equal(expo.ios.bundleIdentifier, 'com.curioustrio.expensetracker');
+assert.equal(
+  expo.runtimeVersion?.policy,
+  'fingerprint',
+  'OTA updates must be isolated by native runtime compatibility'
+);
 assert.equal(expo.ios.infoPlist.CFBundleURLTypes, undefined);
 assert.deepEqual(expo.ios.entitlements['keychain-access-groups'], [
   '$(AppIdentifierPrefix)$(CFBundleIdentifier)',
