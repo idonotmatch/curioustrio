@@ -3,6 +3,7 @@ const mockGmailList = jest.fn();
 const mockGmailGet = jest.fn();
 const mockGmailGetProfile = jest.fn();
 const mockGmailHistoryList = jest.fn();
+const mockGmailAttachmentGet = jest.fn();
 const mockRefreshAccessToken = jest.fn();
 const mockSetCredentials = jest.fn();
 const mockOAuth2 = jest.fn(() => ({
@@ -14,7 +15,11 @@ const mockGoogleGmail = jest.fn(() => ({
   users: {
     getProfile: mockGmailGetProfile,
     history: { list: mockGmailHistoryList },
-    messages: { list: mockGmailList, get: mockGmailGet },
+    messages: {
+      list: mockGmailList,
+      get: mockGmailGet,
+      attachments: { get: mockGmailAttachmentGet },
+    },
   },
 }));
 jest.mock('googleapis', () => ({
@@ -43,6 +48,8 @@ const {
   createGmailSession,
   disconnectGmailConnection,
   listHistoryMessages,
+  getMessage,
+  extractStructuredHtmlEvidence,
 } = require('../../src/services/gmailClient');
 
 describe('gmailClient helpers', () => {
@@ -72,6 +79,94 @@ describe('gmailClient helpers', () => {
     expect(text).toContain('Thanks for your order');
     expect(text).toContain('Order total $42.15');
     expect(text).toContain('Shipped soon');
+  });
+
+  it('extracts order identity, totals, and items from receipt JSON-LD', () => {
+    const html = `<script type="application/ld+json">
+      {
+        "@type": "Order",
+        "orderNumber": "BB-1042",
+        "seller": { "name": "Bobby Boy Bakeshop" },
+        "priceCurrency": "USD",
+        "totalPrice": "27.10",
+        "orderedItem": [{
+          "orderQuantity": 2,
+          "itemOffered": { "name": "Croissant" },
+          "price": "9.00"
+        }]
+      }
+    </script>`;
+
+    expect(extractStructuredHtmlEvidence(html)).toContain('Order ID: BB-1042');
+    expect(extractStructuredHtmlEvidence(html)).toContain('Merchant: Bobby Boy Bakeshop');
+    expect(extractStructuredHtmlEvidence(html)).toContain('Order total: USD 27.10');
+    expect(extractStructuredHtmlEvidence(html)).toContain('Croissant');
+  });
+
+  it('loads text stored behind Gmail attachment IDs', async () => {
+    mockGmailGet.mockResolvedValueOnce({
+      data: {
+        threadId: 'thread-1',
+        snippet: 'Invoice attached',
+        payload: {
+          headers: [
+            { name: 'Subject', value: 'Your invoice' },
+            { name: 'From', value: 'billing@example.com' },
+          ],
+          mimeType: 'multipart/mixed',
+          parts: [{
+            filename: 'invoice.txt',
+            mimeType: 'text/plain',
+            body: { attachmentId: 'attachment-1', size: 42 },
+          }],
+        },
+      },
+    });
+    mockGmailAttachmentGet.mockResolvedValueOnce({
+      data: { data: Buffer.from('Order ID: A-42\nOrder total: $18.25').toString('base64url') },
+    });
+
+    await expect(getMessage('user-1', 'message-1', {
+      gmailClient: mockGoogleGmail(),
+    })).resolves.toEqual(expect.objectContaining({
+      threadId: 'thread-1',
+      attachmentCount: 1,
+      attachmentTextCount: 1,
+      body: expect.stringContaining('Order total: $18.25'),
+    }));
+    expect(mockGmailAttachmentGet).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 'message-1',
+      id: 'attachment-1',
+    }), expect.any(Object));
+  });
+
+  it('extracts bounded PDF attachment text without persisting the file', async () => {
+    const pdfTextExtractor = jest.fn().mockResolvedValue('Invoice #INV-9\nTotal $40.00');
+    mockGmailGet.mockResolvedValueOnce({
+      data: {
+        snippet: 'Invoice attached',
+        payload: {
+          headers: [],
+          parts: [{
+            filename: 'invoice.pdf',
+            mimeType: 'application/pdf',
+            body: { attachmentId: 'pdf-1', size: 128 },
+          }],
+        },
+      },
+    });
+    mockGmailAttachmentGet.mockResolvedValueOnce({
+      data: { data: Buffer.from('%PDF-test').toString('base64url') },
+    });
+
+    const result = await getMessage('user-1', 'message-pdf', {
+      gmailClient: mockGoogleGmail(),
+      pdfTextExtractor,
+    });
+
+    expect(pdfTextExtractor).toHaveBeenCalledTimes(1);
+    expect(result.body).toContain('Invoice #INV-9');
+    expect(result.attachmentTextCount).toBe(1);
   });
 
   it('prefers the richer html body when plain text drops item structure', () => {
@@ -166,6 +261,7 @@ describe('createGmailSession', () => {
   beforeEach(() => {
     mockGmailList.mockReset();
     mockGmailGet.mockReset();
+    mockGmailAttachmentGet.mockReset();
     mockRefreshAccessToken.mockReset();
     mockSetCredentials.mockReset();
     mockOAuth2.mockClear();

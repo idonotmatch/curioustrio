@@ -193,7 +193,14 @@ export default function ExpenseDetailScreen() {
   const importedAtLabel = formatImportedAt(gmailReviewHint?.imported_at);
   const subjectLine = formatEmailText(gmailReviewHint?.message_subject || expense?.email_subject);
   const emailSnippet = formatEmailSnippet(gmailReviewHint?.message_snippet || expense?.email_snippet);
-  const importMetaBits = [gmailReviewHint?.from_address || expense?.email_from_address, importedAtLabel].filter(Boolean);
+  const importMetaBits = [
+    gmailReviewHint?.from_address || expense?.email_from_address,
+    gmailReviewHint?.external_order_id ? `Order ${gmailReviewHint.external_order_id}` : null,
+    gmailReviewHint?.attachment_text_count > 0
+      ? `${gmailReviewHint.attachment_text_count} ${gmailReviewHint.attachment_text_count === 1 ? 'attachment' : 'attachments'} read`
+      : null,
+    importedAtLabel,
+  ].filter(Boolean);
   const treatmentSuggestionSummary = buildTreatmentSuggestionSummary(treatmentSuggestion);
   const reviewFocusSummary = buildReviewFocusSummary(gmailReviewHint);
   const reviewDecisionFacts = buildReviewDecisionFacts({

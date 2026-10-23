@@ -27,6 +27,9 @@ Return ONLY a JSON object with:
 - payment_method (string or null): one of "cash", "credit", "debit", or null if not visible. Infer "visa", "mastercard", "amex", "credit" as credit; "debit" as debit.
 - card_label (string or null): card brand or nickname shown in the email when visible (for example "Visa", "Chase Sapphire", "Amex Gold"). null if not visible.
 - card_last4 (string or null): the final 4 digits of the card if visible. null if not visible.
+- currency (string or null): ISO 4217 currency code when visible, otherwise null.
+- order_id (string or null): merchant order, confirmation, or invoice identifier when visible. Do not invent one.
+- transaction_id (string or null): payment processor transaction identifier when visible. Do not invent one.
 - items (array or null): individual line items from the email, each as { "description": string, "amount": number or null, "quantity": number or null, "unit_price": number or null, "upc": string or null, "sku": string or null, "brand": string or null, "product_size": string or null, "pack_size": string or null, "unit": string or null }. Include product lines AND fees (shipping, tax, service fees, etc.) as separate items so that items sum to the total amount. For fee/tax/shipping lines set quantity/unit_price/upc/sku/brand/product_size/pack_size/unit to null. Set items to null if the email does not list individual items.
 
 Do NOT treat itinerary, reservation, guest, policy, loyalty-credit, support, or informational lines as items. Examples that should usually NOT become items: check-in/check-out times, guest names, cancellation policy text, "dollars used", "for more information", website links, confirmation headlines, or marketing upgrade offers unless they are clearly billed as purchased line items in an itemized block.

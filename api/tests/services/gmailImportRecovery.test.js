@@ -1,6 +1,7 @@
 jest.mock('../../src/db', () => ({ pool: { connect: jest.fn() } }));
 jest.mock('../../src/models/emailImportLog', () => ({
   findByIdForUser: jest.fn(), recordLogFeedback: jest.fn(), upsertResult: jest.fn(), markRetryFailed: jest.fn(),
+  findRelatedTransaction: jest.fn(),
 }));
 jest.mock('../../src/models/expense', () => ({ create: jest.fn(), findPotentialDuplicates: jest.fn() }));
 jest.mock('../../src/models/expenseItem', () => ({ createBulk: jest.fn() }));
@@ -152,4 +153,50 @@ it('does not suppress a valid fallback amount merely because prior detail edits 
   parseEmailExpense.mockResolvedValue(null);
   expect(await retryFailedImportLog(user, log)).toMatchObject({ imported: 1 });
   expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending', amount: 12 }));
+});
+
+it('links a later confirmation or charge to an existing order instead of creating another expense', async () => {
+  getMessage.mockResolvedValue({
+    subject: 'Payment processed for order #ORDER-42',
+    from: 'orders@shop.com',
+    body: 'Order #ORDER-42\nYour card was charged $12.00',
+    threadId: 'thread-42',
+  });
+  classifyEmailExpense.mockResolvedValue({ disposition: 'expense' });
+  parseEmailExpense.mockResolvedValue({ merchant: 'Shop', amount: 12, date: '2026-09-20', order_id: 'ORDER-42', items: [] });
+  Log.findRelatedTransaction.mockResolvedValue({ expense_id: 'existing-expense', amount: 12, match_key: 'order_id' });
+
+  await expect(reviewSkippedImportLog(user, log)).resolves.toMatchObject({
+    imported: 0,
+    skipped: 1,
+    reason: 'lifecycle_existing_expense',
+  });
+  expect(Expense.create).not.toHaveBeenCalled();
+  expect(Log.upsertResult).toHaveBeenCalledWith(expect.objectContaining({
+    expenseId: 'existing-expense',
+    relatedExpenseId: 'existing-expense',
+    externalOrderId: 'ORDER-42',
+  }));
+});
+
+it('keeps a refund as a separate negative expense linked to its original purchase', async () => {
+  getMessage.mockResolvedValue({
+    subject: 'Refund processed for order #ORDER-42',
+    from: 'orders@shop.com',
+    body: 'Order #ORDER-42\nRefund total $12.00',
+    threadId: 'thread-42',
+  });
+  classifyEmailExpense.mockResolvedValue({ disposition: 'refund' });
+  parseEmailExpense.mockResolvedValue({ merchant: 'Shop', amount: 12, date: '2026-09-20', order_id: 'ORDER-42', items: [] });
+  Log.findRelatedTransaction.mockResolvedValue({ expense_id: 'original-expense', amount: 12 });
+
+  await expect(reviewSkippedImportLog(user, log)).resolves.toMatchObject({ imported: 1 });
+  expect(Expense.create).toHaveBeenCalledWith(expect.objectContaining({
+    amount: -12,
+    reviewMode: 'full_review',
+  }));
+  expect(Log.upsertResult).toHaveBeenCalledWith(expect.objectContaining({
+    relatedExpenseId: 'original-expense',
+    emailEventType: 'refund',
+  }), client);
 });

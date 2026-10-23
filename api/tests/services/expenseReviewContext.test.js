@@ -114,6 +114,10 @@ describe('expenseReviewContext', () => {
       from_address: 'uber@uber.com',
       imported_at: '2026-03-16T14:00:00.000Z',
       review_action: null,
+      email_event_type: 'charge',
+      external_order_id: 'UBER-42',
+      attachment_count: 1,
+      attachment_text_count: 1,
     });
     Expense.findTreatmentCandidates.mockResolvedValueOnce([
       {
@@ -157,6 +161,10 @@ describe('expenseReviewContext', () => {
       message_subject: 'Uber trip "receipt"',
       message_snippet: 'Your Uber trip total was "$42.50"',
       review_mode: 'quick_check',
+      email_event_type: 'charge',
+      external_order_id: 'UBER-42',
+      attachment_count: 1,
+      attachment_text_count: 1,
       treatment_suggestion: expect.objectContaining({
         suggested_track_only: true,
         budget_exclusion_reason: 'business',

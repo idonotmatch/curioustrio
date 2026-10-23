@@ -120,14 +120,22 @@ async function fetchPendingExpensesBase(userId, { limit = null, cursor = null } 
             l.subject_pattern AS email_subject_pattern,
             l.subject AS email_subject,
             l.from_address AS email_from_address,
-            l.snippet AS email_snippet
+            l.snippet AS email_snippet,
+            l.email_event_type AS email_event_type,
+            l.external_order_id AS email_external_order_id,
+            l.external_transaction_id AS email_external_transaction_id,
+            l.related_expense_id AS email_related_expense_id,
+            l.attachment_count AS email_attachment_count,
+            l.attachment_text_count AS email_attachment_text_count
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
      LEFT JOIN LATERAL (
        SELECT log.message_id, log.imported_at,
               feedback.review_action, feedback.review_edit_count,
               log.sender_domain, log.subject_pattern, log.subject,
-              log.from_address, log.snippet
+              log.from_address, log.snippet, log.email_event_type,
+              log.external_order_id, log.external_transaction_id,
+              log.related_expense_id, log.attachment_count, log.attachment_text_count
        FROM email_import_log log
        LEFT JOIN email_import_feedback feedback ON feedback.expense_id = log.expense_id
        WHERE log.expense_id = e.id
@@ -301,6 +309,12 @@ async function attachExpenseReviewContext(expense, userId, {
         subject: enrichedExpense.email_subject,
         from_address: enrichedExpense.email_from_address,
         snippet: enrichedExpense.email_snippet,
+        email_event_type: enrichedExpense.email_event_type,
+        external_order_id: enrichedExpense.email_external_order_id,
+        external_transaction_id: enrichedExpense.email_external_transaction_id,
+        related_expense_id: enrichedExpense.email_related_expense_id,
+        attachment_count: enrichedExpense.email_attachment_count,
+        attachment_text_count: enrichedExpense.email_attachment_text_count,
       }
       : null;
     const result = await attachGmailReviewHint(enrichedExpense, userId, { compact, emailLog });
@@ -311,6 +325,12 @@ async function attachExpenseReviewContext(expense, userId, {
       email_review_edit_count,
       email_sender_domain,
       email_subject_pattern,
+      email_event_type,
+      email_external_order_id,
+      email_external_transaction_id,
+      email_related_expense_id,
+      email_attachment_count,
+      email_attachment_text_count,
       ...cleanExpense
     } = result;
     return cleanExpense;

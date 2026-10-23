@@ -26,6 +26,11 @@ function isMissingMinimalLedgerError(err) {
   return err?.code === '42703' && /(sender_domain|subject_pattern)/i.test(`${err?.message || ''}`);
 }
 
+function isMissingLifecycleError(err) {
+  return err?.code === '42703'
+    && /(gmail_thread_id|external_order_id|external_transaction_id|email_event_type|related_expense_id|attachment_count|attachment_text_count)/i.test(`${err?.message || ''}`);
+}
+
 function sanitizeSnippet(snippet) {
   const value = decodeHtmlEntities(`${snippet || ''}`).trim();
   if (!value) return null;
@@ -105,6 +110,13 @@ async function create({
   snippet,
   structuredItemBlockLevel = null,
   deterministicItemCount = null,
+  gmailThreadId = null,
+  externalOrderId = null,
+  externalTransactionId = null,
+  emailEventType = null,
+  relatedExpenseId = null,
+  attachmentCount = null,
+  attachmentTextCount = null,
 }) {
   const {
     safeSubject,
@@ -117,20 +129,24 @@ async function create({
     const result = await db.query(
       `INSERT INTO email_import_log (
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
-         structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern
+         structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern,
+         gmail_thread_id, external_order_id, external_transaction_id, email_event_type,
+         related_expense_id, attachment_count, attachment_text_count
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
       [
         userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null, safeSnippet,
         structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
-        senderDomain, subjectPattern,
+        senderDomain, subjectPattern, gmailThreadId, externalOrderId, externalTransactionId, emailEventType,
+        relatedExpenseId, Number.isFinite(Number(attachmentCount)) ? Number(attachmentCount) : null,
+        Number.isFinite(Number(attachmentTextCount)) ? Number(attachmentTextCount) : null,
       ]
     );
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
+    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err) && !isMissingLifecycleError(err)) throw err;
     const fallback = await db.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -458,6 +474,13 @@ async function upsertResult({
   snippet,
   structuredItemBlockLevel = null,
   deterministicItemCount = null,
+  gmailThreadId = null,
+  externalOrderId = null,
+  externalTransactionId = null,
+  emailEventType = null,
+  relatedExpenseId = null,
+  attachmentCount = null,
+  attachmentTextCount = null,
 }, queryable = db) {
   const {
     safeSubject,
@@ -472,9 +495,11 @@ async function upsertResult({
     const result = await queryable.query(
       `INSERT INTO email_import_log (
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
-         structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern
+         structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern,
+         gmail_thread_id, external_order_id, external_transaction_id, email_event_type,
+         related_expense_id, attachment_count, attachment_text_count
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        ON CONFLICT (user_id, message_id) DO UPDATE SET
          expense_id = EXCLUDED.expense_id,
          status = EXCLUDED.status,
@@ -486,18 +511,27 @@ async function upsertResult({
          deterministic_item_count = EXCLUDED.deterministic_item_count,
          sender_domain = EXCLUDED.sender_domain,
          subject_pattern = EXCLUDED.subject_pattern,
+         gmail_thread_id = EXCLUDED.gmail_thread_id,
+         external_order_id = EXCLUDED.external_order_id,
+         external_transaction_id = EXCLUDED.external_transaction_id,
+         email_event_type = EXCLUDED.email_event_type,
+         related_expense_id = EXCLUDED.related_expense_id,
+         attachment_count = EXCLUDED.attachment_count,
+         attachment_text_count = EXCLUDED.attachment_text_count,
          imported_at = NOW()
        RETURNING *`,
       [
         userId, messageId, expenseId, status, safeSubject, storedFromAddress, skipReason || null, safeSnippet,
         structuredItemBlockLevel || null, Number.isFinite(Number(deterministicItemCount)) ? Number(deterministicItemCount) : null,
-        senderDomain, subjectPattern,
+        senderDomain, subjectPattern, gmailThreadId, externalOrderId, externalTransactionId, emailEventType,
+        relatedExpenseId, Number.isFinite(Number(attachmentCount)) ? Number(attachmentCount) : null,
+        Number.isFinite(Number(attachmentTextCount)) ? Number(attachmentTextCount) : null,
       ]
     );
     if (inTransaction) await queryable.query('RELEASE SAVEPOINT email_import_log_upsert_compat');
     return result.rows[0] || null;
   } catch (err) {
-    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err)) throw err;
+    if (!isMissingSnippetError(err) && !isMissingItemStructureError(err) && !isMissingMinimalLedgerError(err) && !isMissingLifecycleError(err)) throw err;
     if (inTransaction) await queryable.query('ROLLBACK TO SAVEPOINT email_import_log_upsert_compat');
     const fallback = await queryable.query(
       `INSERT INTO email_import_log (user_id, message_id, expense_id, status, subject, from_address, skip_reason)
@@ -514,6 +548,57 @@ async function upsertResult({
     );
     if (inTransaction) await queryable.query('RELEASE SAVEPOINT email_import_log_upsert_compat');
     return fallback.rows[0] || null;
+  }
+}
+
+async function findRelatedTransaction(userId, {
+  messageId = null,
+  gmailThreadId = null,
+  externalOrderId = null,
+  externalTransactionId = null,
+  senderDomain = null,
+} = {}, queryable = db) {
+  if (!externalTransactionId && !externalOrderId && !gmailThreadId) return null;
+  try {
+    const result = await queryable.query(
+      `SELECT l.id, l.message_id, l.expense_id, l.email_event_type,
+              l.external_order_id, l.external_transaction_id, l.gmail_thread_id,
+              e.amount, e.merchant, e.date, e.status AS expense_status,
+              CASE
+                WHEN $3::text IS NOT NULL AND l.external_transaction_id = $3 THEN 'transaction_id'
+                WHEN $4::text IS NOT NULL AND l.external_order_id = $4 AND l.sender_domain = $5 THEN 'order_id'
+                ELSE 'gmail_thread'
+              END AS match_key
+       FROM email_import_log l
+       JOIN expenses e ON e.id = l.expense_id
+       WHERE l.user_id = $1
+         AND ($2::text IS NULL OR l.message_id <> $2)
+         AND e.amount > 0
+         AND (
+           ($3::text IS NOT NULL AND l.external_transaction_id = $3)
+           OR ($4::text IS NOT NULL AND l.external_order_id = $4 AND l.sender_domain = $5)
+           OR (
+             $3::text IS NULL
+             AND $4::text IS NULL
+             AND $6::text IS NOT NULL
+             AND l.gmail_thread_id = $6
+             AND l.sender_domain = $5
+           )
+         )
+       ORDER BY
+         CASE
+           WHEN $3::text IS NOT NULL AND l.external_transaction_id = $3 THEN 1
+           WHEN $4::text IS NOT NULL AND l.external_order_id = $4 AND l.sender_domain = $5 THEN 2
+           ELSE 3
+         END,
+         l.imported_at DESC
+       LIMIT 1`,
+      [userId, messageId, externalTransactionId, externalOrderId, senderDomain, gmailThreadId]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (isMissingLifecycleError(err)) return null;
+    throw err;
   }
 }
 
@@ -1021,4 +1106,5 @@ module.exports = {
   pruneOldRows,
   sanitizeSnippet,
   upsertResult,
+  findRelatedTransaction,
 };

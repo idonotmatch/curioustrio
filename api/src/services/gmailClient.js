@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { google } = require('googleapis');
 const fetch = require('node-fetch');
+const { PDFParse } = require('pdf-parse');
 const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
 const { decodeHtmlEntities } = require('../utils/htmlEntities');
@@ -9,6 +10,9 @@ const GOOGLE_REQUEST_TIMEOUT_MS = Math.max(
   3000,
   Math.min(Number(process.env.GOOGLE_REQUEST_TIMEOUT_MS) || 15000, 60000)
 );
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_PDF_ATTACHMENTS = 2;
+const MAX_ATTACHMENT_TEXT_CHARS = 24000;
 
 const GMAIL_SEARCH_QUERY = [
   'newer_than:30d',
@@ -248,6 +252,111 @@ function htmlToReadableText(html = '') {
     .trim();
 }
 
+function decodeGmailData(data = '') {
+  const normalized = `${data || ''}`.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4;
+  return Buffer.from(padding ? normalized.padEnd(normalized.length + (4 - padding), '=') : normalized, 'base64');
+}
+
+function compactStructuredValue(value) {
+  if (value == null) return null;
+  if (typeof value === 'string' || typeof value === 'number') {
+    return `${value}`.replace(/\s+/g, ' ').trim() || null;
+  }
+  if (typeof value === 'object') {
+    return compactStructuredValue(value.name || value.value || value.identifier || value['@id']);
+  }
+  return null;
+}
+
+function collectJsonLdNodes(value, nodes = []) {
+  if (Array.isArray(value)) {
+    value.forEach(item => collectJsonLdNodes(item, nodes));
+    return nodes;
+  }
+  if (!value || typeof value !== 'object') return nodes;
+  nodes.push(value);
+  if (Array.isArray(value['@graph'])) collectJsonLdNodes(value['@graph'], nodes);
+  return nodes;
+}
+
+function normalizeJsonLdItems(value) {
+  const items = Array.isArray(value) ? value : (value ? [value] : []);
+  return items.map((entry) => {
+    const item = entry?.itemOffered || entry?.orderedItem || entry?.item || entry;
+    const offer = entry?.acceptedOffer || entry?.offers || entry;
+    const description = compactStructuredValue(item?.name || entry?.name || item?.description);
+    const quantity = compactStructuredValue(entry?.orderQuantity || entry?.quantity || item?.quantity);
+    const unitPrice = compactStructuredValue(offer?.price || entry?.unitPrice || item?.price);
+    const amount = compactStructuredValue(entry?.price || entry?.totalPrice || offer?.price);
+    if (!description) return null;
+    return { description, quantity, unitPrice, amount };
+  }).filter(Boolean).slice(0, 40);
+}
+
+function extractStructuredHtmlEvidence(html = '') {
+  if (!html) return '';
+  const lines = [];
+  const scriptPattern = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  for (const match of html.matchAll(scriptPattern)) {
+    try {
+      const parsed = JSON.parse(decodeHtmlEntities(match[1]).trim());
+      for (const node of collectJsonLdNodes(parsed)) {
+        const type = Array.isArray(node['@type']) ? node['@type'].join(' ') : `${node['@type'] || ''}`;
+        if (!/(order|invoice|receipt|payment|reservation)/i.test(type)) continue;
+
+        const orderId = compactStructuredValue(
+          node.orderNumber || node.confirmationNumber || node.invoiceNumber || node.identifier
+        );
+        const merchant = compactStructuredValue(node.seller || node.merchant || node.provider || node.broker);
+        const total = compactStructuredValue(
+          node.totalPrice || node.price || node.paymentDue?.price || node.paymentDue || node.totalPaymentDue?.price || node.totalPaymentDue
+        );
+        const currency = compactStructuredValue(
+          node.priceCurrency || node.totalPriceCurrency || node.paymentDue?.priceCurrency
+        );
+        if (orderId) lines.push(`Order ID: ${orderId}`);
+        if (merchant) lines.push(`Merchant: ${merchant}`);
+        if (total) lines.push(`Order total: ${currency ? `${currency} ` : ''}${total}`);
+
+        const items = normalizeJsonLdItems(
+          node.orderedItem || node.acceptedOffer || node.itemListElement || node.referencesOrder?.orderedItem
+        );
+        if (items.length) lines.push('Items purchased:');
+        for (const item of items) {
+          lines.push(item.description);
+          if (item.quantity) lines.push(`x ${item.quantity}`);
+          if (item.amount) lines.push(`${currency ? `${currency} ` : ''}${item.amount}`);
+          else if (item.unitPrice) lines.push(`Unit price: ${currency ? `${currency} ` : ''}${item.unitPrice}`);
+        }
+      }
+    } catch {
+      // Invalid marketing JSON-LD should not block a receipt import.
+    }
+  }
+
+  const unique = [...new Set(lines.map(line => line.trim()).filter(Boolean))];
+  return unique.length ? `[Structured receipt data]\n${unique.join('\n')}` : '';
+}
+
+async function extractPdfText(buffer) {
+  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+  try {
+    const result = await parser.getText({ first: 12 });
+    return `${result?.text || ''}`.trim();
+  } finally {
+    await parser.destroy();
+  }
+}
+
+function appendEvidence(body, evidence) {
+  const cleanBody = `${body || ''}`.trim();
+  const cleanEvidence = `${evidence || ''}`.trim();
+  if (!cleanEvidence) return cleanBody;
+  if (!cleanBody) return cleanEvidence;
+  return `${cleanBody}\n\n${cleanEvidence}`;
+}
+
 function countLineMatches(text = '', pattern) {
   return text
     .split(/\n+/)
@@ -327,7 +436,10 @@ function chooseBestMessageBody(plainText = '', htmlText = '', snippet = '') {
   return normalizedPlain;
 }
 
-async function getMessage(userId, messageId, { gmailClient = null } = {}) {
+async function getMessage(userId, messageId, {
+  gmailClient = null,
+  pdfTextExtractor = extractPdfText,
+} = {}) {
   const gmail = gmailClient || google.gmail({
     version: 'v1',
     auth: await getAuthenticatedClient(userId),
@@ -349,17 +461,66 @@ async function getMessage(userId, messageId, { gmailClient = null } = {}) {
   const subject = decodeHtmlEntities(headers.find(h => h.name === 'Subject')?.value || '');
   const from = decodeHtmlEntities(headers.find(h => h.name === 'From')?.value || '');
 
+  const attachmentParts = [];
   let plainBody = '';
   let htmlBody = '';
   function extractBody(part) {
     if (part.mimeType === 'text/plain' && part.body?.data) {
-      plainBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
+      plainBody += decodeGmailData(part.body.data).toString('utf-8');
     } else if (part.mimeType === 'text/html' && part.body?.data) {
-      htmlBody += Buffer.from(part.body.data, 'base64').toString('utf-8');
+      htmlBody += decodeGmailData(part.body.data).toString('utf-8');
+    } else if (part.body?.attachmentId) {
+      attachmentParts.push({
+        attachmentId: part.body.attachmentId,
+        filename: part.filename || '',
+        mimeType: `${part.mimeType || ''}`.toLowerCase(),
+        size: Number(part.body.size || 0),
+      });
     }
     if (part.parts) part.parts.forEach(extractBody);
   }
   if (payload) extractBody(payload);
+
+  let attachmentText = '';
+  let attachmentTextCount = 0;
+  let pdfCount = 0;
+  for (const part of attachmentParts) {
+    const isText = part.mimeType === 'text/plain' || part.mimeType === 'text/html';
+    const isPdf = part.mimeType === 'application/pdf' || /\.pdf$/i.test(part.filename);
+    if ((!isText && !isPdf) || part.size > MAX_ATTACHMENT_BYTES) continue;
+    if (isPdf && pdfCount >= MAX_PDF_ATTACHMENTS) continue;
+
+    try {
+      const attachment = await gmail.users.messages.attachments.get({
+        userId: 'me',
+        messageId,
+        id: part.attachmentId,
+      }, {
+        timeout: GOOGLE_REQUEST_TIMEOUT_MS,
+      });
+      const data = decodeGmailData(attachment.data?.data || '');
+      if (!data.length || data.length > MAX_ATTACHMENT_BYTES) continue;
+      let text = '';
+      if (isPdf) {
+        pdfCount += 1;
+        text = await pdfTextExtractor(data);
+      } else {
+        text = data.toString('utf-8');
+        if (part.mimeType === 'text/html') text = htmlToReadableText(text);
+      }
+      if (!text.trim()) continue;
+      attachmentTextCount += 1;
+      const label = part.filename ? `Attachment: ${part.filename}` : 'Attachment text';
+      attachmentText = appendEvidence(attachmentText, `[${label}]\n${text.trim()}`);
+      attachmentText = attachmentText.slice(0, MAX_ATTACHMENT_TEXT_CHARS);
+      if (attachmentText.length >= MAX_ATTACHMENT_TEXT_CHARS) break;
+    } catch (error) {
+      console.warn('[gmail] attachment text extraction failed', {
+        mime_type: part.mimeType || 'unknown',
+        reason: error?.name || 'attachment_parse_failed',
+      });
+    }
+  }
 
   const normalizedPlain = plainBody
     .replace(/\r/g, '')
@@ -367,9 +528,21 @@ async function getMessage(userId, messageId, { gmailClient = null } = {}) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const normalizedHtml = htmlToReadableText(htmlBody);
-  const body = chooseBestMessageBody(normalizedPlain, normalizedHtml, snippet);
+  const structuredEvidence = extractStructuredHtmlEvidence(htmlBody);
+  let body = chooseBestMessageBody(normalizedPlain, normalizedHtml, snippet);
+  body = appendEvidence(body, structuredEvidence);
+  body = appendEvidence(body, attachmentText);
 
-  return { subject, from, snippet, body, receivedAt };
+  return {
+    subject,
+    from,
+    snippet,
+    body,
+    receivedAt,
+    threadId: response.data.threadId || null,
+    attachmentCount: attachmentParts.length,
+    attachmentTextCount,
+  };
 }
 
 async function createGmailSession(userId) {
@@ -403,4 +576,7 @@ module.exports = {
   htmlToReadableText,
   chooseBestMessageBody,
   bodyRichnessScore,
+  decodeGmailData,
+  extractStructuredHtmlEvidence,
+  extractPdfText,
 };

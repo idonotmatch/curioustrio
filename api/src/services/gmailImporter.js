@@ -34,6 +34,11 @@ const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { pushNotificationsEnabled } = require('./pushPreferences');
 const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
 const { extractPeerPaymentRecipient } = require('./merchantIdentity');
+const {
+  extractEmailTransactionLifecycle,
+  isNonFinancialLifecycleEvent,
+  shouldReuseLifecycleExpense,
+} = require('./emailTransactionLifecycle');
 const detectDuplicates = require('./duplicateDetector');
 
 function amountsApproximatelyEqual(left, right) {
@@ -350,8 +355,18 @@ async function processMessageImport(user, msgId, {
   }
 
   let msgSubject, msgFrom, msgSnippet, createdExpense;
+  let lifecycleLogContext = {};
   try {
-    const { subject, from, body, snippet, receivedAt } = gmailSession
+    const {
+      subject,
+      from,
+      body,
+      snippet,
+      receivedAt,
+      threadId,
+      attachmentCount,
+      attachmentTextCount,
+    } = gmailSession
       ? await gmailSession.getMessage(msgId)
       : await getMessage(user.id, msgId);
     msgSubject = subject;
@@ -370,6 +385,32 @@ async function processMessageImport(user, msgId, {
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
     const signals = analyzeEmailSignals(subject, from, body);
     const structuredItemSignal = summarizeStructuredItemBlock(body);
+    let lifecycle = extractEmailTransactionLifecycle({
+      subject,
+      body,
+      classification,
+      threadId,
+    });
+    lifecycleLogContext = {
+      ...lifecycle,
+      emailEventType: lifecycle.eventType,
+      attachmentCount,
+      attachmentTextCount,
+    };
+    delete lifecycleLogContext.eventType;
+
+    if (isNonFinancialLifecycleEvent(lifecycle.eventType)) {
+      const skipReason = `lifecycle_${lifecycle.eventType}`;
+      await EmailImportLog.upsertResult({
+        userId: user.id, messageId: msgId, status: 'skipped',
+        subject, fromAddress: from, skipReason, snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        ...lifecycleLogContext,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+    }
 
     if (shouldSkipTemplateBeforeClassification({
       templateQuality,
@@ -383,6 +424,7 @@ async function processMessageImport(user, msgId, {
         subject, fromAddress: from, skipReason, snippet,
         structuredItemBlockLevel: structuredItemSignal.level,
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        ...lifecycleLogContext,
       });
       increment(outcomes.skipped_reasons, skipReason);
       return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -398,6 +440,7 @@ async function processMessageImport(user, msgId, {
           subject, fromAddress: from, skipReason, snippet,
           structuredItemBlockLevel: structuredItemSignal.level,
           deterministicItemCount: structuredItemSignal.deterministic_item_count,
+          ...lifecycleLogContext,
         });
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -406,6 +449,20 @@ async function processMessageImport(user, msgId, {
 
     let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
     parsed = normalizeParsedAmountAgainstDeterministicTotal(parsed, body, classification);
+    lifecycle = extractEmailTransactionLifecycle({
+      subject,
+      body,
+      classification,
+      parsed,
+      threadId,
+    });
+    lifecycleLogContext = {
+      ...lifecycle,
+      emailEventType: lifecycle.eventType,
+      attachmentCount,
+      attachmentTextCount,
+    };
+    delete lifecycleLogContext.eventType;
     const deterministicFallbackItems = extractFallbackItemsFromEmailBody(body);
     let importedAsPendingReview = false;
     const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
@@ -419,6 +476,7 @@ async function processMessageImport(user, msgId, {
           subject, fromAddress: from, skipReason, snippet,
           structuredItemBlockLevel: structuredItemSignal.level,
           deterministicItemCount: structuredItemSignal.deterministic_item_count,
+          ...lifecycleLogContext,
         });
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -430,6 +488,7 @@ async function processMessageImport(user, msgId, {
           subject, fromAddress: from, skipReason, snippet,
           structuredItemBlockLevel: structuredItemSignal.level,
           deterministicItemCount: structuredItemSignal.deterministic_item_count,
+          ...lifecycleLogContext,
         });
         increment(outcomes.skipped_reasons, skipReason);
         return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -456,6 +515,7 @@ async function processMessageImport(user, msgId, {
         subject, fromAddress: from, skipReason, snippet,
         structuredItemBlockLevel: structuredItemSignal.level,
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        ...lifecycleLogContext,
       });
       increment(outcomes.skipped_reasons, skipReason);
       return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -467,6 +527,44 @@ async function processMessageImport(user, msgId, {
     }
     if (senderQuality.level === 'noisy' && !/needs review/i.test(parsed.notes || '')) {
       parsed.notes = buildReviewNotes({ reason: 'needs review' });
+      importedAsPendingReview = true;
+    }
+
+    const relatedLifecycle = await EmailImportLog.findRelatedTransaction(user.id, {
+      messageId: msgId,
+      gmailThreadId: lifecycle.gmailThreadId,
+      externalOrderId: lifecycle.externalOrderId,
+      externalTransactionId: lifecycle.externalTransactionId,
+      senderDomain: extractSenderDomain(from),
+    });
+    if (shouldReuseLifecycleExpense(lifecycle.eventType, relatedLifecycle, parsed)) {
+      const skipReason = 'lifecycle_existing_expense';
+      await EmailImportLog.upsertResult({
+        userId: user.id,
+        messageId: msgId,
+        expenseId: relatedLifecycle.expense_id,
+        relatedExpenseId: relatedLifecycle.expense_id,
+        status: 'skipped',
+        subject,
+        fromAddress: from,
+        skipReason,
+        snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        ...lifecycleLogContext,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return {
+        imported: 0,
+        skipped: 1,
+        failed: 0,
+        reason: skipReason,
+        expense: relatedLifecycle,
+      };
+    }
+
+    if (lifecycle.eventType === 'refund') {
+      parsed.amount = -Math.abs(Number(parsed.amount));
       importedAsPendingReview = true;
     }
 
@@ -494,7 +592,9 @@ async function processMessageImport(user, msgId, {
       };
     }
 
-    let reviewMode = forceReview ? 'full_review' : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
+    let reviewMode = (forceReview || lifecycle.eventType === 'refund')
+      ? 'full_review'
+      : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
 
     const persistenceClient = providedPersistenceClient || await db.pool.connect();
     const ownsPersistenceClient = !providedPersistenceClient;
@@ -539,6 +639,8 @@ async function processMessageImport(user, msgId, {
         snippet: msgSnippet,
         structuredItemBlockLevel: structuredItemSignal.level,
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        relatedExpenseId: relatedLifecycle?.expense_id || null,
+        ...lifecycleLogContext,
       }, persistenceClient);
       await BackgroundJob.enqueue({
         jobType: BackgroundJob.JOB_TYPES.gmailEnrichment,
@@ -630,6 +732,7 @@ async function processMessageImport(user, msgId, {
         userId: user.id, messageId: msgId, status: 'failed',
         expenseId: createdExpense?.id || null,
         subject: msgSubject, fromAddress: msgFrom, skipReason: failureReason, snippet: msgSnippet,
+        ...lifecycleLogContext,
       });
     }
     return { imported: 0, skipped: 0, failed: 1, error: e };
