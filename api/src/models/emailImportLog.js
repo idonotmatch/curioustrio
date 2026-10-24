@@ -1,5 +1,5 @@
 const db = require('../db');
-const { extractSenderDomain, extractSubjectPattern } = require('../services/gmailImportFingerprint');
+const { extractSenderDomain, extractSenderRootDomain, extractSubjectPattern } = require('../services/gmailImportFingerprint');
 const {
   gmailMinimalLogModeEnabled,
   emailImportRetentionDays,
@@ -28,7 +28,7 @@ function isMissingMinimalLedgerError(err) {
 
 function isMissingLifecycleError(err) {
   return err?.code === '42703'
-    && /(gmail_thread_id|external_order_id|external_transaction_id|email_event_type|related_expense_id|attachment_count|attachment_text_count)/i.test(`${err?.message || ''}`);
+    && /(gmail_thread_id|external_order_id|external_transaction_id|email_event_type|related_expense_id|attachment_count|attachment_text_count|sender_root_domain|message_fingerprint|purchase_identity_key|lifecycle_match_confidence|lifecycle_match_reason)/i.test(`${err?.message || ''}`);
 }
 
 function sanitizeSnippet(snippet) {
@@ -63,6 +63,7 @@ function buildStoredMessageContext({
   const safeSubject = sanitizeSubject(subject);
   const safeSnippet = sanitizeSnippet(snippet);
   const senderDomain = extractSenderDomain(fromAddress || '');
+  const senderRootDomain = extractSenderRootDomain(fromAddress || '');
   const subjectPattern = extractSubjectPattern(safeSubject || '', fromAddress || '');
   const keepRaw = shouldPersistRawMessageContext({ status, expenseId });
 
@@ -71,6 +72,7 @@ function buildStoredMessageContext({
     safeSnippet: keepRaw ? safeSnippet : null,
     storedFromAddress: keepRaw ? (fromAddress || null) : null,
     senderDomain,
+    senderRootDomain,
     subjectPattern,
   };
 }
@@ -117,12 +119,17 @@ async function create({
   relatedExpenseId = null,
   attachmentCount = null,
   attachmentTextCount = null,
+  messageFingerprint = null,
+  purchaseIdentityKey = null,
+  lifecycleMatchConfidence = null,
+  lifecycleMatchReason = null,
 }) {
   const {
     safeSubject,
     safeSnippet,
     storedFromAddress,
     senderDomain,
+    senderRootDomain,
     subjectPattern,
   } = buildStoredMessageContext({ status, expenseId, subject, fromAddress, snippet });
   try {
@@ -131,9 +138,10 @@ async function create({
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
          structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern,
          gmail_thread_id, external_order_id, external_transaction_id, email_event_type,
-         related_expense_id, attachment_count, attachment_text_count
+         related_expense_id, attachment_count, attachment_text_count, sender_root_domain,
+         message_fingerprint, purchase_identity_key, lifecycle_match_confidence, lifecycle_match_reason
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
        ON CONFLICT (user_id, message_id) DO NOTHING
        RETURNING *`,
       [
@@ -142,6 +150,7 @@ async function create({
         senderDomain, subjectPattern, gmailThreadId, externalOrderId, externalTransactionId, emailEventType,
         relatedExpenseId, Number.isFinite(Number(attachmentCount)) ? Number(attachmentCount) : null,
         Number.isFinite(Number(attachmentTextCount)) ? Number(attachmentTextCount) : null,
+        senderRootDomain, messageFingerprint, purchaseIdentityKey, lifecycleMatchConfidence, lifecycleMatchReason,
       ]
     );
     return result.rows[0] || null;
@@ -173,7 +182,7 @@ async function findByExpenseId(expenseId) {
        FROM email_import_log l
        LEFT JOIN email_import_feedback f ON f.expense_id = l.expense_id
        WHERE l.expense_id = $1
-       ORDER BY l.imported_at DESC
+       ORDER BY (l.status = 'imported') DESC, l.imported_at DESC
        LIMIT 1`,
       [expenseId]
     );
@@ -193,7 +202,7 @@ async function findByExpenseId(expenseId) {
               0::int AS review_edit_count
        FROM email_import_log l
        WHERE l.expense_id = $1
-       ORDER BY l.imported_at DESC
+       ORDER BY (l.status = 'imported') DESC, l.imported_at DESC
        LIMIT 1`,
       [expenseId]
     );
@@ -405,7 +414,7 @@ async function findByIdForUser(id, userId) {
 async function listReviewHistory(userId, { filter = 'potential', limit = 50, cursor = null } = {}) {
   const conditions = {
     potential: "l.status = 'skipped' AND (l.skip_reason LIKE 'template_skip_%' OR l.skip_reason IN ('classifier_uncertain', 'missing_amount', 'low_sender_quality'))",
-    skipped: "l.status = 'skipped' AND COALESCE(l.skip_reason, '') <> 'existing'",
+    skipped: "l.status = 'skipped' AND COALESCE(l.skip_reason, '') <> 'existing' AND COALESCE(l.skip_reason, '') NOT LIKE 'lifecycle_%'",
     failed: "l.status = 'failed'",
     imported: "(l.status = 'imported' OR (l.status = 'skipped' AND l.skip_reason = 'existing'))",
   };
@@ -481,12 +490,17 @@ async function upsertResult({
   relatedExpenseId = null,
   attachmentCount = null,
   attachmentTextCount = null,
+  messageFingerprint = null,
+  purchaseIdentityKey = null,
+  lifecycleMatchConfidence = null,
+  lifecycleMatchReason = null,
 }, queryable = db) {
   const {
     safeSubject,
     safeSnippet,
     storedFromAddress,
     senderDomain,
+    senderRootDomain,
     subjectPattern,
   } = buildStoredMessageContext({ status, expenseId, subject, fromAddress, snippet });
   const inTransaction = queryable !== db;
@@ -497,9 +511,10 @@ async function upsertResult({
          user_id, message_id, expense_id, status, subject, from_address, skip_reason, snippet,
          structured_item_block_level, deterministic_item_count, sender_domain, subject_pattern,
          gmail_thread_id, external_order_id, external_transaction_id, email_event_type,
-         related_expense_id, attachment_count, attachment_text_count
+         related_expense_id, attachment_count, attachment_text_count, sender_root_domain,
+         message_fingerprint, purchase_identity_key, lifecycle_match_confidence, lifecycle_match_reason
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
        ON CONFLICT (user_id, message_id) DO UPDATE SET
          expense_id = EXCLUDED.expense_id,
          status = EXCLUDED.status,
@@ -518,6 +533,11 @@ async function upsertResult({
          related_expense_id = EXCLUDED.related_expense_id,
          attachment_count = EXCLUDED.attachment_count,
          attachment_text_count = EXCLUDED.attachment_text_count,
+         sender_root_domain = EXCLUDED.sender_root_domain,
+         message_fingerprint = EXCLUDED.message_fingerprint,
+         purchase_identity_key = EXCLUDED.purchase_identity_key,
+         lifecycle_match_confidence = EXCLUDED.lifecycle_match_confidence,
+         lifecycle_match_reason = EXCLUDED.lifecycle_match_reason,
          imported_at = NOW()
        RETURNING *`,
       [
@@ -526,6 +546,7 @@ async function upsertResult({
         senderDomain, subjectPattern, gmailThreadId, externalOrderId, externalTransactionId, emailEventType,
         relatedExpenseId, Number.isFinite(Number(attachmentCount)) ? Number(attachmentCount) : null,
         Number.isFinite(Number(attachmentTextCount)) ? Number(attachmentTextCount) : null,
+        senderRootDomain, messageFingerprint, purchaseIdentityKey, lifecycleMatchConfidence, lifecycleMatchReason,
       ]
     );
     if (inTransaction) await queryable.query('RELEASE SAVEPOINT email_import_log_upsert_compat');
@@ -557,16 +578,27 @@ async function findRelatedTransaction(userId, {
   externalOrderId = null,
   externalTransactionId = null,
   senderDomain = null,
+  senderRootDomain = null,
+  messageFingerprint = null,
 } = {}, queryable = db) {
-  if (!externalTransactionId && !externalOrderId && !gmailThreadId) return null;
+  if (!externalTransactionId && !externalOrderId && !gmailThreadId && !messageFingerprint) return null;
   try {
     const result = await queryable.query(
       `SELECT l.id, l.message_id, l.expense_id, l.email_event_type,
               l.external_order_id, l.external_transaction_id, l.gmail_thread_id,
+              l.purchase_identity_key, l.sender_root_domain,
               e.amount, e.merchant, e.date, e.status AS expense_status,
               CASE
                 WHEN $3::text IS NOT NULL AND l.external_transaction_id = $3 THEN 'transaction_id'
-                WHEN $4::text IS NOT NULL AND l.external_order_id = $4 AND l.sender_domain = $5 THEN 'order_id'
+                WHEN $4::text IS NOT NULL
+                  AND l.external_order_id IS NOT NULL
+                  AND (
+                    l.external_order_id = $4
+                    OR ($4 LIKE 'ENDING-%' AND l.external_order_id LIKE '%' || SUBSTRING($4 FROM 8))
+                    OR (l.external_order_id LIKE 'ENDING-%' AND $4 LIKE '%' || SUBSTRING(l.external_order_id FROM 8))
+                  )
+                  AND l.sender_root_domain = $5 THEN 'order_id'
+                WHEN $7::text IS NOT NULL AND l.message_fingerprint = $7 THEN 'message_fingerprint'
                 ELSE 'gmail_thread'
               END AS match_key
        FROM email_import_log l
@@ -576,30 +608,92 @@ async function findRelatedTransaction(userId, {
          AND e.amount > 0
          AND (
            ($3::text IS NOT NULL AND l.external_transaction_id = $3)
-           OR ($4::text IS NOT NULL AND l.external_order_id = $4 AND l.sender_domain = $5)
+           OR (
+             $4::text IS NOT NULL
+             AND l.external_order_id IS NOT NULL
+             AND (
+               l.external_order_id = $4
+               OR ($4 LIKE 'ENDING-%' AND l.external_order_id LIKE '%' || SUBSTRING($4 FROM 8))
+               OR (l.external_order_id LIKE 'ENDING-%' AND $4 LIKE '%' || SUBSTRING(l.external_order_id FROM 8))
+             )
+             AND l.sender_root_domain = $5
+           )
+           OR ($7::text IS NOT NULL AND l.message_fingerprint = $7)
            OR (
              $3::text IS NULL
              AND $4::text IS NULL
              AND $6::text IS NOT NULL
              AND l.gmail_thread_id = $6
-             AND l.sender_domain = $5
+             AND l.sender_root_domain = $5
            )
          )
        ORDER BY
          CASE
            WHEN $3::text IS NOT NULL AND l.external_transaction_id = $3 THEN 1
-           WHEN $4::text IS NOT NULL AND l.external_order_id = $4 AND l.sender_domain = $5 THEN 2
-           ELSE 3
+           WHEN $4::text IS NOT NULL
+             AND l.external_order_id IS NOT NULL
+             AND (
+               l.external_order_id = $4
+               OR ($4 LIKE 'ENDING-%' AND l.external_order_id LIKE '%' || SUBSTRING($4 FROM 8))
+               OR (l.external_order_id LIKE 'ENDING-%' AND $4 LIKE '%' || SUBSTRING(l.external_order_id FROM 8))
+             )
+             AND l.sender_root_domain = $5 THEN 2
+           WHEN $7::text IS NOT NULL AND l.message_fingerprint = $7 THEN 3
+           ELSE 4
          END,
          l.imported_at DESC
        LIMIT 1`,
-      [userId, messageId, externalTransactionId, externalOrderId, senderDomain, gmailThreadId]
+      [userId, messageId, externalTransactionId, externalOrderId, senderRootDomain || senderDomain, gmailThreadId, messageFingerprint]
     );
     return result.rows[0] || null;
   } catch (err) {
     if (isMissingLifecycleError(err)) return null;
     throw err;
   }
+}
+
+async function findPurchaseCandidates(userId, {
+  messageId = null,
+  merchant,
+  amount,
+  date,
+  limit = 8,
+} = {}, queryable = db) {
+  if (!userId || !merchant || !Number.isFinite(Number(amount)) || !date) return [];
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 8, 20));
+  const result = await queryable.query(
+    `SELECT l.id, l.message_id, l.expense_id, l.email_event_type,
+            l.purchase_identity_key, l.sender_root_domain,
+            e.amount, e.merchant, e.date, e.status AS expense_status,
+            COALESCE(
+              JSONB_AGG(
+                JSONB_BUILD_OBJECT(
+                  'description', i.description,
+                  'raw_description', i.raw_description,
+                  'normalized_name', i.normalized_name,
+                  'comparable_key', i.comparable_key
+                )
+              ) FILTER (WHERE i.id IS NOT NULL),
+              '[]'::jsonb
+            ) AS items
+     FROM email_import_log l
+     JOIN expenses e ON e.id = l.expense_id
+     LEFT JOIN expense_items i ON i.expense_id = e.id
+     WHERE l.user_id = $1
+       AND ($2::text IS NULL OR l.message_id <> $2)
+       AND e.source = 'email'
+       AND e.status IN ('pending', 'confirmed')
+       AND e.amount > 0
+       AND e.date BETWEEN ($5::date - INTERVAL '7 days') AND ($5::date + INTERVAL '7 days')
+       AND ABS(e.amount - $4::numeric) <= GREATEST(1.00, ABS($4::numeric) * 0.03)
+       AND REGEXP_REPLACE(LOWER(COALESCE(e.merchant, '')), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER($3), '[^a-z0-9]+', '', 'g')
+     GROUP BY l.id, e.id
+     ORDER BY ABS(e.amount - $4::numeric), ABS(e.date - $5::date), l.imported_at DESC
+     LIMIT $6`,
+    [userId, messageId, merchant, Number(amount), date, safeLimit]
+  );
+  return result.rows;
 }
 
 async function recordLogFeedback(logId, userId, feedback) {
@@ -1107,4 +1201,5 @@ module.exports = {
   sanitizeSnippet,
   upsertResult,
   findRelatedTransaction,
+  findPurchaseCandidates,
 };

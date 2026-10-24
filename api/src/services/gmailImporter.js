@@ -29,7 +29,7 @@ const {
   getSenderImportQuality,
   recommendReviewMode,
 } = require('./gmailImportQualityService');
-const { extractSenderDomain, extractSubjectPattern } = require('./gmailImportFingerprint');
+const { extractSenderDomain, extractSenderRootDomain, extractSubjectPattern } = require('./gmailImportFingerprint');
 const { requestProjectionRefresh } = require('./projectionRefreshService');
 const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { pushNotificationsEnabled } = require('./pushPreferences');
@@ -38,6 +38,7 @@ const { extractPeerPaymentRecipient } = require('./merchantIdentity');
 const {
   extractEmailTransactionLifecycle,
   isNonFinancialLifecycleEvent,
+  scoreLifecycleCandidate,
   shouldReuseLifecycleExpense,
 } = require('./emailTransactionLifecycle');
 const detectDuplicates = require('./duplicateDetector');
@@ -370,7 +371,62 @@ async function processMessageImport(user, msgId, {
     msgFrom = from;
     msgSnippet = snippet;
     const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
+    const senderDomain = extractSenderDomain(from);
+    const senderRootDomain = extractSenderRootDomain(from);
     const structuredItemSignal = summarizeStructuredItemBlock(body);
+    let lifecycle = extractEmailTransactionLifecycle({
+      subject,
+      body,
+      snippet,
+      fromAddress: from,
+      senderRootDomain,
+      threadId,
+    });
+    lifecycleLogContext = {
+      gmailThreadId: lifecycle.gmailThreadId,
+      externalOrderId: lifecycle.externalOrderId,
+      externalTransactionId: lifecycle.externalTransactionId,
+      emailEventType: lifecycle.eventType,
+      messageFingerprint: lifecycle.messageFingerprint,
+      purchaseIdentityKey: lifecycle.purchaseIdentityKey,
+      attachmentCount,
+      attachmentTextCount,
+    };
+
+    if (isNonFinancialLifecycleEvent(lifecycle.eventType)) {
+      const relatedEvent = await EmailImportLog.findRelatedTransaction(user.id, {
+        messageId: msgId,
+        gmailThreadId: lifecycle.gmailThreadId,
+        externalOrderId: lifecycle.externalOrderId,
+        externalTransactionId: lifecycle.externalTransactionId,
+        senderDomain,
+        senderRootDomain,
+        messageFingerprint: lifecycle.messageFingerprint,
+      });
+      const skipReason = `lifecycle_${lifecycle.eventType}`;
+      await EmailImportLog.upsertResult({
+        userId: user.id,
+        messageId: msgId,
+        expenseId: relatedEvent?.expense_id || null,
+        relatedExpenseId: relatedEvent?.expense_id || null,
+        status: 'skipped',
+        subject,
+        fromAddress: from,
+        skipReason,
+        snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        ...lifecycleLogContext,
+        lifecycleMatchConfidence: relatedEvent
+          ? (relatedEvent.match_key === 'gmail_thread' ? 'high' : 'exact')
+          : 'none',
+        lifecycleMatchReason: relatedEvent?.match_key || 'nonfinancial_event',
+        purchaseIdentityKey: relatedEvent?.purchase_identity_key || lifecycle.purchaseIdentityKey,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason, expense: relatedEvent || null };
+    }
+
     const preAdmission = assessEmailAdmission({
       subject,
       fromAddress: from,
@@ -388,8 +444,7 @@ async function processMessageImport(user, msgId, {
         subject, fromAddress: from, skipReason, snippet,
         structuredItemBlockLevel: structuredItemSignal.level,
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
-        attachmentCount,
-        attachmentTextCount,
+        ...lifecycleLogContext,
       });
       increment(outcomes.skipped_reasons, skipReason);
       return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
@@ -405,19 +460,25 @@ async function processMessageImport(user, msgId, {
     const templateQuality = senderQuality?.template_quality || {};
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
     const signals = preAdmission.evidence.signals || analyzeEmailSignals(subject, from, body);
-    let lifecycle = extractEmailTransactionLifecycle({
+    lifecycle = extractEmailTransactionLifecycle({
       subject,
       body,
+      snippet,
+      fromAddress: from,
+      senderRootDomain,
       classification,
       threadId,
     });
     lifecycleLogContext = {
-      ...lifecycle,
+      gmailThreadId: lifecycle.gmailThreadId,
+      externalOrderId: lifecycle.externalOrderId,
+      externalTransactionId: lifecycle.externalTransactionId,
       emailEventType: lifecycle.eventType,
+      messageFingerprint: lifecycle.messageFingerprint,
+      purchaseIdentityKey: lifecycle.purchaseIdentityKey,
       attachmentCount,
       attachmentTextCount,
     };
-    delete lifecycleLogContext.eventType;
 
     if (isNonFinancialLifecycleEvent(lifecycle.eventType)) {
       const skipReason = `lifecycle_${lifecycle.eventType}`;
@@ -479,17 +540,23 @@ async function processMessageImport(user, msgId, {
     lifecycle = extractEmailTransactionLifecycle({
       subject,
       body,
+      snippet,
+      fromAddress: from,
+      senderRootDomain,
       classification,
       parsed,
       threadId,
     });
     lifecycleLogContext = {
-      ...lifecycle,
+      gmailThreadId: lifecycle.gmailThreadId,
+      externalOrderId: lifecycle.externalOrderId,
+      externalTransactionId: lifecycle.externalTransactionId,
       emailEventType: lifecycle.eventType,
+      messageFingerprint: lifecycle.messageFingerprint,
+      purchaseIdentityKey: lifecycle.purchaseIdentityKey,
       attachmentCount,
       attachmentTextCount,
     };
-    delete lifecycleLogContext.eventType;
     const deterministicFallbackItems = extractFallbackItemsFromEmailBody(body);
     let importedAsPendingReview = false;
     const maxExpenseDate = messageDateContext < todayDate ? messageDateContext : todayDate;
@@ -561,13 +628,45 @@ async function processMessageImport(user, msgId, {
       importedAsPendingReview = true;
     }
 
-    const relatedLifecycle = await EmailImportLog.findRelatedTransaction(user.id, {
+    const matchingItems = buildEmailItemsForPersistence(parsed.items, deterministicFallbackItems);
+    let relatedLifecycle = await EmailImportLog.findRelatedTransaction(user.id, {
       messageId: msgId,
       gmailThreadId: lifecycle.gmailThreadId,
       externalOrderId: lifecycle.externalOrderId,
       externalTransactionId: lifecycle.externalTransactionId,
-      senderDomain: extractSenderDomain(from),
+      senderDomain,
+      senderRootDomain,
+      messageFingerprint: lifecycle.messageFingerprint,
     });
+    if (!relatedLifecycle && lifecycle.eventType !== 'refund') {
+      const candidates = await EmailImportLog.findPurchaseCandidates(user.id, {
+        messageId: msgId,
+        merchant: parsed.merchant,
+        amount: parsed.amount,
+        date: parsed.date,
+      });
+      const bestFallback = candidates
+        .map((candidate) => ({
+          ...candidate,
+          ...scoreLifecycleCandidate({
+            merchant: parsed.merchant,
+            amount: parsed.amount,
+            date: parsed.date,
+            eventType: lifecycle.eventType,
+            senderRootDomain,
+            items: matchingItems,
+          }, candidate),
+        }))
+        .sort((left, right) => right.score - left.score)[0];
+      if (bestFallback?.confidence === 'high') {
+        relatedLifecycle = {
+          ...bestFallback,
+          match_key: 'purchase_fallback',
+          match_confidence: bestFallback.confidence,
+          match_reason: bestFallback.reasons.join(','),
+        };
+      }
+    }
     if (shouldReuseLifecycleExpense(lifecycle.eventType, relatedLifecycle, parsed)) {
       const skipReason = 'lifecycle_existing_expense';
       await EmailImportLog.upsertResult({
@@ -583,6 +682,9 @@ async function processMessageImport(user, msgId, {
         structuredItemBlockLevel: structuredItemSignal.level,
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
         ...lifecycleLogContext,
+        purchaseIdentityKey: relatedLifecycle.purchase_identity_key || lifecycle.purchaseIdentityKey,
+        lifecycleMatchConfidence: relatedLifecycle.match_confidence || (relatedLifecycle.match_key === 'gmail_thread' ? 'high' : 'exact'),
+        lifecycleMatchReason: relatedLifecycle.match_reason || relatedLifecycle.match_key,
       });
       increment(outcomes.skipped_reasons, skipReason);
       return {
@@ -607,7 +709,7 @@ async function processMessageImport(user, msgId, {
       skipAiFallback: true,
     });
     const { category_id } = categoryAssignment;
-    const itemsForPersistence = buildEmailItemsForPersistence(parsed.items, deterministicFallbackItems);
+    const itemsForPersistence = matchingItems;
 
     let effectiveSenderQuality = senderQuality;
 
@@ -683,6 +785,9 @@ async function processMessageImport(user, msgId, {
         deterministicItemCount: structuredItemSignal.deterministic_item_count,
         relatedExpenseId: relatedLifecycle?.expense_id || null,
         ...lifecycleLogContext,
+        purchaseIdentityKey: lifecycle.purchaseIdentityKey || `expense:${expense.id}`,
+        lifecycleMatchConfidence: 'none',
+        lifecycleMatchReason: 'new_purchase',
       }, persistenceClient);
       await ExpenseSourceObservation.record({
         userId: user.id,
@@ -953,6 +1058,9 @@ async function recoverImportLog(user, log, {
     }
     if (!['skipped', 'failed'].includes(current.status) || (!forceReview && current.status !== 'failed')) {
       throw Object.assign(new Error('This import cannot be retried'), { status: 400 });
+    }
+    if (current.status === 'skipped' && `${current.skip_reason || ''}`.startsWith('lifecycle_')) {
+      throw Object.assign(new Error('This email is a purchase update and does not create a separate expense.'), { status: 400 });
     }
     if (forceReview && current.status === 'skipped' && current.skip_reason !== 'duplicate_expense') {
       await EmailImportLog.recordLogFeedback(current.id, user.id, 'should_have_imported');

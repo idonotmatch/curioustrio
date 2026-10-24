@@ -1,7 +1,7 @@
 jest.mock('../../src/db', () => ({ pool: { connect: jest.fn() } }));
 jest.mock('../../src/models/emailImportLog', () => ({
   findByIdForUser: jest.fn(), recordLogFeedback: jest.fn(), upsertResult: jest.fn(), markRetryFailed: jest.fn(),
-  findRelatedTransaction: jest.fn(),
+  findRelatedTransaction: jest.fn(), findPurchaseCandidates: jest.fn(),
 }));
 jest.mock('../../src/models/expense', () => ({ create: jest.fn(), findPotentialDuplicates: jest.fn() }));
 jest.mock('../../src/models/expenseItem', () => ({ createBulk: jest.fn() }));
@@ -48,6 +48,8 @@ beforeEach(() => {
   analyzeEmailSignals.mockReturnValue({});
   parseEmailExpense.mockResolvedValue({ merchant: 'Shop', amount: 12, date: '2026-09-20', items: [] });
   Expense.findPotentialDuplicates.mockResolvedValue([]);
+  Log.findRelatedTransaction.mockResolvedValue(null);
+  Log.findPurchaseCandidates.mockResolvedValue([]);
   Expense.create.mockResolvedValue({ id: 'expense-1', user_id: user.id, amount: 12, status: 'pending' });
   ExpenseItem.createBulk.mockResolvedValue([]);
   Log.upsertResult.mockResolvedValue({ id: 'log-1' });
@@ -99,6 +101,13 @@ it('rechecks ownership before fetching Gmail content', async () => {
   Log.findByIdForUser.mockResolvedValue(null);
   await expect(reviewSkippedImportLog(user, log)).rejects.toMatchObject({ status: 404 });
   expect(getMessage).not.toHaveBeenCalled();
+});
+
+it('does not let fulfillment updates re-enter the expense queue', async () => {
+  Log.findByIdForUser.mockResolvedValue({ ...log, skip_reason: 'lifecycle_shipping_update' });
+  await expect(reviewSkippedImportLog(user, log)).rejects.toMatchObject({ status: 400 });
+  expect(getMessage).not.toHaveBeenCalled();
+  expect(Log.recordLogFeedback).not.toHaveBeenCalled();
 });
 
 it('preserves existing message fingerprints when Gmail is unavailable', async () => {

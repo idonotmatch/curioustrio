@@ -5,6 +5,17 @@ function extractSenderDomain(fromAddress = '') {
   return match?.[1] || 'unknown';
 }
 
+function extractSenderRootDomain(fromAddress = '') {
+  const domain = extractSenderDomain(fromAddress);
+  if (!domain || domain === 'unknown') return 'unknown';
+  const labels = domain.split('.').filter(Boolean);
+  if (labels.length <= 2) return domain;
+  const compoundSuffix = labels.length >= 3
+    && ['co', 'com', 'org', 'net', 'gov', 'ac'].includes(labels.at(-2))
+    && labels.at(-1).length === 2;
+  return labels.slice(compoundSuffix ? -3 : -2).join('.');
+}
+
 function extractSubjectPattern(subject = '', fromAddress = '') {
   const senderDomain = extractSenderDomain(fromAddress);
   const trimmed = `${subject || ''}`.trim();
@@ -53,5 +64,6 @@ function extractSubjectPattern(subject = '', fromAddress = '') {
 
 module.exports = {
   extractSenderDomain,
+  extractSenderRootDomain,
   extractSubjectPattern,
 };

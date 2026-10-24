@@ -84,6 +84,7 @@ const MIGRATION_PLAN = [
   '088_gmail_incremental_sync.sql',
   '089_email_transaction_lifecycle.sql',
   '090_import_reconciliation.sql',
+  '091_email_purchase_lifecycle_ledger.sql',
 ];
 
 module.exports = {
