@@ -377,7 +377,7 @@ describe('expenseConfirmService deferred enrichment', () => {
     const result = await recordItemPriceObservations({
       user: { id: 'user-1' },
       expense: { id: 'expense-1', merchant: 'Retailer A', date: '2026-10-07' },
-      payload: { source: 'camera', is_private: false },
+      payload: { source: 'share', is_private: false },
       items: [{
         id: 'item-1',
         comparable_key: 'laptop m4 16gb 512gb',

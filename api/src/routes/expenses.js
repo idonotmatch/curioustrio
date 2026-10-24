@@ -19,6 +19,7 @@ const {
 } = require('../services/expenseConfirmService');
 const {
   parseExpenseInput,
+  scanReceiptDocumentInput,
   scanReceiptInput,
 } = require('../services/expenseIngestService');
 const {
@@ -227,6 +228,23 @@ router.post('/scan', aiEndpoints, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Read an uploaded PDF receipt → structured expense (does NOT save to DB)
+router.post('/scan-document', aiEndpoints, async (req, res, next) => {
+  try {
+    const { document_base64: documentBase64, file_name: fileName, today } = req.body;
+    if (!documentBase64) return res.status(400).json({ error: 'document_base64 required' });
+    if (documentBase64.length > 10_000_000) return res.status(400).json({ error: 'document too large (max ~7MB)' });
+    const result = await scanReceiptDocumentInput({
+      user: await getUser(req),
+      documentBase64,
+      fileName,
+      todayDate: today || new Date().toISOString().split('T')[0],
+    });
+    if (result.errorStatus) return res.status(result.errorStatus).json(result.errorBody);
+    return res.json(result.body);
+  } catch (err) { return next(err); }
+});
+
 // Confirm expense → save to DB + update merchant mapping + run dedup
 router.post('/confirm', async (req, res, next) => {
   let confirmUser = null;
@@ -234,7 +252,7 @@ router.post('/confirm', async (req, res, next) => {
   let confirmSource = null;
   async function markConfirmFailure(reason, error = null) {
     if (!confirmAttemptId || !confirmUser?.id) return;
-    if (confirmSource && !['manual', 'camera', 'refund'].includes(confirmSource)) return;
+    if (confirmSource && !['manual', 'camera', 'share', 'refund'].includes(confirmSource)) return;
     try {
       await IngestAttemptLog.markConfirmFailed(confirmAttemptId, confirmUser.id, { reason, error });
     } catch (logErr) {
@@ -252,7 +270,8 @@ router.post('/confirm', async (req, res, next) => {
       category_status, location_status, category_user_owned, location_user_owned,
       payment_method, card_last4, card_label, is_private, exclude_from_budget, budget_exclusion_reason, items,
       ingest_attempt_id, parsed_payment_snapshot, idempotency_key, receipt_details,
-      purchase_plan_id,
+      purchase_plan_id, field_confidence, field_evidence,
+      external_record_id, external_transaction_id, currency,
     } = req.body;
     const originalParsedItems = Array.isArray(req.body.original_parsed_items) ? req.body.original_parsed_items : [];
     confirmAttemptId = ingest_attempt_id || null;
@@ -307,6 +326,11 @@ router.post('/confirm', async (req, res, next) => {
         receipt_details,
         idempotency_key,
         purchase_plan_id,
+        field_confidence,
+        field_evidence,
+        external_record_id,
+        external_transaction_id,
+        currency,
       },
       originalParsedItems,
     });
@@ -805,9 +829,8 @@ router.patch('/:id', async (req, res, next) => {
     const originalItems = originalExpense.source === 'email' && items !== undefined
       ? await ExpenseItem.findByExpenseId(req.params.id)
       : [];
-    const changedFields = originalExpense.source === 'email'
-      ? collectChangedFields(originalExpense, req.body)
-      : [];
+    const userChangedFields = collectChangedFields(originalExpense, req.body);
+    const changedFields = originalExpense.source === 'email' ? [...userChangedFields] : [];
     if (originalExpense.source === 'email' && items !== undefined) {
       changedFields.push(...collectItemReviewSignals(originalItems, Array.isArray(items) ? items : []));
     }
@@ -871,6 +894,15 @@ router.patch('/:id', async (req, res, next) => {
       }
       if (resolvedItems !== null) {
         await ExpenseItem.replaceItems(req.params.id, resolvedItems, client);
+      }
+      const confirmedFields = userChangedFields.map((field) => {
+        if (field === 'category_id') return 'category';
+        if (field.startsWith('items')) return 'items';
+        if (['place_name', 'address', 'mapkit_stable_id'].includes(field)) return 'location';
+        return field;
+      });
+      if (confirmedFields.length) {
+        expense = await Expense.markFieldsConfirmed(req.params.id, user.id, confirmedFields, client) || expense;
       }
       await client.query('COMMIT');
     } catch (transactionErr) {

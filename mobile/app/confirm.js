@@ -182,7 +182,7 @@ export default function ConfirmScreen() {
             provider_place_id: parsed.location_provider_id || parsed.provider_place_id || null,
             latitude: parsed.location_latitude ?? parsed.latitude ?? null,
             longitude: parsed.location_longitude ?? parsed.longitude ?? null,
-            source: parsed.location_source || (parsed.source === 'camera' ? 'receipt' : null),
+            source: parsed.location_source || (['camera', 'share'].includes(parsed.source) ? 'receipt' : null),
             location_status: parsed.location_status || null,
             location_confidence: parsed.location_confidence ?? null,
             location_user_owned: Boolean(parsed.location_user_owned),
@@ -279,6 +279,7 @@ export default function ConfirmScreen() {
   }, [paymentMethod, selectedSavedCard, selectedSavedCardKey]);
 
   const isCameraSource = parsed.source === 'camera';
+  const isReceiptSource = ['camera', 'share'].includes(parsed.source);
   const cardsForMethod = savedCards.filter(c => c.payment_method === paymentMethod);
   const selectedSavedCard = cardsForMethod.find(c => savedCardKey(c) === selectedSavedCardKey) || null;
   const canRenameSavedCard = Boolean(
@@ -499,7 +500,7 @@ export default function ConfirmScreen() {
           card_label: parsed?.card_label || null,
           card_last4: parsed?.card_last4 || null,
         },
-        receipt_details: parsed?.source === 'camera' ? {
+        receipt_details: ['camera', 'share'].includes(parsed?.source) ? {
           ...normalizedReceiptDetails,
           validation: {
             ...(parsed?.receipt_validation || {}),
@@ -508,6 +509,8 @@ export default function ConfirmScreen() {
             user_corrected_fields: correctedReceiptFields,
           },
         } : undefined,
+        field_confidence: parsed?.field_confidence || undefined,
+        field_evidence: parsed?.field_evidence || undefined,
         original_parsed_items: parsed?.ingest_attempt_id && Array.isArray(parsed?.items)
           ? originalParsedItemsRef.current
           : undefined,
@@ -679,7 +682,7 @@ export default function ConfirmScreen() {
         {reviewNote('date', 'Date was inferred and may need adjusting.')}
       </View>
 
-      {isCameraSource ? (
+      {isReceiptSource ? (
         <View style={styles.receiptDetailsSection}>
           <Text style={styles.sectionLabel}>RECEIPT BREAKDOWN</Text>
           <Text style={styles.receiptDetailsHint}>
@@ -870,7 +873,7 @@ export default function ConfirmScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {(items.length > 0 || parsed?.source === 'camera' || parsed?.source === 'email') && (
+      {(items.length > 0 || isReceiptSource || parsed?.source === 'email') && (
         <View style={styles.itemsSection}>
           <Text style={styles.sectionLabel}>ITEMS</Text>
           {itemReviewPresentation ? (

@@ -53,6 +53,7 @@ export function PendingExpenseReviewPanel({
 }) {
   const attentionFields = Array.isArray(priorityReviewFields)
     ? priorityReviewFields.filter((field) => {
+        if (field?.questionable === true) return true;
         const reason = `${field?.reason || ''}`.toLowerCase();
         if (field?.key === 'items' && isItemsFirstReview) return true;
         return (

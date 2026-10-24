@@ -12,6 +12,8 @@ const {
 const { finalizeIngestMetadata } = require('./parseIngestMetadata');
 const { persistSuccessInputPreviewEnabled } = require('./storageMinimizationConfig');
 const { canonicalizeMerchantForHousehold } = require('./merchantIdentity');
+const { parseEmailExpense } = require('./emailParser');
+const { PDFParse } = require('pdf-parse');
 
 function truncateInputPreview(input, max = 180) {
   const text = `${input || ''}`.trim();
@@ -645,8 +647,121 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
   };
 }
 
+async function scanReceiptDocumentInput({ user, documentBase64, fileName = 'receipt.pdf', todayDate }) {
+  const startedAt = Date.now();
+  let parser;
+  try {
+    const buffer = Buffer.from(documentBase64, 'base64');
+    parser = new PDFParse({ data: new Uint8Array(buffer) });
+    const result = await parser.getText({ first: 12 });
+    const documentText = `${result?.text || ''}`.replace(/\0/g, '').trim().slice(0, 120000);
+    if (!documentText) {
+      return { errorStatus: 422, errorBody: buildIngestFailure('receipt', 'document_has_no_text') };
+    }
+
+    let parsed = await parseEmailExpense(
+      documentText,
+      `${fileName || 'Uploaded receipt'}`.slice(0, 180),
+      'uploaded-receipt@local',
+      todayDate,
+      documentText.slice(0, 500)
+    );
+    if (!parsed?.merchant || !Number.isFinite(Number(parsed?.amount)) || Number(parsed.amount) === 0) {
+      await IngestAttemptLog.create({
+        userId: user?.id || null,
+        source: 'receipt',
+        status: 'failed',
+        failureReason: 'document_missing_required_fields',
+        metadata: { route_family: 'expenses_scan_document', text_length: documentText.length },
+      });
+      return { errorStatus: 422, errorBody: buildIngestFailure('receipt', 'document_missing_required_fields') };
+    }
+
+    const merchantIdentity = await canonicalizeMerchantForHousehold({
+      householdId: user?.household_id || null,
+      merchant: parsed.merchant,
+    });
+    parsed = {
+      ...parsed,
+      merchant: merchantIdentity.merchant || parsed.merchant,
+      raw_merchant: parsed.merchant,
+      merchant_key: merchantIdentity.merchant_key || null,
+    };
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+    const fieldConfidence = {
+      merchant: merchantIdentity.reason === 'household_history' ? 'high' : 'medium',
+      amount: items.length ? 'medium' : 'low',
+      date: parsed.date ? 'medium' : 'low',
+      ...(items.length ? { items: 'medium' } : {}),
+    };
+    const reviewFields = Object.entries(fieldConfidence)
+      .filter(([, confidence]) => confidence === 'low')
+      .map(([field]) => field);
+    const parseStatus = reviewFields.length ? 'partial' : 'complete';
+    const normalizedParsed = {
+      ...parsed,
+      source: 'share',
+      parse_status: parseStatus,
+      review_fields: reviewFields,
+      uncertain_fields: reviewFields,
+      field_confidence: fieldConfidence,
+      receipt_validation: {
+        uncertain_fields: reviewFields,
+        field_confidence: fieldConfidence,
+        issues: [],
+        raw_merchant: parsed.raw_merchant || null,
+        canonical_merchant: parsed.merchant || null,
+        merchant_key: parsed.merchant_key || null,
+        merchant_identity_confidence: merchantIdentity.confidence || 'medium',
+        merchant_normalization_reason: merchantIdentity.reason || 'document',
+      },
+    };
+    const { assignment, matchedCategory } = await assignParsedCategory(user, normalizedParsed);
+    const attempt = await IngestAttemptLog.create({
+      userId: user?.id || null,
+      source: 'receipt',
+      status: parseStatus === 'partial' ? 'partial' : 'parsed',
+      parseStatus,
+      reviewFields,
+      metadata: finalizeIngestMetadata({
+        status: parseStatus === 'partial' ? 'partial' : 'parsed',
+        parsed: normalizedParsed,
+        source: 'receipt',
+        metadata: {
+          route_family: 'expenses_scan_document',
+          text_length: documentText.length,
+          total_parse_duration_ms: Date.now() - startedAt,
+        },
+      }),
+    });
+
+    return {
+      body: {
+        ...normalizedParsed,
+        ingest_attempt_id: attempt?.id || null,
+        parsed_payment_snapshot: buildParsedPaymentSnapshot(normalizedParsed),
+        ...buildCategoryResponseFields(assignment, matchedCategory),
+        location_source: 'receipt',
+        location_status: 'deferred',
+      },
+    };
+  } catch (err) {
+    await IngestAttemptLog.create({
+      userId: user?.id || null,
+      source: 'receipt',
+      status: 'failed',
+      failureReason: 'document_parse_failed',
+      metadata: { route_family: 'expenses_scan_document', error: err?.message || 'unknown_error' },
+    });
+    return { errorStatus: 422, errorBody: buildIngestFailure('receipt', 'document_parse_failed') };
+  } finally {
+    if (parser) await parser.destroy().catch(() => {});
+  }
+}
+
 module.exports = {
   buildIngestFailure,
   parseExpenseInput,
   scanReceiptInput,
+  scanReceiptDocumentInput,
 };

@@ -56,6 +56,67 @@ function deriveEmailFieldEvidence(expense, log) {
   };
 }
 
+function buildEmailFieldEvidence(expense, log, senderQuality = {}) {
+  const legacy = deriveEmailFieldEvidence(expense, log);
+  const subject = `${log?.subject || ''}`;
+  const fromAddress = `${log?.from_address || ''}`;
+  const merchant = `${expense?.merchant || ''}`.trim();
+  const amount = Math.abs(Number(expense?.amount || 0));
+  const amountPattern = Number.isFinite(amount) && amount > 0
+    ? amount.toFixed(2).replace('.', '\\.')
+    : null;
+  const amountText = `${subject} ${expense?.notes || ''}`;
+  const merchantInSubject = merchant
+    ? new RegExp(merchant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(subject)
+    : false;
+  const merchantFromSender = merchant
+    ? fromAddress.toLowerCase().includes(merchant.toLowerCase().replace(/\s+/g, ''))
+    : false;
+  const amountExplicit = amountPattern ? new RegExp(`(?:\\$|USD\\s*)?${amountPattern}\\b`, 'i').test(amountText) : false;
+  const hasItems = Array.isArray(expense?.items) && expense.items.length > 0;
+  const importedDate = dateOnly(log?.imported_at);
+  const expenseDate = dateOnly(expense?.date);
+  const itemLevel = senderQuality?.item_reliability?.level || 'unknown';
+
+  const fieldEvidence = {
+    merchant: {
+      confidence: merchantInSubject ? 'high' : (merchantFromSender || fromAddress ? 'medium' : 'low'),
+      questionable: !merchantInSubject && !merchantFromSender,
+      detail: legacy.merchant_evidence || 'Merchant could not be tied to a strong email signal.',
+      source: merchantInSubject ? 'subject' : 'sender',
+    },
+    amount: {
+      confidence: amountExplicit ? 'high' : (hasItems ? 'medium' : 'low'),
+      questionable: !amountExplicit && !hasItems,
+      detail: legacy.amount_evidence || 'The final charged total was not explicit in the email summary.',
+      source: amountExplicit ? 'email_total' : (hasItems ? 'line_items' : 'extraction'),
+    },
+    date: {
+      confidence: expenseDate && importedDate && expenseDate !== importedDate ? 'high' : 'medium',
+      questionable: !expenseDate,
+      detail: legacy.date_evidence || 'Confirm the purchase date.',
+      source: expenseDate && importedDate && expenseDate !== importedDate ? 'email_date' : 'received_date',
+    },
+  };
+
+  if (hasItems) {
+    fieldEvidence.items = {
+      confidence: itemLevel === 'trusted' ? 'high' : (itemLevel === 'noisy' ? 'low' : 'medium'),
+      questionable: itemLevel === 'noisy',
+      detail: senderQuality?.item_reliability?.message || 'Line items were extracted from the email receipt.',
+      source: 'email_items',
+    };
+  }
+
+  return {
+    field_confidence: Object.fromEntries(Object.entries(fieldEvidence).map(([field, value]) => [field, value.confidence])),
+    field_evidence: fieldEvidence,
+    questionable_fields: Object.entries(fieldEvidence)
+      .filter(([, value]) => value.questionable)
+      .map(([field]) => field),
+  };
+}
+
 function buildEmailReviewRouting(senderQuality, itemReliability, preferredReviewMode = null) {
   const reviewMode = preferredReviewMode || recommendReviewMode({ ...senderQuality, item_reliability: itemReliability });
 
@@ -120,6 +181,15 @@ function buildEmailReviewHint(expense, log, senderQuality) {
   const itemReliability = senderQuality?.item_reliability || null;
   const automationRecommendation = senderQuality?.automation_recommendation || null;
   const fieldEvidence = deriveEmailFieldEvidence(expense, log);
+  const structuredEvidence = expense?.field_evidence && Object.keys(expense.field_evidence).length
+    ? {
+      field_confidence: expense.field_confidence || {},
+      field_evidence: expense.field_evidence,
+      questionable_fields: Object.entries(expense.field_evidence)
+        .filter(([, value]) => value?.questionable === true)
+        .map(([field]) => field),
+    }
+    : buildEmailFieldEvidence(expense, log, senderQuality);
   const reviewRouting = buildEmailReviewRouting(senderQuality, itemReliability, expense.review_mode || null);
 
   let headline = 'Imported from Gmail';
@@ -151,6 +221,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
       attachment_count: Number(log.attachment_count || 0),
       attachment_text_count: Number(log.attachment_text_count || 0),
       ...fieldEvidence,
+      ...structuredEvidence,
       headline: 'Reviewed Gmail import',
       tone: 'positive',
       message: log.review_edit_count > 0
@@ -197,6 +268,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
     attachment_count: Number(log.attachment_count || 0),
     attachment_text_count: Number(log.attachment_text_count || 0),
     ...fieldEvidence,
+    ...structuredEvidence,
     headline,
     tone,
     message,
@@ -204,6 +276,7 @@ function buildEmailReviewHint(expense, log, senderQuality) {
 }
 
 module.exports = {
+  buildEmailFieldEvidence,
   buildEmailReviewHint,
   dateOnly,
 };

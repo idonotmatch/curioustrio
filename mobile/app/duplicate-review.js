@@ -21,6 +21,9 @@ function formatDate(value) {
 function sourceLabel(source) {
   if (source === 'email') return 'Gmail import';
   if (source === 'camera') return 'Receipt scan';
+  if (source === 'share') return 'Shared receipt';
+  if (source === 'financekit') return 'Apple transaction';
+  if (source === 'bank') return 'Bank transaction';
   if (source === 'manual') return 'Manual entry';
   return 'Expense';
 }
@@ -112,9 +115,12 @@ export default function DuplicateReviewScreen() {
   }, [expense, flagId]);
   const counterpart = flag?.duplicate_expense || null;
   const reasons = Array.isArray(flag?.match_reasons) ? flag.match_reasons : [];
-  const canMergeIntoExisting = expense?.source === 'email'
-    && counterpart?.source === 'manual'
-    && flag?.can_replace_duplicate === true;
+  const detailSources = ['email', 'camera', 'share', 'forwarded_email'];
+  const settlementSources = ['refund', 'financekit', 'bank'];
+  const canMergeIntoExisting = flag?.can_replace_duplicate === true && (
+    (counterpart?.source === 'manual' && expense?.source !== 'manual')
+    || (settlementSources.includes(expense?.source) && detailSources.includes(counterpart?.source))
+  );
 
   async function resolve(action) {
     if (!flag?.id || actioning) return;
@@ -178,7 +184,7 @@ export default function DuplicateReviewScreen() {
       <SafeAreaView style={styles.center} edges={['bottom']}>
         <Ionicons name="checkmark-circle-outline" size={36} color={colors.success} />
         <Text style={styles.emptyTitle}>Expenses merged</Text>
-        <Text style={styles.emptyBody}>The manual expense stayed in place and blank details were filled from the import.</Text>
+        <Text style={styles.emptyBody}>Your existing expense stayed in place and supporting details were added from the import.</Text>
         <TouchableOpacity style={[styles.primaryButton, styles.resultButton]} onPress={() => router.replace({ pathname: '/expense/[id]', params: { id: mergeResult.surviving_expense_id } })}>
           <Text style={styles.primaryText}>View merged expense</Text>
         </TouchableOpacity>
@@ -215,7 +221,7 @@ export default function DuplicateReviewScreen() {
               <Ionicons name="layers-outline" size={18} color={colors.success} />
               <Text style={styles.mergePreviewTitle}>Merge preview</Text>
             </View>
-            <Text style={styles.mergePreviewBody}>The manual expense survives. The import only fills fields that are blank.</Text>
+            <Text style={styles.mergePreviewBody}>Your existing expense stays. The import fills blank details and adds receipt items when none are present.</Text>
             <View style={styles.mergeFieldList}>
               {mergePreviewRows(counterpart, expense).map((row) => (
                 <View key={row.label} style={styles.mergeFieldRow}>

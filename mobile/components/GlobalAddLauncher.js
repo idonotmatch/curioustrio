@@ -81,6 +81,11 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
     router.push('/plan/new');
   }
 
+  function openDocumentImport() {
+    close();
+    router.push({ pathname: '/(tabs)/add', params: { auto_document: '1' } });
+  }
+
   return (
     <>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!loading) close(); }}>
@@ -130,6 +135,14 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
                     title="Scan receipt"
                     body="Use the camera or photo library to pull details in."
                     onPress={openScan}
+                    disabled={loading}
+                  />
+
+                  <ActionRow
+                    icon="document-attach-outline"
+                    title="Import receipt file"
+                    body="Choose a receipt image or PDF from Files."
+                    onPress={openDocumentImport}
                     disabled={loading}
                   />
 

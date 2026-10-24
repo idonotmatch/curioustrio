@@ -127,6 +127,15 @@ function buildTreatmentSuggestionSummary(treatmentSuggestion = null) {
 function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, categoryLabel }) {
   const likelyFields = Array.isArray(gmailReviewHint?.likely_changed_fields) ? gmailReviewHint.likely_changed_fields : [];
   const likelySet = new Set(likelyFields);
+  const fieldEvidence = gmailReviewHint?.field_evidence || expense?.field_evidence || {};
+  const explicitQuestionable = new Set(
+    Array.isArray(gmailReviewHint?.questionable_fields) ? gmailReviewHint.questionable_fields : []
+  );
+  const evidenceFor = (field) => fieldEvidence?.[field] || null;
+  const isQuestionable = (field) => explicitQuestionable.has(field)
+    || evidenceFor(field)?.questionable === true
+    || evidenceFor(field)?.confidence === 'low';
+  const reasonFor = (field, fallback) => evidenceFor(field)?.detail || fallback;
   const isItemsFirst = gmailReviewHint?.review_mode === 'items_first';
   const itemCount = Array.isArray(expense?.items) ? expense.items.length : 0;
   const itemSignals = Array.isArray(gmailReviewHint?.item_top_signals) ? gmailReviewHint.item_top_signals : [];
@@ -137,32 +146,40 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
     || gmailReviewHint?.item_reliability_message
     || 'This sender often needs item cleanup before approval.';
   const candidates = [
-    ...(isItemsFirst ? [{
+    ...(isItemsFirst && isQuestionable('items') ? [{
       key: 'items',
       label: 'Items',
       value: itemCount ? `${itemCount} extracted ${itemCount === 1 ? 'item' : 'items'}` : 'Review extracted items',
-      reason: itemHistoryReason,
+      reason: reasonFor('items', itemHistoryReason),
+      confidence: evidenceFor('items')?.confidence || null,
+      questionable: true,
       weight: 110,
     }] : []),
     {
       key: 'amount',
       label: 'Amount',
       value: `$${Math.abs(Number(expense?.amount || 0)).toFixed(2)}`,
-      reason: gmailReviewHint?.amount_evidence || 'Confirm the final charged total.',
+      reason: reasonFor('amount', gmailReviewHint?.amount_evidence || 'Confirm the final charged total.'),
+      confidence: evidenceFor('amount')?.confidence || null,
+      questionable: isQuestionable('amount'),
       weight: likelySet.has('amount') ? 100 : (isItemsFirst ? 50 : 60),
     },
     {
       key: 'date',
       label: 'Date',
       value: formattedDate,
-      reason: gmailReviewHint?.date_evidence || 'Confirm the purchase date you want to track.',
+      reason: reasonFor('date', gmailReviewHint?.date_evidence || 'Confirm the purchase date you want to track.'),
+      confidence: evidenceFor('date')?.confidence || null,
+      questionable: isQuestionable('date'),
       weight: likelySet.has('date') ? 95 : (isItemsFirst ? 40 : 55),
     },
     {
       key: 'merchant',
       label: 'Merchant',
       value: expense?.merchant || '—',
-      reason: gmailReviewHint?.merchant_evidence || 'Confirm the merchant name.',
+      reason: reasonFor('merchant', gmailReviewHint?.merchant_evidence || 'Confirm the merchant name.'),
+      confidence: evidenceFor('merchant')?.confidence || null,
+      questionable: isQuestionable('merchant'),
       weight: likelySet.has('merchant') ? 90 : (isItemsFirst ? 35 : 50),
     },
     {
@@ -173,10 +190,13 @@ function buildPriorityReviewFields({ expense, gmailReviewHint, formattedDate, ca
         ? (gmailReviewHint?.category_explanation?.detail || 'This sender often needs a category correction.')
         : (gmailReviewHint?.category_explanation?.detail || 'Check this if the purchase type looks off.'),
       weight: likelySet.has('category_id') ? 85 : 35,
+      questionable: isQuestionable('category') || likelySet.has('category_id'),
+      confidence: evidenceFor('category')?.confidence || null,
     },
   ];
 
   return candidates
+    .filter((candidate) => candidate.questionable)
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 4);
 }

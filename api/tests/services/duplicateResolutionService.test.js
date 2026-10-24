@@ -1,6 +1,10 @@
 jest.mock('../../src/db', () => ({ pool: { connect: jest.fn() } }));
 jest.mock('../../src/models/expense', () => ({ findById: jest.fn() }));
 jest.mock('../../src/models/emailImportLog', () => ({ recordReviewFeedback: jest.fn() }));
+jest.mock('../../src/models/expenseSourceObservation', () => ({
+  transfer: jest.fn(async () => ['observation-1']),
+  restore: jest.fn(async () => 1),
+}));
 jest.mock('../../src/services/expenseEmailReviewService', () => ({
   handleApprovedExpenseReview: jest.fn(async (expense) => expense),
   handleDismissedExpenseReview: jest.fn(async (expense) => expense),
@@ -10,6 +14,7 @@ jest.mock('../../src/services/expenseEmailReviewService', () => ({
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
 const EmailImportLog = require('../../src/models/emailImportLog');
+const ExpenseSourceObservation = require('../../src/models/expenseSourceObservation');
 const {
   handleApprovedExpenseReview,
   handleDismissedExpenseReview,
@@ -160,6 +165,7 @@ it('merges imported evidence into a manual survivor without replacing manual cho
     if (sql.includes('SELECT expense_id, COUNT(*)')) return { rows: [{ expense_id: imported.id, count: 3 }] };
     if (sql.includes('UPDATE expenses existing')) return { rows: [mergedManual] };
     if (sql.includes('UPDATE expense_items SET expense_id')) return { rows: [{ id: 'item-1' }, { id: 'item-2' }, { id: 'item-3' }], rowCount: 3 };
+    if (sql.includes('UPDATE expense_receipt_details')) return { rows: [{ expense_id: manual.id }], rowCount: 1 };
     if (sql.includes("SET status = 'dismissed'") && sql.includes('linked_expense_id')) {
       return { rows: [{ ...imported, status: 'dismissed', linked_expense_id: manual.id }] };
     }
@@ -185,10 +191,39 @@ it('merges imported evidence into a manual survivor without replacing manual cho
     action: 'approved',
     changedFields: ['merged_into_existing'],
   });
+  expect(ExpenseSourceObservation.transfer).toHaveBeenCalledWith(expect.objectContaining({
+    fromExpenseId: imported.id,
+    toExpenseId: manual.id,
+  }));
   expect(client.query).toHaveBeenCalledWith(
     'UPDATE email_import_log SET expense_id = $1 WHERE expense_id = $2 AND user_id = $3',
     [manual.id, imported.id, user.id]
   );
+});
+
+it('allows a receipt scan to merge into a manual expense', async () => {
+  const receipt = { ...current, source: 'camera' };
+  const client = { release: jest.fn() };
+  client.query = jest.fn(async (sql) => {
+    if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
+    if (sql.includes('SELECT * FROM duplicate_flags')) return { rows: [flag] };
+    if (sql.includes('SELECT * FROM expenses')) return { rows: [receipt, existing] };
+    if (sql.includes('SELECT expense_id, COUNT(*)')) return { rows: [] };
+    if (sql.includes('UPDATE expenses existing')) return { rows: [existing] };
+    if (sql.includes('UPDATE expense_receipt_details')) return { rows: [], rowCount: 0 };
+    if (sql.includes("SET status = 'dismissed'") && sql.includes('linked_expense_id')) return { rows: [{ ...receipt, status: 'dismissed' }] };
+    if (sql.includes('UPDATE email_import_log')) return { rows: [] };
+    if (sql.includes('SET status = $2')) return { rows: [{ ...flag, status: 'merged' }] };
+    if (sql.includes("SET status = 'merged'")) return { rows: [] };
+    if (sql.includes('INSERT INTO expense_merge_events')) return { rows: [{ id: 'merge-event-camera' }] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  db.pool.connect.mockResolvedValue(client);
+  Expense.findById.mockResolvedValue(existing);
+
+  await expect(resolveDuplicate({ user, expenseId: receipt.id, flagId: flag.id, action: 'merge_existing' }))
+    .resolves.toMatchObject({ surviving_expense_id: existing.id });
+  expect(EmailImportLog.recordReviewFeedback).not.toHaveBeenCalled();
 });
 
 it('undoes a recent merge and moves only transferred receipt items back', async () => {

@@ -7,6 +7,7 @@ const IngestAttemptLog = require('../models/ingestAttemptLog');
 const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../models/receiptLineCorrection');
 const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
+const ExpenseSourceObservation = require('../models/expenseSourceObservation');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ProductPriceObservation = require('../models/productPriceObservation');
 const BackgroundJob = require('../models/backgroundJob');
@@ -17,6 +18,11 @@ const { assignCategory } = require('./categoryAssigner');
 const { searchPlace } = require('./mapkitService');
 const { refreshPlansForPriceObservations } = require('./purchasePlanningService');
 const { validateExpenseCoreFields } = require('./expenseValidation');
+const {
+  buildReceiptFieldEvidence,
+  normalizeFieldConfidence,
+  normalizeFieldEvidence,
+} = require('./importSourcePolicy');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -266,7 +272,7 @@ async function appendConfirmPaymentFeedback({
   finalItems = [],
   expenseId,
 }) {
-  if (!['manual', 'camera', 'refund'].includes(source) || !ingestAttemptId || !userId) return;
+  if (!['manual', 'camera', 'share', 'refund'].includes(source) || !ingestAttemptId || !userId) return;
   try {
     const attempt = await IngestAttemptLog.findByIdForUser(ingestAttemptId, userId);
     const parsedSnapshot = attempt?.metadata?.parsed_snapshot || null;
@@ -564,7 +570,7 @@ async function recordItemPriceObservations({ user, expense, payload, items = [] 
   if (payload.is_private === true || !Array.isArray(items) || items.length === 0) return [];
   const merchant = `${expense.merchant || payload.merchant || ''}`.trim();
   if (!merchant) return [];
-  const sourceType = payload.source === 'camera' || payload.source === 'refund'
+  const sourceType = ['camera', 'share', 'refund'].includes(payload.source)
     ? 'receipt'
     : payload.source === 'email' ? 'email' : 'manual';
   const sourceTrust = sourceType === 'receipt' || sourceType === 'email'
@@ -634,7 +640,7 @@ async function runPostConfirmSideEffects({
     console.error('Price observation capture failed (non-fatal):', priceObservationErr.message);
   }
 
-  if (resolvedPayload.source === 'camera' && resolvedItems.length > 0 && resolvedPayload.is_private !== true) {
+  if (['camera', 'share'].includes(resolvedPayload.source) && resolvedItems.length > 0 && resolvedPayload.is_private !== true) {
     await captureReceiptLineCorrections({
       householdId: user?.household_id,
       merchant: enrichedExpense.merchant || resolvedPayload.merchant,
@@ -735,6 +741,16 @@ async function createConfirmedExpense({
   queuePostConfirm = enqueuePostConfirmSideEffects,
 }) {
   const normalizedBudgetExclusionReason = normalizeBudgetExclusionReason(payload.budget_exclusion_reason);
+  const receiptValidation = payload.receipt_details?.validation || {};
+  const fieldConfidence = normalizeFieldConfidence(
+    payload.field_confidence
+      || receiptValidation.field_confidence
+      || (payload.source === 'manual' ? { merchant: 'confirmed', amount: 'confirmed', date: 'confirmed' } : {})
+  );
+  const fieldEvidence = normalizeFieldEvidence(
+    payload.field_evidence
+      || (payload.receipt_details ? buildReceiptFieldEvidence(receiptValidation) : {})
+  );
   const client = await db.pool.connect();
   let expense;
   let idempotentReplay = false;
@@ -775,6 +791,8 @@ async function createConfirmedExpense({
       categoryReasoning: payload.category_reasoning || null,
       idempotencyKey: payload.idempotency_key || null,
       purchasePlanId: payload.purchase_plan_id || null,
+      fieldConfidence,
+      fieldEvidence,
       queryable: client,
     });
 
@@ -815,6 +833,21 @@ async function createConfirmedExpense({
       receiptDetails = payload.receipt_details
         ? await ExpenseReceiptDetail.upsert(expense.id, payload.receipt_details, client)
         : null;
+      await ExpenseSourceObservation.record({
+        userId: user.id,
+        expense,
+        sourceType: payload.source,
+        externalRecordId: payload.external_record_id || null,
+        externalTransactionId: receiptDetails?.transaction_id || payload.external_transaction_id || null,
+        fieldConfidence,
+        fieldEvidence,
+        extraFields: {
+          currency: receiptDetails?.currency || payload.currency || null,
+          transaction_id: receiptDetails?.transaction_id || payload.external_transaction_id || null,
+          item_count: createdItems.length,
+        },
+        queryable: client,
+      });
       if (deferPostConfirmSideEffects) {
         await queuePostConfirm({
           user,

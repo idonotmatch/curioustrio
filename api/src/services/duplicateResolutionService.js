@@ -1,11 +1,13 @@
 const db = require('../db');
 const Expense = require('../models/expense');
 const EmailImportLog = require('../models/emailImportLog');
+const ExpenseSourceObservation = require('../models/expenseSourceObservation');
 const {
   handleApprovedExpenseReview,
   handleDismissedExpenseReview,
   normalizeApprovedEmailNotes,
 } = require('./expenseEmailReviewService');
+const { canMergeSources, sourceRole } = require('./importSourcePolicy');
 
 const ACTION_STATUS = {
   keep_both: 'kept_both',
@@ -31,18 +33,26 @@ function sourceForValue(existingValue, importedValue, { unknown = false } = {}) 
 }
 
 function buildMergeFieldSources(existing, imported, { existingItemCount = 0, importedItemCount = 0 } = {}) {
+  const importedSettlementWins = sourceRole(imported.source) === 'settlement'
+    && sourceRole(existing.source) !== 'user';
   return {
     identity: 'existing',
     merchant: 'existing',
-    amount: 'existing',
-    date: 'existing',
+    amount: importedSettlementWins ? 'imported' : 'existing',
+    date: importedSettlementWins ? 'imported' : 'existing',
     source: 'existing',
     description: sourceForValue(existing.description, imported.description),
     category: sourceForValue(existing.category_id, imported.category_id),
     notes: sourceForValue(existing.notes, imported.notes),
-    payment_method: sourceForValue(existing.payment_method, imported.payment_method, { unknown: true }),
-    card_last4: sourceForValue(existing.card_last4, imported.card_last4),
-    card_label: sourceForValue(existing.card_label, imported.card_label),
+    payment_method: importedSettlementWins && imported.payment_method !== 'unknown'
+      ? 'imported'
+      : sourceForValue(existing.payment_method, imported.payment_method, { unknown: true }),
+    card_last4: importedSettlementWins && imported.card_last4
+      ? 'imported'
+      : sourceForValue(existing.card_last4, imported.card_last4),
+    card_label: importedSettlementWins && imported.card_label
+      ? 'imported'
+      : sourceForValue(existing.card_label, imported.card_label),
     place_name: sourceForValue(existing.place_name, imported.place_name),
     address: sourceForValue(existing.address, imported.address),
     mapkit_stable_id: sourceForValue(existing.mapkit_stable_id, imported.mapkit_stable_id),
@@ -73,6 +83,8 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
   let flag;
   let mergeEventId = null;
   let transferredItemIds = [];
+  let transferredObservationIds = [];
+  let receiptDetailsTransferred = false;
 
   try {
     await client.query('BEGIN');
@@ -101,8 +113,8 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
       if (counterpart.user_id !== user.id) {
         throw httpError(403, 'You cannot merge into another household member\'s expense');
       }
-      if (current.source !== 'email' || counterpart.source !== 'manual') {
-        throw httpError(400, 'Only an imported expense can be merged into a manual expense');
+      if (!canMergeSources(current.source, counterpart.source)) {
+        throw httpError(400, 'These expense sources cannot be reconciled automatically');
       }
     }
 
@@ -136,11 +148,17 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
       const importedItemCount = countByExpense.get(current.id) || 0;
       const existingItemCount = countByExpense.get(counterpart.id) || 0;
       const fieldSources = buildMergeFieldSources(counterpart, current, { existingItemCount, importedItemCount });
-      const importedNotes = normalizeApprovedEmailNotes(current.notes || '') || null;
+      const importedNotes = current.source === 'email'
+        ? normalizeApprovedEmailNotes(current.notes || '') || null
+        : current.notes || null;
+      const importedSettlementWins = sourceRole(current.source) === 'settlement'
+        && sourceRole(counterpart.source) !== 'user';
 
       const merged = await client.query(
         `UPDATE expenses existing
-         SET description = COALESCE(NULLIF(BTRIM(existing.description), ''), imported.description),
+         SET amount = CASE WHEN $5 THEN imported.amount ELSE existing.amount END,
+             date = CASE WHEN $5 THEN imported.date ELSE existing.date END,
+             description = COALESCE(NULLIF(BTRIM(existing.description), ''), imported.description),
              category_id = COALESCE(existing.category_id, imported.category_id),
              notes = COALESCE(NULLIF(BTRIM(existing.notes), ''), $4),
              place_name = COALESCE(NULLIF(BTRIM(existing.place_name), ''), imported.place_name),
@@ -153,12 +171,22 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
              location_status = COALESCE(NULLIF(BTRIM(existing.location_status), ''), imported.location_status),
              location_confidence = COALESCE(existing.location_confidence, imported.location_confidence),
              payment_method = CASE
+               WHEN $5 AND imported.payment_method IS NOT NULL AND imported.payment_method <> 'unknown'
+                 THEN imported.payment_method
                WHEN existing.payment_method IS NULL OR existing.payment_method = 'unknown'
                  THEN COALESCE(NULLIF(imported.payment_method, 'unknown'), existing.payment_method)
                ELSE existing.payment_method
              END,
-             card_last4 = COALESCE(NULLIF(BTRIM(existing.card_last4), ''), imported.card_last4),
-             card_label = COALESCE(NULLIF(BTRIM(existing.card_label), ''), imported.card_label),
+             card_last4 = CASE WHEN $5 THEN COALESCE(imported.card_last4, existing.card_last4) ELSE COALESCE(NULLIF(BTRIM(existing.card_last4), ''), imported.card_last4) END,
+             card_label = CASE WHEN $5 THEN COALESCE(imported.card_label, existing.card_label) ELSE COALESCE(NULLIF(BTRIM(existing.card_label), ''), imported.card_label) END,
+             field_confidence = CASE
+               WHEN $5 THEN COALESCE(existing.field_confidence, '{}'::jsonb) || COALESCE(imported.field_confidence, '{}'::jsonb)
+               ELSE COALESCE(imported.field_confidence, '{}'::jsonb) || COALESCE(existing.field_confidence, '{}'::jsonb)
+             END,
+             field_evidence = CASE
+               WHEN $5 THEN COALESCE(existing.field_evidence, '{}'::jsonb) || COALESCE(imported.field_evidence, '{}'::jsonb)
+               ELSE COALESCE(imported.field_evidence, '{}'::jsonb) || COALESCE(existing.field_evidence, '{}'::jsonb)
+             END,
              category_source = CASE WHEN existing.category_id IS NULL THEN imported.category_source ELSE existing.category_source END,
              category_confidence = CASE WHEN existing.category_id IS NULL THEN imported.category_confidence ELSE existing.category_confidence END,
              category_reasoning = CASE WHEN existing.category_id IS NULL THEN imported.category_reasoning ELSE existing.category_reasoning END
@@ -167,7 +195,7 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
            AND existing.user_id = $2
            AND imported.id = $3
          RETURNING existing.*`,
-        [counterpart.id, user.id, current.id, importedNotes]
+        [counterpart.id, user.id, current.id, importedNotes, importedSettlementWins]
       );
       counterpart = merged.rows[0];
       if (!counterpart) throw httpError(409, 'Could not merge these expenses');
@@ -181,6 +209,16 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
         transferredItems = transferred.rowCount || transferred.rows.length;
         transferredItemIds = transferred.rows.map((row) => row.id).filter(Boolean);
       }
+
+      const receiptTransfer = await client.query(
+        `UPDATE expense_receipt_details
+         SET expense_id = $1, updated_at = NOW()
+         WHERE expense_id = $2
+           AND NOT EXISTS (SELECT 1 FROM expense_receipt_details WHERE expense_id = $1)
+         RETURNING expense_id`,
+        [counterpart.id, current.id]
+      );
+      receiptDetailsTransferred = Boolean(receiptTransfer.rows[0]);
 
       const dismissed = await client.query(
         `UPDATE expenses
@@ -196,6 +234,12 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
         'UPDATE email_import_log SET expense_id = $1 WHERE expense_id = $2 AND user_id = $3',
         [counterpart.id, current.id, user.id]
       );
+      transferredObservationIds = await ExpenseSourceObservation.transfer({
+        fromExpenseId: current.id,
+        toExpenseId: counterpart.id,
+        userId: user.id,
+        queryable: client,
+      });
       mergeSummary = { survivor: counterpart, field_sources: fieldSources, imported_items_count: transferredItems };
     } else if (action === 'keep_existing') {
       const updated = await client.query(
@@ -232,8 +276,9 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
       const mergeEvent = await client.query(
         `INSERT INTO expense_merge_events (
            user_id, surviving_expense_id, merged_expense_id, duplicate_flag_id,
-           field_sources, imported_items_count, survivor_before, merged_before, transferred_item_ids
-         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9::jsonb)
+           field_sources, imported_items_count, survivor_before, merged_before, transferred_item_ids,
+           transferred_observation_ids, receipt_details_transferred
+         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11)
          RETURNING id`,
         [
           user.id,
@@ -245,6 +290,8 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
           JSON.stringify(expenseResult.rows.find((row) => row.id === counterpart.id)),
           JSON.stringify(expenseResult.rows.find((row) => row.id === current.id)),
           JSON.stringify(transferredItemIds),
+          JSON.stringify(transferredObservationIds),
+          receiptDetailsTransferred,
         ]
       );
       mergeEventId = mergeEvent.rows[0]?.id || null;
@@ -310,7 +357,7 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
     client.release();
   }
 
-  if (action === 'merge_existing') {
+  if (action === 'merge_existing' && current.source === 'email') {
     try {
       await EmailImportLog.recordReviewFeedback(counterpart.id, {
         action: 'approved',
@@ -388,7 +435,8 @@ async function undoDuplicateMerge({ user, mergeEventId }) {
          location_user_owned = $15, payment_method = $16, card_last4 = $17,
          card_label = $18, category_source = $19, category_confidence = $20,
          category_reasoning = $21, status = $22, review_required = $23,
-         linked_expense_id = $24
+         linked_expense_id = $24, amount = $25, date = $26,
+         field_confidence = $27::jsonb, field_evidence = $28::jsonb
        WHERE id = $1 AND user_id = $2
        RETURNING *`,
       [
@@ -400,6 +448,8 @@ async function undoDuplicateMerge({ user, mergeEventId }) {
         snapshot.card_label ?? null, snapshot.category_source ?? null, snapshot.category_confidence ?? null,
         snapshot.category_reasoning ? JSON.stringify(snapshot.category_reasoning) : null,
         snapshot.status, Boolean(snapshot.review_required), snapshot.linked_expense_id ?? null,
+        snapshot.amount, snapshot.date,
+        JSON.stringify(snapshot.field_confidence || {}), JSON.stringify(snapshot.field_evidence || {}),
       ]
     );
 
@@ -416,6 +466,20 @@ async function undoDuplicateMerge({ user, mergeEventId }) {
         [event.merged_expense_id, event.surviving_expense_id, itemIds]
       );
     }
+    if (event.receipt_details_transferred) {
+      await client.query(
+        `UPDATE expense_receipt_details SET expense_id = $1, updated_at = NOW()
+         WHERE expense_id = $2`,
+        [event.merged_expense_id, event.surviving_expense_id]
+      );
+    }
+    await ExpenseSourceObservation.restore({
+      observationIds: Array.isArray(event.transferred_observation_ids) ? event.transferred_observation_ids : [],
+      fromExpenseId: event.surviving_expense_id,
+      toExpenseId: event.merged_expense_id,
+      userId: user.id,
+      queryable: client,
+    });
     await client.query(
       'UPDATE email_import_log SET expense_id = $1 WHERE expense_id = $2 AND user_id = $3',
       [event.merged_expense_id, event.surviving_expense_id, user.id]

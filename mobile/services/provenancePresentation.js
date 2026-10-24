@@ -14,6 +14,20 @@ function sourcePresentation(expense = {}) {
       tone: 'accent',
     };
   }
+  if (source === 'share') {
+    return {
+      label: 'Receipt file',
+      detail: 'Created from a receipt image or PDF you selected from Files.',
+      tone: 'accent',
+    };
+  }
+  if (source === 'financekit' || source === 'bank') {
+    return {
+      label: source === 'financekit' ? 'Apple transaction' : 'Bank import',
+      detail: 'Settlement details came from a connected transaction source.',
+      tone: 'info',
+    };
+  }
   if (source === 'refund') {
     return {
       label: 'Refund',
@@ -82,7 +96,7 @@ function confidencePresentation(expense = {}) {
     };
   }
 
-  if (source === 'camera') {
+  if (source === 'camera' || source === 'share') {
     return {
       label: reviewFields.length ? 'Check extracted fields' : 'Receipt read complete',
       detail: reviewFields.length

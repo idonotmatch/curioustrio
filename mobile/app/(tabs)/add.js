@@ -2,6 +2,8 @@ import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 let ImageManipulator;
 try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not available in Expo Go */ }
 import { NLInput } from '../../components/NLInput';
@@ -22,10 +24,11 @@ import { colors, radius, spacing, typography } from '../../theme/tokens';
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { auto_scan } = useLocalSearchParams();
+  const { auto_scan, auto_document } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const didAutoScan = useRef(false);
+  const didAutoDocument = useRef(false);
   const processingMessage = scanLoading
     ? 'Reading your receipt. This can take a few seconds.'
     : loading
@@ -62,6 +65,37 @@ export default function AddScreen() {
     }
   }
 
+  async function parseReceiptImage(asset, source = 'camera') {
+    let imageBase64 = asset.base64 || await new File(asset.uri).base64();
+    try {
+      const primaryPlan = primaryReceiptImagePlan(asset);
+      const resized = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: primaryPlan.width } }],
+        { compress: primaryPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      imageBase64 = resized.base64;
+      if ((imageBase64?.length || 0) > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
+        const fallbackPlan = fallbackReceiptImagePlan(asset);
+        const compressed = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: fallbackPlan.width } }],
+          { compress: fallbackPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+        imageBase64 = compressed.base64;
+      }
+    } catch { /* use the picker-provided or file-system image */ }
+
+    if (!imageBase64 || imageBase64.length > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
+      throw new Error('Receipt image is too large. Crop closer to the receipt and try again.');
+    }
+    const parsed = await api.post('/expenses/scan', {
+      image_base64: imageBase64,
+      today: toLocalDateString(),
+    });
+    pushConfirmDraft(router, { ...parsed, source, image_uri: asset.uri });
+  }
+
   async function handleScan(fromGallery = false) {
     try {
       if (!fromGallery) {
@@ -86,34 +120,7 @@ export default function AddScreen() {
 
       const asset = pickerResult.assets[0];
       setScanLoading(true);
-
-      let imageBase64 = asset.base64;
-      try {
-        const primaryPlan = primaryReceiptImagePlan(asset);
-        const resized = await ImageManipulator.manipulateAsync(
-          asset.uri,
-          [{ resize: { width: primaryPlan.width } }],
-          { compress: primaryPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-        );
-        imageBase64 = resized.base64;
-        if ((imageBase64?.length || 0) > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
-          const fallbackPlan = fallbackReceiptImagePlan(asset);
-          const compressed = await ImageManipulator.manipulateAsync(
-            asset.uri,
-            [{ resize: { width: fallbackPlan.width } }],
-            { compress: fallbackPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-          );
-          imageBase64 = compressed.base64;
-        }
-      } catch { /* native module unavailable; validate the picker-provided image below */ }
-
-      if (!imageBase64 || imageBase64.length > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
-        throw new Error('Receipt image is too large. Crop closer to the receipt and try again.');
-      }
-
-      const today = toLocalDateString();
-      const parsed = await api.post('/expenses/scan', { image_base64: imageBase64, today });
-      pushConfirmDraft(router, { ...parsed, source: 'camera', image_uri: asset.uri });
+      await parseReceiptImage(asset, 'camera');
     } catch (err) {
       const msg = err?.message || '';
       const presentation = receiptScanErrorPresentation(err);
@@ -140,11 +147,53 @@ export default function AddScreen() {
     }
   }
 
+  async function handleDocumentImport() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      setScanLoading(true);
+      const isPdf = asset.mimeType === 'application/pdf' || `${asset.name || ''}`.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        if (Number(asset.size || 0) > 7_000_000) {
+          throw new Error('Receipt PDF is too large. Choose a file smaller than 7MB.');
+        }
+        const documentBase64 = await new File(asset.uri).base64();
+        const parsed = await api.post('/expenses/scan-document', {
+          document_base64: documentBase64,
+          file_name: asset.name || 'receipt.pdf',
+          today: toLocalDateString(),
+        });
+        pushConfirmDraft(router, { ...parsed, source: 'share' });
+      } else {
+        await parseReceiptImage(asset, 'share');
+      }
+    } catch (err) {
+      const presentation = receiptScanErrorPresentation(err);
+      Alert.alert(
+        presentation?.title || 'Could not read receipt file',
+        presentation?.message || err?.message || 'Choose a receipt image or a text-based PDF and try again.'
+      );
+    } finally {
+      setScanLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (auto_scan !== '1' || didAutoScan.current || scanLoading) return;
     didAutoScan.current = true;
     handleScan(false);
   }, [auto_scan, scanLoading]);
+
+  useEffect(() => {
+    if (auto_document !== '1' || didAutoDocument.current || scanLoading) return;
+    didAutoDocument.current = true;
+    handleDocumentImport();
+  }, [auto_document, scanLoading]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
@@ -181,6 +230,12 @@ export default function AddScreen() {
           title="Choose from camera roll"
           icon="images-outline"
           onPress={() => handleScan(true)}
+          disabled={scanLoading}
+        />
+        <SecondaryButton
+          title="Import receipt file"
+          icon="document-attach-outline"
+          onPress={handleDocumentImport}
           disabled={scanLoading}
         />
       </View>

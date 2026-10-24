@@ -25,6 +25,10 @@ function isMissingPurchasePlanError(err) {
   return err?.code === '42703' && /purchase_plan_id/i.test(`${err?.message || ''}`);
 }
 
+function isMissingFieldEvidenceError(err) {
+  return err?.code === '42703' && /field_(confidence|evidence)/i.test(`${err?.message || ''}`);
+}
+
 async function create({
   userId,
   householdId,
@@ -61,6 +65,8 @@ async function create({
   reviewSource = null,
   idempotencyKey = null,
   purchasePlanId = null,
+  fieldConfidence = {},
+  fieldEvidence = {},
   queryable = db,
 }) {
   const inTransaction = queryable !== db;
@@ -75,9 +81,10 @@ async function create({
          linked_expense_id, payment_method, card_last4, card_label,
          is_private, exclude_from_budget, budget_exclusion_reason,
          category_source, category_confidence, category_reasoning,
-         review_required, review_mode, review_source, idempotency_key, purchase_plan_id
+         review_required, review_mode, review_source, idempotency_key, purchase_plan_id,
+         field_confidence, field_evidence
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36::jsonb,$37::jsonb)
        ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL
        DO NOTHING
        RETURNING *`,
@@ -90,6 +97,7 @@ async function create({
         isPrivate, excludeFromBudget, budgetExclusionReason,
         categorySource, categoryConfidence, categoryReasoning ? JSON.stringify(categoryReasoning) : null,
         reviewRequired, reviewMode, reviewSource, idempotencyKey, purchasePlanId,
+        JSON.stringify(fieldConfidence || {}), JSON.stringify(fieldEvidence || {}),
       ]
     );
     if (result.rows[0]) {
@@ -115,6 +123,7 @@ async function create({
       && !isMissingCategoryProvenanceError(err)
       && !isMissingLocationProvenanceError(err)
       && !isMissingPurchasePlanError(err)
+      && !isMissingFieldEvidenceError(err)
     ) throw err;
     if (inTransaction) await queryable.query('ROLLBACK TO SAVEPOINT expense_create_compat');
     const fallback = await queryable.query(
@@ -132,6 +141,46 @@ async function create({
     );
     if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_create_compat');
     return fallback.rows[0];
+  }
+}
+
+async function markFieldsConfirmed(id, userId, fields = [], queryable = db) {
+  const confirmedFields = [...new Set(fields.filter(Boolean))];
+  if (!confirmedFields.length) return null;
+  const inTransaction = queryable !== db;
+  if (inTransaction) await queryable.query('SAVEPOINT expense_field_evidence_compat');
+  try {
+    const result = await queryable.query(
+      `UPDATE expenses
+       SET field_confidence = COALESCE(field_confidence, '{}'::jsonb) ||
+             (SELECT COALESCE(jsonb_object_agg(field, '"confirmed"'::jsonb), '{}'::jsonb)
+              FROM unnest($3::text[]) AS field),
+           field_evidence = COALESCE(field_evidence, '{}'::jsonb) ||
+             (SELECT COALESCE(jsonb_object_agg(
+                field,
+                jsonb_build_object(
+                  'confidence', 'confirmed',
+                  'questionable', false,
+                  'detail', 'Confirmed by you.',
+                  'source', 'user'
+                )
+              ), '{}'::jsonb)
+              FROM unnest($3::text[]) AS field)
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [id, userId, confirmedFields]
+    );
+    if (inTransaction) await queryable.query('RELEASE SAVEPOINT expense_field_evidence_compat');
+    return result.rows[0] || null;
+  } catch (err) {
+    if (isMissingFieldEvidenceError(err)) {
+      if (inTransaction) {
+        await queryable.query('ROLLBACK TO SAVEPOINT expense_field_evidence_compat');
+        await queryable.query('RELEASE SAVEPOINT expense_field_evidence_compat');
+      }
+      return null;
+    }
+    throw err;
   }
 }
 
@@ -687,4 +736,5 @@ module.exports = {
   updateStatusByHousehold,
   applyDeferredCategory,
   applyDeferredLocation,
+  markFieldsConfirmed,
 };

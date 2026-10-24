@@ -1,4 +1,7 @@
-const ALLOWED_EXPENSE_SOURCES = new Set(['manual', 'camera', 'email', 'refund']);
+const ALLOWED_EXPENSE_SOURCES = new Set([
+  'manual', 'camera', 'email', 'refund',
+  'share', 'forwarded_email', 'financekit', 'bank',
+]);
 const MAX_EXPENSE_AMOUNT = 99999999.99;
 
 function hasOwn(value, key) {
@@ -41,7 +44,7 @@ function validateExpenseCoreFields(payload = {}, { partial = false } = {}) {
   if (!partial || sourcePresent) {
     const source = `${payload.source || ''}`.trim();
     if (!ALLOWED_EXPENSE_SOURCES.has(source)) {
-      return { error: 'source must be manual, camera, email, or refund', reason: 'invalid_source' };
+      return { error: 'source is not supported', reason: 'invalid_source' };
     }
   }
 

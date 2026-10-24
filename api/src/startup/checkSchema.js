@@ -70,6 +70,7 @@ const REQUIRED_TABLES = [
 
 const OPTIONAL_TABLES = [
   'duplicate_flags',
+  'expense_source_observations',
   'gmail_sender_preferences',
 ];
 

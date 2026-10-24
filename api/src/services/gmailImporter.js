@@ -4,6 +4,7 @@ const Category = require('../models/category');
 const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const BackgroundJob = require('../models/backgroundJob');
+const ExpenseSourceObservation = require('../models/expenseSourceObservation');
 const PushToken = require('../models/pushToken');
 const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
@@ -40,6 +41,7 @@ const {
   shouldReuseLifecycleExpense,
 } = require('./emailTransactionLifecycle');
 const detectDuplicates = require('./duplicateDetector');
+const { buildEmailFieldEvidence } = require('./emailReviewHint');
 
 function amountsApproximatelyEqual(left, right) {
   const expected = Math.abs(Number(right) || 0);
@@ -595,6 +597,15 @@ async function processMessageImport(user, msgId, {
     let reviewMode = (forceReview || lifecycle.eventType === 'refund')
       ? 'full_review'
       : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
+    const structuredEvidence = buildEmailFieldEvidence({
+      ...parsed,
+      items: itemsForPersistence,
+    }, {
+      message_id: msgId,
+      subject,
+      from_address: from,
+      imported_at: `${messageDateContext}T12:00:00.000Z`,
+    }, effectiveSenderQuality);
 
     const persistenceClient = providedPersistenceClient || await db.pool.connect();
     const ownsPersistenceClient = !providedPersistenceClient;
@@ -624,6 +635,8 @@ async function processMessageImport(user, msgId, {
         reviewRequired: true,
         reviewMode: reviewMode || null,
         reviewSource: 'gmail',
+        fieldConfidence: structuredEvidence.field_confidence,
+        fieldEvidence: structuredEvidence.field_evidence,
         queryable: persistenceClient,
       });
       if (itemsForPersistence.length > 0) {
@@ -642,6 +655,17 @@ async function processMessageImport(user, msgId, {
         relatedExpenseId: relatedLifecycle?.expense_id || null,
         ...lifecycleLogContext,
       }, persistenceClient);
+      await ExpenseSourceObservation.record({
+        userId: user.id,
+        expense,
+        sourceType: 'email',
+        externalRecordId: msgId,
+        externalTransactionId: lifecycle.externalTransactionId || lifecycle.externalOrderId || null,
+        fieldConfidence: structuredEvidence.field_confidence,
+        fieldEvidence: structuredEvidence.field_evidence,
+        extraFields: { item_count: itemsForPersistence.length },
+        queryable: persistenceClient,
+      });
       await BackgroundJob.enqueue({
         jobType: BackgroundJob.JOB_TYPES.gmailEnrichment,
         dedupeKey: expense.id,
