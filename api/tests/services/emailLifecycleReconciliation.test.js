@@ -90,4 +90,22 @@ describe('email lifecycle reconciliation', () => {
     };
     expect(pairEvidence(receipt, pickup)).toMatchObject({ reason: 'exact_identity' });
   });
+
+  it('reprocesses a standalone fulfillment update even when its confirmation is no longer pending', () => {
+    const shipping = {
+      ...base,
+      expense_id: 'expense-shipping',
+      log_id: 'log-shipping',
+      subject: "We're getting your Autoship order ready",
+      email_event_type: 'charge',
+    };
+    expect(selectReconciliations([shipping])).toEqual([
+      expect.objectContaining({
+        duplicate_expense_id: 'expense-shipping',
+        canonical_expense_id: null,
+        reason: 'nonfinancial_shipping_update',
+        match_confidence: 'none',
+      }),
+    ]);
+  });
 });

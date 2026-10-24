@@ -137,6 +137,24 @@ function selectReconciliations(rows = []) {
       }
     }
   }
+
+  for (const row of rows) {
+    if (row.status !== 'pending' || selections.has(row.expense_id)) continue;
+    const type = eventType(row);
+    if (!isNonFinancialLifecycleEvent(type)) continue;
+    selections.set(row.expense_id, {
+      duplicate_expense_id: row.expense_id,
+      duplicate_log_id: row.log_id,
+      canonical_expense_id: null,
+      canonical_score: 0,
+      merchant: row.merchant,
+      amount: Number(row.amount),
+      duplicate_subject: row.subject,
+      canonical_subject: null,
+      reason: `nonfinancial_${type}`,
+      match_confidence: 'none',
+    });
+  }
   return [...selections.values()];
 }
 
@@ -193,7 +211,7 @@ async function applyReconciliations(selections) {
         `UPDATE email_import_log
          SET skip_reason = $2,
              related_expense_id = $3,
-             lifecycle_match_confidence = 'high',
+             lifecycle_match_confidence = $5,
              lifecycle_match_reason = $4
          WHERE id = $1`,
         [
@@ -201,6 +219,7 @@ async function applyReconciliations(selections) {
           MARKER,
           selection.canonical_expense_id,
           selection.reason,
+          selection.match_confidence || 'high',
         ]
       );
     }
