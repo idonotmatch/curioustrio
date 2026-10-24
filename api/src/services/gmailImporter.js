@@ -42,6 +42,10 @@ const {
 } = require('./emailTransactionLifecycle');
 const detectDuplicates = require('./duplicateDetector');
 const { buildEmailFieldEvidence } = require('./emailReviewHint');
+const {
+  assessEmailAdmission,
+  normalizeEmailMerchant,
+} = require('./emailAdmissionPolicy');
 
 function amountsApproximatelyEqual(left, right) {
   const expected = Math.abs(Number(right) || 0);
@@ -84,14 +88,10 @@ function buildEmailItemsForPersistence(items = [], deterministicItems = []) {
 }
 
 function guessMerchant(subject = '', fromAddress = '') {
-  const fromMatch = fromAddress.match(/@([a-z0-9-]+)\./i);
-  if (fromMatch?.[1]) {
-    return fromMatch[1]
-      .replace(/[-_]+/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase());
-  }
+  const senderMerchant = normalizeEmailMerchant(null, fromAddress);
+  if (senderMerchant !== 'Merchant needs review') return senderMerchant;
   const subjectMatch = subject.match(/^([^:-]{3,40})/);
-  return subjectMatch ? subjectMatch[1].trim() : 'Email import';
+  return normalizeEmailMerchant(subjectMatch?.[1] || null, fromAddress);
 }
 
 function findLikelyAmount(...parts) {
@@ -106,15 +106,13 @@ function findLikelyAmount(...parts) {
   }
 
   const patterns = [
-    /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund total)[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
-    /\btotal\b[^$\d]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/i,
+    /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund total)[^$\d]{0,20}(?:\$\s?(-?\d+(?:\.\d{1,2})?)|(-?\d+\.\d{2}))/i,
+    /\btotal\b[^$\d]{0,20}(?:\$\s?(-?\d+(?:\.\d{1,2})?)|(-?\d+\.\d{2}))/i,
   ];
   for (const pattern of patterns) {
     const match = body.match(pattern);
-    if (match) return Number(match[1]);
+    if (match) return Number(match[1] || match[2]);
   }
-  const allMoney = [...body.matchAll(/\$\s?(-?\d+(?:\.\d{2})?)/g)];
-  if (allMoney.length > 0) return Number(allMoney[allMoney.length - 1][1]);
   return null;
 }
 
@@ -225,11 +223,7 @@ function summarizeImportFailure(err) {
 }
 
 function shouldSoftenSkipBehavior(senderQuality = {}) {
-  const metrics = senderQuality?.metrics || {};
-  return (
-    Number(metrics.should_have_imported || 0) >= 1
-    || Number(metrics.should_have_imported_rate || 0) >= 0.2
-  );
+  return senderQuality?.template_quality?.force_import_review === true;
 }
 
 function shouldSkipTemplateBeforeClassification({
@@ -368,6 +362,7 @@ async function processMessageImport(user, msgId, {
       threadId,
       attachmentCount,
       attachmentTextCount,
+      labelIds,
     } = gmailSession
       ? await gmailSession.getMessage(msgId)
       : await getMessage(user.id, msgId);
@@ -375,6 +370,30 @@ async function processMessageImport(user, msgId, {
     msgFrom = from;
     msgSnippet = snippet;
     const messageDateContext = receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(receivedAt) ? receivedAt : todayDate;
+    const structuredItemSignal = summarizeStructuredItemBlock(body);
+    const preAdmission = assessEmailAdmission({
+      subject,
+      fromAddress: from,
+      body,
+      snippet,
+      labelIds,
+      attachmentTextCount,
+      structuredItemSignal,
+      forceReview,
+    });
+    if (!preAdmission.admit) {
+      const skipReason = `admission_${preAdmission.reason}`;
+      await EmailImportLog.upsertResult({
+        userId: user.id, messageId: msgId, status: 'skipped',
+        subject, fromAddress: from, skipReason, snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        attachmentCount,
+        attachmentTextCount,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+    }
     const qualityKey = `${extractSenderDomain(from)}:${extractSubjectPattern(subject, from)}`;
     let qualityPromise = qualityCache?.get(qualityKey);
     if (!qualityPromise) {
@@ -385,8 +404,7 @@ async function processMessageImport(user, msgId, {
     const softenSkipBehavior = forceReview || senderQuality?.sender_preference?.force_review || shouldSoftenSkipBehavior(senderQuality);
     const templateQuality = senderQuality?.template_quality || {};
     const classification = await classifyEmailExpense(body, subject, from, messageDateContext, snippet);
-    const signals = analyzeEmailSignals(subject, from, body);
-    const structuredItemSignal = summarizeStructuredItemBlock(body);
+    const signals = preAdmission.evidence.signals || analyzeEmailSignals(subject, from, body);
     let lifecycle = extractEmailTransactionLifecycle({
       subject,
       body,
@@ -432,21 +450,28 @@ async function processMessageImport(user, msgId, {
       return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
     }
 
-    if (classification.disposition === 'not_expense') {
-      if (signals.shouldSurfaceToReview || softenSkipBehavior || templateQuality.force_import_review) {
-        classification.disposition = 'uncertain';
-      } else {
-        const skipReason = classification.reason || 'classifier_not_expense';
-        await EmailImportLog.upsertResult({
-          userId: user.id, messageId: msgId, status: 'skipped',
-          subject, fromAddress: from, skipReason, snippet,
-          structuredItemBlockLevel: structuredItemSignal.level,
-          deterministicItemCount: structuredItemSignal.deterministic_item_count,
-          ...lifecycleLogContext,
-        });
-        increment(outcomes.skipped_reasons, skipReason);
-        return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
-      }
+    const classifiedAdmission = assessEmailAdmission({
+      subject,
+      fromAddress: from,
+      body,
+      snippet,
+      labelIds,
+      attachmentTextCount,
+      structuredItemSignal,
+      classification,
+      forceReview,
+    });
+    if (!classifiedAdmission.admit) {
+      const skipReason = `admission_${classifiedAdmission.reason}`;
+      await EmailImportLog.upsertResult({
+        userId: user.id, messageId: msgId, status: 'skipped',
+        subject, fromAddress: from, skipReason, snippet,
+        structuredItemBlockLevel: structuredItemSignal.level,
+        deterministicItemCount: structuredItemSignal.deterministic_item_count,
+        ...lifecycleLogContext,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
     }
 
     let parsed = await parseEmailExpense(body, subject, from, messageDateContext, snippet);
@@ -509,6 +534,10 @@ async function processMessageImport(user, msgId, {
     }
 
     parsed = normalizePeerPaymentExpense(parsed);
+    parsed.merchant = normalizeEmailMerchant(
+      parsed?.merchant || classification.merchant || guessMerchant(subject, from),
+      from
+    );
     parsed.date = clampExpenseDate(parsed.date, maxExpenseDate);
     if (!hasValidParsedAmount(parsed)) {
       const skipReason = classification.disposition === 'uncertain' ? 'classifier_uncertain' : 'missing_amount';

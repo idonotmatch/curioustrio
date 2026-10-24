@@ -99,6 +99,18 @@ describe('findLikelyAmount', () => {
       'Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84 $1.61 promotions applied'
     )).toBe(19.84);
   });
+
+  it('does not turn an unlabeled promotional price into an expense total', () => {
+    expect(findLikelyAmount(
+      'Exclusive deals: Save $300',
+      'XGIMI for $849',
+      'Shop products starting at $109. Offer ends soon.'
+    )).toBeNull();
+  });
+
+  it('does not treat a year following the word total as money', () => {
+    expect(findLikelyAmount('Daily update', '', 'The total for 2026 remains unknown.')).toBeNull();
+  });
 });
 
 describe('normalizeParsedAmountAgainstDeterministicTotal', () => {

@@ -465,19 +465,21 @@ function extractDeterministicTotalAmount(emailBody = '') {
 
   const candidates = [];
   const exactLabelPattern = /^(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total)$/i;
-  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total(?!\s+savings))\b[^$\d-]{0,20}\$?\s?(-?\d+(?:\.\d{2})?)/gi;
+  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total(?!\s+savings))\b([^\n]{0,32})/gi;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const inlineMatches = [...line.matchAll(inlineLabelPattern)];
     if (inlineMatches.length > 0) {
+      let foundInlineAmount = false;
       for (const match of inlineMatches) {
-        const amount = Number(match[2]);
+        const amount = parsePriceValue(match[2]);
         if (Number.isFinite(amount) && amount !== 0) {
           candidates.push(amount);
+          foundInlineAmount = true;
         }
       }
-      continue;
+      if (foundInlineAmount) continue;
     }
 
     if (/^total savings$/i.test(line)) continue;

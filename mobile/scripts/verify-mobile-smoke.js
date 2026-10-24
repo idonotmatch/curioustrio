@@ -78,6 +78,7 @@ const filesToCheck = [
   'services/provenancePresentation.js',
   'services/gmailAuthFlow.js',
   'services/importRecoveryPresentation.js',
+  'services/reviewQueuePresentation.js',
   'services/itemEditing.js',
   'services/internalTools.js',
   'services/internalToolsConfig.js',
@@ -110,6 +111,7 @@ const filesToCheck = [
   'scripts/test-onboarding-flow.js',
   'scripts/test-provenance-presentation.js',
   'scripts/test-import-recovery-presentation.js',
+  'scripts/test-review-queue-presentation.js',
   'scripts/test-password-recovery.js',
 ];
 

@@ -5,6 +5,7 @@ import { DuplicateAlert } from './DuplicateAlert';
 import { colors } from '../theme/tokens';
 import { reviewReasonSummary, sourcePresentation } from '../services/provenancePresentation';
 const { decodeHtmlEntities } = require('../services/text');
+const { reviewQueuePresentation } = require('../services/reviewQueuePresentation');
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -109,10 +110,6 @@ function reviewSubline(item = {}) {
   return parts.join('  ·  ');
 }
 
-function reviewSubject(item = {}) {
-  return decodeHtmlEntities(`${item?.gmail_review_hint?.message_subject || item?.email_subject || ''}`).trim();
-}
-
 export function reviewQueueGuidance(item = {}) {
   if (Array.isArray(item?.duplicate_flags) && item.duplicate_flags.length > 0) {
     return 'Possible duplicate. Compare before approving.';
@@ -188,7 +185,7 @@ export function ReviewQueueItem({
   const quickCheck = isQuickCheckPending(item);
   const hasDuplicateFlags = Array.isArray(item?.duplicate_flags) && item.duplicate_flags.length > 0;
   const isPreview = variant === 'preview';
-  const subject = reviewSubject(item);
+  const presentation = reviewQueuePresentation(item);
   const itemCount = extractedItemCount(item);
   const guidance = reviewQueueGuidance(item);
   const reasonSummary = reviewReasonSummary(item);
@@ -198,9 +195,7 @@ export function ReviewQueueItem({
     itemCount > 0 ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : null,
     formatDate(item?.date),
   ].filter(Boolean);
-  const rowTitle = subject
-    ? (item.merchant || item.description || subject || '—')
-    : reviewHeadline(item);
+  const rowTitle = presentation.title || reviewHeadline(item);
   const primaryAction = () => {
     if (disabled) return;
     if (quickCheck && ctaLabel === 'Confirm') onApprove(item.id);
@@ -274,9 +269,9 @@ export function ReviewQueueItem({
             </Text>
             {isPreview ? (
               <>
-                {subject ? (
+                {presentation.context ? (
                   <Text style={styles.previewMeta} numberOfLines={1}>
-                    {[subject, item?.gmail_review_hint?.from_address || item?.email_from_address].filter(Boolean).join('  ·  ')}
+                    {presentation.context}
                   </Text>
                 ) : null}
                 <Text style={styles.previewMeta} numberOfLines={1}>{reviewQueueLabel(item)}</Text>
@@ -284,6 +279,9 @@ export function ReviewQueueItem({
               </>
             ) : (
               <>
+                {presentation.context ? (
+                  <Text style={styles.emailSubject} numberOfLines={2}>{presentation.context}</Text>
+                ) : null}
                 <Text style={styles.reviewReason} numberOfLines={2}>{guidance || reasonSummary}</Text>
                 <Text style={styles.emailContext} numberOfLines={1}>
                   {metadataParts.join('  ·  ')}
@@ -330,7 +328,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingVertical: 14, paddingHorizontal: 4,
     borderBottomWidth: 1, borderBottomColor: colors.surface,
-    minHeight: 96,
+    minHeight: 108,
   },
   rowMain: { flex: 1, minWidth: 0, marginRight: 12 },
   selectionControl: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', marginRight: 12 },

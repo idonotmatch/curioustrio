@@ -77,7 +77,7 @@ it('recovers a legacy duplicate skip into review without teaching classifier fee
 
 it('keeps emails without an amount out of expenses', async () => {
   parseEmailExpense.mockResolvedValue(null);
-  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ skipped: 1, reason: 'classifier_uncertain' });
+  expect(await reviewSkippedImportLog(user, log)).toMatchObject({ skipped: 1, reason: 'missing_amount' });
   expect(Expense.create).not.toHaveBeenCalled();
 });
 

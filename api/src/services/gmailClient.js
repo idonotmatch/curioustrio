@@ -538,6 +538,7 @@ async function getMessage(userId, messageId, {
     from,
     snippet,
     body,
+    labelIds: Array.isArray(response.data.labelIds) ? response.data.labelIds : [],
     receivedAt,
     threadId: response.data.threadId || null,
     attachmentCount: attachmentParts.length,

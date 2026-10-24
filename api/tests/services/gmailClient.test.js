@@ -107,6 +107,7 @@ describe('gmailClient helpers', () => {
     mockGmailGet.mockResolvedValueOnce({
       data: {
         threadId: 'thread-1',
+        labelIds: ['CATEGORY_UPDATES', 'INBOX'],
         snippet: 'Invoice attached',
         payload: {
           headers: [
@@ -133,6 +134,7 @@ describe('gmailClient helpers', () => {
       attachmentCount: 1,
       attachmentTextCount: 1,
       body: expect.stringContaining('Order total: $18.25'),
+      labelIds: ['CATEGORY_UPDATES', 'INBOX'],
     }));
     expect(mockGmailAttachmentGet).toHaveBeenCalledWith(expect.objectContaining({
       messageId: 'message-1',
