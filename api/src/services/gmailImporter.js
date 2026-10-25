@@ -5,6 +5,7 @@ const EmailImportLog = require('../models/emailImportLog');
 const ExpenseItem = require('../models/expenseItem');
 const BackgroundJob = require('../models/backgroundJob');
 const ExpenseSourceObservation = require('../models/expenseSourceObservation');
+const { resolveExpenseIdentities } = require('./entityResolutionService');
 const PushToken = require('../models/pushToken');
 const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
@@ -34,7 +35,7 @@ const { requestProjectionRefresh } = require('./projectionRefreshService');
 const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
 const { pushNotificationsEnabled } = require('./pushPreferences');
 const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
-const { extractPeerPaymentRecipient } = require('./merchantIdentity');
+const { canonicalMerchantKey, extractPeerPaymentRecipient } = require('./merchantIdentity');
 const {
   extractEmailTransactionLifecycle,
   isNonFinancialLifecycleEvent,
@@ -642,6 +643,7 @@ async function processMessageImport(user, msgId, {
       const candidates = await EmailImportLog.findPurchaseCandidates(user.id, {
         messageId: msgId,
         merchant: parsed.merchant,
+        merchantKey: canonicalMerchantKey(parsed.merchant),
         amount: parsed.amount,
         date: parsed.date,
       });
@@ -794,10 +796,16 @@ async function processMessageImport(user, msgId, {
         expense,
         sourceType: 'email',
         externalRecordId: msgId,
-        externalTransactionId: lifecycle.externalTransactionId || lifecycle.externalOrderId || null,
+        externalTransactionId: lifecycle.externalTransactionId || null,
         fieldConfidence: structuredEvidence.field_confidence,
         fieldEvidence: structuredEvidence.field_evidence,
         extraFields: { item_count: itemsForPersistence.length },
+        queryable: persistenceClient,
+      });
+      await resolveExpenseIdentities({
+        expense,
+        userId: user.id,
+        householdId: user.household_id || null,
         queryable: persistenceClient,
       });
       await BackgroundJob.enqueue({

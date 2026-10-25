@@ -285,11 +285,17 @@ async function findPotentialDuplicates({ householdId, userId, merchant, amount, 
   if (!householdId && !userId) return [];
   const scopeColumn = householdId ? 'household_id' : 'user_id';
   const scopeId = householdId || userId;
-  const params = [scopeId, merchant, amount, date];
-  const merchantClause = allowMerchantMismatch
-    ? ''
-    : `AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') =
-           REGEXP_REPLACE(LOWER(COALESCE($2, '')), '[^a-z0-9]+', '', 'g')`;
+  const params = [scopeId];
+  let merchantClause = '';
+  if (!allowMerchantMismatch) {
+    params.push(merchant);
+    merchantClause = `AND REGEXP_REPLACE(LOWER(COALESCE(merchant, '')), '[^a-z0-9]+', '', 'g') =
+           REGEXP_REPLACE(LOWER(COALESCE($${params.length}, '')), '[^a-z0-9]+', '', 'g')`;
+  }
+  params.push(amount);
+  const amountParam = params.length;
+  params.push(date);
+  const dateParam = params.length;
   let privacyClause = '';
   if (householdId && userId) {
     params.push(userId);
@@ -304,8 +310,8 @@ async function findPotentialDuplicates({ householdId, userId, merchant, amount, 
     `SELECT * FROM expenses
      WHERE ${scopeColumn} = $1
        ${merchantClause}
-       AND ABS(amount - $3) <= 1.00
-       AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
+       AND ABS(amount - $${amountParam}) <= 1.00
+       AND date BETWEEN ($${dateParam}::date - INTERVAL '2 days') AND ($${dateParam}::date + INTERVAL '2 days')
        AND status IN ('pending', 'confirmed')
        ${privacyClause}
        ${excludeClause}`,
@@ -385,6 +391,40 @@ async function findByMapkitStableId({ householdId, userId, mapkitStableId, amoun
     params
   );
   return result.rows;
+}
+
+async function findByPlaceEntityId({ householdId, userId, placeEntityId, amount, date, excludeId }) {
+  if ((!householdId && !userId) || !placeEntityId) return [];
+  const scopeColumn = householdId ? 'household_id' : 'user_id';
+  const scopeId = householdId || userId;
+  const params = [scopeId, placeEntityId, amount, date];
+  let privacyClause = '';
+  if (householdId && userId) {
+    params.push(userId);
+    privacyClause = `AND (is_private = FALSE OR user_id = $${params.length})`;
+  }
+  let excludeClause = '';
+  if (excludeId) {
+    params.push(excludeId);
+    excludeClause = `AND id != $${params.length}`;
+  }
+  try {
+    const result = await db.query(
+      `SELECT * FROM expenses
+       WHERE ${scopeColumn} = $1
+         AND place_entity_id = $2
+         AND ABS(amount - $3) <= 1.00
+         AND date BETWEEN ($4::date - INTERVAL '2 days') AND ($4::date + INTERVAL '2 days')
+         AND status IN ('pending', 'confirmed')
+         ${privacyClause}
+         ${excludeClause}`,
+      params
+    );
+    return result.rows;
+  } catch (error) {
+    if (error?.code === '42703' && /place_entity_id/i.test(`${error?.message || ''}`)) return [];
+    throw error;
+  }
 }
 
 async function findById(id) {
@@ -730,6 +770,7 @@ module.exports = {
   findPotentialDuplicates,
   findTreatmentCandidates,
   findByMapkitStableId,
+  findByPlaceEntityId,
   findById,
   findByHousehold,
   update,

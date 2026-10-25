@@ -138,6 +138,20 @@ async function upsert(expenseId, details = {}, queryable = db) {
   }
 }
 
+async function findByExpenseId(expenseId, queryable = db) {
+  if (!expenseId) return null;
+  try {
+    const result = await queryable.query(
+      'SELECT * FROM expense_receipt_details WHERE expense_id = $1 LIMIT 1',
+      [expenseId]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (isMissingTableError(err)) return null;
+    throw err;
+  }
+}
+
 async function findPotentialDuplicates({ householdId, userId, transactionId, date, excludeId }) {
   if ((!householdId && !userId) || !transactionId) return [];
   try {
@@ -162,4 +176,4 @@ async function findPotentialDuplicates({ householdId, userId, transactionId, dat
   }
 }
 
-module.exports = { upsert, findPotentialDuplicates, normalizeDetails };
+module.exports = { upsert, findByExpenseId, findPotentialDuplicates, normalizeDetails };

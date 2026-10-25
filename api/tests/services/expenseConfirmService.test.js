@@ -25,6 +25,7 @@ jest.mock('../../src/services/productResolver');
 jest.mock('../../src/services/categoryAssigner');
 jest.mock('../../src/services/mapkitService');
 jest.mock('../../src/services/purchasePlanningService', () => ({ refreshPlansForPriceObservations: jest.fn() }));
+jest.mock('../../src/services/entityResolutionService', () => ({ resolveExpenseIdentities: jest.fn() }));
 
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');

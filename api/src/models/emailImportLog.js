@@ -655,6 +655,7 @@ async function findRelatedTransaction(userId, {
 async function findPurchaseCandidates(userId, {
   messageId = null,
   merchant,
+  merchantKey = null,
   amount,
   date,
   limit = 8,
@@ -678,6 +679,7 @@ async function findPurchaseCandidates(userId, {
             ) AS items
      FROM email_import_log l
      JOIN expenses e ON e.id = l.expense_id
+     LEFT JOIN merchant_entities merchant_identity ON merchant_identity.id = e.merchant_entity_id
      LEFT JOIN expense_items i ON i.expense_id = e.id
      WHERE l.user_id = $1
        AND ($2::text IS NULL OR l.message_id <> $2)
@@ -686,12 +688,18 @@ async function findPurchaseCandidates(userId, {
        AND e.amount > 0
        AND e.date BETWEEN ($5::date - INTERVAL '7 days') AND ($5::date + INTERVAL '7 days')
        AND ABS(e.amount - $4::numeric) <= GREATEST(1.00, ABS($4::numeric) * 0.03)
-       AND REGEXP_REPLACE(LOWER(COALESCE(e.merchant, '')), '[^a-z0-9]+', '', 'g') =
-           REGEXP_REPLACE(LOWER($3), '[^a-z0-9]+', '', 'g')
+       AND (
+         ($6::text IS NOT NULL AND merchant_identity.canonical_key = $6)
+         OR (
+           merchant_identity.id IS NULL
+           AND REGEXP_REPLACE(LOWER(COALESCE(e.merchant, '')), '[^a-z0-9]+', '', 'g') =
+               REGEXP_REPLACE(LOWER($3), '[^a-z0-9]+', '', 'g')
+         )
+       )
      GROUP BY l.id, e.id
      ORDER BY ABS(e.amount - $4::numeric), ABS(e.date - $5::date), l.imported_at DESC
-     LIMIT $6`,
-    [userId, messageId, merchant, Number(amount), date, safeLimit]
+     LIMIT $7`,
+    [userId, messageId, merchant, Number(amount), date, merchantKey || null, safeLimit]
   );
   return result.rows;
 }

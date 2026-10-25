@@ -55,6 +55,9 @@ const REQUIRED_COLUMNS = [
   ['scenario_memory', 'last_choice_followed_recommendation'],
   ['scenario_memory', 'last_choice_source'],
   ['expenses', 'purchase_plan_id'],
+  ['expenses', 'merchant_entity_id'],
+  ['expenses', 'payment_instrument_id'],
+  ['expenses', 'place_entity_id'],
   ['purchase_plans', 'selected_strategy'],
   ['purchase_plans', 'decision_criteria'],
   ['purchase_plans', 'revisit_on'],
@@ -71,6 +74,11 @@ const REQUIRED_TABLES = [
   'purchase_plan_allocations',
   'purchase_plan_snapshots',
   'product_offer_watches',
+  'merchant_entities',
+  'merchant_aliases',
+  'payment_instruments',
+  'place_entities',
+  'expense_match_evidence',
 ];
 
 const OPTIONAL_TABLES = [

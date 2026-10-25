@@ -40,6 +40,7 @@ const { resolveDuplicate, undoDuplicateMerge } = require('../services/duplicateR
 const { validateExpenseCoreFields } = require('../services/expenseValidation');
 const { transitionPendingExpense } = require('../services/expenseReviewTransitionService');
 const { recordItemMatchDecision } = require('../services/itemMatchReviewService');
+const { resolveExpenseIdentities } = require('../services/entityResolutionService');
 
 router.use(authenticate);
 
@@ -895,6 +896,12 @@ router.patch('/:id', async (req, res, next) => {
       if (resolvedItems !== null) {
         await ExpenseItem.replaceItems(req.params.id, resolvedItems, client);
       }
+      await resolveExpenseIdentities({
+        expense,
+        userId: user.id,
+        householdId: user.household_id || null,
+        queryable: client,
+      });
       const confirmedFields = userChangedFields.map((field) => {
         if (field === 'category_id') return 'category';
         if (field.startsWith('items')) return 'items';

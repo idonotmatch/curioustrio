@@ -120,4 +120,60 @@ async function restore({ observationIds = [], fromExpenseId, toExpenseId, userId
   }
 }
 
-module.exports = { isMissingTableError, record, restore, transfer };
+async function findTransactionIdsForExpense(expenseId, queryable = db) {
+  if (!expenseId) return [];
+  try {
+    const result = await queryable.query(
+      `SELECT DISTINCT external_transaction_id
+       FROM expense_source_observations
+       WHERE expense_id = $1
+         AND NULLIF(BTRIM(external_transaction_id), '') IS NOT NULL`,
+      [expenseId]
+    );
+    return result.rows.map((row) => row.external_transaction_id).filter(Boolean);
+  } catch (err) {
+    if (isMissingTableError(err)) return [];
+    throw err;
+  }
+}
+
+async function findPotentialTransactionDuplicates({
+  householdId,
+  userId,
+  transactionIds = [],
+  date,
+  excludeId,
+  queryable = db,
+}) {
+  const ids = [...new Set(transactionIds.map((value) => `${value || ''}`.trim().toLowerCase()).filter(Boolean))];
+  if ((!householdId && !userId) || !ids.length || !date) return [];
+  try {
+    const result = await queryable.query(
+      `SELECT DISTINCT e.*
+       FROM expense_source_observations observation
+       JOIN expenses e ON e.id = observation.expense_id
+       WHERE LOWER(BTRIM(observation.external_transaction_id)) = ANY($1::text[])
+         AND e.id <> $2
+         AND e.status IN ('confirmed', 'pending')
+         AND e.date BETWEEN $3::date - INTERVAL '14 days' AND $3::date + INTERVAL '14 days'
+         AND (($4::uuid IS NOT NULL AND e.household_id = $4)
+           OR ($4::uuid IS NULL AND e.user_id = $5))
+       ORDER BY e.date DESC
+       LIMIT 20`,
+      [ids, excludeId, date, householdId, userId]
+    );
+    return result.rows;
+  } catch (err) {
+    if (isMissingTableError(err)) return [];
+    throw err;
+  }
+}
+
+module.exports = {
+  findPotentialTransactionDuplicates,
+  findTransactionIdsForExpense,
+  isMissingTableError,
+  record,
+  restore,
+  transfer,
+};

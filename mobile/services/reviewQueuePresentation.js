@@ -75,8 +75,15 @@ function reviewQueuePresentation(item = {}) {
   return { title, context, subject, brand };
 }
 
+function pendingActionCount({ loadedCount = 0, serverCount = 0, optimisticDelta = 0 } = {}) {
+  const loaded = Math.max(0, Number(loadedCount) || 0);
+  const exact = Math.max(0, (Number(serverCount) || 0) + (Number(optimisticDelta) || 0));
+  return Math.max(loaded, exact);
+}
+
 module.exports = {
   isGenericReviewTitle: isGeneric,
+  pendingActionCount,
   reviewQueuePresentation,
   senderBrand,
 };

@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   isGenericReviewTitle,
+  pendingActionCount,
   reviewQueuePresentation,
   senderBrand,
 } = require('../services/reviewQueuePresentation');
@@ -39,5 +40,10 @@ assert.deepStrictEqual(
     brand: 'Whole Foods Market',
   }
 );
+
+assert.strictEqual(pendingActionCount({ loadedCount: 25, serverCount: 83 }), 83);
+assert.strictEqual(pendingActionCount({ loadedCount: 25, serverCount: 83, optimisticDelta: -2 }), 81);
+assert.strictEqual(pendingActionCount({ loadedCount: 25, serverCount: 0 }), 25);
+assert.strictEqual(pendingActionCount({ loadedCount: 0, serverCount: 1, optimisticDelta: -1 }), 0);
 
 console.log('[review-queue-presentation] tests passed');

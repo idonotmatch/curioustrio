@@ -1,7 +1,10 @@
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
+const ExpenseReceiptDetail = require('../../src/models/expenseReceiptDetail');
+const ExpenseSourceObservation = require('../../src/models/expenseSourceObservation');
 const detectDuplicates = require('../../src/services/duplicateDetector');
+const { resolveExpenseIdentities } = require('../../src/services/entityResolutionService');
 
 let householdId;
 let householdId2;
@@ -284,5 +287,87 @@ describe('detectDuplicates', () => {
     expect(flag).toBeDefined();
     expect(flag.status).toBe('pending');
     expect(flag.confidence).toBe('exact');
+  });
+
+  it('loads a persisted receipt transaction ID without requiring the caller to pass it', async () => {
+    const existing = await Expense.create({
+      userId,
+      householdId,
+      merchant: 'Receipt Identity Market',
+      amount: '18.25',
+      date: '2026-03-15',
+      source: 'camera',
+      status: 'confirmed',
+    });
+    await ExpenseReceiptDetail.upsert(existing.id, { transaction_id: 'TXN-PERSISTED-123' });
+
+    const incoming = await Expense.create({
+      userId,
+      householdId,
+      merchant: 'Receipt Identity Market',
+      amount: '18.75',
+      date: '2026-03-16',
+      source: 'manual',
+      status: 'pending',
+    });
+    await ExpenseSourceObservation.record({
+      userId,
+      expense: incoming,
+      sourceType: 'manual',
+      externalTransactionId: 'TXN-PERSISTED-123',
+    });
+
+    const flags = await detectDuplicates(incoming);
+    const flag = flags.find((candidate) => (
+      [candidate.expense_id_a, candidate.expense_id_b].includes(existing.id)
+      && [candidate.expense_id_a, candidate.expense_id_b].includes(incoming.id)
+    ));
+    expect(flag).toBeDefined();
+    expect(flag.confidence).toBe('exact');
+    expect(flag.match_reasons).toContain('Same receipt transaction ID');
+  });
+
+  it('attaches stable merchant, payment, place, and transaction evidence', async () => {
+    const expense = await Expense.create({
+      userId,
+      householdId,
+      merchant: 'Identity Market LLC',
+      amount: '24.00',
+      date: '2026-03-20',
+      source: 'camera',
+      status: 'confirmed',
+      paymentMethod: 'credit',
+      cardLast4: '4242',
+      cardLabel: 'Daily card',
+      locationProviderId: 'mapkit-place-identity-market',
+      locationSource: 'mapkit',
+      placeName: 'Identity Market',
+      address: '10 Main Street',
+    });
+    await ExpenseReceiptDetail.upsert(expense.id, { transaction_id: 'TXN-IDENTITY-EVIDENCE' });
+    const resolutions = await resolveExpenseIdentities({
+      expense,
+      userId,
+      householdId,
+    });
+
+    expect(resolutions.merchant?.id).toBeTruthy();
+    expect(resolutions.payment?.id).toBeTruthy();
+    expect(resolutions.place?.id).toBeTruthy();
+    expect(resolutions.transaction?.evidence?.identifiers).toContain('TXN-IDENTITY-EVIDENCE');
+
+    const persisted = await Expense.findById(expense.id);
+    expect(persisted.merchant_entity_id).toBe(resolutions.merchant.id);
+    expect(persisted.payment_instrument_id).toBe(resolutions.payment.id);
+    expect(persisted.place_entity_id).toBe(resolutions.place.id);
+
+    const evidence = await db.query(
+      `SELECT domain FROM expense_match_evidence
+       WHERE expense_id = $1 ORDER BY domain`,
+      [expense.id]
+    );
+    expect(evidence.rows.map((row) => row.domain)).toEqual([
+      'merchant', 'payment', 'place', 'transaction',
+    ]);
   });
 });

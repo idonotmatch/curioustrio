@@ -1,4 +1,9 @@
 const crypto = require('crypto');
+const {
+  basketSimilarity,
+  canonicalMerchantKey,
+  daysBetween,
+} = require('./matchPrimitives');
 
 const FINANCIAL_EVENT_TYPES = new Set(['purchase_confirmation', 'charge', 'refund']);
 const NON_FINANCIAL_EVENT_TYPES = new Set(['shipping_update', 'cancellation', 'return_update']);
@@ -123,37 +128,6 @@ function extractEmailTransactionLifecycle({
 
 function isNonFinancialLifecycleEvent(eventType) {
   return NON_FINANCIAL_EVENT_TYPES.has(eventType);
-}
-
-function canonicalMerchantKey(value = '') {
-  return `${value || ''}`.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
-}
-
-function itemKey(item = {}) {
-  return `${item.comparable_key || item.normalized_name || item.description || item.raw_description || ''}`
-    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
-function basketSimilarity(left = [], right = []) {
-  const leftKeys = new Set(left.map(itemKey).filter(Boolean));
-  const rightKeys = new Set(right.map(itemKey).filter(Boolean));
-  if (!leftKeys.size || !rightKeys.size) return 0;
-  let overlap = 0;
-  leftKeys.forEach((key) => { if (rightKeys.has(key)) overlap += 1; });
-  return overlap / Math.max(leftKeys.size, rightKeys.size);
-}
-
-function daysBetween(left, right) {
-  const parseDate = (value) => {
-    const raw = value instanceof Date ? value.toISOString() : `${value || ''}`;
-    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (dateOnly) return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T12:00:00Z`);
-    return new Date(raw);
-  };
-  const leftDate = parseDate(left);
-  const rightDate = parseDate(right);
-  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) return Infinity;
-  return Math.abs(leftDate.getTime() - rightDate.getTime()) / 86400000;
 }
 
 function scoreLifecycleCandidate(current = {}, candidate = {}) {

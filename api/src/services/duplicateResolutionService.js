@@ -2,6 +2,7 @@ const db = require('../db');
 const Expense = require('../models/expense');
 const EmailImportLog = require('../models/emailImportLog');
 const ExpenseSourceObservation = require('../models/expenseSourceObservation');
+const { resolveExpenseIdentities } = require('./entityResolutionService');
 const {
   handleApprovedExpenseReview,
   handleDismissedExpenseReview,
@@ -240,6 +241,18 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
         userId: user.id,
         queryable: client,
       });
+      await resolveExpenseIdentities({
+        expense: counterpart,
+        userId: user.id,
+        householdId: user.household_id || null,
+        queryable: client,
+      });
+      await resolveExpenseIdentities({
+        expense: current,
+        userId: user.id,
+        householdId: user.household_id || null,
+        queryable: client,
+      });
       mergeSummary = { survivor: counterpart, field_sources: fieldSources, imported_items_count: transferredItems };
     } else if (action === 'keep_existing') {
       const updated = await client.query(
@@ -453,7 +466,7 @@ async function undoDuplicateMerge({ user, mergeEventId }) {
       ]
     );
 
-    await restoreExpense(event.surviving_expense_id, survivorBefore);
+    const restoredSurvivor = await restoreExpense(event.surviving_expense_id, survivorBefore);
     const restored = await restoreExpense(event.merged_expense_id, mergedBefore);
     if (!restored.rows[0]) throw httpError(409, 'Could not restore the imported expense');
     restoredExpenseId = event.merged_expense_id;
@@ -478,6 +491,18 @@ async function undoDuplicateMerge({ user, mergeEventId }) {
       fromExpenseId: event.surviving_expense_id,
       toExpenseId: event.merged_expense_id,
       userId: user.id,
+      queryable: client,
+    });
+    await resolveExpenseIdentities({
+      expense: restoredSurvivor.rows[0],
+      userId: user.id,
+      householdId: user.household_id || null,
+      queryable: client,
+    });
+    await resolveExpenseIdentities({
+      expense: restored.rows[0],
+      userId: user.id,
+      householdId: user.household_id || null,
       queryable: client,
     });
     await client.query(

@@ -8,6 +8,7 @@ const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const ReceiptLineCorrection = require('../models/receiptLineCorrection');
 const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
 const ExpenseSourceObservation = require('../models/expenseSourceObservation');
+const { resolveExpenseIdentities } = require('./entityResolutionService');
 const DuplicateFlag = require('../models/duplicateFlag');
 const ProductPriceObservation = require('../models/productPriceObservation');
 const BackgroundJob = require('../models/backgroundJob');
@@ -400,12 +401,10 @@ async function detectDuplicateFlags(expense) {
       ? expense.date.toISOString().split('T')[0]
       : expense.date;
     return await detectDuplicates({
-      id: expense.id,
-      householdId: expense.household_id,
-      merchant: expense.merchant,
-      amount: expense.amount,
+      ...expense,
+      householdId: expense.householdId || expense.household_id,
+      userId: expense.userId || expense.user_id,
       date: expenseDate,
-      mapkit_stable_id: expense.mapkit_stable_id,
     });
   } catch (dupErr) {
     console.error('Dedup error (non-fatal):', dupErr);
@@ -526,6 +525,14 @@ async function applyDeferredExpenseEnrichment({ user, expense, originalPayload, 
     if (updatedLocationExpense) {
       nextExpense = updatedLocationExpense;
     }
+  }
+
+  if (nextExpense !== expense) {
+    await resolveExpenseIdentities({
+      expense: nextExpense,
+      userId: user.id,
+      householdId: user.household_id || null,
+    });
   }
 
   return nextExpense;
@@ -846,6 +853,12 @@ async function createConfirmedExpense({
           transaction_id: receiptDetails?.transaction_id || payload.external_transaction_id || null,
           item_count: createdItems.length,
         },
+        queryable: client,
+      });
+      await resolveExpenseIdentities({
+        expense,
+        userId: user.id,
+        householdId: user.household_id || null,
         queryable: client,
       });
       if (deferPostConfirmSideEffects) {

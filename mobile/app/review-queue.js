@@ -7,12 +7,14 @@ import { ActionNotice } from '../components/ActionNotice';
 import { DismissReasonSheet } from '../components/DismissReasonSheet';
 import { SkippedImportsList } from '../components/SkippedImportsList';
 import { usePendingExpenses, removePendingExpense, restorePendingExpense } from '../hooks/usePendingExpenses';
+import { usePendingExpenseCount } from '../hooks/usePendingExpenseCount';
 import { ReviewQueueItem, reviewQueueGroup } from '../components/ReviewQueueItem';
 import { api } from '../services/api';
 import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { colors } from '../theme/tokens';
 import { EmptyState, InlineError } from '../components/ui/States';
+const { pendingActionCount } = require('../services/reviewQueuePresentation');
 
 function summarizeReviewModes(expenses = []) {
   const counts = { quickCheck: 0, itemsFirst: 0, review: 0 };
@@ -57,7 +59,9 @@ function LoadingRows() {
 export default function ReviewQueueScreen() {
   const router = useRouter();
   const { expenses, loading, loadingMore, hasMore, error, refresh, loadMore, isUsingMockData, resolveMockExpense } = usePendingExpenses();
+  const { count: serverPendingCount, refresh: refreshPendingCount } = usePendingExpenseCount();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
+  const [pendingCountDelta, setPendingCountDelta] = useState(0);
   const [reviewTab, setReviewTab] = useState('pending');
   const [notice, setNotice] = useState('');
   const [dismissingId, setDismissingId] = useState(null);
@@ -66,9 +70,16 @@ export default function ReviewQueueScreen() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchActioning, setBatchActioning] = useState('');
   const actioningIdsRef = useRef(new Set());
+  const serverPendingCountRef = useRef(serverPendingCount);
   const reviewModeCounts = useMemo(() => summarizeReviewModes(displayExpenses), [displayExpenses]);
   const queueRows = useMemo(() => buildQueueRows(displayExpenses), [displayExpenses]);
-  const totalActions = displayExpenses.length;
+  const totalActions = isUsingMockData
+    ? displayExpenses.length
+    : pendingActionCount({
+      loadedCount: displayExpenses.length,
+      serverCount: serverPendingCount,
+      optimisticDelta: pendingCountDelta,
+    });
   const hasSecondarySummary = reviewModeCounts.quickCheck > 0 || reviewModeCounts.itemsFirst > 0;
   const selectedExpenses = useMemo(
     () => displayExpenses.filter((expense) => selectedIds.has(expense.id)),
@@ -95,6 +106,11 @@ export default function ReviewQueueScreen() {
 
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
   useEffect(() => {
+    if (serverPendingCountRef.current === serverPendingCount) return;
+    serverPendingCountRef.current = serverPendingCount;
+    setPendingCountDelta(0);
+  }, [serverPendingCount]);
+  useEffect(() => {
     setSelectedIds((current) => new Set([...current].filter((id) => displayExpenses.some((expense) => expense.id === id))));
   }, [displayExpenses]);
   useEffect(() => {
@@ -104,12 +120,14 @@ export default function ReviewQueueScreen() {
   }, [notice]);
 
   const remove = (id) => {
+    if (!isUsingMockData) setPendingCountDelta((current) => current - 1);
     setDisplayExpenses((prev) => prev.filter((expense) => expense.id !== id));
     removePendingExpense(id);
   };
 
   const restore = (expense) => {
     if (!expense?.id) return;
+    if (!isUsingMockData) setPendingCountDelta((current) => current + 1);
     setDisplayExpenses((prev) => (
       prev.some((item) => item.id === expense.id) ? prev : [expense, ...prev]
     ));
@@ -264,7 +282,11 @@ export default function ReviewQueueScreen() {
         </View>
         {reviewTab === 'skipped' ? (
           <SkippedImportsList isUsingMockData={isUsingMockData} onRecovered={() => {
-            Promise.all([refresh(), invalidateExpenseMutationCaches()]).catch(() => {});
+            Promise.all([
+              refresh({ forceRefresh: true }),
+              refreshPendingCount({ forceRefresh: true }),
+              invalidateExpenseMutationCaches(),
+            ]).catch(() => {});
           }} />
         ) : <FlatList
           data={queueRows}
@@ -288,7 +310,14 @@ export default function ReviewQueueScreen() {
               />
             )
           )}
-          refreshControl={<RefreshControl refreshing={loading && displayExpenses.length > 0} onRefresh={() => refresh({ forceRefresh: true })} tintColor={colors.text} />}
+          refreshControl={<RefreshControl
+            refreshing={loading && displayExpenses.length > 0}
+            onRefresh={() => Promise.all([
+              refresh({ forceRefresh: true }),
+              refreshPendingCount({ forceRefresh: true }),
+            ])}
+            tintColor={colors.text}
+          />}
           contentContainerStyle={[styles.list, selectionMode && styles.listSelecting]}
           onEndReached={() => { if (hasMore && !loadingMore) loadMore(); }}
           onEndReachedThreshold={0.35}
@@ -311,7 +340,10 @@ export default function ReviewQueueScreen() {
                   title="Showing saved review items"
                   body="The latest queue could not be refreshed. You can keep reviewing these items or try again."
                   actionLabel="Refresh"
-                  onAction={() => refresh({ forceRefresh: true })}
+                  onAction={() => Promise.all([
+                    refresh({ forceRefresh: true }),
+                    refreshPendingCount({ forceRefresh: true }),
+                  ])}
                   style={styles.staleError}
                 />
               ) : null}
@@ -358,7 +390,10 @@ export default function ReviewQueueScreen() {
                     title="Could not load review queue"
                     body={error}
                     actionLabel="Try again"
-                    onAction={() => refresh({ forceRefresh: true })}
+                    onAction={() => Promise.all([
+                      refresh({ forceRefresh: true }),
+                      refreshPendingCount({ forceRefresh: true }),
+                    ])}
                   />
                 )
                 : (

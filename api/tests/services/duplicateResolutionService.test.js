@@ -10,6 +10,7 @@ jest.mock('../../src/services/expenseEmailReviewService', () => ({
   handleDismissedExpenseReview: jest.fn(async (expense) => expense),
   normalizeApprovedEmailNotes: jest.fn((notes) => notes),
 }));
+jest.mock('../../src/services/entityResolutionService', () => ({ resolveExpenseIdentities: jest.fn() }));
 
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');

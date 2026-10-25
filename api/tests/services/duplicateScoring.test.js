@@ -1,21 +1,39 @@
 jest.mock('../../src/models/expense', () => ({
+  findById: jest.fn(),
   findPotentialDuplicates: jest.fn(),
   findByMapkitStableId: jest.fn(),
+  findByPlaceEntityId: jest.fn(),
 }));
 jest.mock('../../src/models/duplicateFlag', () => ({ create: jest.fn() }));
 jest.mock('../../src/models/expenseItem', () => ({ findByExpenseId: jest.fn() }));
+jest.mock('../../src/models/expenseReceiptDetail', () => ({
+  findByExpenseId: jest.fn(),
+  findPotentialDuplicates: jest.fn(),
+}));
+jest.mock('../../src/models/expenseSourceObservation', () => ({
+  findTransactionIdsForExpense: jest.fn(),
+  findPotentialTransactionDuplicates: jest.fn(),
+}));
 
 const Expense = require('../../src/models/expense');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
 const ExpenseItem = require('../../src/models/expenseItem');
+const ExpenseReceiptDetail = require('../../src/models/expenseReceiptDetail');
+const ExpenseSourceObservation = require('../../src/models/expenseSourceObservation');
 const detectDuplicates = require('../../src/services/duplicateDetector');
 const { scoreCandidate } = require('../../src/services/duplicateDetector');
 
 beforeEach(() => {
   jest.resetAllMocks();
   Expense.findPotentialDuplicates.mockResolvedValue([]);
+  Expense.findById.mockResolvedValue(null);
   Expense.findByMapkitStableId.mockResolvedValue([]);
+  Expense.findByPlaceEntityId.mockResolvedValue([]);
   ExpenseItem.findByExpenseId.mockResolvedValue([]);
+  ExpenseReceiptDetail.findByExpenseId.mockResolvedValue(null);
+  ExpenseReceiptDetail.findPotentialDuplicates.mockResolvedValue([]);
+  ExpenseSourceObservation.findTransactionIdsForExpense.mockResolvedValue([]);
+  ExpenseSourceObservation.findPotentialTransactionDuplicates.mockResolvedValue([]);
 });
 
 it('scores exact matches with readable evidence', () => {
@@ -38,6 +56,29 @@ it('treats a matching receipt transaction ID as exact evidence', () => {
     score: 170,
     confidence: 'exact',
     reasons: ['Same merchant', 'Amount within $1', 'Dates one day apart', 'Same receipt transaction ID'],
+  });
+});
+
+it('uses stable merchant and payment identities when display text changes', () => {
+  expect(scoreCandidate(
+    {
+      merchant: 'Neighborhood Market',
+      merchant_entity_id: 'merchant-1',
+      payment_instrument_id: 'payment-1',
+      amount: 20,
+      date: '2026-09-01',
+    },
+    {
+      merchant: 'Market Receipt Header',
+      merchant_entity_id: 'merchant-1',
+      payment_instrument_id: 'payment-1',
+      amount: 20,
+      date: '2026-09-01',
+    }
+  )).toEqual({
+    score: 115,
+    confidence: 'exact',
+    reasons: ['Same merchant', 'Same amount', 'Same date', 'Same payment method'],
   });
 });
 
