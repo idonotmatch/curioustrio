@@ -39,4 +39,29 @@ FROM classified
 WHERE ei.id = classified.id
   AND classified.next_item_type IS NOT NULL;
 
+-- Earlier migrations assigned item types before comparable identities existed.
+-- Clear any stale identity that was later attached to a non-product row.
+UPDATE expense_items
+SET normalized_name = NULL,
+    normalized_brand = NULL,
+    normalized_size_value = NULL,
+    normalized_size_unit = NULL,
+    normalized_pack_size = NULL,
+    normalized_quantity = NULL,
+    normalized_total_size_value = NULL,
+    normalized_total_size_unit = NULL,
+    estimated_unit_price = NULL,
+    comparable_key = NULL,
+    product_id = NULL,
+    product_match_confidence = NULL,
+    product_match_reason = NULL
+WHERE item_type <> 'product'
+  AND (
+    normalized_name IS NOT NULL
+    OR comparable_key IS NOT NULL
+    OR product_id IS NOT NULL
+    OR product_match_confidence IS NOT NULL
+    OR product_match_reason IS NOT NULL
+  );
+
 COMMIT;
