@@ -85,6 +85,7 @@ const MIGRATION_PLAN = [
   '089_email_transaction_lifecycle.sql',
   '090_import_reconciliation.sql',
   '091_email_purchase_lifecycle_ledger.sql',
+  '092_item_intelligence_quality_gate.sql',
 ];
 
 module.exports = {

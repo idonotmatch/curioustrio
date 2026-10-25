@@ -42,6 +42,21 @@ const ITEM_BOILERPLATE_MARKERS = [
   /\bfollow us\b/i,
   /\bthanks? for (?:shopping|your purchase)\b/i,
   /\bpopular in your interests\b/i,
+  /\bsponsored items? to complement your purchase\b/i,
+  /\bor best offer\b/i,
+  /\bbuy it now\b/i,
+  /\bthank you for ordering\b/i,
+  /\bdisplay images to show\b/i,
+  /\bview all items\b/i,
+];
+
+const NON_PRODUCT_IDENTITY_PATTERNS = [
+  /^(?:order|purchase|payment|transaction) (?:confirmation|confirmed|summary|details?)\b/i,
+  /^(?:you paid|payment (?:sent|received)|amount (?:paid|charged))\b/i,
+  /\b\d{1,2}:\d{2}\s*(?:am|pm)\b.*\bpoints? earned\b/i,
+  /^#?[a-z0-9-]*\s*[a-z]{3,9}\s+\d{1,2}\s+\d{4}\s+at\s+\d{1,2}:\d{2}\s*(?:am|pm)?$/i,
+  /^(?:sponsored|recommended|popular) (?:items?|products?)\b/i,
+  /\bthank you for ordering\b/i,
 ];
 
 const REDACTED_IDENTITY_PATTERN = /(?:\[|#\[)?\s*redacted(?:[-_\s]+)(?:address|email|link|number)\s*\]?/i;
@@ -67,8 +82,13 @@ function expandItemAbbreviations(value = '') {
 }
 
 function cleanItemDescription(value = '') {
-  let text = `${value || ''}`.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  let text = `${value || ''}`
+    .replace(/&(?:#(?:32|160)|#x(?:20|a0)|nbsp);?/gi, ' ')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!text) return '';
+  if (/\bthank you for ordering\b/i.test(text)) return '';
   let cutAt = text.length;
   for (const marker of ITEM_BOILERPLATE_MARKERS) {
     const match = marker.exec(text);
@@ -115,6 +135,7 @@ function hasRedactedIdentityMarker(value = '') {
 }
 
 function isInsightEligibleItemIdentity(item = {}) {
+  if (`${item.extraction_confidence || ''}`.toLowerCase() === 'low') return false;
   const values = [
     item.description,
     item.raw_description,
@@ -129,9 +150,12 @@ function isInsightEligibleItemIdentity(item = {}) {
     return !/[a-z]{2,}/i.test(withoutEntities);
   })) return false;
 
-  const description = cleanItemDescription(item.description || item.item_name || item.normalized_name || '');
+  const rawDescription = `${item.description || item.item_name || item.normalized_name || ''}`;
+  if (NON_PRODUCT_IDENTITY_PATTERNS.some((pattern) => pattern.test(rawDescription))) return false;
+  const description = cleanItemDescription(rawDescription);
   const normalized = normalizeText(description);
   if (!normalized || normalized === 'unknown item') return false;
+  if (NON_PRODUCT_IDENTITY_PATTERNS.some((pattern) => pattern.test(description))) return false;
   if (classifyExpenseItemType(description) !== 'product') return false;
   return normalized.split(' ').some((token) => token.length >= 2 && token !== 'redacted');
 }

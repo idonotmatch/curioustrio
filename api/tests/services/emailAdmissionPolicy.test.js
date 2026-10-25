@@ -1,5 +1,6 @@
 const {
   assessEmailAdmission,
+  assessStoredImport,
   normalizeEmailMerchant,
   senderDisplayName,
   shouldQuarantineStoredImport,
@@ -24,6 +25,20 @@ describe('emailAdmissionPolicy', () => {
       body: 'Order total: $33.16',
       classification: { disposition: 'expense' },
     })).toMatchObject({ admit: true, reason: 'transaction_evidence' });
+  });
+
+  it('recognizes merchant names embedded in received-order subjects', () => {
+    expect(assessEmailAdmission({
+      subject: "We've Received Your Hanna Order!",
+      fromAddress: 'Hanna Andersson <info@e.o.hannaandersson.com>',
+      body: 'Thank you for your purchase. Order total: $210.20',
+      classification: { disposition: 'expense' },
+    })).toMatchObject({ admit: true });
+    expect(assessStoredImport({
+      subject: "We've Received Your Hanna Order!",
+      from_address: 'Hanna Andersson <info@e.o.hannaandersson.com>',
+      snippet: 'Thank you for your purchase',
+    })).toEqual({ quarantine: false, reason: null });
   });
 
   it('admits an invoice attachment with a labeled total', () => {
@@ -97,5 +112,34 @@ describe('emailAdmissionPolicy', () => {
       fromAddress: 'hello@example.com',
       snippet: 'Manage email preferences',
     })).toBe(false);
+  });
+
+  it.each([
+    ['publisher newsletter', 'Trump to Cut Some Tariffs on Canada', 'WSJ What\'s News <access@interactive.wsj.com>', 'Plus, the latest political news. View in browser'],
+    ['retail newsletter sender', "It's been a while", 'Allivet <allivet@newsletter.allivet.com>', 'Save big on your next order. View in browser'],
+    ['daily digest', 'Daily Digest: Grocery and Personal Care Party', 'Woot <store-news@woot.com>', 'Featured Deals: laptops and more'],
+    ['reward promotion', 'Activate Rewards on items like shoes', 'Capital One Shopping <hello@capitaloneshopping.com>', 'Spend $350, Get $100 in Rewards'],
+    ['property listing', 'New For Sale: 709 N Main St', 'Zillow <my-saved-home@mail.zillow.com>', 'More details inside'],
+    ['editorial digest', 'Dynamic Duo', 'Morning Brew <crew@morningbrew.com>', 'View Online | Sign Up | Shop Newsletter Logo Presented by'],
+    ['offer sender', 'The gold standard of suiting', 'Brooks Brothers <brooksbrothers@offers.brooksbrothers.com>', '2 suits starting at $1799'],
+    ['future payment reminder', 'Your Payment Reminder', 'Card <billing@example.com>', 'Payment due next week'],
+  ])('quarantines stored %s noise', (_label, subject, fromAddress, snippet) => {
+    expect(assessStoredImport({ subject, fromAddress, snippet })).toMatchObject({ quarantine: true });
+  });
+
+  it('does not quarantine a payment receipt from an alerts sender', () => {
+    expect(assessStoredImport({
+      subject: 'Thank you for your payment',
+      fromAddress: 'Duke Energy Alerts <payments@duke-energyalert.com>',
+      snippet: 'Your payment was received. Amount paid: $196.79',
+    })).toEqual({ quarantine: false, reason: null });
+  });
+
+  it('accepts stored database column names when replaying the policy', () => {
+    expect(assessStoredImport({
+      subject: 'The Post Most: today in politics',
+      from_address: 'The Washington Post <info@nl.mail.washingtonpost.com>',
+      snippet: 'Plus: today\'s stories',
+    })).toMatchObject({ quarantine: true, reason: 'publisher_content' });
   });
 });

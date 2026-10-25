@@ -169,6 +169,7 @@ describe('itemNormalizer', () => {
   it('does not create an insight identity from HTML entity noise', () => {
     expect(isInsightEligibleItemIdentity({ description: '&#32; &#160' })).toBe(false);
     expect(isInsightEligibleItemIdentity({ description: 'Bread &#160;' })).toBe(true);
+    expect(normalizeItemMetadata({ description: 'Bread &#160;' }).comparable_key).toBe('bread');
   });
 
   it('does not create an insight identity from redacted transaction metadata', () => {
@@ -188,6 +189,22 @@ describe('itemNormalizer', () => {
     expect(isInsightEligibleItemIdentity({ description: 'Back of House Support Charge (6%)' })).toBe(false);
     expect(normalized.normalized_name).toBeNull();
     expect(normalized.comparable_key).toBeNull();
+    expect(normalizeItemMetadata({ description: 'North Carolina Transportation Commerce Tax' }).comparable_key).toBeNull();
+    expect(normalizeItemMetadata({ description: 'Booking Fee' }).comparable_key).toBeNull();
+    expect(normalizeItemMetadata({ description: 'Standard Delivery' }).comparable_key).toBeNull();
+  });
+
+  it('keeps email calls to action and metadata out of item intelligence', () => {
+    for (const description of [
+      'Sponsored items to complement your purchase &#160;',
+      'Or Best Offer &#32;',
+      'Buy it now &#32;',
+      'Aug 8 2026 at 8:06 AM +3 Points earned',
+      'The Pepperoni Grill Thank you for ordering!',
+      'You paid Carter @ Ardmore Barbershop $35.00',
+    ]) {
+      expect(normalizeItemMetadata({ description }).comparable_key).toBeNull();
+    }
   });
 
   it('normalizes extraction casing without flattening intentional brand casing', () => {

@@ -45,7 +45,7 @@ const SUPPRESSED_CATEGORY_PATTERNS = [
   ['subscription_context', /\b(subscriptions?|memberships?)\b/],
 ];
 
-const ITEM_INSIGHT_POLICY_VERSION = 'category-value-v2';
+const ITEM_INSIGHT_POLICY_VERSION = 'category-value-v3';
 
 function normalizeCategoryName(value) {
   return `${value || ''}`
@@ -146,20 +146,24 @@ function automaticItemInsightDecision(rows = [], { minOccurrences = 3 } = {}) {
   const categoryNames = [...new Set(
     classified.map(({ context }) => context.category_name).filter(Boolean)
   )];
+  const needsStrongIdentity = eligibleContexts.length > 0
+    && eligibleContexts.every((context) => ['ambiguous', 'unclassified'].includes(context.tier));
   const ambiguousOnly = eligibleContexts.length > 0
     && eligibleContexts.every((context) => context.tier === 'ambiguous');
+  const unclassifiedOnly = eligibleContexts.length > 0
+    && eligibleContexts.every((context) => context.tier === 'unclassified');
+  const strongIdentity = hasStrongItemIdentity(eligibleRows);
   const minimumOccurrences = Math.max(
     Math.max(1, Number(minOccurrences) || 3),
-    ambiguousOnly ? 4 : 0
+    ambiguousOnly || (unclassifiedOnly && !strongIdentity) ? 4 : 0
   );
-  const strongIdentity = hasStrongItemIdentity(eligibleRows);
 
   let suppressedReason = null;
   if (!eligibleRows.length) {
     suppressedReason = suppressedReasons[0] || 'no_eligible_observations';
   } else if (eligibleRows.length < minimumOccurrences) {
     suppressedReason = 'insufficient_product_observations';
-  } else if (ambiguousOnly && !strongIdentity) {
+  } else if (needsStrongIdentity && !strongIdentity) {
     suppressedReason = 'ambiguous_category_identity';
   }
 
@@ -180,7 +184,7 @@ function automaticItemInsightDecision(rows = [], { minOccurrences = 3 } = {}) {
     eligible_occurrence_count: eligibleRows.length,
     excluded_occurrence_count: Math.max(0, classified.length - eligibleRows.length),
     minimum_occurrences: minimumOccurrences,
-    requires_strong_identity: ambiguousOnly,
+    requires_strong_identity: needsStrongIdentity,
     strong_identity: strongIdentity,
     tier,
     suppressed_reason: suppressedReason,

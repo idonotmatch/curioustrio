@@ -86,15 +86,26 @@ describe('itemInsightEligibility', () => {
     });
   });
 
-  it('keeps legacy uncategorized histories at the existing threshold', () => {
+  it('requires strong identity for uncategorized histories', () => {
     const rows = Array.from({ length: 3 }, () => occurrence({
       expense_category_name: null,
     }));
 
     expect(automaticItemInsightDecision(rows)).toMatchObject({
+      eligible: false,
+      tier: 'unclassified',
+      minimum_occurrences: 4,
+      requires_strong_identity: true,
+      suppressed_reason: 'insufficient_product_observations',
+    });
+
+    expect(automaticItemInsightDecision([...rows, rows[0]].map((row) => ({
+      ...row,
+      product_match_confidence: 'high',
+    })))).toMatchObject({
       eligible: true,
       tier: 'unclassified',
-      minimum_occurrences: 3,
+      strong_identity: true,
     });
   });
 

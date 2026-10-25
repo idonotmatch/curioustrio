@@ -3,9 +3,9 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const db = require('../src/db');
-const { shouldQuarantineStoredImport } = require('../src/services/emailAdmissionPolicy');
+const { assessStoredImport } = require('../src/services/emailAdmissionPolicy');
 
-const MARKER = 'post_import_quality_gate';
+const MARKER = 'post_import_quality_gate_v2';
 
 async function findCandidates() {
   const result = await db.query(
@@ -24,7 +24,9 @@ async function findCandidates() {
        AND l.status = 'imported'
      ORDER BY e.created_at DESC`
   );
-  return result.rows.filter(shouldQuarantineStoredImport);
+  return result.rows
+    .map((row) => ({ ...row, quarantine_assessment: assessStoredImport(row) }))
+    .filter((row) => row.quarantine_assessment.quarantine);
 }
 
 async function quarantine(candidates) {
@@ -99,6 +101,7 @@ function preview(candidates) {
     merchant: row.merchant,
     amount: Number(row.amount),
     subject: row.subject,
+    reason: row.quarantine_assessment?.reason || null,
     created_at: row.created_at,
   }));
 }
