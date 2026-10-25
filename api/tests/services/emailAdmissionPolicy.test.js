@@ -123,6 +123,8 @@ describe('emailAdmissionPolicy', () => {
     ['editorial digest', 'Dynamic Duo', 'Morning Brew <crew@morningbrew.com>', 'View Online | Sign Up | Shop Newsletter Logo Presented by'],
     ['offer sender', 'The gold standard of suiting', 'Brooks Brothers <brooksbrothers@offers.brooksbrothers.com>', '2 suits starting at $1799'],
     ['future payment reminder', 'Your Payment Reminder', 'Card <billing@example.com>', 'Payment due next week'],
+    ['retail call to action', 'Get ready for snow season', 'Vans <reply@e.vans.com>', 'Shop boots & outerwear to ride all winter.'],
+    ['browser-view marketing', 'Changes to collecting points', 'Club <updates@example.com>', "Find out what's changing. View email in browser"],
   ])('quarantines stored %s noise', (_label, subject, fromAddress, snippet) => {
     expect(assessStoredImport({ subject, fromAddress, snippet })).toMatchObject({ quarantine: true });
   });
