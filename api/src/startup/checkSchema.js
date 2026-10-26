@@ -62,6 +62,12 @@ const REQUIRED_COLUMNS = [
   ['purchase_plans', 'decision_criteria'],
   ['purchase_plans', 'revisit_on'],
   ['purchase_plan_snapshots', 'reserved_amount'],
+  ['merchant_entities', 'chain_key'],
+  ['merchant_entities', 'branch_key'],
+  ['payment_instruments', 'issuer'],
+  ['payment_instruments', 'network'],
+  ['place_entities', 'chain_key'],
+  ['place_entities', 'branch_key'],
 ];
 
 const REQUIRED_TABLES = [
@@ -79,6 +85,15 @@ const REQUIRED_TABLES = [
   'payment_instruments',
   'place_entities',
   'expense_match_evidence',
+  'payment_instrument_aliases',
+  'place_aliases',
+  'expense_identity_overrides',
+  'match_decisions',
+  'receipt_scan_requests',
+  'ai_usage_buckets',
+  'ai_usage_events',
+  'account_feature_entitlements',
+  'receipt_scan_jobs',
 ];
 
 const OPTIONAL_TABLES = [

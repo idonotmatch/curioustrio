@@ -87,6 +87,9 @@ const MIGRATION_PLAN = [
   '091_email_purchase_lifecycle_ledger.sql',
   '092_item_intelligence_quality_gate.sql',
   '093_unified_expense_identities.sql',
+  '094_match_learning_and_identity_controls.sql',
+  '095_receipt_scan_usage_guards.sql',
+  '096_scalable_receipt_scan_jobs.sql',
 ];
 
 module.exports = {

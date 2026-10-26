@@ -27,6 +27,7 @@ const freshnessRouter = require('./routes/freshness');
 const summaryRouter = require('./routes/summary');
 const plansRouter = require('./routes/plans');
 const cronRouter = require('./routes/cron');
+const identitiesRouter = require('./routes/identities');
 const { seedDefaultCategories } = require('./db');
 const { runStartupChecks } = require('./startup/runStartupChecks');
 const { initObservability } = require('./services/observability');
@@ -108,6 +109,11 @@ app.use((req, res, next) => {
   if (req.path.startsWith('/cron/')) return next();
   return standard(req, res, next);
 });
+// Text-based receipt PDFs can legitimately exceed the general JSON limit after
+// base64 expansion. Parse only that route with the larger cap; all other routes
+// retain the tighter default.
+app.use('/expenses/scan-document', express.json({ limit: '11mb' }));
+app.use('/expenses/scan-document-jobs', express.json({ limit: '11mb' }));
 app.use(express.json({ limit: '5mb' }));
 
 app.use('/expenses', expensesRouter);
@@ -125,6 +131,7 @@ app.use('/price-observations', priceObservationsRouter);
 app.use('/freshness', freshnessRouter);
 app.use('/summary', summaryRouter);
 app.use('/plans', plansRouter);
+app.use('/identities', identitiesRouter);
 app.use('/cron', cronRouter);
 app.use(errorHandler);
 

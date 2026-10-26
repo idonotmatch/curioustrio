@@ -15,7 +15,7 @@ import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffe
 import { colors } from '../theme/tokens';
 
 function cardKey(card = {}) {
-  return `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
+  return card.id || `${card.payment_method || ''}:${card.card_label || ''}:${card.card_last4 || ''}`;
 }
 
 function cardDisplay(card = {}) {
@@ -29,6 +29,8 @@ export default function PaymentMethodsScreen() {
   const [editingKey, setEditingKey] = useState(null);
   const [draftLabel, setDraftLabel] = useState('');
   const [draftLast4, setDraftLast4] = useState('');
+  const [draftIssuer, setDraftIssuer] = useState('');
+  const [draftNetwork, setDraftNetwork] = useState('');
 
   const loadCards = useCallback(async () => {
     setLoading(true);
@@ -50,12 +52,16 @@ export default function PaymentMethodsScreen() {
     setEditingKey(cardKey(card));
     setDraftLabel(card.card_label || '');
     setDraftLast4(card.card_last4 || '');
+    setDraftIssuer(card.issuer || '');
+    setDraftNetwork(card.network || '');
   }
 
   function cancelEdit() {
     setEditingKey(null);
     setDraftLabel('');
     setDraftLast4('');
+    setDraftIssuer('');
+    setDraftNetwork('');
   }
 
   async function saveEdit(card) {
@@ -63,11 +69,14 @@ export default function PaymentMethodsScreen() {
     setSavingKey(key);
     try {
       await api.patch('/expenses/cards/rename', {
+        id: card.id,
         payment_method: card.payment_method,
         card_label: card.card_label || null,
         card_last4: card.card_last4 || null,
         next_card_label: draftLabel || null,
         next_card_last4: draftLast4 || null,
+        issuer: draftIssuer || null,
+        network: draftNetwork || null,
       });
       await invalidateExpenseMutationCaches({ includePending: false });
       cancelEdit();
@@ -84,6 +93,7 @@ export default function PaymentMethodsScreen() {
     setSavingKey(key);
     try {
       await api.post('/expenses/cards/forget', {
+        id: card.id,
         payment_method: card.payment_method,
         card_label: card.card_label || null,
         card_last4: card.card_last4 || null,
@@ -102,9 +112,9 @@ export default function PaymentMethodsScreen() {
     <>
       <Stack.Screen options={{ title: 'Saved Card Labels' }} />
       <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>SAVED CARD LABELS</Text>
+        <Text style={styles.sectionTitle}>SAVED PAYMENT METHODS</Text>
         <Text style={styles.sectionIntro}>
-          These are card labels remembered from past expense entries. You can rename or forget them here.
+          Names and card details are stored once, then linked to expenses. Renaming one no longer rewrites past transactions.
         </Text>
 
         {loading ? (
@@ -127,7 +137,7 @@ export default function PaymentMethodsScreen() {
                   <View style={styles.cardText}>
                     <Text style={styles.cardTitle}>{cardDisplay(card)}</Text>
                     <Text style={styles.cardMeta}>
-                      {card.payment_method} · last used {new Date(card.last_used).toLocaleDateString()}
+                      {[card.payment_method, card.issuer, card.network, card.last_used ? `last used ${new Date(card.last_used).toLocaleDateString()}` : null, card.expense_count ? `${card.expense_count} expenses` : null].filter(Boolean).join(' · ')}
                     </Text>
                   </View>
                   {!editing ? (
@@ -144,28 +154,18 @@ export default function PaymentMethodsScreen() {
 
                 {editing ? (
                   <View style={styles.editor}>
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      value={draftLabel}
-                      onChangeText={setDraftLabel}
-                      placeholder="Card nickname"
-                      placeholderTextColor={colors.textDisabled}
-                    />
-                    <TextInput
-                      style={styles.last4Input}
-                      value={draftLast4}
-                      onChangeText={(value) => setDraftLast4(value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="Last 4"
-                      placeholderTextColor={colors.textDisabled}
-                      keyboardType="number-pad"
-                      maxLength={4}
-                    />
-                    <TouchableOpacity onPress={() => saveEdit(card)} disabled={saving}>
-                      <Text style={styles.saveAction}>{saving ? '...' : 'Save'}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={cancelEdit} disabled={saving}>
-                      <Text style={styles.cancelAction}>Cancel</Text>
-                    </TouchableOpacity>
+                    <View style={styles.fieldRow}>
+                      <TextInput style={[styles.input, { flex: 1 }]} value={draftLabel} onChangeText={setDraftLabel} placeholder="Card nickname" placeholderTextColor={colors.textDisabled} accessibilityLabel="Card nickname" />
+                      <TextInput style={styles.last4Input} value={draftLast4} onChangeText={(value) => setDraftLast4(value.replace(/\D/g, '').slice(0, 4))} placeholder="Last 4" placeholderTextColor={colors.textDisabled} keyboardType="number-pad" maxLength={4} accessibilityLabel="Card last four digits" />
+                    </View>
+                    <View style={styles.fieldRow}>
+                      <TextInput style={[styles.input, { flex: 1 }]} value={draftIssuer} onChangeText={setDraftIssuer} placeholder="Issuer, e.g. Chase" placeholderTextColor={colors.textDisabled} accessibilityLabel="Card issuer" />
+                      <TextInput style={[styles.input, { flex: 1 }]} value={draftNetwork} onChangeText={setDraftNetwork} placeholder="Network, e.g. Visa" placeholderTextColor={colors.textDisabled} accessibilityLabel="Card network" />
+                    </View>
+                    <View style={styles.editorActions}>
+                      <TouchableOpacity onPress={() => saveEdit(card)} disabled={saving} accessibilityRole="button"><Text style={styles.saveAction}>{saving ? 'Saving...' : 'Save'}</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={cancelEdit} disabled={saving} accessibilityRole="button"><Text style={styles.cancelAction}>Cancel</Text></TouchableOpacity>
+                    </View>
                   </View>
                 ) : null}
               </View>
@@ -207,7 +207,9 @@ const styles = StyleSheet.create({
   actionsRow: { alignItems: 'flex-end', gap: 10 },
   editAction: { color: colors.info, fontSize: 13, fontWeight: '600' },
   forgetAction: { color: colors.danger, fontSize: 13, fontWeight: '600' },
-  editor: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  editor: { gap: 8, marginTop: 12 },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  editorActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 20 },
   input: {
     backgroundColor: colors.background,
     borderWidth: 1,

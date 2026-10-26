@@ -7,6 +7,8 @@ module.exports = {
     '**/tests/models/**/*.test.js',
     '**/tests/services/categoryAssigner.test.js',
     '**/tests/services/duplicateDetector.test.js',
+    '**/tests/services/identityManagement.integration.test.js',
+    '**/tests/services/receiptScanUsageService.integration.test.js',
     '**/tests/services/recurringDetector.test.js',
   ],
   testPathIgnorePatterns: ['/node_modules/'],

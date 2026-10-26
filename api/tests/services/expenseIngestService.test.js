@@ -57,7 +57,7 @@ describe('expenseIngestService', () => {
       todayDate: '2026-10-07',
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       errorStatus: 503,
       errorBody: { error: 'Could not parse receipt', reason_code: 'ai_timeout' },
     });
@@ -66,6 +66,33 @@ describe('expenseIngestService', () => {
       status: 'failed',
       failureReason: 'ai_timeout',
     }));
+  });
+
+  it('passes the validated image media type to the image model', async () => {
+    parseReceiptDetailed.mockResolvedValueOnce({
+      parsed: {
+        merchant: 'PNG Market',
+        amount: 4,
+        date: '2026-10-25',
+        items: [],
+        parse_status: 'complete',
+        review_fields: [],
+      },
+      raw: { merchant: 'PNG Market' },
+      diagnostics: { model_call_count: 1 },
+    });
+
+    await scanReceiptInput({
+      user: { id: 'user-1', household_id: null },
+      imageBase64: 'fakebase64',
+      imageMediaType: 'image/png',
+      todayDate: '2026-10-25',
+    });
+
+    expect(parseReceiptDetailed).toHaveBeenCalledWith('fakebase64', '2026-10-25', {
+      passMode: 'primary_only',
+      mediaType: 'image/png',
+    });
   });
 
   it('records compact success metadata for parsed NL input', async () => {
@@ -234,6 +261,88 @@ describe('expenseIngestService', () => {
     const payload = IngestAttemptLog.create.mock.calls[0][0];
     expect(payload.metadata.retry_strategy).toBe('fallback_only');
     expect(payload.metadata.model_call_count).toBe(2);
+  });
+
+  it('keeps usable first-pass data when an optional fallback attempt fails', async () => {
+    process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
+    parseReceiptDetailed
+      .mockResolvedValueOnce({
+        parsed: {
+          merchant: 'Corner Market',
+          amount: 12.5,
+          date: '2026-10-25',
+          items: [],
+          parse_status: 'partial',
+          review_fields: ['items'],
+        },
+        raw: { merchant: 'Corner Market' },
+        diagnostics: { model_call_count: 1, receipt_family: 'grocery_receipt' },
+      })
+      .mockRejectedValueOnce(Object.assign(new Error('anthropic_image timed out'), { name: 'VendorTimeoutError' }));
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: null },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-10-25',
+    });
+
+    expect(result.errorStatus).toBeUndefined();
+    expect(result.body).toMatchObject({ merchant: 'Corner Market', amount: 12.5, parse_status: 'partial' });
+    expect(IngestAttemptLog.create.mock.calls.at(-1)[0].metadata.retry_failure_reason).toBe('ai_timeout');
+  });
+
+  it('returns extracted receipt data when category enrichment is unavailable', async () => {
+    parseReceiptDetailed.mockResolvedValueOnce({
+      parsed: {
+        merchant: 'Cafe',
+        amount: 9.25,
+        date: '2026-10-25',
+        items: [],
+        parse_status: 'complete',
+        review_fields: [],
+      },
+      raw: { merchant: 'Cafe' },
+      diagnostics: { model_call_count: 1 },
+    });
+    Category.findByHousehold.mockRejectedValueOnce(new Error('database unavailable'));
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: null },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-10-25',
+    });
+
+    expect(result.body).toMatchObject({
+      merchant: 'Cafe',
+      amount: 9.25,
+      category_id: null,
+      category_source: 'deferred',
+      category_status: 'deferred',
+    });
+  });
+
+  it('returns extracted receipt data when telemetry storage fails', async () => {
+    parseReceiptDetailed.mockResolvedValueOnce({
+      parsed: {
+        merchant: 'Bakery',
+        amount: 6,
+        date: '2026-10-25',
+        items: [],
+        parse_status: 'complete',
+        review_fields: [],
+      },
+      raw: { merchant: 'Bakery' },
+      diagnostics: { model_call_count: 1 },
+    });
+    IngestAttemptLog.create.mockRejectedValueOnce(new Error('telemetry unavailable'));
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: null },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-10-25',
+    });
+
+    expect(result.body).toMatchObject({ merchant: 'Bakery', amount: 6, ingest_attempt_id: null });
   });
 
   it('uses a contextual primary-only retry when the merchant is uncertain and priors are available', async () => {

@@ -3,7 +3,7 @@ const ExpenseReceiptDetail = require('../models/expenseReceiptDetail');
 const ExpenseSourceObservation = require('../models/expenseSourceObservation');
 const { canonicalMerchantKey, cleanMerchantDisplayName } = require('./merchantIdentity');
 
-const RESOLVER_VERSION = 'identity-v1';
+const RESOLVER_VERSION = 'identity-v2';
 
 function compact(value, maxLength = 320) {
   const text = `${value || ''}`.replace(/\s+/g, ' ').trim();
@@ -53,6 +53,30 @@ async function resolveMerchantIdentity({ expense, householdId, queryable }) {
   const canonicalKey = canonicalMerchantKey(displayName);
   if (!householdId || !displayName || !canonicalKey) return null;
 
+  const aliasKey = normalizedKey(expense.merchant, 240) || canonicalKey;
+  const aliasResult = await queryable.query(
+    `SELECT entity.id, entity.canonical_key, entity.display_name
+     FROM merchant_aliases alias
+     JOIN merchant_entities entity ON entity.id = alias.merchant_entity_id
+     WHERE alias.household_id = $1 AND alias.alias_key = $2 AND entity.status = 'active'
+     LIMIT 1`,
+    [householdId, aliasKey]
+  );
+  if (aliasResult.rows[0]) {
+    await queryable.query(
+      `UPDATE merchant_aliases
+       SET occurrence_count = occurrence_count + 1, updated_at = NOW()
+       WHERE household_id = $1 AND alias_key = $2`,
+      [householdId, aliasKey]
+    );
+    return {
+      id: aliasResult.rows[0].id,
+      confidence: 1,
+      method: 'merchant_alias',
+      evidence: { alias_key: aliasKey, display_name: aliasResult.rows[0].display_name },
+    };
+  }
+
   const entityResult = await queryable.query(
     `INSERT INTO merchant_entities (household_id, canonical_key, display_name)
      VALUES ($1, $2, $3)
@@ -62,7 +86,6 @@ async function resolveMerchantIdentity({ expense, householdId, queryable }) {
     [householdId, canonicalKey, displayName]
   );
   const entity = entityResult.rows[0];
-  const aliasKey = normalizedKey(expense.merchant, 240) || canonicalKey;
   await queryable.query(
     `INSERT INTO merchant_aliases (
        household_id, merchant_entity_id, alias_key, alias_name, source, confidence
@@ -87,6 +110,61 @@ async function resolvePaymentIdentity({ expense, userId, queryable }) {
   const label = compact(expense.card_label, 120);
   const labelKey = normalizedKey(label, 140);
   if (!last4 && !labelKey) return null;
+
+  const observedKeys = [
+    last4 ? `last4:${last4}` : null,
+    labelKey ? `label:${labelKey}` : null,
+  ].filter(Boolean);
+  const lookupKeys = last4 ? [`last4:${last4}`] : observedKeys;
+  if (lookupKeys.length) {
+    const aliasResult = await queryable.query(
+      `SELECT instrument.id, instrument.payment_method, instrument.card_last4,
+              instrument.display_label, alias.confidence, alias.alias_key
+       FROM payment_instrument_aliases alias
+       JOIN payment_instruments instrument ON instrument.id = alias.payment_instrument_id
+       WHERE alias.user_id = $1
+         AND alias.payment_method = $2
+         AND alias.alias_key = ANY($3::text[])
+         AND instrument.status = 'active'
+         AND (
+           $5::boolean
+           OR (
+             SELECT COUNT(DISTINCT candidate.payment_instrument_id)
+             FROM payment_instrument_aliases candidate
+             JOIN payment_instruments candidate_instrument
+               ON candidate_instrument.id = candidate.payment_instrument_id
+             WHERE candidate.user_id = alias.user_id
+               AND candidate.payment_method = alias.payment_method
+               AND candidate.alias_key = alias.alias_key
+               AND candidate_instrument.status = 'active'
+           ) = 1
+         )
+       ORDER BY (alias.alias_key = $4) DESC, alias.confidence DESC
+       LIMIT 1`,
+      [userId, method, lookupKeys, lookupKeys[0], Boolean(last4)]
+    );
+    if (aliasResult.rows[0]) {
+      const matched = aliasResult.rows[0];
+      for (const aliasKey of observedKeys) {
+        await queryable.query(
+          `INSERT INTO payment_instrument_aliases (
+             user_id, payment_instrument_id, payment_method, alias_key, alias_name,
+             card_last4, source, confidence
+           ) VALUES ($1,$2,$3,$4,$5,$6,'observed',$7)
+           ON CONFLICT (user_id, payment_method, alias_key, card_last4) DO UPDATE SET
+             occurrence_count = payment_instrument_aliases.occurrence_count + 1,
+             updated_at = NOW()`,
+          [userId, matched.id, method, aliasKey, label, last4 || '', last4 ? 1 : 0.85]
+        );
+      }
+      return {
+        id: matched.id,
+        confidence: Number(matched.confidence || (last4 ? 1 : 0.9)),
+        method: last4 ? 'payment_alias_last4' : 'payment_alias_label',
+        evidence: { payment_method: method, card_last4: last4, display_label: matched.display_label },
+      };
+    }
+  }
 
   const result = last4
     ? await queryable.query(
@@ -115,6 +193,18 @@ async function resolvePaymentIdentity({ expense, userId, queryable }) {
       [userId, method, label, labelKey]
     );
   const entity = result.rows[0];
+  for (const aliasKey of observedKeys) {
+    await queryable.query(
+      `INSERT INTO payment_instrument_aliases (
+         user_id, payment_instrument_id, payment_method, alias_key, alias_name,
+         card_last4, source, confidence
+       ) VALUES ($1,$2,$3,$4,$5,$6,'observed',$7)
+       ON CONFLICT (user_id, payment_method, alias_key, card_last4) DO UPDATE SET
+         occurrence_count = payment_instrument_aliases.occurrence_count + 1,
+         updated_at = NOW()`,
+      [userId, entity.id, method, aliasKey, label, last4 || '', last4 ? 1 : 0.85]
+    );
+  }
   return {
     id: entity.id,
     confidence: last4 ? 1 : 0.85,
@@ -136,6 +226,27 @@ async function resolvePlaceIdentity({ expense, userId, queryable }) {
   const placeName = compact(expense.place_name, 160);
   const address = compact(expense.address, 320);
   const nameKey = normalizedKey(placeName, 180);
+  const aliasResult = await queryable.query(
+    `SELECT entity.id, entity.identity_key, alias.confidence
+     FROM place_aliases alias
+     JOIN place_entities entity ON entity.id = alias.place_entity_id
+     WHERE alias.user_id = $1 AND alias.alias_key = $2 AND entity.status = 'active'
+     LIMIT 1`,
+    [userId, identityKey]
+  );
+  if (aliasResult.rows[0]) {
+    await queryable.query(
+      `UPDATE place_aliases SET occurrence_count = occurrence_count + 1, updated_at = NOW()
+       WHERE user_id = $1 AND alias_key = $2`,
+      [userId, identityKey]
+    );
+    return {
+      id: aliasResult.rows[0].id,
+      confidence: Number(aliasResult.rows[0].confidence || 1),
+      method: 'place_alias',
+      evidence: { identity_key: identityKey, provider, provider_place_id: providerId },
+    };
+  }
   const result = await queryable.query(
     `INSERT INTO place_entities (
        user_id, identity_key, provider, provider_place_id, coordinate_key,
@@ -152,11 +263,41 @@ async function resolvePlaceIdentity({ expense, userId, queryable }) {
      RETURNING id, identity_key`,
     [userId, identityKey, provider, providerId, coordinates, placeName, address, nameKey]
   );
+  await queryable.query(
+    `INSERT INTO place_aliases (
+       user_id, place_entity_id, alias_key, alias_name, source, confidence
+     ) VALUES ($1,$2,$3,$4,'observed',$5)
+     ON CONFLICT (user_id, alias_key) DO UPDATE SET
+       occurrence_count = place_aliases.occurrence_count + 1,
+       updated_at = NOW()`,
+    [userId, result.rows[0].id, identityKey, placeName, providerId ? 1 : (coordinates ? 0.95 : 0.75)]
+  );
   return {
     id: result.rows[0].id,
     confidence: providerId ? 1 : (coordinates ? 0.95 : 0.75),
     method: providerId ? 'provider_place_id' : (coordinates ? 'coordinate_key' : 'place_name_address'),
     evidence: { identity_key: identityKey, provider, provider_place_id: providerId },
+  };
+}
+
+async function loadIdentityOverride({ expenseId, userId, domain, queryable }) {
+  const result = await queryable.query(
+    `SELECT entity_id, decision
+     FROM expense_identity_overrides
+     WHERE expense_id = $1 AND user_id = $2 AND domain = $3
+     LIMIT 1`,
+    [expenseId, userId, domain]
+  );
+  return result.rows[0] || null;
+}
+
+function overrideResolution(override, domain) {
+  if (!override?.entity_id) return null;
+  return {
+    id: override.entity_id,
+    confidence: 1,
+    method: `user_${override.decision || 'override'}`,
+    evidence: { domain, user_override: true },
   };
 }
 
@@ -207,10 +348,22 @@ async function resolveExpenseIdentities({ expense, userId, householdId, queryabl
       receiptDetails?.transaction_id,
       ...observedTransactionIds,
     ].map((value) => compact(value, 320)).filter(Boolean))];
+    const overrides = {};
+    for (const domain of ['merchant', 'payment', 'place']) {
+      overrides[domain] = await loadIdentityOverride({
+        expenseId: expense.id,
+        userId,
+        domain,
+        queryable,
+      });
+    }
     const resolutions = {
-      merchant: await resolveMerchantIdentity({ expense, householdId, queryable }),
-      payment: await resolvePaymentIdentity({ expense, userId, queryable }),
-      place: await resolvePlaceIdentity({ expense, userId, queryable }),
+      merchant: overrideResolution(overrides.merchant, 'merchant')
+        || await resolveMerchantIdentity({ expense, householdId, queryable }),
+      payment: overrideResolution(overrides.payment, 'payment')
+        || await resolvePaymentIdentity({ expense, userId, queryable }),
+      place: overrideResolution(overrides.place, 'place')
+        || await resolvePlaceIdentity({ expense, userId, queryable }),
       transaction: transactionIds.length ? {
         id: null,
         confidence: 1,
@@ -243,6 +396,7 @@ module.exports = {
   RESOLVER_VERSION,
   isMissingIdentitySchemaError,
   normalizedLast4,
+  normalizedKey,
   placeIdentityKey,
   resolveExpenseIdentities,
 };

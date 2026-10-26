@@ -42,6 +42,11 @@ async function handleGmailSync(payload = {}) {
   return runGmailSyncJob(payload);
 }
 
+async function handleReceiptScan(payload = {}) {
+  const { runReceiptScanJob } = require('./receiptScanJobService');
+  return runReceiptScanJob(payload);
+}
+
 async function runJob(job) {
   if (job.job_type === BackgroundJob.JOB_TYPES.projectionRefresh) {
     return handleProjectionRefresh(job.payload);
@@ -54,6 +59,9 @@ async function runJob(job) {
   }
   if (job.job_type === BackgroundJob.JOB_TYPES.gmailSync) {
     return handleGmailSync(job.payload);
+  }
+  if (job.job_type === BackgroundJob.JOB_TYPES.receiptScan) {
+    return handleReceiptScan(job.payload);
   }
   throw new Error(`No handler registered for background job type: ${job.job_type}`);
 }
@@ -75,6 +83,16 @@ async function processJob(job) {
     await BackgroundJob.complete(job.id, workerId);
   } catch (err) {
     const failed = await BackgroundJob.fail(job.id, workerId, err, job.attempt_count);
+    if (failed?.status === 'dead' && job.job_type === BackgroundJob.JOB_TYPES.receiptScan) {
+      const { failDeadReceiptScanJob } = require('./receiptScanJobService');
+      await failDeadReceiptScanJob(job.payload, err).catch((cleanupError) => {
+        captureException(cleanupError, {
+          component: 'background_job_worker',
+          operation: 'finalize_dead_receipt_scan',
+          job_id: job.id,
+        });
+      });
+    }
     captureException(err, {
       component: 'background_job_worker',
       job_id: job.id,
@@ -140,6 +158,7 @@ module.exports = {
   handlePostConfirm,
   handleGmailEnrichment,
   handleGmailSync,
+  handleReceiptScan,
   handleProjectionRefresh,
   processJob,
   startBackgroundJobWorker,

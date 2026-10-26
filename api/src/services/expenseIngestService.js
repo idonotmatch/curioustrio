@@ -31,6 +31,9 @@ function buildIngestFailure(source, failureReason) {
   return {
     error: family === 'receipt' ? 'Could not parse receipt' : 'Could not parse expense',
     reason_code: failureReason || 'missing_required_fields',
+    suggested_actions: family === 'receipt'
+      ? ['retry_scan', 'choose_another_image', 'enter_manually']
+      : ['edit_input', 'enter_manually'],
   };
 }
 
@@ -126,6 +129,61 @@ function applyModelMetrics(parsedResult, metrics) {
       ...metrics,
     },
   };
+}
+
+function receiptProviderFailureReason(error) {
+  return error?.name === 'VendorTimeoutError' ? 'ai_timeout' : 'ai_unavailable';
+}
+
+function receiptParseOptions(options = {}, imageMediaType = null) {
+  return imageMediaType ? { ...options, mediaType: imageMediaType } : options;
+}
+
+async function safeRecordIngestAttempt(payload) {
+  try {
+    return await IngestAttemptLog.create(payload);
+  } catch (error) {
+    console.warn('[ingest] telemetry write failed', {
+      stage: 'ingest_attempt_log',
+      message: error?.message || null,
+    });
+    return null;
+  }
+}
+
+async function tryReceiptParse(imageBase64, todayDate, options, modelMetrics) {
+  const startedAt = Date.now();
+  try {
+    const result = await parseReceiptDetailed(imageBase64, todayDate, options);
+    addModelMetrics(modelMetrics, result?.diagnostics);
+    return { result, durationMs: Date.now() - startedAt, error: null };
+  } catch (error) {
+    return {
+      result: null,
+      durationMs: Date.now() - startedAt,
+      error,
+      failureReason: receiptProviderFailureReason(error),
+    };
+  }
+}
+
+async function safeReceiptContext({ householdId, requesterUserId, merchantHint }) {
+  try {
+    return await buildReceiptParsingContext({ householdId, requesterUserId, merchantHint });
+  } catch (error) {
+    console.warn('[receipt scan] context lookup failed', {
+      stage: 'context_lookup',
+      message: error?.message || null,
+    });
+    return {
+      priors: [],
+      prior_count: 0,
+      merchant_alias_count: 0,
+      merchant_item_count: 0,
+      merchant_hint: merchantHint || null,
+      lookup_failed: true,
+    };
+  }
 }
 
 function summarizeReceiptOutcome(parsedResult) {
@@ -313,7 +371,7 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
   };
 }
 
-async function scanReceiptInput({ user, imageBase64, todayDate }) {
+async function scanReceiptInput({ user, imageBase64, imageMediaType = null, todayDate, allowRetry = true }) {
   const scanStartedAt = Date.now();
   const useSingleRetryPolicy = receiptRetryPolicyMode() === 'single';
   const modelMetrics = createModelMetrics();
@@ -321,14 +379,14 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
   let initialParseDurationMs = 0;
   try {
     const initialParseStartedAt = Date.now();
-    parsedResult = await parseReceiptDetailed(imageBase64, todayDate, {
+    parsedResult = await parseReceiptDetailed(imageBase64, todayDate, receiptParseOptions({
       passMode: useSingleRetryPolicy ? 'primary_only' : 'full',
-    });
+    }, imageMediaType));
     addModelMetrics(modelMetrics, parsedResult?.diagnostics);
     initialParseDurationMs = Date.now() - initialParseStartedAt;
   } catch (err) {
-    const failureReason = err?.name === 'VendorTimeoutError' ? 'ai_timeout' : 'ai_unavailable';
-    await IngestAttemptLog.create({
+    const failureReason = receiptProviderFailureReason(err);
+    await safeRecordIngestAttempt({
       userId: user?.id || null,
       source: 'receipt',
       status: 'failed',
@@ -338,7 +396,11 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         error: err.message,
       },
     });
-    return { errorStatus: 503, errorBody: buildIngestFailure('receipt', failureReason) };
+    return {
+      errorStatus: 503,
+      errorBody: buildIngestFailure('receipt', failureReason),
+      modelUsage: modelMetrics,
+    };
   }
 
   const firstPassOutcome = summarizeReceiptOutcome(parsedResult);
@@ -347,16 +409,19 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
   let contextRetryDurationMs = 0;
   let contextRetrySkippedReason = null;
   let retryStrategy = 'none';
+  let retryFailureReason = null;
   const merchantHint = parsedResult?.parsed?.merchant || parsedResult?.raw?.merchant || null;
 
-  if (useSingleRetryPolicy) {
+  if (!allowRetry) {
+    contextRetrySkippedReason = 'cost_guard';
+  } else if (useSingleRetryPolicy) {
     const firstPassPrimaryOnly = parsedResult;
     const needsRetry = shouldRetryReceipt(firstPassPrimaryOnly, merchantHint);
     const shouldUseContextRetry = user?.household_id
       && shouldRetryReceiptWithContext(firstPassPrimaryOnly, merchantHint);
     if (shouldUseContextRetry) {
       const contextLookupStartedAt = Date.now();
-      const context = await buildReceiptParsingContext({
+      const context = await safeReceiptContext({
         householdId: user.household_id,
         requesterUserId: user.id,
         merchantHint,
@@ -370,11 +435,11 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         retryStrategy = 'contextual_primary_only';
         try {
           const contextRetryStartedAt = Date.now();
-          const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, {
+          const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, receiptParseOptions({
             priors: context.priors,
             passMode: 'primary_only',
             familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
-          });
+          }, imageMediaType));
           addModelMetrics(modelMetrics, contextualResult?.diagnostics);
           contextRetryDurationMs = Date.now() - contextRetryStartedAt;
           const preferredResult = preferReceiptResult(parsedResult, contextualResult);
@@ -398,8 +463,8 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
               context_merchant_hint: context.merchant_hint,
             };
           }
-        } catch {
-          contextRetryDurationMs = 0;
+        } catch (error) {
+          retryFailureReason = receiptProviderFailureReason(error);
           if (parsedResult?.diagnostics) {
             parsedResult.diagnostics = {
               ...parsedResult.diagnostics,
@@ -413,33 +478,31 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         contextRetrySkippedReason = context.prior_count <= 0 ? 'no_priors' : 'low_value_priors';
         if (needsRetry || !parsedResult?.parsed) {
           retryStrategy = 'fallback_only';
-          const fallbackStartedAt = Date.now();
-          const fallbackResult = await parseReceiptDetailed(imageBase64, todayDate, {
+          const fallbackAttempt = await tryReceiptParse(imageBase64, todayDate, receiptParseOptions({
             passMode: 'fallback_only',
             familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
-          });
-          addModelMetrics(modelMetrics, fallbackResult?.diagnostics);
-          parsedResult = preferReceiptResult(parsedResult, fallbackResult);
-          contextRetryDurationMs = Date.now() - fallbackStartedAt;
+          }, imageMediaType), modelMetrics);
+          contextRetryDurationMs = fallbackAttempt.durationMs;
+          retryFailureReason = fallbackAttempt.failureReason || null;
+          if (fallbackAttempt.result) parsedResult = preferReceiptResult(parsedResult, fallbackAttempt.result);
         }
       }
     } else if (needsRetry || !parsedResult?.parsed) {
       retryStrategy = 'fallback_only';
-      const fallbackStartedAt = Date.now();
-      const fallbackResult = await parseReceiptDetailed(imageBase64, todayDate, {
+      const fallbackAttempt = await tryReceiptParse(imageBase64, todayDate, receiptParseOptions({
         passMode: 'fallback_only',
         familyHint: { family: parsedResult?.diagnostics?.receipt_family || 'generic_receipt' },
-      });
-      addModelMetrics(modelMetrics, fallbackResult?.diagnostics);
-      parsedResult = preferReceiptResult(parsedResult, fallbackResult);
-      contextRetryDurationMs = Date.now() - fallbackStartedAt;
+      }, imageMediaType), modelMetrics);
+      contextRetryDurationMs = fallbackAttempt.durationMs;
+      retryFailureReason = fallbackAttempt.failureReason || null;
+      if (fallbackAttempt.result) parsedResult = preferReceiptResult(parsedResult, fallbackAttempt.result);
       contextRetrySkippedReason = merchantHint ? 'fallback_without_context' : 'fallback_without_merchant_hint';
     } else {
       contextRetrySkippedReason = merchantHint ? 'not_eligible' : 'no_merchant_hint';
     }
   } else if (user?.household_id && shouldRetryReceiptWithContext(parsedResult, merchantHint)) {
     const contextLookupStartedAt = Date.now();
-    const context = await buildReceiptParsingContext({
+    const context = await safeReceiptContext({
       householdId: user.household_id,
       requesterUserId: user.id,
       merchantHint,
@@ -453,7 +516,11 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       retryStrategy = 'legacy_contextual_full';
       try {
         const contextRetryStartedAt = Date.now();
-        const contextualResult = await parseReceiptDetailed(imageBase64, todayDate, { priors: context.priors });
+        const contextualResult = await parseReceiptDetailed(
+          imageBase64,
+          todayDate,
+          receiptParseOptions({ priors: context.priors }, imageMediaType)
+        );
         addModelMetrics(modelMetrics, contextualResult?.diagnostics);
         contextRetryDurationMs = Date.now() - contextRetryStartedAt;
         const preferredResult = preferReceiptResult(parsedResult, contextualResult);
@@ -477,8 +544,8 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
             context_merchant_hint: context.merchant_hint,
           };
         }
-      } catch {
-        contextRetryDurationMs = 0;
+      } catch (error) {
+        retryFailureReason = receiptProviderFailureReason(error);
         if (parsedResult?.diagnostics) {
           parsedResult.diagnostics = {
             ...parsedResult.diagnostics,
@@ -503,7 +570,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
 
   if (!parsed) {
     const failure = buildIngestFailure('receipt', parsedResult?.failureReason);
-    await IngestAttemptLog.create({
+    await safeRecordIngestAttempt({
       userId: user?.id || null,
       source: 'receipt',
       status: 'failed',
@@ -522,18 +589,27 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
         total_scan_duration_ms: totalScanDurationMs,
         context_retry_skipped_reason: contextRetrySkippedReason,
         retry_strategy: retryStrategy,
+        retry_failure_reason: retryFailureReason,
         route_family: 'expenses_scan',
         },
       }),
     });
-    return { errorStatus: 422, errorBody: failure };
+    return { errorStatus: 422, errorBody: failure, modelUsage: modelMetrics };
   }
 
-  const merchantIdentity = await canonicalizeMerchantForHousehold({
-    householdId: user?.household_id || null,
-    merchant: parsed.raw_merchant || parsed.merchant,
-  });
-  if (merchantIdentity.merchant) {
+  let merchantIdentity = null;
+  try {
+    merchantIdentity = await canonicalizeMerchantForHousehold({
+      householdId: user?.household_id || null,
+      merchant: parsed.raw_merchant || parsed.merchant,
+    });
+  } catch (error) {
+    console.warn('[receipt scan] merchant normalization failed', {
+      stage: 'merchant_normalization',
+      message: error?.message || null,
+    });
+  }
+  if (merchantIdentity?.merchant) {
     parsed = {
       ...parsed,
       merchant: merchantIdentity.merchant,
@@ -557,7 +633,29 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     };
   }
 
-  const { assignment, matchedCategory } = await assignParsedCategory(user, parsed);
+  let assignment;
+  let matchedCategory = null;
+  let categoryEnrichmentStatus = 'completed';
+  try {
+    ({ assignment, matchedCategory } = await assignParsedCategory(user, parsed));
+  } catch (error) {
+    categoryEnrichmentStatus = 'failed_open';
+    assignment = {
+      category_id: null,
+      source: 'deferred',
+      confidence: 0,
+      reasoning: {
+        strategy: 'category_enrichment_failed_open',
+        label: 'Category deferred',
+        detail: 'The receipt was read, but category matching was temporarily unavailable.',
+        fallback_skipped_reason: 'category_enrichment_unavailable',
+      },
+    };
+    console.warn('[receipt scan] category enrichment failed', {
+      stage: 'category_enrichment',
+      message: error?.message || null,
+    });
+  }
   const locationQuery = [
     parsed.merchant,
     parsed.store_number ? `Store ${parsed.store_number}` : null,
@@ -583,7 +681,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
     locationEnrichmentStatus = 'missing';
   }
 
-  const attempt = await IngestAttemptLog.create({
+  const attempt = await safeRecordIngestAttempt({
     userId: user?.id || null,
     source: 'receipt',
     status: parsed.parse_status === 'partial' ? 'partial' : 'parsed',
@@ -611,6 +709,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       total_scan_duration_ms: totalScanDurationMs,
       context_retry_skipped_reason: contextRetrySkippedReason,
       retry_strategy: retryStrategy,
+      retry_failure_reason: retryFailureReason,
       category_id: assignment.category_id,
       category_source: assignment.source,
       category_status: assignment.source === 'deferred' ? 'deferred' : (assignment.category_id ? 'assigned' : 'skipped'),
@@ -618,6 +717,7 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
       category_ai_fallback_used: assignment.source === 'claude',
       category_ai_fallback_skipped: assignment.source === 'deferred',
       category_fallback_reason: assignment?.reasoning?.fallback_skipped_reason || null,
+      category_enrichment_status: categoryEnrichmentStatus,
       place_lookup_attempted: locationLookupAttempted,
       place_lookup_duration_ms: locationLookupDurationMs,
       location_query_present: Boolean(locationQuery),
@@ -628,6 +728,10 @@ async function scanReceiptInput({ user, imageBase64, todayDate }) {
   });
 
   return {
+    modelUsage: {
+      ...modelMetrics,
+      model_call_count: modelMetrics.model_call_count + (assignment.source === 'claude' ? 1 : 0),
+    },
     body: {
       ...parsed,
       ingest_attempt_id: attempt?.id || null,
@@ -656,7 +760,11 @@ async function scanReceiptDocumentInput({ user, documentBase64, fileName = 'rece
     const result = await parser.getText({ first: 12 });
     const documentText = `${result?.text || ''}`.replace(/\0/g, '').trim().slice(0, 120000);
     if (!documentText) {
-      return { errorStatus: 422, errorBody: buildIngestFailure('receipt', 'document_has_no_text') };
+      return {
+        errorStatus: 422,
+        errorBody: buildIngestFailure('receipt', 'document_has_no_text'),
+        modelUsage: { model_call_count: 0 },
+      };
     }
 
     let parsed = await parseEmailExpense(
@@ -674,7 +782,11 @@ async function scanReceiptDocumentInput({ user, documentBase64, fileName = 'rece
         failureReason: 'document_missing_required_fields',
         metadata: { route_family: 'expenses_scan_document', text_length: documentText.length },
       });
-      return { errorStatus: 422, errorBody: buildIngestFailure('receipt', 'document_missing_required_fields') };
+      return {
+        errorStatus: 422,
+        errorBody: buildIngestFailure('receipt', 'document_missing_required_fields'),
+        modelUsage: { model_call_count: 1 },
+      };
     }
 
     const merchantIdentity = await canonicalizeMerchantForHousehold({
@@ -736,6 +848,7 @@ async function scanReceiptDocumentInput({ user, documentBase64, fileName = 'rece
     });
 
     return {
+      modelUsage: { model_call_count: 1 + (assignment.source === 'claude' ? 1 : 0) },
       body: {
         ...normalizedParsed,
         ingest_attempt_id: attempt?.id || null,
@@ -753,7 +866,11 @@ async function scanReceiptDocumentInput({ user, documentBase64, fileName = 'rece
       failureReason: 'document_parse_failed',
       metadata: { route_family: 'expenses_scan_document', error: err?.message || 'unknown_error' },
     });
-    return { errorStatus: 422, errorBody: buildIngestFailure('receipt', 'document_parse_failed') };
+    return {
+      errorStatus: 422,
+      errorBody: buildIngestFailure('receipt', 'document_parse_failed'),
+      modelUsage: { model_call_count: 1 },
+    };
   } finally {
     if (parser) await parser.destroy().catch(() => {});
   }

@@ -14,7 +14,11 @@ const aiEndpoints = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Rate limit exceeded for AI endpoints' },
+  handler: (req, res) => res.status(429).json({
+    error: 'Rate limit exceeded for AI endpoints',
+    reason_code: 'rate_limited',
+    request_id: req.requestId || null,
+  }),
 });
 
 module.exports = { standard, aiEndpoints };

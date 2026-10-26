@@ -1,7 +1,11 @@
 const assert = require('assert');
 const {
   RECEIPT_IMAGE_MAX_BASE64_LENGTH,
+  emergencyReceiptImagePlan,
   fallbackReceiptImagePlan,
+  inferReceiptMediaType,
+  isSupportedReceiptMediaType,
+  normalizeReceiptBase64,
   primaryReceiptImagePlan,
 } = require('../services/receiptImagePreparation');
 
@@ -20,6 +24,10 @@ function run() {
 
   const fallback = fallbackReceiptImagePlan({ width: 3024 });
   assert.deepStrictEqual(fallback, { width: 1450, compress: 0.58, is_tall_receipt: false });
+  assert.deepStrictEqual(emergencyReceiptImagePlan({ width: 3024 }), { width: 1100, compress: 0.42, is_tall_receipt: false });
+  assert.strictEqual(normalizeReceiptBase64('data:image/png;base64,YWJj ZA=='), 'YWJjZA==');
+  assert.strictEqual(inferReceiptMediaType({ name: 'receipt.PNG' }), 'image/png');
+  assert.strictEqual(isSupportedReceiptMediaType('image/heic'), false);
   assert(RECEIPT_IMAGE_MAX_BASE64_LENGTH < 3_000_000);
 
   process.stdout.write('[mobile-logic] receipt image preparation checks passed\n');

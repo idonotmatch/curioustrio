@@ -1,6 +1,10 @@
 jest.mock('../../src/db', () => ({ pool: { connect: jest.fn() } }));
 jest.mock('../../src/models/expense', () => ({ findById: jest.fn() }));
 jest.mock('../../src/models/emailImportLog', () => ({ recordReviewFeedback: jest.fn() }));
+jest.mock('../../src/models/matchDecision', () => ({
+  recordExpensePair: jest.fn(async () => ({})),
+  recordDuplicatePatternDecision: jest.fn(async () => ({})),
+}));
 jest.mock('../../src/models/expenseSourceObservation', () => ({
   transfer: jest.fn(async () => ['observation-1']),
   restore: jest.fn(async () => 1),
@@ -15,6 +19,7 @@ jest.mock('../../src/services/entityResolutionService', () => ({ resolveExpenseI
 const db = require('../../src/db');
 const Expense = require('../../src/models/expense');
 const EmailImportLog = require('../../src/models/emailImportLog');
+const MatchDecision = require('../../src/models/matchDecision');
 const ExpenseSourceObservation = require('../../src/models/expenseSourceObservation');
 const {
   handleApprovedExpenseReview,
@@ -45,6 +50,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   Expense.findById.mockResolvedValue(current);
   EmailImportLog.recordReviewFeedback.mockResolvedValue(null);
+  MatchDecision.recordExpensePair.mockResolvedValue({});
+  MatchDecision.recordDuplicatePatternDecision.mockResolvedValue({});
 });
 
 it('describes field-level merge precedence before persisting it', () => {

@@ -2,6 +2,7 @@ const EmailImportLog = require('../models/emailImportLog');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
 const BackgroundJob = require('../models/backgroundJob');
 const HouseholdFreshnessEvent = require('../models/householdFreshnessEvent');
+const { pruneReceiptScanUsage } = require('./receiptScanUsageService');
 const {
   emailImportRetentionDays,
   freshnessEventRetentionDays,
@@ -10,7 +11,7 @@ const {
 } = require('./storageMinimizationConfig');
 
 async function runDataRetention() {
-  const [emailImport, ingestAttempts, backgroundJobs, freshnessEvents] = await Promise.all([
+  const [emailImport, ingestAttempts, backgroundJobs, freshnessEvents, receiptScanUsage] = await Promise.all([
     EmailImportLog.pruneOldRows(emailImportRetentionDays()),
     IngestAttemptLog.pruneOldRows({
       successDays: ingestSuccessRetentionDays(),
@@ -18,6 +19,7 @@ async function runDataRetention() {
     }),
     BackgroundJob.pruneFinished(),
     HouseholdFreshnessEvent.pruneOldRows(freshnessEventRetentionDays()),
+    pruneReceiptScanUsage(),
   ]);
 
   return {
@@ -25,6 +27,7 @@ async function runDataRetention() {
     ingest_attempts: ingestAttempts,
     background_jobs: backgroundJobs,
     freshness_events: freshnessEvents,
+    receipt_scan_usage: receiptScanUsage,
   };
 }
 

@@ -155,8 +155,8 @@ export const api = {
     inFlightGets.set(key, pending);
     return pending;
   },
-  post: (path, body, { token } = {}) => request(path, { method: 'POST', body: JSON.stringify(body) }, token),
-  put: (path, body, { token } = {}) => request(path, { method: 'PUT', body: JSON.stringify(body) }, token),
-  patch: (path, body, { token } = {}) => request(path, { method: 'PATCH', body: JSON.stringify(body) }, token),
+  post: (path, body, { token, timeoutMs, headers } = {}) => request(path, { method: 'POST', body: JSON.stringify(body), timeoutMs, headers }, token),
+  put: (path, body, { token, timeoutMs, headers } = {}) => request(path, { method: 'PUT', body: JSON.stringify(body), timeoutMs, headers }, token),
+  patch: (path, body, { token, timeoutMs, headers } = {}) => request(path, { method: 'PATCH', body: JSON.stringify(body), timeoutMs, headers }, token),
   delete: (path, { token } = {}) => request(path, { method: 'DELETE' }, token),
 };

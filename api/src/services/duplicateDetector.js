@@ -6,76 +6,24 @@ const ExpenseItem = require('../models/expenseItem');
 const {
   basketSimilarity,
   canonicalMerchantKey,
-  daysBetween,
 } = require('./matchPrimitives');
+const { scoreMatch } = require('./matchScoring');
+const MatchDecision = require('../models/matchDecision');
 
 function scoreCandidate(expense, candidate, {
   locationMatch = false,
   transactionIdMatch = false,
   basketMatch = 0,
+  learnedDifferent = false,
 } = {}) {
-  const reasons = [];
-  let score = 0;
-  const amountDistance = Math.abs(Number(candidate.amount) - Number(expense.amount));
-  const dateDistance = daysBetween(candidate.date, expense.date);
-  const merchantMatch = Boolean(
-    expense.merchant_entity_id
-      && candidate.merchant_entity_id
-      && expense.merchant_entity_id === candidate.merchant_entity_id
-  ) || canonicalMerchantKey(candidate.merchant) === canonicalMerchantKey(expense.merchant);
-  const paymentMatch = Boolean(
-    expense.payment_instrument_id
-      && candidate.payment_instrument_id
-      && expense.payment_instrument_id === candidate.payment_instrument_id
-  );
-
-  if (merchantMatch) {
-    score += 30;
-    reasons.push('Same merchant');
-  }
-  if (amountDistance < 0.005) {
-    score += 40;
-    reasons.push('Same amount');
-  } else if (amountDistance <= 1) {
-    score += 20;
-    reasons.push('Amount within $1');
-  }
-  if (dateDistance === 0) {
-    score += 30;
-    reasons.push('Same date');
-  } else if (dateDistance === 1) {
-    score += 20;
-    reasons.push('Dates one day apart');
-  } else if (dateDistance === 2) {
-    score += 10;
-    reasons.push('Dates two days apart');
-  }
-  if (paymentMatch || (expense.card_last4 && candidate.card_last4 && expense.card_last4 === candidate.card_last4)) {
-    score += 15;
-    reasons.push(paymentMatch ? 'Same payment method' : 'Same card');
-  }
-  if (locationMatch) {
-    score += 15;
-    reasons.push('Same location');
-  }
-  if (transactionIdMatch) {
-    score += 100;
-    reasons.push('Same receipt transaction ID');
-  }
-  if (basketMatch >= 0.6) {
-    score += 35;
-    reasons.push(`Same basket (${Math.round(basketMatch * 100)}%)`);
-  } else if (basketMatch >= 0.4) {
-    score += 15;
-    reasons.push(`Similar basket (${Math.round(basketMatch * 100)}%)`);
-  }
-
-  const exact = transactionIdMatch || (merchantMatch && amountDistance < 0.005 && dateDistance === 0);
-  return {
-    score,
-    reasons,
-    confidence: exact ? 'exact' : score >= 60 ? 'fuzzy' : 'uncertain',
-  };
+  const { evidence, ...result } = scoreMatch(expense, candidate, {
+    profile: 'duplicate',
+    placeMatch: locationMatch,
+    transactionMatch: transactionIdMatch,
+    basketSimilarity: basketMatch,
+    learnedDifferent,
+  });
+  return result;
 }
 
 async function detectDuplicates(expense) {
@@ -193,6 +141,11 @@ async function detectDuplicates(expense) {
       ? await ExpenseItem.findByExpenseId(match.candidate.id).catch(() => [])
       : [];
     const basketMatch = basketSimilarity(currentItems, candidateItems);
+    const learnedDifferent = await MatchDecision.isDuplicatePatternDifferent({
+      userId,
+      left: matchExpense,
+      right: match.candidate,
+    });
     const merchantMatch = Boolean(
       matchExpense.merchant_entity_id
         && match.candidate.merchant_entity_id
@@ -205,12 +158,18 @@ async function detectDuplicates(expense) {
         basketMatch,
         locationMatch: match.locationMatch,
         transactionIdMatch: match.transactionIdMatch,
+        learnedDifferent,
       }),
     };
   }))).filter(Boolean);
 
   const flags = [];
   for (const { candidate, confidence, score, reasons } of matches) {
+    if (await MatchDecision.isExpensePairDifferent({
+      userId,
+      expenseIdA: id,
+      expenseIdB: candidate.id,
+    })) continue;
     const flag = await DuplicateFlag.create({
       expenseIdA: id,
       expenseIdB: candidate.id,

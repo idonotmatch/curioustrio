@@ -16,6 +16,13 @@ jest.mock('../../src/services/receiptParser', () => ({
 jest.mock('../../src/services/mapkitService', () => ({
   searchPlace: jest.fn(),
 }));
+jest.mock('../../src/models/receiptScanJob', () => ({
+  findForUser: jest.fn(),
+}));
+jest.mock('../../src/services/receiptScanJobService', () => ({
+  publicJob: jest.fn((job) => job),
+  submitReceiptScanJob: jest.fn(),
+}));
 
 const { parseExpenseDetailed } = require('../../src/services/nlParser');
 const { assignCategory } = require('../../src/services/categoryAssigner');
@@ -23,6 +30,8 @@ const { parseReceiptDetailed } = require('../../src/services/receiptParser');
 const { searchPlace } = require('../../src/services/mapkitService');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
 const EmailImportLog = require('../../src/models/emailImportLog');
+const ReceiptScanJob = require('../../src/models/receiptScanJob');
+const { submitReceiptScanJob } = require('../../src/services/receiptScanJobService');
 
 let householdId;
 let userId;
@@ -33,6 +42,8 @@ beforeEach(() => {
   assignCategory.mockReset();
   searchPlace.mockReset();
   searchPlace.mockResolvedValue(null);
+  submitReceiptScanJob.mockReset();
+  ReceiptScanJob.findForUser.mockReset();
 });
 
 beforeAll(async () => {
@@ -359,6 +370,41 @@ describe('POST /expenses/confirm', () => {
   });
 });
 
+describe('durable receipt scan jobs', () => {
+  it('queues image extraction and returns a polling location', async () => {
+    submitReceiptScanJob.mockResolvedValueOnce({
+      kind: 'queued',
+      job: { scan_job_id: '8b72693b-64d4-4c99-86af-2b16ec83c1d9', status: 'queued' },
+    });
+    const res = await request(app)
+      .post('/expenses/scan-jobs')
+      .send({ image_base64: '/9j/2Q==', media_type: 'image/jpeg', scan_request_id: 'scan-job-route-001' });
+
+    expect(res.status).toBe(202);
+    expect(res.headers.location).toBe('/expenses/scan-jobs/8b72693b-64d4-4c99-86af-2b16ec83c1d9');
+    expect(res.body.status).toBe('queued');
+    expect(submitReceiptScanJob).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: 'image',
+      requestKey: 'scan-job-route-001',
+      mediaType: 'image/jpeg',
+    }));
+  });
+
+  it('returns only the authenticated user receipt job', async () => {
+    ReceiptScanJob.findForUser.mockResolvedValueOnce({
+      scan_job_id: '8b72693b-64d4-4c99-86af-2b16ec83c1d9',
+      status: 'processing',
+    });
+    const res = await request(app).get('/expenses/scan-jobs/8b72693b-64d4-4c99-86af-2b16ec83c1d9');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('processing');
+    expect(ReceiptScanJob.findForUser).toHaveBeenCalledWith(
+      '8b72693b-64d4-4c99-86af-2b16ec83c1d9',
+      userId
+    );
+  });
+});
+
 describe('POST /expenses/scan', () => {
   it('returns receipt-derived location fields when a store address is available', async () => {
     parseReceiptDetailed.mockResolvedValueOnce({ parsed: {
@@ -383,7 +429,7 @@ describe('POST /expenses/scan', () => {
 
     const res = await request(app)
       .post('/expenses/scan')
-      .send({ image_base64: 'fakebase64data', today: '2026-03-21' });
+      .send({ image_base64: '/9j/2Q==', today: '2026-03-21' });
 
     expect(res.status).toBe(200);
     expect(res.body.place_name).toBe('Trader Joe\'s');
@@ -1349,7 +1395,7 @@ describe('POST /expenses/scan', () => {
     const res = await request(app)
       .post('/expenses/scan')
       .set('Authorization', 'Bearer test')
-      .send({ image_base64: 'base64data' });
+      .send({ image_base64: '/9j/2Q==' });
     expect(res.status).toBe(200);
     expect(res.body.source).toBe('camera');
     expect(res.body.merchant).toBe('Whole Foods');
@@ -1373,7 +1419,7 @@ describe('POST /expenses/scan', () => {
     const res = await request(app)
       .post('/expenses/scan')
       .set('Authorization', 'Bearer test')
-      .send({ image_base64: 'base64data' });
+      .send({ image_base64: '/9j/2Q==' });
     expect(res.status).toBe(200);
     expect(res.body.parse_status).toBe('partial');
     expect(res.body.review_fields).toEqual(expect.arrayContaining(['merchant', 'items']));
@@ -1386,7 +1432,17 @@ describe('POST /expenses/scan', () => {
       .set('Authorization', 'Bearer test')
       .send({});
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('image_base64 required');
+    expect(res.body).toMatchObject({ error: 'Receipt image is required', reason_code: 'image_required' });
+  });
+
+  it('rejects unsupported image formats before invoking the model', async () => {
+    const res = await request(app)
+      .post('/expenses/scan')
+      .set('Authorization', 'Bearer test')
+      .send({ image_base64: '/9j/2Q==', media_type: 'image/heic' });
+    expect(res.status).toBe(415);
+    expect(res.body.reason_code).toBe('unsupported_image_type');
+    expect(parseReceiptDetailed).not.toHaveBeenCalled();
   });
 
   it('returns 422 when receipt cannot be parsed', async () => {
@@ -1394,7 +1450,7 @@ describe('POST /expenses/scan', () => {
     const res = await request(app)
       .post('/expenses/scan')
       .set('Authorization', 'Bearer test')
-      .send({ image_base64: 'base64data' });
+      .send({ image_base64: '/9j/2Q==' });
     expect(res.status).toBe(422);
     expect(res.body.reason_code).toBe('missing_total');
     expect(Array.isArray(res.body.suggested_actions)).toBe(true);
@@ -1426,12 +1482,13 @@ describe('POST /expenses/parse — input length limit', () => {
 });
 
 describe('POST /expenses/scan — image size limit', () => {
-  it('returns 400 when image_base64 exceeds the route limit', async () => {
+  it('returns 413 when image_base64 exceeds the route limit', async () => {
     const res = await request(app)
       .post('/expenses/scan')
       .send({ image_base64: 'a'.repeat(3_000_001), today: '2026-03-29' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(413);
     expect(res.body.error).toMatch(/too large/i);
+    expect(res.body.reason_code).toBe('payload_too_large');
   });
 });
 
@@ -1551,7 +1608,7 @@ describe('POST /expenses/scan — category_name in response', () => {
 
     const res = await request(app)
       .post('/expenses/scan')
-      .send({ image_base64: 'base64data' });
+      .send({ image_base64: '/9j/2Q==' });
 
     expect(res.status).toBe(200);
     expect(res.body.category_id).toBe(catId);

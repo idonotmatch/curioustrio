@@ -63,5 +63,6 @@ async function deleteSupabaseAuthUser(providerUid) {
 module.exports = {
   assertSupabaseAuthUserExists,
   deleteSupabaseAuthUser,
+  getAdminClient,
   supabaseAdminConfigured,
 };

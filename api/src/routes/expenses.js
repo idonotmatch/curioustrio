@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
@@ -41,6 +42,15 @@ const { validateExpenseCoreFields } = require('../services/expenseValidation');
 const { transitionPendingExpense } = require('../services/expenseReviewTransitionService');
 const { recordItemMatchDecision } = require('../services/itemMatchReviewService');
 const { resolveExpenseIdentities } = require('../services/entityResolutionService');
+const { updateIdentity } = require('../services/identityManagementService');
+const { normalizeReceiptImageInput } = require('../services/receiptImageInput');
+const ReceiptScanJob = require('../models/receiptScanJob');
+const { publicJob, submitReceiptScanJob } = require('../services/receiptScanJobService');
+const {
+  completeReceiptScan,
+  failReceiptScan,
+  reserveReceiptScan,
+} = require('../services/receiptScanUsageService');
 
 router.use(authenticate);
 
@@ -210,40 +220,203 @@ router.post('/parse', aiEndpoints, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Scan receipt image → structured expense (does NOT save to DB)
-router.post('/scan', aiEndpoints, async (req, res, next) => {
+// Queue receipt extraction and return immediately. The synchronous endpoints
+// below remain available for older TestFlight builds during the transition.
+router.post('/scan-jobs', aiEndpoints, async (req, res, next) => {
   try {
-    const { image_base64, today } = req.body;
-    if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
-    if (image_base64.length > 3_000_000) return res.status(400).json({ error: 'image too large (max ~2MB)' });
-
-    const result = await scanReceiptInput({
-      user: await getUser(req),
-      imageBase64: image_base64,
+    const { image_base64, media_type: mediaType, today, scan_request_id: scanRequestId } = req.body;
+    const image = normalizeReceiptImageInput({ imageBase64: image_base64, mediaType });
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const inputHash = crypto.createHash('sha256').update(image.imageBase64).digest('hex');
+    const queued = await submitReceiptScanJob({
+      user,
+      endpoint: 'image',
+      inputBase64: image.imageBase64,
+      inputHash,
+      requestKey: scanRequestId || req.get('x-idempotency-key') || `image:${inputHash}`,
+      mediaType: image.mediaType,
       todayDate: today || new Date().toISOString().split('T')[0],
     });
-    if (result.errorStatus) {
-      return res.status(result.errorStatus).json(result.errorBody);
+    if (queued.kind === 'cached') {
+      res.setHeader('x-receipt-scan-cache', 'hit');
+      return res.json(queued.result);
     }
-    res.json(result.body);
-  } catch (err) { next(err); }
+    const pollPath = `/expenses/scan-jobs/${queued.job.scan_job_id}`;
+    res.setHeader('location', pollPath);
+    return res.status(202).json({ ...queued.job, poll_path: pollPath });
+  } catch (err) { return next(err); }
+});
+
+router.post('/scan-document-jobs', aiEndpoints, async (req, res, next) => {
+  try {
+    const {
+      document_base64: documentBase64,
+      file_name: fileName,
+      today,
+      scan_request_id: scanRequestId,
+    } = req.body;
+    if (!documentBase64) return res.status(400).json({ error: 'document_base64 required' });
+    if (documentBase64.length > 10_000_000) return res.status(400).json({ error: 'document too large (max ~7MB)' });
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const inputHash = crypto.createHash('sha256').update(documentBase64).digest('hex');
+    const queued = await submitReceiptScanJob({
+      user,
+      endpoint: 'document',
+      inputBase64: documentBase64,
+      inputHash,
+      requestKey: scanRequestId || req.get('x-idempotency-key') || `document:${inputHash}`,
+      mediaType: 'application/pdf',
+      fileName: fileName || 'receipt.pdf',
+      todayDate: today || new Date().toISOString().split('T')[0],
+    });
+    if (queued.kind === 'cached') {
+      res.setHeader('x-receipt-scan-cache', 'hit');
+      return res.json(queued.result);
+    }
+    const pollPath = `/expenses/scan-jobs/${queued.job.scan_job_id}`;
+    res.setHeader('location', pollPath);
+    return res.status(202).json({ ...queued.job, poll_path: pollPath });
+  } catch (err) { return next(err); }
+});
+
+router.get('/scan-jobs/:id', async (req, res, next) => {
+  try {
+    if (!UUID_RE.test(`${req.params.id || ''}`)) return res.status(400).json({ error: 'Invalid receipt scan job ID' });
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const job = await ReceiptScanJob.findForUser(req.params.id, user.id);
+    if (!job) return res.status(404).json({ error: 'Receipt scan not found' });
+    res.setHeader('cache-control', 'no-store');
+    return res.json(publicJob(job));
+  } catch (err) { return next(err); }
+});
+
+// Scan receipt image → structured expense (does NOT save to DB)
+router.post('/scan', aiEndpoints, async (req, res, next) => {
+  let reservation = null;
+  let user = null;
+  try {
+    const { image_base64, media_type: mediaType, today, scan_request_id: scanRequestId } = req.body;
+    const image = normalizeReceiptImageInput({ imageBase64: image_base64, mediaType });
+    user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const inputHash = crypto.createHash('sha256').update(image.imageBase64).digest('hex');
+    reservation = await reserveReceiptScan({
+      userId: user.id,
+      requestKey: scanRequestId || req.get('x-idempotency-key') || `image:${inputHash}`,
+      endpoint: 'image',
+      inputHash,
+    });
+    if (reservation.kind === 'cached') {
+      res.setHeader('x-receipt-scan-cache', 'hit');
+      return res.json({ ...reservation.responseBody, scan_usage: reservation.usage });
+    }
+    if (reservation.kind === 'in_progress') {
+      throw Object.assign(new Error('This receipt scan is still processing'), {
+        status: 409, expose: true, reason_code: 'receipt_scan_in_progress',
+      });
+    }
+
+    const result = await scanReceiptInput({
+      user,
+      imageBase64: image.imageBase64,
+      imageMediaType: image.mediaType,
+      todayDate: today || new Date().toISOString().split('T')[0],
+      allowRetry: !reservation.degraded,
+    });
+    if (result.errorStatus) {
+      await failReceiptScan({
+        requestId: reservation.requestId,
+        userId: user.id,
+        errorBody: result.errorBody,
+        modelUsage: result.modelUsage,
+      });
+      return res.status(result.errorStatus).json({ ...result.errorBody, scan_usage: reservation.usage });
+    }
+    await completeReceiptScan({
+      requestId: reservation.requestId,
+      userId: user.id,
+      responseBody: result.body,
+      modelUsage: result.modelUsage,
+    });
+    return res.json({ ...result.body, scan_usage: reservation.usage });
+  } catch (err) {
+    if (reservation?.kind === 'reserved' && reservation?.requestId && user?.id) {
+      await failReceiptScan({
+        requestId: reservation.requestId,
+        userId: user.id,
+        errorBody: { reason_code: 'scan_route_failed' },
+      }).catch(() => {});
+    }
+    return next(err);
+  }
 });
 
 // Read an uploaded PDF receipt → structured expense (does NOT save to DB)
 router.post('/scan-document', aiEndpoints, async (req, res, next) => {
+  let reservation = null;
+  let user = null;
   try {
-    const { document_base64: documentBase64, file_name: fileName, today } = req.body;
+    const {
+      document_base64: documentBase64,
+      file_name: fileName,
+      today,
+      scan_request_id: scanRequestId,
+    } = req.body;
     if (!documentBase64) return res.status(400).json({ error: 'document_base64 required' });
     if (documentBase64.length > 10_000_000) return res.status(400).json({ error: 'document too large (max ~7MB)' });
+    user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    const inputHash = crypto.createHash('sha256').update(documentBase64).digest('hex');
+    reservation = await reserveReceiptScan({
+      userId: user.id,
+      requestKey: scanRequestId || req.get('x-idempotency-key') || `document:${inputHash}`,
+      endpoint: 'document',
+      inputHash,
+    });
+    if (reservation.kind === 'cached') {
+      res.setHeader('x-receipt-scan-cache', 'hit');
+      return res.json({ ...reservation.responseBody, scan_usage: reservation.usage });
+    }
+    if (reservation.kind === 'in_progress') {
+      throw Object.assign(new Error('This receipt scan is still processing'), {
+        status: 409, expose: true, reason_code: 'receipt_scan_in_progress',
+      });
+    }
     const result = await scanReceiptDocumentInput({
-      user: await getUser(req),
+      user,
       documentBase64,
       fileName,
       todayDate: today || new Date().toISOString().split('T')[0],
     });
-    if (result.errorStatus) return res.status(result.errorStatus).json(result.errorBody);
-    return res.json(result.body);
-  } catch (err) { return next(err); }
+    if (result.errorStatus) {
+      await failReceiptScan({
+        requestId: reservation.requestId,
+        userId: user.id,
+        errorBody: result.errorBody,
+        modelUsage: result.modelUsage,
+      });
+      return res.status(result.errorStatus).json({ ...result.errorBody, scan_usage: reservation.usage });
+    }
+    await completeReceiptScan({
+      requestId: reservation.requestId,
+      userId: user.id,
+      responseBody: result.body,
+      modelUsage: result.modelUsage,
+    });
+    return res.json({ ...result.body, scan_usage: reservation.usage });
+  } catch (err) {
+    if (reservation?.kind === 'reserved' && reservation?.requestId && user?.id) {
+      await failReceiptScan({
+        requestId: reservation.requestId,
+        userId: user.id,
+        errorBody: { reason_code: 'scan_document_route_failed' },
+      }).catch(() => {});
+    }
+    return next(err);
+  }
 });
 
 // Confirm expense → save to DB + update merchant mapping + run dedup
@@ -515,14 +688,17 @@ router.get('/cards', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const result = await db.query(
-      `SELECT card_label, card_last4, payment_method, MAX(created_at) AS last_used
-       FROM expenses
-       WHERE user_id = $1
-         AND payment_method IN ('credit', 'debit')
-         AND (card_last4 IS NOT NULL OR card_label IS NOT NULL)
-       GROUP BY card_label, card_last4, payment_method
-       ORDER BY MAX(created_at) DESC
-       LIMIT 10`,
+      `SELECT instrument.id, instrument.display_label AS card_label,
+              instrument.card_last4, instrument.payment_method,
+              instrument.issuer, instrument.network, instrument.confidence,
+              MAX(expense.created_at) AS last_used,
+              COUNT(expense.id)::int AS expense_count
+       FROM payment_instruments instrument
+       LEFT JOIN expenses expense ON expense.payment_instrument_id = instrument.id
+       WHERE instrument.user_id = $1 AND instrument.status = 'active'
+       GROUP BY instrument.id
+       ORDER BY MAX(expense.created_at) DESC NULLS LAST, instrument.updated_at DESC
+       LIMIT 20`,
       [user.id]
     );
     res.json(result.rows);
@@ -534,37 +710,44 @@ router.patch('/cards/rename', async (req, res, next) => {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
     const {
+      id,
       payment_method,
       card_label,
       card_last4,
       next_card_label,
       next_card_last4,
     } = req.body || {};
-    if (!['credit', 'debit'].includes(payment_method)) {
+    if (!id && !['credit', 'debit'].includes(payment_method)) {
       return res.status(400).json({ error: 'payment_method must be credit or debit' });
     }
     if (!next_card_label && !next_card_last4) {
       return res.status(400).json({ error: 'next card details required' });
     }
-    const result = await db.query(
-      `UPDATE expenses
-       SET card_label = $5,
-           card_last4 = $6
-       WHERE user_id = $1
-         AND payment_method = $2
-         AND COALESCE(card_label, '') = COALESCE($3, '')
-         AND COALESCE(card_last4, '') = COALESCE($4, '')
-       RETURNING id`,
-      [
-        user.id,
-        payment_method,
-        card_label || null,
-        card_last4 || null,
-        next_card_label || null,
-        next_card_last4 || null,
-      ]
-    );
-    res.json({ updated: result.rowCount || 0 });
+    let entityId = id;
+    if (!entityId) {
+      const existing = await db.query(
+        `SELECT id FROM payment_instruments
+         WHERE user_id = $1 AND payment_method = $2
+           AND COALESCE(display_label, '') = COALESCE($3, '')
+           AND COALESCE(card_last4, '') = COALESCE($4, '')
+         ORDER BY updated_at DESC LIMIT 1`,
+        [user.id, payment_method, card_label || null, card_last4 || null]
+      );
+      entityId = existing.rows[0]?.id;
+    }
+    if (!entityId) return res.status(404).json({ error: 'Saved card not found' });
+    const instrument = await updateIdentity({
+      user,
+      domain: 'payment',
+      entityId,
+      patch: {
+        display_label: next_card_label,
+        card_last4: next_card_last4,
+        issuer: req.body?.issuer,
+        network: req.body?.network,
+      },
+    });
+    res.json({ updated: 1, instrument });
   } catch (err) { next(err); }
 });
 
@@ -572,21 +755,23 @@ router.post('/cards/forget', async (req, res, next) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
-    const { payment_method, card_label, card_last4 } = req.body || {};
-    if (!['credit', 'debit'].includes(payment_method)) {
+    const { id, payment_method, card_label, card_last4 } = req.body || {};
+    if (!id && !['credit', 'debit'].includes(payment_method)) {
       return res.status(400).json({ error: 'payment_method must be credit or debit' });
     }
-    const result = await db.query(
-      `UPDATE expenses
-       SET card_label = NULL,
-           card_last4 = NULL
-       WHERE user_id = $1
-         AND payment_method = $2
-         AND COALESCE(card_label, '') = COALESCE($3, '')
-         AND COALESCE(card_last4, '') = COALESCE($4, '')
-       RETURNING id`,
-      [user.id, payment_method, card_label || null, card_last4 || null]
-    );
+    const result = id
+      ? await db.query(
+        `UPDATE payment_instruments SET status = 'forgotten', forgotten_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [id, user.id]
+      )
+      : await db.query(
+        `UPDATE payment_instruments SET status = 'forgotten', forgotten_at = NOW(), updated_at = NOW()
+         WHERE user_id = $1 AND payment_method = $2
+           AND COALESCE(display_label, '') = COALESCE($3, '')
+           AND COALESCE(card_last4, '') = COALESCE($4, '') RETURNING id`,
+        [user.id, payment_method, card_label || null, card_last4 || null]
+      );
     res.json({ removed: result.rowCount || 0 });
   } catch (err) { next(err); }
 });

@@ -8,18 +8,81 @@ let ImageManipulator;
 try { ImageManipulator = require('expo-image-manipulator'); } catch { /* not available in Expo Go */ }
 import { NLInput } from '../../components/NLInput';
 import { api } from '../../services/api';
-const { receiptScanErrorPresentation } = require('../../services/receiptScanPresentation');
+const {
+  receiptScanErrorPresentation,
+  receiptScanUsagePresentation,
+} = require('../../services/receiptScanPresentation');
 const {
   RECEIPT_IMAGE_MAX_BASE64_LENGTH,
+  emergencyReceiptImagePlan,
   fallbackReceiptImagePlan,
+  inferReceiptMediaType,
+  isSupportedReceiptMediaType,
+  normalizeReceiptBase64,
   primaryReceiptImagePlan,
 } = require('../../services/receiptImagePreparation');
+const { createReceiptScanRequestId, submitReceiptScan } = require('../../services/receiptScanClient');
 import { useEffect, useRef, useState } from 'react';
 import { toLocalDateString } from '../../services/date';
 import { pushConfirmDraft } from '../../services/confirmNavigation';
 import { ActionRow, SecondaryButton } from '../../components/ui/Buttons';
 import { LoadingState } from '../../components/ui/States';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
+
+async function prepareReceiptImage(asset = {}) {
+  if (!asset.uri && !asset.base64) {
+    const error = new Error('The selected receipt image is unavailable. Choose it again.');
+    error.reason_code = 'image_unavailable';
+    throw error;
+  }
+
+  if (ImageManipulator?.manipulateAsync && asset.uri) {
+    const plans = [
+      primaryReceiptImagePlan(asset),
+      fallbackReceiptImagePlan(asset),
+      emergencyReceiptImagePlan(asset),
+    ];
+    for (const plan of plans) {
+      try {
+        const result = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: plan.width } }],
+          { compress: plan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+        const imageBase64 = normalizeReceiptBase64(result.base64);
+        if (imageBase64 && imageBase64.length <= RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
+          return { imageBase64, mediaType: 'image/jpeg' };
+        }
+      } catch {
+        // Try the next preparation strategy before falling back to the original bytes.
+      }
+    }
+  }
+
+  let imageBase64 = normalizeReceiptBase64(asset.base64);
+  if (!imageBase64 && asset.uri) {
+    try {
+      imageBase64 = normalizeReceiptBase64(await new File(asset.uri).base64());
+    } catch {
+      const error = new Error('Could not open the selected receipt image. Choose it again or take a new photo.');
+      error.reason_code = 'image_unavailable';
+      throw error;
+    }
+  }
+
+  const mediaType = inferReceiptMediaType(asset);
+  if (!isSupportedReceiptMediaType(mediaType)) {
+    const error = new Error('This image format could not be converted. Choose a JPEG or PNG image.');
+    error.reason_code = 'unsupported_image_type';
+    throw error;
+  }
+  if (!imageBase64 || imageBase64.length > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
+    const error = new Error('Receipt image is too large. Crop closer to the receipt and try again.');
+    error.reason_code = 'image_too_large';
+    throw error;
+  }
+  return { imageBase64, mediaType };
+}
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
@@ -65,35 +128,40 @@ export default function AddScreen() {
     }
   }
 
-  async function parseReceiptImage(asset, source = 'camera') {
-    let imageBase64 = asset.base64 || await new File(asset.uri).base64();
-    try {
-      const primaryPlan = primaryReceiptImagePlan(asset);
-      const resized = await ImageManipulator.manipulateAsync(
-        asset.uri,
-        [{ resize: { width: primaryPlan.width } }],
-        { compress: primaryPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-      );
-      imageBase64 = resized.base64;
-      if ((imageBase64?.length || 0) > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
-        const fallbackPlan = fallbackReceiptImagePlan(asset);
-        const compressed = await ImageManipulator.manipulateAsync(
-          asset.uri,
-          [{ resize: { width: fallbackPlan.width } }],
-          { compress: fallbackPlan.compress, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-        );
-        imageBase64 = compressed.base64;
-      }
-    } catch { /* use the picker-provided or file-system image */ }
-
-    if (!imageBase64 || imageBase64.length > RECEIPT_IMAGE_MAX_BASE64_LENGTH) {
-      throw new Error('Receipt image is too large. Crop closer to the receipt and try again.');
-    }
-    const parsed = await api.post('/expenses/scan', {
+  async function parseReceiptImage(asset, source = 'camera', scanRequestId = createReceiptScanRequestId()) {
+    const { imageBase64, mediaType } = await prepareReceiptImage(asset);
+    const parsed = await submitReceiptScan(api, '/expenses/scan-jobs', {
       image_base64: imageBase64,
+      media_type: mediaType,
       today: toLocalDateString(),
+      scan_request_id: scanRequestId,
     });
     pushConfirmDraft(router, { ...parsed, source, image_uri: asset.uri });
+    const usageNotice = receiptScanUsagePresentation(parsed.scan_usage);
+    if (usageNotice) Alert.alert(usageNotice.title, usageNotice.message);
+  }
+
+  function presentReceiptFailure(error, retry = null) {
+    const presentation = receiptScanErrorPresentation(error);
+    const reference = error?.requestId ? `\n\nReference: ${error.requestId}` : '';
+    const title = presentation?.title || 'Scan failed';
+    const message = `${presentation?.message || error?.message || 'Could not read this receipt.'}${reference}`;
+    const actions = [];
+    if (presentation?.canRetry !== false && retry) actions.push({ text: 'Try again', onPress: retry });
+    if (presentation?.canEnterManually !== false) actions.push({ text: 'Enter manually', onPress: startManualEntry });
+    actions.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert(title, message, actions);
+  }
+
+  async function processReceiptAsset(asset, source = 'camera', scanRequestId = createReceiptScanRequestId()) {
+    setScanLoading(true);
+    try {
+      await parseReceiptImage(asset, source, scanRequestId);
+    } catch (error) {
+      presentReceiptFailure(error, () => processReceiptAsset(asset, source, scanRequestId));
+    } finally {
+      setScanLoading(false);
+    }
   }
 
   async function handleScan(fromGallery = false) {
@@ -119,31 +187,13 @@ export default function AddScreen() {
       if (pickerResult.canceled) return;
 
       const asset = pickerResult.assets[0];
-      setScanLoading(true);
-      await parseReceiptImage(asset, 'camera');
+      await processReceiptAsset(asset, 'camera');
     } catch (err) {
-      const msg = err?.message || '';
-      const presentation = receiptScanErrorPresentation(err);
-      if (presentation?.canEnterManually) {
-        Alert.alert(
-          presentation.title,
-          presentation.message,
-          [
-            { text: 'Try again', style: 'cancel' },
-            { text: 'Start from scratch', onPress: startManualEntry },
-          ]
-        );
-      } else if (presentation) {
-        Alert.alert(presentation.title, presentation.message);
-      } else if (msg.includes('Camera not available on simulator')) {
+      if (`${err?.message || ''}`.includes('Camera not available on simulator')) {
         Alert.alert('Simulator', 'Camera is not available in the simulator. Use "from camera roll" or test on a real device.');
-      } else if (msg.includes('Receipt image is too large')) {
-        Alert.alert('Crop the receipt', msg);
       } else {
-        Alert.alert('Scan failed', 'Could not reach the server. Check your connection and try again.');
+        presentReceiptFailure(err, () => handleScan(fromGallery));
       }
-    } finally {
-      setScanLoading(false);
     }
   }
 
@@ -163,21 +213,20 @@ export default function AddScreen() {
           throw new Error('Receipt PDF is too large. Choose a file smaller than 7MB.');
         }
         const documentBase64 = await new File(asset.uri).base64();
-        const parsed = await api.post('/expenses/scan-document', {
+        const parsed = await submitReceiptScan(api, '/expenses/scan-document-jobs', {
           document_base64: documentBase64,
           file_name: asset.name || 'receipt.pdf',
           today: toLocalDateString(),
+          scan_request_id: createReceiptScanRequestId(),
         });
         pushConfirmDraft(router, { ...parsed, source: 'share' });
+        const usageNotice = receiptScanUsagePresentation(parsed.scan_usage);
+        if (usageNotice) Alert.alert(usageNotice.title, usageNotice.message);
       } else {
-        await parseReceiptImage(asset, 'share');
+        await processReceiptAsset(asset, 'share');
       }
     } catch (err) {
-      const presentation = receiptScanErrorPresentation(err);
-      Alert.alert(
-        presentation?.title || 'Could not read receipt file',
-        presentation?.message || err?.message || 'Choose a receipt image or a text-based PDF and try again.'
-      );
+      presentReceiptFailure(err, handleDocumentImport);
     } finally {
       setScanLoading(false);
     }

@@ -18,6 +18,7 @@ const filesToCheck = [
   'app/item-trends.js',
   'app/item-family-review.js',
   'app/manual-add.js',
+  'app/match-details.js',
   'app/onboarding.js',
   'app/recurring-item.js',
   'app/recurring-bundle.js',

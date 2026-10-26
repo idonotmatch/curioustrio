@@ -326,6 +326,7 @@ export default function ConfirmScreen() {
   async function forgetSavedCard(card) {
     try {
       await api.post('/expenses/cards/forget', {
+        id: card.id,
         payment_method: card.payment_method,
         card_label: card.card_label || null,
         card_last4: card.card_last4 || null,
@@ -346,6 +347,7 @@ export default function ConfirmScreen() {
     if (!selectedSavedCard) return;
     try {
       await api.patch('/expenses/cards/rename', {
+        id: selectedSavedCard.id,
         payment_method: selectedSavedCard.payment_method,
         card_label: selectedSavedCard.card_label || null,
         card_last4: selectedSavedCard.card_last4 || null,

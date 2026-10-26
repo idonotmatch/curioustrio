@@ -9,6 +9,7 @@ const {
   normalizeApprovedEmailNotes,
 } = require('./expenseEmailReviewService');
 const { canMergeSources, sourceRole } = require('./importSourcePolicy');
+const MatchDecision = require('../models/matchDecision');
 
 const ACTION_STATUS = {
   keep_both: 'kept_both',
@@ -362,6 +363,30 @@ async function resolveDuplicate({ user, expenseId, flagId, action }) {
         currentConfirmed = true;
       }
     }
+    await MatchDecision.recordExpensePair({
+      userId: user.id,
+      householdId: user.household_id || null,
+      domain: 'transaction',
+      decision: action === 'keep_both' ? 'different' : 'same',
+      expenseIdA: current.id,
+      expenseIdB: counterpart.id,
+      source: `duplicate_${action}`,
+      evidence: {
+        flag_id: flag.id,
+        score: flag.score,
+        confidence: flag.confidence,
+        reasons: flag.match_reasons || [],
+      },
+      queryable: client,
+    });
+    await MatchDecision.recordDuplicatePatternDecision({
+      userId: user.id,
+      householdId: user.household_id || null,
+      left: current,
+      right: counterpart,
+      decision: action === 'keep_both' ? 'different' : 'same',
+      queryable: client,
+    });
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

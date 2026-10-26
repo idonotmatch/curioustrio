@@ -558,6 +558,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
   const priors = Array.isArray(options?.priors) ? options.priors.filter(Boolean) : [];
   const passMode = options?.passMode || 'full';
   const familyHint = options?.familyHint || null;
+  const mediaType = options?.mediaType || 'image/jpeg';
   const shouldRunPrimary = passMode !== 'fallback_only';
   const shouldRunFallback = passMode !== 'primary_only';
   if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
@@ -576,6 +577,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     primaryModelResult = await completeWithImageDetailed({
       system: SYSTEM_PROMPT,
       imageBase64,
+      mediaType,
       text: buildPrimaryPrompt(todayDate, priors, familyHint),
       maxTokens: 3200,
       outputSchema: RECEIPT_OUTPUT_SCHEMA,
@@ -668,6 +670,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
   const fallbackModelResult = await completeWithImageDetailed({
     system: FALLBACK_SYSTEM_PROMPT,
     imageBase64,
+    mediaType,
     text: buildFallbackPrompt(todayDate, priors, familyHint || familyClassification),
     maxTokens: 1800,
     outputSchema: FALLBACK_RECEIPT_OUTPUT_SCHEMA,

@@ -14,12 +14,17 @@ jest.mock('../../src/models/expenseSourceObservation', () => ({
   findTransactionIdsForExpense: jest.fn(),
   findPotentialTransactionDuplicates: jest.fn(),
 }));
+jest.mock('../../src/models/matchDecision', () => ({
+  isExpensePairDifferent: jest.fn(),
+  isDuplicatePatternDifferent: jest.fn(),
+}));
 
 const Expense = require('../../src/models/expense');
 const DuplicateFlag = require('../../src/models/duplicateFlag');
 const ExpenseItem = require('../../src/models/expenseItem');
 const ExpenseReceiptDetail = require('../../src/models/expenseReceiptDetail');
 const ExpenseSourceObservation = require('../../src/models/expenseSourceObservation');
+const MatchDecision = require('../../src/models/matchDecision');
 const detectDuplicates = require('../../src/services/duplicateDetector');
 const { scoreCandidate } = require('../../src/services/duplicateDetector');
 
@@ -34,6 +39,38 @@ beforeEach(() => {
   ExpenseReceiptDetail.findPotentialDuplicates.mockResolvedValue([]);
   ExpenseSourceObservation.findTransactionIdsForExpense.mockResolvedValue([]);
   ExpenseSourceObservation.findPotentialTransactionDuplicates.mockResolvedValue([]);
+  MatchDecision.isExpensePairDifferent.mockResolvedValue(false);
+  MatchDecision.isDuplicatePatternDifferent.mockResolvedValue(false);
+});
+
+it('downgrades future matches after a similar pattern was kept separate', async () => {
+  const candidate = { id: 'expense-1', source: 'manual', merchant: 'Coffee Shop', amount: '8.00', date: '2026-09-02' };
+  Expense.findPotentialDuplicates.mockResolvedValue([candidate]);
+  MatchDecision.isDuplicatePatternDifferent.mockResolvedValue(true);
+  DuplicateFlag.create.mockImplementation(async (value) => value);
+
+  await detectDuplicates({
+    id: 'expense-2', user_id: 'user-1', source: 'email', merchant: 'Coffee Shop', amount: '8.00', date: '2026-09-02',
+  });
+
+  expect(DuplicateFlag.create).toHaveBeenCalledWith(expect.objectContaining({
+    confidence: 'fuzzy',
+    score: 75,
+    matchReasons: expect.arrayContaining(['Similar matches were previously kept separate']),
+  }));
+});
+
+it('does not recreate a duplicate that the user marked as different', async () => {
+  const candidate = { id: 'expense-1', merchant: 'Coffee Shop', amount: '8.00', date: '2026-09-02' };
+  Expense.findPotentialDuplicates.mockResolvedValue([candidate]);
+  MatchDecision.isExpensePairDifferent.mockResolvedValue(true);
+
+  const flags = await detectDuplicates({
+    id: 'expense-2', user_id: 'user-1', merchant: 'Coffee Shop', amount: '8.00', date: '2026-09-02',
+  });
+
+  expect(flags).toEqual([]);
+  expect(DuplicateFlag.create).not.toHaveBeenCalled();
 });
 
 it('scores exact matches with readable evidence', () => {

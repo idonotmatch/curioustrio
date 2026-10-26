@@ -4,6 +4,7 @@ jest.mock('../../src/models/backgroundJob', () => ({
     postConfirm: 'post_confirm',
     gmailEnrichment: 'gmail_enrichment',
     gmailSync: 'gmail_sync',
+    receiptScan: 'receipt_scan',
   },
   claimNext: jest.fn(),
   complete: jest.fn().mockResolvedValue({ status: 'completed' }),
@@ -25,6 +26,10 @@ jest.mock('../../src/services/gmailEnrichmentService', () => ({
 jest.mock('../../src/services/gmailSyncService', () => ({
   runGmailSyncJob: jest.fn().mockResolvedValue({}),
 }));
+jest.mock('../../src/services/receiptScanJobService', () => ({
+  runReceiptScanJob: jest.fn().mockResolvedValue({ succeeded: true }),
+  failDeadReceiptScanJob: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../src/services/observability', () => ({ captureException: jest.fn() }));
 
 const BackgroundJob = require('../../src/models/backgroundJob');
@@ -33,6 +38,7 @@ const { refreshProjectionNow } = require('../../src/services/projectionRefreshSe
 const { runPostConfirmJob } = require('../../src/services/expenseConfirmService');
 const { runGmailEnrichmentJob } = require('../../src/services/gmailEnrichmentService');
 const { runGmailSyncJob } = require('../../src/services/gmailSyncService');
+const { runReceiptScanJob, failDeadReceiptScanJob } = require('../../src/services/receiptScanJobService');
 const { captureException } = require('../../src/services/observability');
 const { processJob } = require('../../src/services/backgroundJobWorker');
 
@@ -86,6 +92,26 @@ describe('background job worker', () => {
     await processJob(job);
     expect(runGmailSyncJob).toHaveBeenCalledWith(job.payload);
     expect(BackgroundJob.complete).toHaveBeenCalledWith('job-gmail-sync', 'worker-1');
+  });
+
+  it('delegates receipt scans to the durable extraction handler', async () => {
+    const job = {
+      id: 'job-receipt', job_type: 'receipt_scan', attempt_count: 1, payload: { scan_job_id: 'scan-1' },
+    };
+    await processJob(job);
+    expect(runReceiptScanJob).toHaveBeenCalledWith(job.payload);
+    expect(BackgroundJob.complete).toHaveBeenCalledWith('job-receipt', 'worker-1');
+  });
+
+  it('finalizes receipt jobs only after the worker exhausts retries', async () => {
+    const error = new Error('provider down');
+    runReceiptScanJob.mockRejectedValueOnce(error);
+    BackgroundJob.fail.mockResolvedValueOnce({ status: 'dead' });
+    const job = {
+      id: 'job-receipt-dead', job_type: 'receipt_scan', attempt_count: 3, payload: { scan_job_id: 'scan-2' },
+    };
+    await processJob(job);
+    expect(failDeadReceiptScanJob).toHaveBeenCalledWith(job.payload, error);
   });
 
   it('records a retry and captures failures without crashing the worker', async () => {

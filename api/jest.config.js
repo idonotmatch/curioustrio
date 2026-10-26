@@ -8,6 +8,8 @@ module.exports = {
     '/tests/models/',
     '/tests/services/categoryAssigner.test.js',
     '/tests/services/duplicateDetector.test.js',
+    '/tests/services/identityManagement.integration.test.js',
+    '/tests/services/receiptScanUsageService.integration.test.js',
     '/tests/services/recurringDetector.test.js',
   ],
 };

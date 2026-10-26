@@ -338,6 +338,22 @@ export default function ExpenseDetailScreen() {
         )}
       </View>
 
+      {canEdit && !editing ? (
+        <TouchableOpacity
+          style={styles.matchDetailsRow}
+          onPress={() => router.push({ pathname: '/match-details', params: { expense_id: id } })}
+          accessibilityRole="button"
+          accessibilityLabel="Review merchant, payment, and location matching"
+        >
+          <View style={styles.matchDetailsIcon}><Ionicons name="git-compare-outline" size={18} color={colors.text} /></View>
+          <View style={styles.matchDetailsCopy}>
+            <Text style={styles.matchDetailsTitle}>Matching details</Text>
+            <Text style={styles.matchDetailsBody}>Review linked merchant, card, and place history</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textDisabled} />
+        </TouchableOpacity>
+      ) : null}
+
       {isPendingEmailReview ? (
         <PendingExpenseReviewPanel
           styles={styles}
@@ -1211,6 +1227,11 @@ const styles = StyleSheet.create({
   },
 
   section: { paddingHorizontal: 20 },
+  matchDetailsRow: { minHeight: 58, marginHorizontal: 20, marginBottom: 8, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
+  matchDetailsIcon: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceRaised, borderWidth: 1, borderColor: colors.border },
+  matchDetailsCopy: { flex: 1, minWidth: 0 },
+  matchDetailsTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  matchDetailsBody: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.surface },
   label: { fontSize: 13, color: colors.textDisabled, width: 90 },
   trackOnlyTextWrap: { flex: 1, paddingRight: 12 },

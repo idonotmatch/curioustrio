@@ -1,9 +1,8 @@
 const crypto = require('crypto');
 const {
-  basketSimilarity,
-  canonicalMerchantKey,
   daysBetween,
 } = require('./matchPrimitives');
+const { scoreMatch } = require('./matchScoring');
 
 const FINANCIAL_EVENT_TYPES = new Set(['purchase_confirmation', 'charge', 'refund']);
 const NON_FINANCIAL_EVENT_TYPES = new Set(['shipping_update', 'cancellation', 'return_update']);
@@ -131,37 +130,11 @@ function isNonFinancialLifecycleEvent(eventType) {
 }
 
 function scoreLifecycleCandidate(current = {}, candidate = {}) {
-  const currentAmount = Math.abs(Number(current.amount || 0));
-  const priorAmount = Math.abs(Number(candidate.amount || 0));
-  const amountTolerance = Math.max(0.05, priorAmount * 0.01);
-  const amountExact = currentAmount > 0 && priorAmount > 0 && Math.abs(currentAmount - priorAmount) <= amountTolerance;
-  const amountNear = currentAmount > 0 && priorAmount > 0 && Math.abs(currentAmount - priorAmount) <= Math.max(1, priorAmount * 0.03);
-  const dateDistance = daysBetween(current.date, candidate.date);
-  const merchantMatch = canonicalMerchantKey(current.merchant) === canonicalMerchantKey(candidate.merchant);
-  const rootMatch = current.senderRootDomain && candidate.sender_root_domain
-    && current.senderRootDomain === candidate.sender_root_domain;
-  const currentEvent = `${current.eventType || 'unknown'}`;
-  const priorEvent = `${candidate.email_event_type || 'unknown'}`;
-  const eventTypes = new Set([currentEvent, priorEvent]);
-  const complementaryEvents = eventTypes.has('purchase_confirmation') && eventTypes.has('charge');
-  const basketMatch = basketSimilarity(current.items, candidate.items);
-
-  let score = 0;
-  const reasons = [];
-  if (merchantMatch) { score += 30; reasons.push('merchant'); }
-  if (amountExact) { score += 30; reasons.push('amount_exact'); }
-  else if (amountNear) { score += 15; reasons.push('amount_near'); }
-  if (dateDistance === 0) { score += 20; reasons.push('date_same'); }
-  else if (dateDistance <= 3) { score += 12; reasons.push('date_near'); }
-  else if (dateDistance <= 7) { score += 4; reasons.push('date_window'); }
-  if (rootMatch) { score += 8; reasons.push('sender_root'); }
-  if (complementaryEvents) { score += 18; reasons.push('complementary_events'); }
-  if (basketMatch >= 0.6) { score += 25; reasons.push('basket_match'); }
-
-  const confidence = score >= 88 && (complementaryEvents || basketMatch >= 0.6)
-    ? 'high'
-    : (score >= 65 ? 'medium' : 'none');
-  return { score, confidence, reasons, basketSimilarity: basketMatch };
+  return scoreMatch(current, candidate, {
+    profile: 'gmailLifecycle',
+    leftEvent: current.eventType,
+    rightEvent: candidate.email_event_type,
+  });
 }
 
 function shouldReuseLifecycleExpense(eventType, relatedEvent, currentExpense = {}) {
