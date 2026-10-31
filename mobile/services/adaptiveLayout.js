@@ -76,9 +76,22 @@ function contentWidthFor(layout, kind = 'feed', options = {}) {
   return Math.max(0, outerWidth - gutter);
 }
 
+function horizontalCardWidthFor(layout, {
+  count = 1,
+  kind = 'feed',
+  maxCardWidth = 720,
+  minCardWidth = 280,
+  trailingPeek = 48,
+} = {}) {
+  const contentWidth = contentWidthFor(layout, kind);
+  if (count <= 1) return contentWidth;
+  return Math.min(maxCardWidth, Math.max(minCardWidth, contentWidth - trailingPeek));
+}
+
 module.exports = {
   ADAPTIVE_BREAKPOINTS,
   ADAPTIVE_MAX_WIDTHS,
   contentWidthFor,
   createAdaptiveLayout,
+  horizontalCardWidthFor,
 };

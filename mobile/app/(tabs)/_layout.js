@@ -44,6 +44,12 @@ const styles = StyleSheet.create({
   addDockFocused: {
     backgroundColor: colors.accentPressed,
   },
+  addDockCompact: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
   badge: {
     position: 'absolute', top: -4, right: -8,
     backgroundColor: colors.danger, borderRadius: 8,
@@ -70,7 +76,6 @@ export default function TabLayout() {
   const router = useRouter();
   const layout = useAdaptiveLayout();
   const addLauncherRef = useRef(null);
-  const visualTabBarHeight = layout.isWide && !layout.prefersCompactNavigation ? 60 : 52;
 
   useEffect(() => subscribeGlobalAddLauncher(() => {
     addLauncherRef.current?.open?.();
@@ -83,18 +88,12 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopColor: colors.surface,
-          height: visualTabBarHeight + layout.insets.bottom,
-          paddingTop: 6,
-          paddingBottom: Math.max(layout.insets.bottom, 8),
-          paddingLeft: layout.insets.left,
-          paddingRight: layout.insets.right,
         },
         headerShown: false,
         tabBarShowLabel: layout.isWide && !layout.prefersCompactNavigation,
+        tabBarLabelPosition: 'below-icon',
+        tabBarHideOnKeyboard: true,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarItemStyle: {
-          paddingVertical: 0,
-        },
       }}>
         <Tabs.Screen
           name="summary"
@@ -123,7 +122,11 @@ export default function TabLayout() {
           options={{
             title: 'Add',
             tabBarIcon: ({ focused }) => (
-              <View style={[styles.addDock, focused && styles.addDockFocused]}>
+              <View style={[
+                styles.addDock,
+                layout.isShortViewport && styles.addDockCompact,
+                focused && styles.addDockFocused,
+              ]}>
                 <Ionicons name="add" size={24} color={colors.textInverse} />
               </View>
             ),

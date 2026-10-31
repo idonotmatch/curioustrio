@@ -3,6 +3,7 @@ const {
   ADAPTIVE_MAX_WIDTHS,
   contentWidthFor,
   createAdaptiveLayout,
+  horizontalCardWidthFor,
 } = require('../services/adaptiveLayout');
 
 const phone = createAdaptiveLayout({
@@ -18,6 +19,7 @@ assert.equal(phone.isTwoPane, false);
 assert.equal(phone.isLargeText, false);
 assert.equal(phone.prefersCompactNavigation, false);
 assert.equal(contentWidthFor(phone, 'feed'), 353);
+assert.equal(horizontalCardWidthFor(phone, { count: 4, kind: 'feed' }), 305);
 
 const resized = createAdaptiveLayout({
   width: 744,
@@ -57,6 +59,8 @@ const openDuo = createAdaptiveLayout({
 });
 assert.equal(openDuo.sizeClass, 'expanded');
 assert.equal(openDuo.isTwoPane, true);
+assert.equal(contentWidthFor(openDuo, 'dashboard'), 868);
+assert.equal(horizontalCardWidthFor(openDuo, { count: 4, kind: 'dashboard' }), 720);
 
 const landscapePhone = createAdaptiveLayout({
   width: 852,
