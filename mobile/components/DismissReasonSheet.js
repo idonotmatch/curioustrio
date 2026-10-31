@@ -1,5 +1,6 @@
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { colors } from '../theme/tokens';
+import { AdaptiveSheet } from './layout/AdaptiveLayout';
 
 export const DISMISS_REASON_OPTIONS = [
   { value: 'not_an_expense', label: 'Not an expense' },
@@ -14,7 +15,7 @@ export function DismissReasonSheet({ visible, onClose, onSelect, busy = false })
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <AdaptiveSheet style={styles.card}>
           <Text style={styles.title}>Why dismiss this import?</Text>
           <Text style={styles.subtitle}>
             This helps us learn what should stay out of your review queue next time.
@@ -35,7 +36,7 @@ export function DismissReasonSheet({ visible, onClose, onSelect, busy = false })
           <TouchableOpacity style={styles.cancel} onPress={onClose} disabled={busy}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-        </View>
+        </AdaptiveSheet>
       </View>
     </Modal>
   );

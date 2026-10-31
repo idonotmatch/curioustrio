@@ -22,6 +22,7 @@ import {
 } from '../services/manualAddSuggestions';
 import { colors, radius } from '../theme/tokens';
 import { sanitizeMoneyInput } from '../services/moneyInput';
+import { AdaptiveSheet } from '../components/layout/AdaptiveLayout';
 import {
   createEditableExpenseItem,
   normalizeExpenseItemPayload,
@@ -313,9 +314,9 @@ export default function ManualAddScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
       <Pressable style={styles.screenBackdrop} onPress={() => router.back()} />
-      <View style={styles.sheetShell}>
+      <AdaptiveSheet style={styles.sheetShell}>
         <DismissKeyboardScrollView style={styles.sheet} contentContainerStyle={styles.content}>
           <View style={styles.grabber} />
 
@@ -669,7 +670,7 @@ export default function ManualAddScreen() {
             </TouchableOpacity>
           </View>
         </DismissKeyboardScrollView>
-      </View>
+      </AdaptiveSheet>
 
       <Modal
         visible={categoryPickerOpen}

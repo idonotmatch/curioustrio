@@ -1,5 +1,4 @@
-import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform, ActivityIndicator } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, FlatList, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform, ActivityIndicator } from 'react-native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +13,8 @@ import { ExpenseItem } from '../../components/ExpenseItem';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { EmptyState, InlineError, SkeletonRow } from '../../components/ui/States';
 import { colors } from '../../theme/tokens';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
+import { AdaptiveSafeArea, AdaptiveSheet } from '../../components/layout/AdaptiveLayout';
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest' },
   { key: 'amount', label: 'Amount' },
@@ -165,9 +166,45 @@ function SpendHeader({ myBudget, householdBudget, isMultiMember, selectedMonth, 
   );
 }
 
+function ItemTrendsLink({ onPress, style }) {
+  return (
+    <TouchableOpacity
+      style={[styles.itemTrendsLink, style]}
+      onPress={onPress}
+      activeOpacity={0.78}
+      accessibilityRole="button"
+      accessibilityLabel="Browse item price trends"
+    >
+      <View style={styles.itemTrendsIcon}>
+        <Ionicons name="trending-up-outline" size={18} color={colors.info} />
+      </View>
+      <View style={styles.itemTrendsCopy}>
+        <Text style={styles.itemTrendsTitle}>Item price trends</Text>
+        <Text style={styles.itemTrendsBody} numberOfLines={1}>Compare matched purchases across time and stores</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={17} color={colors.textDisabled} />
+    </TouchableOpacity>
+  );
+}
+
+function ActivityContextPane({ children, wide }) {
+  if (wide) {
+    return (
+      <ScrollView
+        style={[styles.activityContextPane, styles.activityContextPaneWide]}
+        contentContainerStyle={styles.activityContextContentWide}
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </ScrollView>
+    );
+  }
+  return <View style={styles.activityContextPane}>{children}</View>;
+}
+
 export default function FeedScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const layout = useAdaptiveLayout();
   const [mode, setMode] = useState('mine');
   const [sortKey, setSortKey] = useState('newest');
   const { startDay } = useMonth();
@@ -240,7 +277,10 @@ export default function FeedScreen() {
   ), [categories, currentUserId, handleDelete, mode]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <View style={[styles.container, { width: '100%', maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'], alignSelf: 'center' }]}>
+      <View style={[styles.activityWorkspace, layout.isTwoPane && styles.activityWorkspaceWide]}>
+      <ActivityContextPane wide={layout.isTwoPane}>
       <SpendHeader
         myBudget={personalBudget}
         householdBudget={householdBudget}
@@ -252,7 +292,7 @@ export default function FeedScreen() {
       />
 
       {/* Mine / Household toggle — filters the expense list only */}
-      <View style={styles.controlsRow}>
+      <View style={[styles.controlsRow, layout.isTwoPane && styles.controlsRowWide]}>
       {isMultiMember ? (
         <View style={styles.toggleRow}>
           <TouchableOpacity
@@ -274,8 +314,13 @@ export default function FeedScreen() {
           <Text style={styles.sortChipText}>Sort: {currentSortLabel}</Text>
         </TouchableOpacity>
       </View>
+      {layout.isTwoPane ? (
+        <ItemTrendsLink onPress={() => router.push('/item-trends')} style={styles.itemTrendsWide} />
+      ) : null}
+      </ActivityContextPane>
 
       <FlatList
+        style={styles.ledgerPane}
         data={listData}
         keyExtractor={(item, i) => item.id || `expense-${i}`}
         renderItem={renderItem}
@@ -292,22 +337,7 @@ export default function FeedScreen() {
         ) : null}
         ListHeaderComponent={(
           <View style={styles.listHeader}>
-            <TouchableOpacity
-              style={styles.itemTrendsLink}
-              onPress={() => router.push('/item-trends')}
-              activeOpacity={0.78}
-              accessibilityRole="button"
-              accessibilityLabel="Browse item price trends"
-            >
-              <View style={styles.itemTrendsIcon}>
-                <Ionicons name="trending-up-outline" size={18} color={colors.info} />
-              </View>
-              <View style={styles.itemTrendsCopy}>
-                <Text style={styles.itemTrendsTitle}>Item price trends</Text>
-                <Text style={styles.itemTrendsBody} numberOfLines={1}>Compare matched purchases across time and stores</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={17} color={colors.textDisabled} />
-            </TouchableOpacity>
+            {!layout.isTwoPane ? <ItemTrendsLink onPress={() => router.push('/item-trends')} /> : null}
             {(expenseError || budgetError) && listData.length > 0 ? (
             <InlineError
               title="Showing saved transactions"
@@ -344,10 +374,11 @@ export default function FeedScreen() {
           )
         }
       />
+      </View>
 
       <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
         <View style={styles.monthPickerOverlay}>
-          <View style={styles.monthPickerSheet}>
+          <AdaptiveSheet style={styles.monthPickerSheet}>
             <Text style={styles.monthPickerTitle}>Select month</Text>
             {getPastMonths().map(m => (
               <TouchableOpacity
@@ -363,13 +394,13 @@ export default function FeedScreen() {
             <TouchableOpacity style={styles.monthPickerClose} onPress={() => setShowMonthPicker(false)}>
               <Text style={styles.monthPickerCloseText}>Cancel</Text>
             </TouchableOpacity>
-          </View>
+          </AdaptiveSheet>
         </View>
       </Modal>
 
       <Modal visible={showSortPicker} transparent animationType="slide" onRequestClose={() => setShowSortPicker(false)}>
         <View style={styles.monthPickerOverlay}>
-          <View style={styles.monthPickerSheet}>
+          <AdaptiveSheet style={styles.monthPickerSheet}>
             <Text style={styles.monthPickerTitle}>Sort transactions</Text>
             {SORT_OPTIONS.map((option) => (
               <TouchableOpacity
@@ -388,15 +419,23 @@ export default function FeedScreen() {
             <TouchableOpacity style={styles.monthPickerClose} onPress={() => setShowSortPicker(false)}>
               <Text style={styles.monthPickerCloseText}>Cancel</Text>
             </TouchableOpacity>
-          </View>
+          </AdaptiveSheet>
         </View>
       </Modal>
     </View>
+    </AdaptiveSafeArea>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
+  activityWorkspace: { flex: 1 },
+  activityWorkspaceWide: { flexDirection: 'row' },
+  activityContextPane: { flexShrink: 0 },
+  activityContextPaneWide: { width: 320, borderRightWidth: 1, borderRightColor: colors.borderSubtle },
+  activityContextContentWide: { paddingBottom: 24 },
+  ledgerPane: { flex: 1, minWidth: 0 },
 
   controlsRow: {
     flexDirection: 'row',
@@ -407,6 +446,7 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     gap: 12,
   },
+  controlsRowWide: { alignItems: 'stretch', flexDirection: 'column', paddingTop: 14, paddingBottom: 10 },
   toggleRow: { flexDirection: 'row', gap: 8 },
   toggleChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   toggleChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
@@ -455,6 +495,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
   },
+  itemTrendsWide: { marginHorizontal: 16, marginTop: 8 },
   itemTrendsIcon: {
     width: 36,
     height: 36,

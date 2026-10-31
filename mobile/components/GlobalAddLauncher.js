@@ -7,8 +7,11 @@ import { toLocalDateString } from '../services/date';
 import { pushConfirmDraft } from '../services/confirmNavigation';
 import { ActionRow } from './ui/Buttons';
 import { colors, radius, spacing, typography } from '../theme/tokens';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
+import { AdaptiveSheet } from './layout/AdaptiveLayout';
 
 export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router, openSignal = 0 }, ref) {
+  const layout = useAdaptiveLayout();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -95,7 +98,13 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
           keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => { if (!loading) close(); }} />
-          <View style={[styles.sheet, keyboardVisible && styles.sheetRaised]}>
+          <AdaptiveSheet style={[
+            styles.sheet,
+            {
+              paddingBottom: Math.max(34, layout.insets.bottom + 16),
+            },
+            keyboardVisible && styles.sheetRaised,
+          ]}>
             <ScrollView
               keyboardShouldPersistTaps="handled"
               bounces={false}
@@ -162,7 +171,7 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
                 <Text style={styles.keyboardHint}>Dismiss the keyboard to scan, start from scratch, or consider a purchase.</Text>
               )}
             </ScrollView>
-          </View>
+          </AdaptiveSheet>
         </KeyboardAvoidingView>
       </Modal>
     </>
@@ -179,6 +188,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   sheet: {
+    alignSelf: 'center',
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,

@@ -3,10 +3,12 @@ import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { MonthProvider } from '../contexts/MonthContext';
+import { AdaptiveLayoutProvider } from '../contexts/AdaptiveLayoutContext';
 import { stashNavigationPayload } from '../services/navigationPayloadStore';
 import { saveInsightDetailSnapshot } from '../services/insightLocalStore';
 import { buildRecurringItemPreload } from '../services/summaryScreenHelpers';
@@ -603,9 +605,13 @@ function RootLayout() {
   // Auth0Provider wrapper removed — Supabase manages session internally via lib/supabase.js
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <MonthProvider>
-        <AppNavigator />
-      </MonthProvider>
+      <SafeAreaProvider>
+        <AdaptiveLayoutProvider>
+          <MonthProvider>
+            <AppNavigator />
+          </MonthProvider>
+        </AdaptiveLayoutProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

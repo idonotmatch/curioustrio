@@ -1,5 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -23,6 +22,9 @@ import {
 import { buildMockInsights } from '../../fixtures/mockInsights';
 import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 import { colors } from '../../theme/tokens';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
+import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
+const { contentWidthFor } = require('../../services/adaptiveLayout');
 
 const TREND_INSIGHT_TYPES = new Set([
   'spend_pace_ahead',
@@ -53,7 +55,7 @@ const EARLY_DEVELOPING_INSIGHT_TYPES = new Set([
 export default function SummaryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { width: windowWidth } = useWindowDimensions();
+  const layout = useAdaptiveLayout();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
@@ -97,9 +99,16 @@ export default function SummaryScreen() {
       : insights
   ), [allowMockInsights, currentMonthStr, dismissedMockInsightIds, insights, insightsLoading]);
   const hasMultipleInsights = displayInsights.length > 1;
+  const summaryLayoutKind = layout.isTwoPane ? 'dashboard' : 'feed';
+  const summaryContentWidth = contentWidthFor(layout, summaryLayoutKind);
+  const summaryWorkspaceGap = layout.isTwoPane ? 24 : 0;
+  const planningPaneWidth = layout.isTwoPane ? Math.min(340, Math.max(292, summaryContentWidth * 0.32)) : 0;
+  const insightPaneWidth = layout.isTwoPane
+    ? Math.max(360, summaryContentWidth - planningPaneWidth - summaryWorkspaceGap)
+    : summaryContentWidth;
   const insightCardWidth = displayInsights.length <= 1
-    ? Math.max(0, windowWidth - 40)
-    : Math.max(280, windowWidth - 88);
+    ? insightPaneWidth
+    : Math.max(280, insightPaneWidth - 48);
   const insightNavigationResetRef = useRef(null);
   const [openingInsightId, setOpeningInsightId] = useState('');
   const [showWelcomeAddCard, setShowWelcomeAddCard] = useState(params.welcome === 'add_expense');
@@ -405,10 +414,18 @@ export default function SummaryScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        {
+          width: '100%',
+          maxWidth: layout.maxWidths[summaryLayoutKind],
+          alignSelf: 'center',
+          paddingHorizontal: layout.gutter,
+        },
+      ]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
@@ -494,6 +511,8 @@ export default function SummaryScreen() {
         </View>
       )}
 
+      <View style={[styles.summaryWorkspace, layout.isTwoPane && styles.summaryWorkspaceWide]}>
+      <View style={styles.summaryInsightsPane}>
       <SummaryInsightsRail
         styles={styles}
         displayInsights={displayInsights}
@@ -547,10 +566,12 @@ export default function SummaryScreen() {
           ) : null}
         </View>
       ) : null}
+      </View>
 
+      <View style={layout.isTwoPane ? { width: planningPaneWidth } : null}>
       {displayWatchedPlans.length > 0 ? (
         <TouchableOpacity
-          style={styles.watchingCard}
+          style={[styles.watchingCard, layout.isTwoPane && styles.watchingCardWide]}
           activeOpacity={0.88}
           onPress={() => router.push('/plans')}
         >
@@ -576,7 +597,7 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       ) : (
         <TouchableOpacity
-          style={styles.watchingCard}
+          style={[styles.watchingCard, layout.isTwoPane && styles.watchingCardWide]}
           activeOpacity={0.88}
           onPress={() => router.push('/plans')}
         >
@@ -589,6 +610,8 @@ export default function SummaryScreen() {
           </View>
         </TouchableOpacity>
       )}
+      </View>
+      </View>
     </ScrollView>
 
     <SummaryMonthPicker
@@ -604,7 +627,7 @@ export default function SummaryScreen() {
       periodLabel={periodLabel}
       startDay={startDay}
     />
-    </SafeAreaView>
+    </AdaptiveSafeArea>
   );
 }
 
@@ -684,6 +707,10 @@ const styles = StyleSheet.create({
   hBarTrack: { height: 2, backgroundColor: colors.textInverse, borderRadius: 1 },
   hBarFill: { height: 2, borderRadius: 1 },
   hOverLabel: { fontSize: 12, color: colors.danger, marginTop: 4 },
+
+  summaryWorkspace: { width: '100%' },
+  summaryWorkspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 24 },
+  summaryInsightsPane: { flex: 1, minWidth: 0 },
 
   insightsSection: { marginBottom: 32 },
   insightsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
@@ -816,6 +843,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
+  watchingCardWide: { marginTop: 30, marginBottom: 0, flexDirection: 'column', alignItems: 'stretch' },
   watchingText: { flex: 1, gap: 4 },
   watchingTitle: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
   watchingMeta: { color: colors.textSubtle, fontSize: 13 },

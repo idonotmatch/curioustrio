@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { Ionicons } from '@expo/vector-icons';
 import { DuplicateAlert } from './DuplicateAlert';
 import { colors } from '../theme/tokens';
@@ -178,6 +178,7 @@ export function ReviewQueueItem({
   disabled = false,
   selectionMode = false,
   selected = false,
+  active = false,
   onToggleSelection,
 }) {
   const mode = reviewModePresentation(item.gmail_review_hint);
@@ -245,7 +246,7 @@ export function ReviewQueueItem({
         overshootRight={false}
       >
         <TouchableOpacity
-          style={isPreview ? styles.previewRow : styles.row}
+          style={isPreview ? styles.previewRow : [styles.row, active && styles.rowActive]}
           onPress={() => {
             if (disabled) return;
             if (selectionMode) onToggleSelection?.(item);
@@ -330,6 +331,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.surface,
     minHeight: 108,
   },
+  rowActive: { backgroundColor: colors.surfaceRaised, borderBottomColor: colors.borderStrong },
   rowMain: { flex: 1, minWidth: 0, marginRight: 12 },
   selectionControl: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   selectionControlSelected: { backgroundColor: colors.text, borderColor: colors.text },

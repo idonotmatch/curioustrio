@@ -565,7 +565,7 @@ export default function ConfirmScreen() {
   }
 
   return (
-    <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <DismissKeyboardScrollView contentLayout="form" style={styles.container} contentContainerStyle={styles.content}>
       {isPurchasePlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a planned purchase</Text>

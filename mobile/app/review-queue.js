@@ -2,18 +2,20 @@ import { View, Text, FlatList, StyleSheet, RefreshControl, Pressable, ActivityIn
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionNotice } from '../components/ActionNotice';
 import { DismissReasonSheet } from '../components/DismissReasonSheet';
 import { SkippedImportsList } from '../components/SkippedImportsList';
 import { usePendingExpenses, removePendingExpense, restorePendingExpense } from '../hooks/usePendingExpenses';
 import { usePendingExpenseCount } from '../hooks/usePendingExpenseCount';
 import { ReviewQueueItem, reviewQueueGroup } from '../components/ReviewQueueItem';
+import { ReviewQueuePreviewPane } from '../components/ReviewQueuePreviewPane';
 import { api } from '../services/api';
 import { patchExpenseInCachedLists, removeExpenseFromCachedLists, removeExpenseSnapshot, saveExpenseSnapshot } from '../services/expenseLocalStore';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { colors } from '../theme/tokens';
 import { EmptyState, InlineError } from '../components/ui/States';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
+import { AdaptiveSafeArea } from '../components/layout/AdaptiveLayout';
 const { pendingActionCount } = require('../services/reviewQueuePresentation');
 
 function summarizeReviewModes(expenses = []) {
@@ -58,6 +60,7 @@ function LoadingRows() {
 
 export default function ReviewQueueScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const { expenses, loading, loadingMore, hasMore, error, refresh, loadMore, isUsingMockData, resolveMockExpense } = usePendingExpenses();
   const { count: serverPendingCount, refresh: refreshPendingCount } = usePendingExpenseCount();
   const [displayExpenses, setDisplayExpenses] = useState(expenses);
@@ -69,6 +72,7 @@ export default function ReviewQueueScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchActioning, setBatchActioning] = useState('');
+  const [activeReviewId, setActiveReviewId] = useState(null);
   const actioningIdsRef = useRef(new Set());
   const serverPendingCountRef = useRef(serverPendingCount);
   const reviewModeCounts = useMemo(() => summarizeReviewModes(displayExpenses), [displayExpenses]);
@@ -88,8 +92,12 @@ export default function ReviewQueueScreen() {
   const selectedHasItemsFirst = selectedExpenses.some((expense) => expense?.gmail_review_hint?.review_mode === 'items_first');
   const selectedHasDuplicate = selectedExpenses.some((expense) => Array.isArray(expense?.duplicate_flags) && expense.duplicate_flags.length > 0);
   const canBatchApprove = selectedExpenses.length > 0 && !selectedHasItemsFirst && !selectedHasDuplicate;
+  const activeReviewExpense = useMemo(
+    () => displayExpenses.find((expense) => expense.id === activeReviewId) || null,
+    [activeReviewId, displayExpenses]
+  );
 
-  function openReviewEntry(entry) {
+  function openFullReviewEntry(entry) {
     const duplicateFlag = Array.isArray(entry?.duplicate_flags) ? entry.duplicate_flags[0] : null;
     if (duplicateFlag?.id) {
       router.push({
@@ -104,6 +112,14 @@ export default function ReviewQueueScreen() {
     });
   }
 
+  function openReviewEntry(entry) {
+    if (layout.isTwoPane) {
+      setActiveReviewId(entry?.id || null);
+      return;
+    }
+    openFullReviewEntry(entry);
+  }
+
   useEffect(() => { setDisplayExpenses(expenses); }, [expenses]);
   useEffect(() => {
     if (serverPendingCountRef.current === serverPendingCount) return;
@@ -113,6 +129,14 @@ export default function ReviewQueueScreen() {
   useEffect(() => {
     setSelectedIds((current) => new Set([...current].filter((id) => displayExpenses.some((expense) => expense.id === id))));
   }, [displayExpenses]);
+  useEffect(() => {
+    if (!layout.isTwoPane) return;
+    setActiveReviewId((current) => (
+      current && displayExpenses.some((expense) => expense.id === current)
+        ? current
+        : displayExpenses[0]?.id || null
+    ));
+  }, [displayExpenses, layout.isTwoPane]);
   useEffect(() => {
     if (!notice) return undefined;
     const timer = setTimeout(() => setNotice(''), 1800);
@@ -270,8 +294,8 @@ export default function ReviewQueueScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.container}>
+    <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <View style={[styles.container, { width: '100%', maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'], alignSelf: 'center' }]}>
         <View style={styles.reviewTabs} accessibilityRole="tablist">
           {[{ key: 'pending', label: 'Pending' }, { key: 'skipped', label: 'Skipped' }].map((tab) => (
             <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: reviewTab === tab.key }}
@@ -281,6 +305,7 @@ export default function ReviewQueueScreen() {
           ))}
         </View>
         {reviewTab === 'skipped' ? (
+          <View style={styles.skippedPane}>
           <SkippedImportsList isUsingMockData={isUsingMockData} onRecovered={() => {
             Promise.all([
               refresh({ forceRefresh: true }),
@@ -288,7 +313,11 @@ export default function ReviewQueueScreen() {
               invalidateExpenseMutationCaches(),
             ]).catch(() => {});
           }} />
-        ) : <FlatList
+          </View>
+        ) : (
+        <View style={[styles.reviewWorkspace, layout.isTwoPane && styles.reviewWorkspaceWide]}>
+        <FlatList
+          style={styles.queuePane}
           data={queueRows}
           keyExtractor={(item) => item.key}
           renderItem={({ item }) => (
@@ -306,6 +335,7 @@ export default function ReviewQueueScreen() {
                 onDismiss={requestDismiss}
                 selectionMode={selectionMode}
                 selected={selectedIds.has(item.expense.id)}
+                active={layout.isTwoPane && activeReviewId === item.expense.id}
                 onToggleSelection={toggleSelection}
               />
             )
@@ -409,9 +439,20 @@ export default function ReviewQueueScreen() {
               )
           }
           ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.loadingMore} color={colors.textMuted} /> : null}
-        />}
+        />
+        {layout.isTwoPane ? (
+          <ReviewQueuePreviewPane
+            expense={activeReviewExpense}
+            disabled={activeReviewExpense ? actioningIds.has(activeReviewExpense.id) : false}
+            onApprove={approve}
+            onDismiss={requestDismiss}
+            onOpen={openFullReviewEntry}
+          />
+        ) : null}
+        </View>
+        )}
         {reviewTab === 'pending' && selectionMode ? (
-          <View style={styles.batchBar}>
+          <View style={[styles.batchBar, layout.isTwoPane && { right: 390 }]}>
             <View style={styles.batchSummary}>
               <Text style={styles.batchTitle}>{selectedIds.size ? `${selectedIds.size} selected` : 'Choose imports'}</Text>
               <Text style={styles.batchHint}>{selectedHasDuplicate ? 'Duplicates must be compared individually.' : selectedHasItemsFirst ? 'Item-first imports must be opened before approval.' : 'Approve or dismiss this selection together.'}</Text>
@@ -431,13 +472,17 @@ export default function ReviewQueueScreen() {
           onSelect={(reason) => dismissingId === '__bulk__' ? runBatch('dismiss', reason) : dismiss(dismissingId, reason)}
         />
       </View>
-    </SafeAreaView>
+    </AdaptiveSafeArea>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
+  reviewWorkspace: { flex: 1 },
+  reviewWorkspaceWide: { flexDirection: 'row' },
+  queuePane: { flex: 1, minWidth: 0 },
+  skippedPane: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center' },
   reviewTabs: { flexDirection: 'row', marginHorizontal: 16, marginVertical: 12, backgroundColor: colors.surface, borderRadius: 8, padding: 3 },
   reviewTab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', padding: 10, borderRadius: 6 },
   reviewTabActive: { backgroundColor: colors.surfacePressed },

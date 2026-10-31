@@ -108,6 +108,7 @@ export default function NotificationsScreen() {
     <>
       <Stack.Screen options={{ title: 'Notifications' }} />
       <DismissKeyboardScrollView
+        contentLayout="form"
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}
       >

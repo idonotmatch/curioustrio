@@ -242,7 +242,7 @@ export default function AccountsScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Accounts' }} />
-      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <DismissKeyboardScrollView contentLayout="form" style={styles.container} contentContainerStyle={styles.content}>
 
         {/* Household */}
         <View style={styles.section}>

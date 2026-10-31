@@ -1,4 +1,5 @@
 import { Modal, View, Text, TouchableOpacity } from 'react-native';
+import { AdaptiveSheet } from './layout/AdaptiveLayout';
 
 export function SummaryMonthPicker({
   styles,
@@ -13,7 +14,7 @@ export function SummaryMonthPicker({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.monthPickerOverlay}>
-        <View style={styles.monthPickerSheet}>
+        <AdaptiveSheet style={styles.monthPickerSheet}>
           <Text style={styles.monthPickerTitle}>Select month</Text>
           {months.map((month) => (
             <TouchableOpacity
@@ -29,7 +30,7 @@ export function SummaryMonthPicker({
           <TouchableOpacity style={styles.monthPickerClose} onPress={onClose}>
             <Text style={styles.monthPickerCloseText}>Cancel</Text>
           </TouchableOpacity>
-        </View>
+        </AdaptiveSheet>
       </View>
     </Modal>
   );

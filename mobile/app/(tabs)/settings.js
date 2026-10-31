@@ -7,7 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
@@ -113,7 +113,12 @@ export default function SettingsScreen() {
   }
 
   return (
-    <DismissKeyboardScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <DismissKeyboardScrollView
+      style={styles.container}
+      contentLayout="feed"
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}
+    >
       {params.welcome === 'budget' ? (
         <View style={styles.welcomeCard}>
           <Text style={styles.welcomeEyebrow}>Good first move</Text>
@@ -313,6 +318,7 @@ export default function SettingsScreen() {
       </View>
 
     </DismissKeyboardScrollView>
+    </SafeAreaView>
   );
 }
 

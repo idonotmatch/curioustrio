@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { api } from '../services/api';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
@@ -424,7 +424,7 @@ export default function CategoriesScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Category Details' }} />
-      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <DismissKeyboardScrollView contentLayout="feed" style={styles.container} contentContainerStyle={styles.content}>
         {loading ? (
           <ActivityIndicator color={colors.textDisabled} style={{ marginTop: 40 }} />
         ) : (

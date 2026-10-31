@@ -247,7 +247,7 @@ export default function ExpenseDetailScreen() {
   }
 
   return (
-    <DismissKeyboardScrollView style={styles.container}>
+    <DismissKeyboardScrollView contentLayout="form" style={styles.container}>
       <Stack.Screen options={{
         title: expense.merchant,
         headerRight: !canEdit ? undefined : () => (

@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { memo, useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { api } from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
 import { loadExpenseItemsSnapshot, patchExpenseInCachedLists, removeExpenseFromCachedLists, saveExpenseSnapshot, removeExpenseSnapshot } from '../services/expenseLocalStore';

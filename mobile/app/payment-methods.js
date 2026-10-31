@@ -111,7 +111,7 @@ export default function PaymentMethodsScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Saved Card Labels' }} />
-      <DismissKeyboardScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <DismissKeyboardScrollView contentLayout="form" style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.sectionTitle}>SAVED PAYMENT METHODS</Text>
         <Text style={styles.sectionIntro}>
           Names and card details are stored once, then linked to expenses. Renaming one no longer rewrites past transactions.

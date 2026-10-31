@@ -255,7 +255,7 @@ export default function MatchDetailsScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Matching details', headerBackTitle: 'Expense' }} />
-      <DismissKeyboardScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <DismissKeyboardScrollView contentLayout="form" style={styles.screen} contentContainerStyle={styles.content}>
         <View style={styles.intro}>
           <Text style={styles.eyebrow}>Linked history</Text>
           <Text style={styles.title}>How Adlo recognizes this expense</Text>

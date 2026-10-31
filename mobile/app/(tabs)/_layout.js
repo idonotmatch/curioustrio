@@ -2,9 +2,9 @@ import { Tabs, useRouter } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePendingExpenseCount } from '../../hooks/usePendingExpenseCount';
 import { useMonth, currentPeriod } from '../../contexts/MonthContext';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { GlobalAddLauncher } from '../../components/GlobalAddLauncher';
 import { subscribeGlobalAddLauncher } from '../../services/globalAddLauncherBus';
@@ -51,6 +51,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
   badgeText: { color: colors.text, fontSize: 9, fontWeight: '700' },
+  tabLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600' },
 });
 
 // Syncs the user's budget_start_day into MonthContext once user data loads.
@@ -67,9 +68,9 @@ function StartDaySyncer() {
 
 export default function TabLayout() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const layout = useAdaptiveLayout();
   const addLauncherRef = useRef(null);
-  const visualTabBarHeight = 52;
+  const visualTabBarHeight = layout.isWide ? 60 : 52;
 
   useEffect(() => subscribeGlobalAddLauncher(() => {
     addLauncherRef.current?.open?.();
@@ -82,12 +83,15 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopColor: colors.surface,
-          height: visualTabBarHeight + insets.bottom,
+          height: visualTabBarHeight + layout.insets.bottom,
           paddingTop: 6,
-          paddingBottom: Math.max(insets.bottom, 8),
+          paddingBottom: Math.max(layout.insets.bottom, 8),
+          paddingLeft: layout.insets.left,
+          paddingRight: layout.insets.right,
         },
         headerShown: false,
-        tabBarShowLabel: false,
+        tabBarShowLabel: layout.isWide,
+        tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: {
           paddingVertical: 0,
         },
