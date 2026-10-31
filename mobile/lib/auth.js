@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import { invalidateCacheByPrefix } from '../services/cache';
 import { invalidateCurrentUserCache } from '../services/currentUserCache';
 import { clearActiveCacheUserId } from '../services/cacheIdentity';
+import { unregisterCurrentPushToken } from '../services/pushRegistration';
 
 let googleSigninModule = null;
 let googleConfigured = false;
@@ -152,6 +153,17 @@ export async function signInWithApple() {
 }
 
 export async function signOut() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await Promise.race([
+        unregisterCurrentPushToken({ token: session.access_token }),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    }
+  } catch {
+    // A stale push registration should never prevent sign-out.
+  }
   await Promise.all([
     invalidateCacheByPrefix('cache:'),
     invalidateCurrentUserCache(),

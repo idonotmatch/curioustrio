@@ -32,6 +32,9 @@ module.exports = {
   freshnessEventRetentionDays() {
     return clampInt(readNumber('FRESHNESS_EVENT_RETENTION_DAYS', 30), 1, 90, 30);
   },
+  notificationDeliveryRetentionDays() {
+    return clampInt(readNumber('NOTIFICATION_DELIVERY_RETENTION_DAYS', 90), 7, 365, 90);
+  },
   persistSuccessParsedSnapshotSampleRate() {
     const raw = readNumber('INGEST_SUCCESS_PARSED_SNAPSHOT_SAMPLE_RATE', 0.02);
     return Math.max(0, Math.min(1, raw));

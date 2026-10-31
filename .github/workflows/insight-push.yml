@@ -2,8 +2,8 @@ name: Insight Push
 
 on:
   schedule:
-    # One conservative daily window: morning in the continental US.
-    - cron: '15 14 * * *'
+    # The API enforces each user's local 9-11 AM delivery window and daily cap.
+    - cron: '15 * * * *'
   workflow_dispatch:
 
 jobs:

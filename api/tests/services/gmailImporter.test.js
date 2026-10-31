@@ -142,28 +142,19 @@ describe('normalizePeerPaymentExpense', () => {
 describe('buildGmailImportPushPayload', () => {
   it('prioritizes review queue messaging when imported expenses need confirmation', () => {
     expect(buildGmailImportPushPayload(2, { imported_pending_review: 2 })).toEqual({
-      title: '2 Gmail imports need review',
-      body: '2 new receipts are waiting in your review queue.',
+      title: '2 purchases need review',
+      body: 'Open Adlo when you are ready to confirm what belongs in your spending history.',
       data: {
         type: 'review_queue',
         route: '/review-queue',
-        imported_count: 2,
         review_count: 2,
+        new_review_count: 2,
       },
     });
   });
 
-  it('uses an auto-added message when nothing needs review', () => {
-    expect(buildGmailImportPushPayload(1, { imported_pending_review: 0 })).toEqual({
-      title: '1 Gmail expense added',
-      body: 'A new expense was added from Gmail.',
-      data: {
-        type: 'gmail_import',
-        route: '/(tabs)/index',
-        imported_count: 1,
-        review_count: 0,
-      },
-    });
+  it('does not build a notification when nothing needs review', () => {
+    expect(buildGmailImportPushPayload(1, { imported_pending_review: 0 })).toBeNull();
   });
 });
 

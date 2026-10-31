@@ -6,7 +6,6 @@ const ExpenseItem = require('../models/expenseItem');
 const BackgroundJob = require('../models/backgroundJob');
 const ExpenseSourceObservation = require('../models/expenseSourceObservation');
 const { resolveExpenseIdentities } = require('./entityResolutionService');
-const PushToken = require('../models/pushToken');
 const OAuthToken = require('../models/oauthToken');
 const db = require('../db');
 const { listRecentMessages, getMessage, createGmailSession } = require('./gmailClient');
@@ -24,7 +23,6 @@ const {
   clampExpenseDate,
 } = require('./emailParser');
 const { assignCategory } = require('./categoryAssigner');
-const { sendNotifications } = require('./pushService');
 const { searchPlace } = require('./mapkitService');
 const {
   getSenderImportQuality,
@@ -33,8 +31,10 @@ const {
 const { extractSenderDomain, extractSenderRootDomain, extractSubjectPattern } = require('./gmailImportFingerprint');
 const { requestProjectionRefresh } = require('./projectionRefreshService');
 const { emitExpenseFreshnessEvent } = require('./freshnessEvents');
-const { pushNotificationsEnabled } = require('./pushPreferences');
-const { safePushData, shouldSendGmailReviewPush } = require('./pushEligibility');
+const {
+  buildGmailReviewPushPayload,
+  dispatchGmailReviewPush,
+} = require('./notificationDispatchService');
 const { canonicalMerchantKey, extractPeerPaymentRecipient } = require('./merchantIdentity');
 const {
   extractEmailTransactionLifecycle,
@@ -174,35 +174,8 @@ function increment(bucket, key) {
 
 function buildGmailImportPushPayload(imported, outcomes = {}) {
   const pendingReview = Number(outcomes.imported_pending_review || 0);
-  const autoAdded = Math.max(0, Number(imported || 0) - pendingReview);
-
-  if (pendingReview > 0) {
-    return {
-      title: pendingReview === 1 ? '1 Gmail import needs review' : `${pendingReview} Gmail imports need review`,
-      body: pendingReview === 1
-        ? 'A new receipt is waiting in your review queue.'
-        : `${pendingReview} new receipts are waiting in your review queue.`,
-      data: {
-        type: 'review_queue',
-        route: '/review-queue',
-        imported_count: Number(imported || 0),
-        review_count: pendingReview,
-      },
-    };
-  }
-
-  return {
-    title: autoAdded === 1 ? '1 Gmail expense added' : `${autoAdded} Gmail expenses added`,
-    body: autoAdded === 1
-      ? 'A new expense was added from Gmail.'
-      : `${autoAdded} new expenses were added from Gmail.`,
-    data: {
-      type: 'gmail_import',
-      route: '/(tabs)/index',
-      imported_count: Number(imported || 0),
-      review_count: 0,
-    },
-  };
+  if (pendingReview <= 0) return null;
+  return buildGmailReviewPushPayload(pendingReview, pendingReview);
 }
 
 function buildReviewNotes({ reason = 'needs review' } = {}) {
@@ -1005,26 +978,11 @@ async function importForUser(user) {
     await OAuthToken.updateGmailHistoryCursor(user.id, discovery.nextHistoryId);
   }
 
-  // Send push notification if new expenses were imported
-  if (imported > 0) {
+  // Notify only for actionable review work. The dispatcher uses the complete
+  // queue, applies quiet hours/cooldowns, and records delivery tickets.
+  if (Number(outcomes.imported_pending_review || 0) > 0) {
     try {
-      const notification = buildGmailImportPushPayload(imported, outcomes);
-      const eligibility = shouldSendGmailReviewPush({
-        imported,
-        pendingReview: notification.data?.review_count || 0,
-        preferenceEnabled: pushNotificationsEnabled(user, 'push_gmail_review_enabled'),
-      });
-      if (eligibility.send) {
-        const tokens = await PushToken.findByUser(user.id);
-        if (tokens.length > 0) {
-          await sendNotifications(tokens.map(t => ({
-            to: t.token,
-            title: notification.title,
-            body: notification.body,
-            data: safePushData(notification.data),
-          })));
-        }
-      }
+      await dispatchGmailReviewPush({ userId: user.id });
     } catch (e) {
       console.error('[gmail import] push notification failed', {
         reason: summarizeImportFailure(e),

@@ -5,6 +5,8 @@ jest.mock('../../src/models/backgroundJob', () => ({
     gmailEnrichment: 'gmail_enrichment',
     gmailSync: 'gmail_sync',
     receiptScan: 'receipt_scan',
+    pushReceipt: 'push_receipt',
+    pushDispatch: 'push_dispatch',
   },
   claimNext: jest.fn(),
   complete: jest.fn().mockResolvedValue({ status: 'completed' }),
@@ -30,7 +32,14 @@ jest.mock('../../src/services/receiptScanJobService', () => ({
   runReceiptScanJob: jest.fn().mockResolvedValue({ succeeded: true }),
   failDeadReceiptScanJob: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../../src/services/pushService', () => ({
+  reconcilePushReceipt: jest.fn().mockResolvedValue({ delivered: true }),
+}));
+jest.mock('../../src/services/notificationDispatchService', () => ({
+  runDeferredPushDispatch: jest.fn().mockResolvedValue({ sent: 1 }),
+}));
 jest.mock('../../src/services/observability', () => ({ captureException: jest.fn() }));
+jest.mock('../../src/services/cronAlertService', () => ({ notifyCronAlert: jest.fn().mockResolvedValue({ sent: true }) }));
 
 const BackgroundJob = require('../../src/models/backgroundJob');
 const User = require('../../src/models/user');
@@ -39,7 +48,10 @@ const { runPostConfirmJob } = require('../../src/services/expenseConfirmService'
 const { runGmailEnrichmentJob } = require('../../src/services/gmailEnrichmentService');
 const { runGmailSyncJob } = require('../../src/services/gmailSyncService');
 const { runReceiptScanJob, failDeadReceiptScanJob } = require('../../src/services/receiptScanJobService');
+const { reconcilePushReceipt } = require('../../src/services/pushService');
+const { runDeferredPushDispatch } = require('../../src/services/notificationDispatchService');
 const { captureException } = require('../../src/services/observability');
+const { notifyCronAlert } = require('../../src/services/cronAlertService');
 const { processJob } = require('../../src/services/backgroundJobWorker');
 
 describe('background job worker', () => {
@@ -103,6 +115,26 @@ describe('background job worker', () => {
     expect(BackgroundJob.complete).toHaveBeenCalledWith('job-receipt', 'worker-1');
   });
 
+  it('verifies Expo delivery receipts in a durable job', async () => {
+    const job = {
+      id: 'job-push-receipt', job_type: 'push_receipt', attempt_count: 1,
+      payload: { delivery_id: 'delivery-1', ticket_id: 'ticket-1' },
+    };
+    await processJob(job);
+    expect(reconcilePushReceipt).toHaveBeenCalledWith(job.payload);
+    expect(BackgroundJob.complete).toHaveBeenCalledWith('job-push-receipt', 'worker-1');
+  });
+
+  it('runs deferred quiet-hour notification dispatches', async () => {
+    const job = {
+      id: 'job-push-dispatch', job_type: 'push_dispatch', attempt_count: 1,
+      payload: { user_id: 'user-1', category: 'gmail_review' },
+    };
+    await processJob(job);
+    expect(runDeferredPushDispatch).toHaveBeenCalledWith(job.payload);
+    expect(BackgroundJob.complete).toHaveBeenCalledWith('job-push-dispatch', 'worker-1');
+  });
+
   it('finalizes receipt jobs only after the worker exhausts retries', async () => {
     const error = new Error('provider down');
     runReceiptScanJob.mockRejectedValueOnce(error);
@@ -125,5 +157,23 @@ describe('background job worker', () => {
 
     expect(BackgroundJob.fail).toHaveBeenCalledWith('job-3', 'worker-1', error, 2);
     expect(captureException).toHaveBeenCalledWith(error, expect.objectContaining({ job_id: 'job-3' }));
+  });
+
+  it('alerts when a queued Gmail sync exhausts retries', async () => {
+    const error = new Error('mailbox unavailable');
+    runGmailSyncJob.mockRejectedValueOnce(error);
+    BackgroundJob.fail.mockResolvedValueOnce({ status: 'dead' });
+    const job = {
+      id: 'job-gmail-dead', job_type: 'gmail_sync', attempt_count: 4,
+      payload: { user_id: 'user-1', source: 'scheduler' },
+    };
+
+    await processJob(job);
+
+    expect(notifyCronAlert).toHaveBeenCalledWith(expect.objectContaining({
+      job: 'gmail-sync-worker',
+      level: 'error',
+      metadata: expect.objectContaining({ user_id: 'user-1' }),
+    }));
   });
 });

@@ -5,6 +5,7 @@ const User = require('../models/user');
 const { disconnectGmailConnection } = require('../services/gmailClient');
 const { deleteAccountDataForUser } = require('../services/accountDeletionService');
 const { emitBudgetFreshnessEvent } = require('../services/freshnessEvents');
+const { validTimezone } = require('../services/notificationTiming');
 const {
   assertSupabaseAuthUserExists,
   deleteSupabaseAuthUser,
@@ -27,6 +28,10 @@ function serializeUser(user) {
     push_gmail_review_enabled: user.push_gmail_review_enabled,
     push_insights_enabled: user.push_insights_enabled,
     push_recurring_enabled: user.push_recurring_enabled,
+    notification_timezone: user.notification_timezone || 'UTC',
+    notification_quiet_hours_enabled: user.notification_quiet_hours_enabled !== false,
+    notification_quiet_start: Number(user.notification_quiet_start ?? 22),
+    notification_quiet_end: Number(user.notification_quiet_end ?? 8),
     setup_mode: user.setup_mode || null,
     onboarding_complete: user.onboarding_complete === true,
     first_run_primary_choice: user.first_run_primary_choice || null,
@@ -126,6 +131,8 @@ router.patch('/settings', authenticate, async (req, res, next) => {
       push_gmail_review_enabled,
       push_insights_enabled,
       push_recurring_enabled,
+      notification_timezone,
+      notification_quiet_hours_enabled,
       setup_mode,
       onboarding_complete,
       first_run_primary_choice,
@@ -142,12 +149,17 @@ router.patch('/settings', authenticate, async (req, res, next) => {
       ['push_gmail_review_enabled', push_gmail_review_enabled],
       ['push_insights_enabled', push_insights_enabled],
       ['push_recurring_enabled', push_recurring_enabled],
+      ['notification_quiet_hours_enabled', notification_quiet_hours_enabled],
       ['onboarding_complete', onboarding_complete],
     ];
     for (const [field, value] of booleanFields) {
       if (value !== undefined && typeof value !== 'boolean') {
         return res.status(400).json({ error: `${field} must be a boolean` });
       }
+    }
+
+    if (notification_timezone !== undefined && !validTimezone(notification_timezone)) {
+      return res.status(400).json({ error: 'notification_timezone must be a valid IANA timezone' });
     }
 
     if (
@@ -171,6 +183,8 @@ router.patch('/settings', authenticate, async (req, res, next) => {
       || push_gmail_review_enabled !== undefined
       || push_insights_enabled !== undefined
       || push_recurring_enabled !== undefined
+      || notification_timezone !== undefined
+      || notification_quiet_hours_enabled !== undefined
       || setup_mode !== undefined
       || onboarding_complete !== undefined
       || first_run_primary_choice !== undefined
@@ -180,6 +194,8 @@ router.patch('/settings', authenticate, async (req, res, next) => {
         pushGmailReviewEnabled: push_gmail_review_enabled,
         pushInsightsEnabled: push_insights_enabled,
         pushRecurringEnabled: push_recurring_enabled,
+        notificationTimezone: notification_timezone !== undefined ? validTimezone(notification_timezone) : undefined,
+        notificationQuietHoursEnabled: notification_quiet_hours_enabled,
         setupMode: setup_mode,
         onboardingComplete: onboarding_complete,
         firstRunPrimaryChoice: first_run_primary_choice,

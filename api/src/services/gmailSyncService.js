@@ -75,15 +75,12 @@ async function runGmailSyncJob(payload = {}) {
 function createSchedulerResult(accountCount) {
   return {
     ok: true,
+    accepted: true,
+    execution_pending: true,
     connected_accounts: accountCount,
     users_processed: 0,
-    users_succeeded: 0,
-    users_partial: 0,
     users_failed: 0,
     users_queued: 0,
-    total_imported: 0,
-    total_skipped: 0,
-    total_failed: 0,
     failure_reasons: {},
   };
 }
@@ -97,7 +94,6 @@ async function runScheduledGmailSync({ onAccountError = null } = {}) {
       await enqueueGmailSync(userId, { source: 'scheduler' });
       summary.users_processed += 1;
       summary.users_queued += 1;
-      summary.users_succeeded += 1;
     } catch (error) {
       summary.users_failed += 1;
       summary.failure_reasons.account_sync_failed = (summary.failure_reasons.account_sync_failed || 0) + 1;
@@ -113,7 +109,10 @@ async function runScheduledGmailSync({ onAccountError = null } = {}) {
     }
   }
 
-  summary.ok = summary.users_failed === 0 && summary.users_partial === 0 && summary.total_failed === 0;
+  // This endpoint confirms durable queue acceptance. Import execution happens
+  // in workers and is reflected by each connection's sync status afterward.
+  summary.ok = summary.users_failed === 0;
+  summary.accepted = summary.ok;
   return summary;
 }
 

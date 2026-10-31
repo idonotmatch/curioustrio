@@ -23,6 +23,7 @@ import { setActiveCacheUserId, clearActiveCacheUserId } from '../services/cacheI
 import { invalidateCacheByPrefix } from '../services/cache';
 import { resetPendingExpenseStore } from '../hooks/usePendingExpenses';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
+import { refreshPushRegistrationIfGranted } from '../services/pushRegistration';
 import { colors } from '../theme/tokens';
 const {
   AUTH_BOOT_CACHE_TIMEOUT_MS,
@@ -119,6 +120,7 @@ function AppNavigator() {
   const lastGmailAutoSyncAttemptRef = useRef(0);
   const gmailAutoSyncTimerRef = useRef(null);
   const lastHandledNotificationRef = useRef(null);
+  const pushRegistrationSessionRef = useRef(null);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -334,6 +336,12 @@ function AppNavigator() {
         resetPendingExpenseStore();
       }
       const routeKey = `${session.user.id}:${session.access_token ? session.access_token.slice(-12) : 'no-token'}`;
+      if (pushRegistrationSessionRef.current !== routeKey) {
+        pushRegistrationSessionRef.current = routeKey;
+        refreshPushRegistrationIfGranted({ token: session.access_token }).catch((error) => {
+          captureException(error, { area: 'push_registration_refresh' });
+        });
+      }
       const alreadyRoutedSession = routedSessionIdRef.current === routeKey;
       if (alreadyRoutedSession && bootstrapped && !isAuthEntryPath(pathname)) {
         scheduleGmailAutoSync(session.access_token);
@@ -395,6 +403,7 @@ function AppNavigator() {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        pushRegistrationSessionRef.current = null;
         resetPendingExpenseStore();
         clearActiveCacheUserId();
         invalidateCacheByPrefix('cache:').catch(() => {});

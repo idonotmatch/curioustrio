@@ -38,6 +38,16 @@ const REQUIRED_COLUMNS = [
   ['users', 'push_gmail_review_enabled'],
   ['users', 'push_insights_enabled'],
   ['users', 'push_recurring_enabled'],
+  ['users', 'notification_timezone'],
+  ['users', 'notification_quiet_hours_enabled'],
+  ['users', 'notification_quiet_start'],
+  ['users', 'notification_quiet_end'],
+  ['push_tokens', 'updated_at'],
+  ['push_tokens', 'last_seen_at'],
+  ['push_tokens', 'disabled_at'],
+  ['push_tokens', 'last_error_code'],
+  ['push_tokens', 'last_error_at'],
+  ['insight_notifications', 'continuity_key'],
   ['expense_items', 'product_id'],
   ['expense_items', 'comparable_key'],
   ['expense_items', 'product_match_confidence'],
@@ -94,6 +104,7 @@ const REQUIRED_TABLES = [
   'ai_usage_events',
   'account_feature_entitlements',
   'receipt_scan_jobs',
+  'notification_deliveries',
 ];
 
 const OPTIONAL_TABLES = [

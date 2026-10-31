@@ -47,6 +47,16 @@ async function handleReceiptScan(payload = {}) {
   return runReceiptScanJob(payload);
 }
 
+async function handlePushReceipt(payload = {}) {
+  const { reconcilePushReceipt } = require('./pushService');
+  return reconcilePushReceipt(payload);
+}
+
+async function handlePushDispatch(payload = {}) {
+  const { runDeferredPushDispatch } = require('./notificationDispatchService');
+  return runDeferredPushDispatch(payload);
+}
+
 async function runJob(job) {
   if (job.job_type === BackgroundJob.JOB_TYPES.projectionRefresh) {
     return handleProjectionRefresh(job.payload);
@@ -62,6 +72,12 @@ async function runJob(job) {
   }
   if (job.job_type === BackgroundJob.JOB_TYPES.receiptScan) {
     return handleReceiptScan(job.payload);
+  }
+  if (job.job_type === BackgroundJob.JOB_TYPES.pushReceipt) {
+    return handlePushReceipt(job.payload);
+  }
+  if (job.job_type === BackgroundJob.JOB_TYPES.pushDispatch) {
+    return handlePushDispatch(job.payload);
   }
   throw new Error(`No handler registered for background job type: ${job.job_type}`);
 }
@@ -89,6 +105,25 @@ async function processJob(job) {
         captureException(cleanupError, {
           component: 'background_job_worker',
           operation: 'finalize_dead_receipt_scan',
+          job_id: job.id,
+        });
+      });
+    }
+    if (failed?.status === 'dead' && job.job_type === BackgroundJob.JOB_TYPES.gmailSync) {
+      const { notifyCronAlert } = require('./cronAlertService');
+      await notifyCronAlert({
+        job: 'gmail-sync-worker',
+        level: 'error',
+        message: 'A queued Gmail sync exhausted all retry attempts.',
+        metadata: {
+          user_id: job.payload?.user_id || null,
+          source: job.payload?.source || null,
+          background_job_id: job.id,
+        },
+      }).catch((alertError) => {
+        captureException(alertError, {
+          component: 'background_job_worker',
+          operation: 'alert_dead_gmail_sync',
           job_id: job.id,
         });
       });
@@ -159,6 +194,8 @@ module.exports = {
   handleGmailEnrichment,
   handleGmailSync,
   handleReceiptScan,
+  handlePushReceipt,
+  handlePushDispatch,
   handleProjectionRefresh,
   processJob,
   startBackgroundJobWorker,

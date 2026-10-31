@@ -22,6 +22,7 @@ export default function NotificationsScreen() {
   const [pushGmailReviewEnabled, setPushGmailReviewEnabled] = useState(true);
   const [pushInsightsEnabled, setPushInsightsEnabled] = useState(true);
   const [pushRecurringEnabled, setPushRecurringEnabled] = useState(true);
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(true);
   const [pushSavingKey, setPushSavingKey] = useState('');
   const [pushMessage, setPushMessage] = useState('');
   const [devicePushEnabled, setDevicePushEnabled] = useState(null);
@@ -31,10 +32,12 @@ export default function NotificationsScreen() {
     setPushGmailReviewEnabled(user.push_gmail_review_enabled !== false);
     setPushInsightsEnabled(user.push_insights_enabled !== false);
     setPushRecurringEnabled(user.push_recurring_enabled !== false);
+    setQuietHoursEnabled(user.notification_quiet_hours_enabled !== false);
   }, [
     user?.push_gmail_review_enabled,
     user?.push_insights_enabled,
     user?.push_recurring_enabled,
+    user?.notification_quiet_hours_enabled,
   ]);
 
   useEffect(() => {
@@ -72,16 +75,17 @@ export default function NotificationsScreen() {
   }
 
   async function savePushSetting(field, value, setter) {
-    const previous = field === 'push_gmail_review_enabled'
-      ? pushGmailReviewEnabled
-      : field === 'push_insights_enabled'
-        ? pushInsightsEnabled
-        : pushRecurringEnabled;
+    const previous = {
+      push_gmail_review_enabled: pushGmailReviewEnabled,
+      push_insights_enabled: pushInsightsEnabled,
+      push_recurring_enabled: pushRecurringEnabled,
+      notification_quiet_hours_enabled: quietHoursEnabled,
+    }[field];
     setter(value);
     setPushSavingKey(field);
     setPushMessage('');
     try {
-      if (value) {
+      if (value && field.startsWith('push_')) {
         const permission = await ensurePushRegistration();
         if (!permission.granted) {
           setter(previous);
@@ -167,6 +171,20 @@ export default function NotificationsScreen() {
               value={pushRecurringEnabled}
               onValueChange={(value) => savePushSetting('push_recurring_enabled', value, setPushRecurringEnabled)}
               disabled={pushSavingKey === 'push_recurring_enabled'}
+              trackColor={{ false: colors.borderStrong, true: colors.successMuted }}
+              thumbColor={colors.text}
+            />
+          </View>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleCopy}>
+              <Text style={styles.toggleTitle}>Quiet hours</Text>
+              <Text style={styles.toggleSubtitle}>Hold notifications from 10 PM to 8 AM in your device time zone</Text>
+            </View>
+            <Switch
+              value={quietHoursEnabled}
+              onValueChange={(value) => savePushSetting('notification_quiet_hours_enabled', value, setQuietHoursEnabled)}
+              disabled={pushSavingKey === 'notification_quiet_hours_enabled'}
               trackColor={{ false: colors.borderStrong, true: colors.successMuted }}
               thumbColor={colors.text}
             />

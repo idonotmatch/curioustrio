@@ -22,7 +22,7 @@ jobs:
             echo "Gmail sync failed with HTTP $status"
             exit 1
           fi
-          if ! jq -e '.ok == true' response.json >/dev/null; then
-            echo "Gmail sync did not report a healthy result"
+          if ! jq -e '.accepted == true and .execution_pending == true' response.json >/dev/null; then
+            echo "Gmail sync jobs were not accepted by the queue"
             exit 1
           fi

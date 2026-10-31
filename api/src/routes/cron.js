@@ -34,15 +34,13 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
         captureException(error, { area: 'gmail_scheduler', phase: context.phase });
       },
     });
-    console.log('[cron/gmail-sync] completed', result);
+    console.log('[cron/gmail-sync] enqueue completed', result);
 
     if (!result.ok) {
       await notifyCronAlert({
         job: 'gmail-sync',
-        level: result.users_failed > 0 ? 'error' : 'warning',
-        message: result.users_failed > 0
-          ? 'Gmail scheduler could not sync one or more connected accounts.'
-          : 'Gmail scheduler completed with failed message imports.',
+        level: 'error',
+        message: 'Gmail scheduler could not queue one or more connected accounts.',
         metadata: result,
       });
     }

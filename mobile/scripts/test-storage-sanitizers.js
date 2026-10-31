@@ -70,8 +70,12 @@ function run() {
     email: 'pat@example.com',
     budget_start_day: 15,
     onboarding_complete: true,
+    notification_timezone: 'America/New_York',
+    notification_quiet_hours_enabled: false,
   });
   assert.strictEqual(sanitizedUser.email, undefined, 'current user cache should drop email');
+  assert.strictEqual(sanitizedUser.notification_timezone, 'America/New_York');
+  assert.strictEqual(sanitizedUser.notification_quiet_hours_enabled, false);
 
   assert.deepStrictEqual(
     sanitizePendingReviewHint({

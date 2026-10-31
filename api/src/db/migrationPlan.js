@@ -90,6 +90,7 @@ const MIGRATION_PLAN = [
   '094_match_learning_and_identity_controls.sql',
   '095_receipt_scan_usage_guards.sql',
   '096_scalable_receipt_scan_jobs.sql',
+  '097_push_notification_hardening.sql',
 ];
 
 module.exports = {

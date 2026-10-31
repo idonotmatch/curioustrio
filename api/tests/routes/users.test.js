@@ -184,6 +184,38 @@ describe('PATCH /users/settings', () => {
     expect(res.body.push_recurring_enabled).toBe(false);
   });
 
+  it('updates notification timezone and quiet hours', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({
+        notification_timezone: 'America/Los_Angeles',
+        notification_quiet_hours_enabled: false,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.notification_timezone).toBe('America/Los_Angeles');
+    expect(res.body.notification_quiet_hours_enabled).toBe(false);
+  });
+
+  it('rejects an invalid notification timezone', async () => {
+    await db.query(
+      'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',
+      [TEST_UUID, 'Dang Nguyen', TEST_EMAIL]
+    );
+
+    const res = await request(app)
+      .patch('/users/settings')
+      .send({ notification_timezone: 'Somewhere/Impossible' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/IANA timezone/i);
+  });
+
   it('updates onboarding state fields', async () => {
     await db.query(
       'INSERT INTO users (provider_uid, name, email) VALUES ($1, $2, $3)',

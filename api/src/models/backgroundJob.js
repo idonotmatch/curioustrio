@@ -7,6 +7,8 @@ const JOB_TYPES = Object.freeze({
   gmailEnrichment: 'gmail_enrichment',
   gmailSync: 'gmail_sync',
   receiptScan: 'receipt_scan',
+  pushReceipt: 'push_receipt',
+  pushDispatch: 'push_dispatch',
 });
 
 function cleanDelayMs(value) {

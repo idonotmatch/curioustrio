@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../../src/index');
 const db = require('../../src/db');
+const PushToken = require('../../src/models/pushToken');
 
 jest.mock('../../src/middleware/auth', () => ({
   authenticate: (req, res, next) => {
@@ -10,7 +11,7 @@ jest.mock('../../src/middleware/auth', () => ({
 }));
 
 jest.mock('../../src/services/pushService', () => ({
-  sendNotifications: jest.fn().mockResolvedValue([]),
+  sendNotifications: jest.fn().mockResolvedValue({ accepted: 1, rejected: 0 }),
 }));
 
 let householdId;
@@ -51,13 +52,27 @@ describe('POST /push/register', () => {
     expect(res.status).toBe(204);
   });
 
+  it('stores the device timezone while registering', async () => {
+    const res = await request(app)
+      .post('/push/register')
+      .send({
+        token: 'ExpoPushToken[timezone-token]',
+        platform: 'ios',
+        timezone: 'America/New_York',
+      });
+
+    expect(res.status).toBe(204);
+    const user = await db.query('SELECT notification_timezone FROM users WHERE id = $1', [userId]);
+    expect(user.rows[0].notification_timezone).toBe('America/New_York');
+  });
+
   it('returns 400 when token is missing', async () => {
     const res = await request(app)
       .post('/push/register')
       .send({ platform: 'ios' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/token and platform required/i);
+    expect(res.body.error).toMatch(/valid Expo token and platform required/i);
   });
 
   it('returns 400 when platform is missing', async () => {
@@ -66,7 +81,42 @@ describe('POST /push/register', () => {
       .send({ token: 'ExponentPushToken[test-token-123]' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/token and platform required/i);
+    expect(res.body.error).toMatch(/valid Expo token and platform required/i);
+  });
+
+  it('rejects malformed Expo tokens', async () => {
+    const res = await request(app)
+      .post('/push/register')
+      .send({ token: 'not-a-push-token', platform: 'ios' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('unregisters the current account token on sign-out', async () => {
+    const token = 'ExponentPushToken[logout-token]';
+    await request(app).post('/push/register').send({ token, platform: 'ios' });
+
+    const res = await request(app).post('/push/unregister').send({ token });
+
+    expect(res.status).toBe(204);
+    const stored = await db.query('SELECT id FROM push_tokens WHERE token = $1', [token]);
+    expect(stored.rowCount).toBe(0);
+  });
+
+  it('moves a physical device token to the currently signed-in account', async () => {
+    const other = await db.query(
+      `INSERT INTO users (provider_uid, name, email)
+       VALUES ('push-token-owner-two', 'Second Push User', 'push-two@test.com')
+       RETURNING id`
+    );
+    const token = 'ExponentPushToken[shared-device-token]';
+
+    await PushToken.upsert({ userId, token, platform: 'ios' });
+    await PushToken.upsert({ userId: other.rows[0].id, token, platform: 'ios' });
+
+    const stored = await db.query('SELECT user_id FROM push_tokens WHERE token = $1', [token]);
+    expect(stored.rows).toEqual([{ user_id: other.rows[0].id }]);
+    await db.query('DELETE FROM users WHERE id = $1', [other.rows[0].id]);
   });
 });
 

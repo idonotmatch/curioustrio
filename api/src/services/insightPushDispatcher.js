@@ -7,6 +7,7 @@ const { safePushData, shouldSendInsightPush } = require('./pushEligibility');
 const InsightEvent = require('../models/insightEvent');
 const { inferOutcomeEventsForUser, summarizeOutcomeWindows } = require('./insightOutcomeInference');
 const { buildInsightPreferenceSummary, shouldSendPushForInsight } = require('./insightPreferenceSummary');
+const { isMorningDeliveryWindow } = require('./notificationTiming');
 
 const PUSHABLE_INSIGHT_TYPES = new Set([
   'recurring_repurchase_due',
@@ -23,22 +24,22 @@ function trimSentence(value = '', max = 140) {
 function pushCopyForInsight(insight) {
   if (insight?.type === 'buy_soon_better_price') {
     return {
-      title: 'Price insight ready',
-      body: 'Open Adlo to review a recent price opportunity.',
+      title: 'A usual purchase is cheaper',
+      body: 'Its current price is below your recent range. Open Adlo to compare.',
     };
   }
 
   if (insight?.type === 'recurring_price_spike') {
     return {
-      title: 'Spending insight ready',
-      body: 'Open Adlo to review a recent price change.',
+      title: 'A usual purchase got pricier',
+      body: 'Its latest price is above your recent range. Open Adlo for context.',
     };
   }
 
   if (insight?.type === 'recurring_repurchase_due') {
     return {
-      title: 'Routine reminder ready',
-      body: 'Open Adlo to review a likely upcoming purchase.',
+      title: 'A usual purchase may be due',
+      body: 'Review timing and typical cost before your next trip.',
     };
   }
 
@@ -65,6 +66,7 @@ function toPushMessage(token, insight) {
   const metadata = pushNavigationMetadata(insight);
   return {
     to: token.token,
+    pushTokenId: token.id,
     title: copy.title,
     body: copy.body,
     data: {
@@ -83,9 +85,29 @@ function toPushMessage(token, insight) {
   };
 }
 
-async function dispatchInsightPushesForUser(user) {
+function preferenceEnabledForInsight(user, insight) {
+  if (insight?.type === 'recurring_repurchase_due') {
+    return pushNotificationsEnabled(user, 'push_recurring_enabled');
+  }
+  return pushNotificationsEnabled(user, 'push_insights_enabled');
+}
+
+async function dispatchInsightPushesForUser(user, options = {}) {
   if (!user?.id) return { sent: 0, considered: 0 };
-  if (!pushNotificationsEnabled(user, 'push_insights_enabled')) return { sent: 0, considered: 0 };
+  if (
+    !pushNotificationsEnabled(user, 'push_insights_enabled')
+    && !pushNotificationsEnabled(user, 'push_recurring_enabled')
+  ) {
+    return { sent: 0, considered: 0 };
+  }
+  const now = options.now || new Date();
+  const enforceWindow = options.enforceWindow ?? process.env.NODE_ENV !== 'test';
+  if (enforceWindow && !isMorningDeliveryWindow(user, now)) {
+    return { sent: 0, considered: 0, skipped: 'outside_delivery_window' };
+  }
+  if (await InsightNotification.hasSentSince(user.id, 'push', new Date(now.getTime() - 20 * 60 * 60 * 1000))) {
+    return { sent: 0, considered: 0, skipped: 'daily_limit' };
+  }
   const tokens = await PushToken.findByUser(user.id);
   if (!tokens.length) return { sent: 0, considered: 0 };
 
@@ -100,16 +122,17 @@ async function dispatchInsightPushesForUser(user) {
   });
   const candidates = insights.filter((insight) => (
     shouldSendInsightPush({ insight, allowedTypes: PUSHABLE_INSIGHT_TYPES }).send &&
+    preferenceEnabledForInsight(user, insight) &&
     shouldSendPushForInsight(insight, preferenceSummary)
   ));
   if (!candidates.length) return { sent: 0, considered: 0 };
 
   const sentIds = await InsightNotification.findSentIds(user.id, candidates.map((insight) => insight.id), 'push');
-  const sentContinuityKeys = new Set(
-    candidates
-      .filter((insight) => sentIds.has(insight.id))
-      .map((insight) => insight?.metadata?.continuity_key)
-      .filter(Boolean)
+  const sentContinuityKeys = await InsightNotification.findRecentContinuityKeys(
+    user.id,
+    candidates.map((insight) => insight?.metadata?.continuity_key).filter(Boolean),
+    'push',
+    new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
   );
   const unsent = candidates.filter((insight) => shouldSendInsightPush({
     insight,
@@ -122,11 +145,21 @@ async function dispatchInsightPushesForUser(user) {
   const messages = tokens.flatMap((token) => unsent.map((insight) => toPushMessage(token, insight)));
   if (!messages.length) return { sent: 0, considered: candidates.length };
 
-  await sendNotifications(messages);
-  await InsightNotification.createBatch(user.id, unsent.map((insight) => insight.id), 'push');
+  const insight = unsent[0];
+  const category = insight.type === 'recurring_repurchase_due' ? 'recurring' : 'insight';
+  const delivery = await sendNotifications(messages, {
+    userId: user.id,
+    category,
+    notificationKey: `insight:${insight.id}`,
+    metadata: { insight_type: insight.type, continuity_key: insight?.metadata?.continuity_key || null },
+  });
+  if (delivery.accepted > 0) {
+    await InsightNotification.createBatch(user.id, unsent, 'push');
+  }
 
   return {
-    sent: messages.length,
+    sent: delivery.accepted,
+    rejected: delivery.rejected,
     considered: candidates.length,
     notified_insight_ids: unsent.map((insight) => insight.id),
   };

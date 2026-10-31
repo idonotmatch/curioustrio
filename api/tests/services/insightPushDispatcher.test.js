@@ -4,6 +4,8 @@ jest.mock('../../src/models/pushToken', () => ({
 
 jest.mock('../../src/models/insightNotification', () => ({
   findSentIds: jest.fn(),
+  findRecentContinuityKeys: jest.fn(),
+  hasSentSince: jest.fn(),
   createBatch: jest.fn(),
 }));
 
@@ -29,11 +31,15 @@ const { dispatchInsightPushesForUser, PUSHABLE_INSIGHT_TYPES, pushCopyForInsight
 beforeEach(() => {
   PushToken.findByUser.mockReset();
   InsightNotification.findSentIds.mockReset();
+  InsightNotification.findRecentContinuityKeys.mockReset();
+  InsightNotification.hasSentSince.mockReset();
   InsightNotification.createBatch.mockReset();
   InsightEvent.getRecentByUser.mockReset();
   sendNotifications.mockReset();
   buildInsightsForUser.mockReset();
   InsightEvent.getRecentByUser.mockResolvedValue([]);
+  InsightNotification.hasSentSince.mockResolvedValue(false);
+  InsightNotification.findRecentContinuityKeys.mockResolvedValue(new Set());
 });
 
 describe('PUSHABLE_INSIGHT_TYPES', () => {
@@ -55,13 +61,13 @@ describe('dispatchInsightPushesForUser', () => {
     });
 
     expect(copy).toEqual({
-      title: 'Price insight ready',
-      body: 'Open Adlo to review a recent price opportunity.',
+      title: 'A usual purchase is cheaper',
+      body: 'Its current price is below your recent range. Open Adlo to compare.',
     });
   });
 
   it('dispatches push notifications for buy_soon_better_price insights', async () => {
-    PushToken.findByUser.mockResolvedValueOnce([{ token: 'expo-token-1' }]);
+    PushToken.findByUser.mockResolvedValueOnce([{ id: 'token-1', token: 'expo-token-1' }]);
     buildInsightsForUser.mockResolvedValueOnce([{
       id: 'buy_soon_better_price:product:abc:target:2026-04-04',
       type: 'buy_soon_better_price',
@@ -73,13 +79,14 @@ describe('dispatchInsightPushesForUser', () => {
     }]);
     InsightNotification.findSentIds.mockResolvedValueOnce(new Set());
     InsightNotification.createBatch.mockResolvedValueOnce([{ id: 'notif-1' }]);
-    sendNotifications.mockResolvedValueOnce([]);
+    sendNotifications.mockResolvedValueOnce({ accepted: 1, rejected: 0 });
 
     const result = await dispatchInsightPushesForUser({ id: 'user-1' });
 
     expect(sendNotifications).toHaveBeenCalledTimes(1);
     expect(sendNotifications).toHaveBeenCalledWith([expect.objectContaining({
-      title: 'Price insight ready',
+      title: 'A usual purchase is cheaper',
+      pushTokenId: 'token-1',
       data: expect.objectContaining({
         route: '/insight-detail',
         insight_id: 'buy_soon_better_price:product:abc:target:2026-04-04',
@@ -87,13 +94,16 @@ describe('dispatchInsightPushesForUser', () => {
           group_key: 'product:abc',
         }),
       }),
-    })]);
+    })], expect.objectContaining({
+      userId: 'user-1',
+      category: 'insight',
+    }));
     const sentMessage = sendNotifications.mock.calls[0][0][0];
     expect(sentMessage.data.title).toBeUndefined();
     expect(sentMessage.data.body).toBeUndefined();
     expect(InsightNotification.createBatch).toHaveBeenCalledWith(
       'user-1',
-      ['buy_soon_better_price:product:abc:target:2026-04-04'],
+      [expect.objectContaining({ id: 'buy_soon_better_price:product:abc:target:2026-04-04' })],
       'push'
     );
     expect(result.sent).toBe(1);
@@ -122,11 +132,30 @@ describe('dispatchInsightPushesForUser', () => {
     const result = await dispatchInsightPushesForUser({
       id: 'user-1',
       push_insights_enabled: false,
+      push_recurring_enabled: false,
     });
 
     expect(PushToken.findByUser).not.toHaveBeenCalled();
     expect(sendNotifications).not.toHaveBeenCalled();
     expect(result).toEqual({ sent: 0, considered: 0 });
+  });
+
+  it('does not re-send a regenerated insight with the same continuity key', async () => {
+    PushToken.findByUser.mockResolvedValueOnce([{ id: 'token-1', token: 'expo-token-1' }]);
+    buildInsightsForUser.mockResolvedValueOnce([{
+      id: 'buy_soon_better_price:new-id',
+      type: 'buy_soon_better_price',
+      entity_type: 'item',
+      entity_id: 'product:abc',
+      metadata: { group_key: 'product:abc', continuity_key: 'price:product:abc' },
+    }]);
+    InsightNotification.findSentIds.mockResolvedValueOnce(new Set());
+    InsightNotification.findRecentContinuityKeys.mockResolvedValueOnce(new Set(['price:product:abc']));
+
+    const result = await dispatchInsightPushesForUser({ id: 'user-1' });
+
+    expect(sendNotifications).not.toHaveBeenCalled();
+    expect(result).toEqual({ sent: 0, considered: 1 });
   });
 
   it('suppresses pushes for insight types with strongly negative learned preference', async () => {

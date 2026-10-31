@@ -57,15 +57,12 @@ describe('gmailSyncService', () => {
 
     await expect(runScheduledGmailSync()).resolves.toMatchObject({
       ok: true,
+      accepted: true,
+      execution_pending: true,
       connected_accounts: 2,
       users_processed: 2,
-      users_succeeded: 2,
       users_queued: 2,
-      users_partial: 0,
       users_failed: 0,
-      total_imported: 0,
-      total_skipped: 0,
-      total_failed: 0,
     });
     expect(BackgroundJob.enqueue).toHaveBeenCalledTimes(2);
     expect(importForUser).not.toHaveBeenCalled();
@@ -82,13 +79,10 @@ describe('gmailSyncService', () => {
 
     expect(result).toMatchObject({
       ok: false,
+      accepted: false,
       users_processed: 1,
-      users_succeeded: 1,
       users_queued: 1,
-      users_partial: 0,
       users_failed: 1,
-      total_imported: 0,
-      total_failed: 0,
       failure_reasons: { account_sync_failed: 1 },
     });
     expect(OAuthToken.markSyncFailure).toHaveBeenCalledWith('failed-user', expect.objectContaining({
