@@ -1064,7 +1064,12 @@ export default function InsightDetailScreen() {
         onRequestClose={() => setShowFeedbackSheet(false)}
       >
         <View style={styles.modalOverlay}>
-          <AdaptiveSheet style={styles.modalCard}>
+          <AdaptiveSheet
+            style={styles.modalCard}
+            accessibilityViewIsModal
+            accessibilityLabel="Insight feedback"
+            onAccessibilityEscape={() => setShowFeedbackSheet(false)}
+          >
             <Text style={styles.modalTitle}>What felt off?</Text>
             <View style={styles.reasonGrid}>
               {FEEDBACK_REASONS.map((reason) => (
@@ -1072,6 +1077,8 @@ export default function InsightDetailScreen() {
                   key={reason.key}
                   style={[styles.reasonChip, feedbackReason === reason.key && styles.reasonChipActive]}
                   onPress={() => setFeedbackReason(reason.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: feedbackReason === reason.key }}
                 >
                   <Text style={[styles.reasonChipText, feedbackReason === reason.key && styles.reasonChipTextActive]}>
                     {reason.label}
@@ -1088,13 +1095,15 @@ export default function InsightDetailScreen() {
               multiline
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalSecondaryButton} onPress={() => setShowFeedbackSheet(false)}>
+              <TouchableOpacity style={styles.modalSecondaryButton} onPress={() => setShowFeedbackSheet(false)} accessibilityRole="button">
                 <Text style={styles.modalSecondaryText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalPrimaryButton, (!feedbackReason || feedbackSaving) && styles.modalPrimaryButtonDisabled]}
                 onPress={submitNegativeFeedback}
                 disabled={!feedbackReason || feedbackSaving}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !feedbackReason || feedbackSaving, busy: feedbackSaving }}
               >
                 <Text style={styles.modalPrimaryText}>{feedbackSaving ? 'Sending...' : 'Send feedback'}</Text>
               </TouchableOpacity>

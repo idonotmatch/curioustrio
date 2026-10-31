@@ -24,10 +24,13 @@ export function AdaptiveContent({ children, kind = 'feed', padded = false, style
   );
 }
 
-export function AdaptiveSheet({ children, style }) {
+export function AdaptiveSheet({ children, style, ...props }) {
   const layout = useAdaptiveLayout();
   return (
-    <View style={[styles.content, { maxWidth: Math.min(layout.maxWidths.sheet, layout.availableWidth) }, style]}>
+    <View
+      style={[styles.content, { maxWidth: Math.min(layout.maxWidths.sheet, layout.availableWidth) }, style]}
+      {...props}
+    >
       {children}
     </View>
   );

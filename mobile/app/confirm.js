@@ -599,10 +599,10 @@ export default function ConfirmScreen() {
       />
       {/* Merchant / Description — editable */}
       <View style={styles.editableGroup}>
-        <View style={styles.editableRow}>
-          <Text style={styles.editableLabel}>{merchant.trim() ? 'MERCHANT' : 'DETAILS'}</Text>
+        <View style={[styles.editableRow, layout.isAccessibilityText && styles.editableRowStacked]}>
+          <Text style={[styles.editableLabel, layout.isAccessibilityText && styles.editableLabelStacked]}>{merchant.trim() ? 'MERCHANT' : 'DETAILS'}</Text>
           <TextInput
-            style={styles.editableInput}
+            style={[styles.editableInput, layout.isAccessibilityText && styles.editableInputStacked]}
             value={merchant.trim() ? merchant : description}
             onChangeText={merchant.trim() ? setMerchant : setDescription}
             placeholder={merchant.trim() ? 'Merchant name' : 'What was this for?'}
@@ -624,10 +624,10 @@ export default function ConfirmScreen() {
       {merchant.trim() && description.trim() ? (
         <>
           <View style={styles.editableGroup}>
-            <View style={styles.editableRow}>
-              <Text style={styles.editableLabel}>DESCRIPTION</Text>
+            <View style={[styles.editableRow, layout.isAccessibilityText && styles.editableRowStacked]}>
+              <Text style={[styles.editableLabel, layout.isAccessibilityText && styles.editableLabelStacked]}>DESCRIPTION</Text>
               <TextInput
-                style={styles.editableInput}
+                style={[styles.editableInput, layout.isAccessibilityText && styles.editableInputStacked]}
                 value={description}
                 onChangeText={setDescription}
                 placeholder="Description"
@@ -646,11 +646,11 @@ export default function ConfirmScreen() {
       ) : null}
 
       <View style={styles.editableGroup}>
-        <View style={styles.editableRow}>
-          <Text style={styles.editableLabel}>AMOUNT</Text>
+        <View style={[styles.editableRow, layout.isAccessibilityText && styles.editableRowStacked]}>
+          <Text style={[styles.editableLabel, layout.isAccessibilityText && styles.editableLabelStacked]}>AMOUNT</Text>
           <TextInput
             ref={amountInputRef}
-            style={styles.editableInput}
+            style={[styles.editableInput, layout.isAccessibilityText && styles.editableInputStacked]}
             value={amountText}
             onChangeText={value => {
               setAmountText(value);
@@ -670,8 +670,8 @@ export default function ConfirmScreen() {
         {reviewNote('amount', 'Amount may need a quick check.')}
       </View>
       <View style={styles.editableGroup}>
-        <View style={styles.editableRow}>
-          <Text style={styles.editableLabel}>DATE</Text>
+        <View style={[styles.editableRow, layout.isAccessibilityText && styles.editableRowStacked]}>
+          <Text style={[styles.editableLabel, layout.isAccessibilityText && styles.editableLabelStacked]}>DATE</Text>
           {Platform.OS === 'ios' ? (
             <DateTimePicker
               value={expense.date ? new Date(`${expense.date}T12:00:00`) : new Date()}
@@ -722,7 +722,11 @@ export default function ConfirmScreen() {
               ['fees', 'Fees'],
               ['discounts', 'Savings'],
             ].map(([field, label]) => (
-              <View key={field} style={styles.receiptDetailField}>
+              <View key={field} style={[
+                styles.receiptDetailField,
+                layout.isLargeText && styles.receiptDetailFieldLargeText,
+                layout.isAccessibilityText && styles.receiptDetailFieldAccessibility,
+              ]}>
                 <Text style={styles.itemMetricLabel}>{label}</Text>
                 <TextInput
                   style={styles.itemMetricInput}
@@ -735,7 +739,11 @@ export default function ConfirmScreen() {
                 />
               </View>
             ))}
-            <View style={styles.receiptDetailField}>
+            <View style={[
+              styles.receiptDetailField,
+              layout.isLargeText && styles.receiptDetailFieldLargeText,
+              layout.isAccessibilityText && styles.receiptDetailFieldAccessibility,
+            ]}>
               <Text style={styles.itemMetricLabel}>Currency</Text>
               <TextInput
                 style={styles.itemMetricInput}
@@ -750,8 +758,8 @@ export default function ConfirmScreen() {
               />
             </View>
           </View>
-          <View style={styles.receiptMetaRow}>
-            <View style={styles.receiptMetaField}>
+          <View style={[styles.receiptMetaRow, layout.isAccessibilityText && styles.fieldRowStacked]}>
+            <View style={[styles.receiptMetaField, layout.isAccessibilityText && styles.fieldFullWidth]}>
               <Text style={styles.itemMetricLabel}>Time (24h)</Text>
               <TextInput
                 style={styles.itemMetricInput}
@@ -763,7 +771,7 @@ export default function ConfirmScreen() {
                 accessibilityLabel="Receipt purchase time"
               />
             </View>
-            <View style={styles.receiptMetaField}>
+            <View style={[styles.receiptMetaField, layout.isAccessibilityText && styles.fieldFullWidth]}>
               <Text style={styles.itemMetricLabel}>Store #</Text>
               <TextInput
                 style={styles.itemMetricInput}
@@ -924,8 +932,8 @@ export default function ConfirmScreen() {
                   <Text style={styles.removeItemText}>×</Text>
                 </TouchableOpacity>
               </View>
-              <View style={styles.itemMetricsRow}>
-                <View style={styles.itemMetricField}>
+              <View style={[styles.itemMetricsRow, layout.isAccessibilityText && styles.fieldRowStacked]}>
+                <View style={[styles.itemMetricField, layout.isAccessibilityText && styles.fieldFullWidth]}>
                   <Text style={styles.itemMetricLabel}>Qty</Text>
                   <TextInput
                     style={styles.itemMetricInput}
@@ -936,7 +944,7 @@ export default function ConfirmScreen() {
                     keyboardType="decimal-pad"
                   />
                 </View>
-                <View style={styles.itemMetricField}>
+                <View style={[styles.itemMetricField, layout.isAccessibilityText && styles.fieldFullWidth]}>
                   <Text style={styles.itemMetricLabel}>Each</Text>
                   <TextInput
                     style={styles.itemMetricInput}
@@ -947,7 +955,7 @@ export default function ConfirmScreen() {
                     keyboardType="decimal-pad"
                   />
                 </View>
-                <View style={styles.itemMetricFieldWide}>
+                <View style={[styles.itemMetricFieldWide, layout.isAccessibilityText && styles.fieldFullWidth]}>
                   <Text style={styles.itemMetricLabel}>Total</Text>
                   <TextInput
                     style={styles.itemMetricInput}
@@ -1034,16 +1042,16 @@ export default function ConfirmScreen() {
             {savedCardMatchNote ? (
               <Text style={styles.savedCardsMatchNote}>{savedCardMatchNote}</Text>
             ) : null}
-            <View style={styles.cardRow}>
+            <View style={[styles.cardRow, layout.isAccessibilityText && styles.fieldRowStacked]}>
               <TextInput
-                style={[styles.cardInput, { flex: 1 }]}
+                style={[styles.cardInput, { flex: 1 }, layout.isAccessibilityText && styles.cardInputStacked]}
                 placeholder="Card nickname (optional)"
                 placeholderTextColor={colors.textDisabled}
                 value={cardLabel}
                 onChangeText={setCardLabel}
               />
               <TextInput
-                style={[styles.cardInput, { width: 64 }]}
+                style={[styles.cardInput, { width: 64 }, layout.isAccessibilityText && styles.cardInputStacked]}
                 placeholder="last 4"
                 placeholderTextColor={colors.textDisabled}
                 value={cardLast4}
@@ -1198,7 +1206,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
+  editableRowStacked: { flexDirection: 'column', alignItems: 'stretch' },
   editableLabel: { fontSize: 11, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, width: 92 },
+  editableLabelStacked: { width: '100%', marginBottom: 8 },
   editableInput: {
     flex: 1,
     color: colors.text,
@@ -1208,6 +1218,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     minHeight: 28,
   },
+  editableInputStacked: { width: '100%', textAlign: 'left', paddingHorizontal: 0 },
   confirmDatePicker: { marginRight: -2 },
   dateButton: { flex: 1, alignItems: 'flex-end', paddingHorizontal: 6, paddingVertical: 8, minHeight: 44, justifyContent: 'center' },
   dateButtonText: { color: colors.text, fontSize: 15, textAlign: 'right' },
@@ -1265,10 +1276,14 @@ const styles = StyleSheet.create({
   receiptDetailsHint: { color: colors.textSubtle, fontSize: 12, lineHeight: 17, marginBottom: 10 },
   receiptDetailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   receiptDetailField: { width: '31%', minWidth: 0 },
+  receiptDetailFieldLargeText: { width: '48%' },
+  receiptDetailFieldAccessibility: { width: '100%' },
   receiptMetaRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  fieldRowStacked: { flexDirection: 'column' },
+  fieldFullWidth: { flex: 0, width: '100%' },
   receiptMetaField: { flex: 1, minWidth: 0 },
   receiptTransactionField: { marginTop: 8 },
-  methodRow: { flexDirection: 'row', gap: 6 },
+  methodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   methodChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
   methodChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
   methodChipText: { fontSize: 14, color: colors.textSubtle },
@@ -1284,6 +1299,7 @@ const styles = StyleSheet.create({
   savedCardUpdateText: { color: colors.info, fontSize: 13, fontWeight: '600' },
   cardRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   cardInput: { backgroundColor: colors.surface, borderRadius: 8, padding: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: colors.borderStrong },
+  cardInputStacked: { flex: 0, width: '100%' },
 
   itemsSection: { backgroundColor: colors.borderSubtle, borderRadius: 8, padding: 12, marginBottom: 8 },
   itemReviewNotice: {

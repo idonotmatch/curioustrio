@@ -70,7 +70,7 @@ export default function TabLayout() {
   const router = useRouter();
   const layout = useAdaptiveLayout();
   const addLauncherRef = useRef(null);
-  const visualTabBarHeight = layout.isWide ? 60 : 52;
+  const visualTabBarHeight = layout.isWide && !layout.prefersCompactNavigation ? 60 : 52;
 
   useEffect(() => subscribeGlobalAddLauncher(() => {
     addLauncherRef.current?.open?.();
@@ -90,7 +90,7 @@ export default function TabLayout() {
           paddingRight: layout.insets.right,
         },
         headerShown: false,
-        tabBarShowLabel: layout.isWide,
+        tabBarShowLabel: layout.isWide && !layout.prefersCompactNavigation,
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: {
           paddingVertical: 0,

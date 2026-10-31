@@ -11,9 +11,12 @@ const phone = createAdaptiveLayout({
   insets: { top: 59, right: 0, bottom: 34, left: 0 },
 });
 assert.equal(phone.sizeClass, 'compact');
+assert.equal(phone.availableHeight, 759);
 assert.equal(phone.gutter, 20);
 assert.equal(phone.isLandscapeLike, false);
 assert.equal(phone.isTwoPane, false);
+assert.equal(phone.isLargeText, false);
+assert.equal(phone.prefersCompactNavigation, false);
 assert.equal(contentWidthFor(phone, 'feed'), 353);
 
 const resized = createAdaptiveLayout({
@@ -54,5 +57,36 @@ const openDuo = createAdaptiveLayout({
 });
 assert.equal(openDuo.sizeClass, 'expanded');
 assert.equal(openDuo.isTwoPane, true);
+
+const landscapePhone = createAdaptiveLayout({
+  width: 852,
+  height: 393,
+  insets: { top: 0, right: 59, bottom: 21, left: 59 },
+});
+assert.equal(landscapePhone.isLandscapeLike, true);
+assert.equal(landscapePhone.availableHeight, 372);
+assert.equal(landscapePhone.isShortViewport, true);
+assert.equal(landscapePhone.isTwoPane, false);
+assert.equal(landscapePhone.prefersCompactNavigation, true);
+
+const openDuoLargeText = createAdaptiveLayout({
+  width: 932,
+  height: 760,
+  fontScale: 1.8,
+  insets: { top: 24, right: 0, bottom: 20, left: 0 },
+});
+assert.equal(openDuoLargeText.isLargeText, true);
+assert.equal(openDuoLargeText.isAccessibilityText, true);
+assert.equal(openDuoLargeText.isTwoPane, false);
+assert.equal(openDuoLargeText.prefersCompactNavigation, true);
+
+const insetConstrained = createAdaptiveLayout({
+  width: 932,
+  height: 650,
+  insets: { top: 59, right: 0, bottom: 34, left: 0 },
+});
+assert.equal(insetConstrained.availableHeight, 557);
+assert.equal(insetConstrained.isShortViewport, true);
+assert.equal(insetConstrained.isTwoPane, false);
 
 console.log('adaptive layout tests passed');

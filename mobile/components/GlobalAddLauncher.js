@@ -104,7 +104,11 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
               paddingBottom: Math.max(34, layout.insets.bottom + 16),
             },
             keyboardVisible && styles.sheetRaised,
-          ]}>
+          ]}
+            accessibilityViewIsModal
+            accessibilityLabel="Add expense options"
+            onAccessibilityEscape={() => { if (!loading) close(); }}
+          >
             <ScrollView
               keyboardShouldPersistTaps="handled"
               bounces={false}

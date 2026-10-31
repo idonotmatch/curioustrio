@@ -284,9 +284,14 @@ export default function ExpenseDetailScreen() {
       {/* Hero */}
       <View style={styles.hero}>
         {editing && canEdit && !isPendingEmailReview ? (
-          <View style={styles.editRow}>
+          <View style={[styles.editRow, layout.isAccessibilityText && styles.editRowStacked]}>
             <TextInput
-              style={[styles.editInput, { flex: 1 }, activeReviewField === 'merchant' && styles.editInputFocused]}
+              style={[
+                styles.editInput,
+                { flex: 1 },
+                layout.isAccessibilityText && styles.editInputStacked,
+                activeReviewField === 'merchant' && styles.editInputFocused,
+              ]}
               value={merchant}
               onChangeText={setMerchant}
               placeholderTextColor={colors.textDisabled}
@@ -301,7 +306,12 @@ export default function ExpenseDetailScreen() {
             />
             <TextInput
               ref={amountInputRef}
-              style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]}
+              style={[
+                styles.editInput,
+                styles.editAmount,
+                layout.isAccessibilityText && styles.editAmountStacked,
+                activeReviewField === 'amount' && styles.editInputFocused,
+              ]}
               value={amount}
               onChangeText={(value) => setAmount(sanitizeMoneyInput(value))}
               onBlur={() => setAmount(formatMoneyInput(amount))}
@@ -795,6 +805,9 @@ const styles = StyleSheet.create({
   merchant: { fontSize: 20, color: colors.text, fontWeight: '600', letterSpacing: 0 },
   amount: { fontSize: 36, color: colors.text, fontWeight: '600', marginTop: 4, letterSpacing: 0 },
   amountRefund: { color: colors.success },
+  editRowStacked: { flexDirection: 'column' },
+  editInputStacked: { flex: 0, width: '100%' },
+  editAmountStacked: { width: '100%', textAlign: 'left' },
   heroMetaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   heroMetaChip: {
     backgroundColor: colors.surfaceRaised,

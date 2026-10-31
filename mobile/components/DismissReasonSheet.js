@@ -15,7 +15,12 @@ export function DismissReasonSheet({ visible, onClose, onSelect, busy = false })
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <AdaptiveSheet style={styles.card}>
+        <AdaptiveSheet
+          style={styles.card}
+          accessibilityViewIsModal
+          accessibilityLabel="Dismiss import reason"
+          onAccessibilityEscape={onClose}
+        >
           <Text style={styles.title}>Why dismiss this import?</Text>
           <Text style={styles.subtitle}>
             This helps us learn what should stay out of your review queue next time.
@@ -28,12 +33,20 @@ export function DismissReasonSheet({ visible, onClose, onSelect, busy = false })
                 disabled={busy}
                 activeOpacity={0.82}
                 onPress={() => onSelect(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busy }}
               >
                 <Text style={styles.optionText}>{option.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
-          <TouchableOpacity style={styles.cancel} onPress={onClose} disabled={busy}>
+          <TouchableOpacity
+            style={styles.cancel}
+            onPress={onClose}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: busy }}
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </AdaptiveSheet>
