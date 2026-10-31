@@ -9,6 +9,7 @@ import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffe
 import { LocationPicker } from '../components/LocationPicker';
 import { ProvenanceSummary } from '../components/ProvenanceSummary';
 import { DismissKeyboardScrollView } from '../components/DismissKeyboardScrollView';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { useCategories } from '../hooks/useCategories';
 import { createManualExpenseDraft } from '../services/manualExpenseDraft';
 import { toLocalDateString } from '../services/date';
@@ -89,6 +90,8 @@ export default function ConfirmScreen() {
     [navigationPayload, dataParam]
   );
   const router = useRouter();
+  const layout = useAdaptiveLayout();
+  const amountInputRef = useRef(null);
   const { categories, refresh: refreshCategories } = useCategories();
   const isWatchedPlanFlow = Boolean(parsed?.scenario_memory_id);
   const isPurchasePlanFlow = Boolean(parsed?.purchase_plan_id);
@@ -565,7 +568,13 @@ export default function ConfirmScreen() {
   }
 
   return (
-    <DismissKeyboardScrollView contentLayout="form" style={styles.container} contentContainerStyle={styles.content}>
+    <DismissKeyboardScrollView
+      contentLayout={layout.isTwoPane ? 'dashboard' : 'form'}
+      style={styles.container}
+      contentContainerStyle={styles.content}
+    >
+      <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
+        <View style={styles.primaryPane}>
       {isPurchasePlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a planned purchase</Text>
@@ -601,6 +610,9 @@ export default function ConfirmScreen() {
             autoCorrect
             spellCheck
             autoCapitalize="words"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => amountInputRef.current?.focus()}
             accessibilityLabel={merchant.trim() ? 'Merchant' : 'Expense details'}
           />
         </View>
@@ -622,6 +634,9 @@ export default function ConfirmScreen() {
                 placeholderTextColor={colors.textDisabled}
                 autoCorrect
                 spellCheck
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => amountInputRef.current?.focus()}
                 accessibilityLabel="Description"
               />
             </View>
@@ -634,6 +649,7 @@ export default function ConfirmScreen() {
         <View style={styles.editableRow}>
           <Text style={styles.editableLabel}>AMOUNT</Text>
           <TextInput
+            ref={amountInputRef}
             style={styles.editableInput}
             value={amountText}
             onChangeText={value => {
@@ -684,6 +700,8 @@ export default function ConfirmScreen() {
         {reviewNote('date', 'Date was inferred and may need adjusting.')}
       </View>
 
+        </View>
+        <View style={styles.detailPane}>
       {isReceiptSource ? (
         <View style={styles.receiptDetailsSection}>
           <Text style={styles.sectionLabel}>RECEIPT BREAKDOWN</Text>
@@ -1114,6 +1132,8 @@ export default function ConfirmScreen() {
           <Text style={styles.confirmText}>{saving ? 'saving...' : 'confirm'}</Text>
         </TouchableOpacity>
       </View>
+        </View>
+      </View>
     </DismissKeyboardScrollView>
   );
 }
@@ -1121,6 +1141,10 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20 },
+  workspace: { gap: 12 },
+  workspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
+  primaryPane: { flex: 0.9, minWidth: 0 },
+  detailPane: { flex: 1.1, minWidth: 0 },
   watchBanner: {
     backgroundColor: colors.infoMuted,
     borderWidth: 1,

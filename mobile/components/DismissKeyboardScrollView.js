@@ -24,6 +24,7 @@ export function DismissKeyboardScrollView({
     <ScrollView
       keyboardShouldPersistTaps={keyboardShouldPersistTaps || 'handled'}
       keyboardDismissMode={keyboardDismissMode || (Platform.OS === 'ios' ? 'interactive' : 'on-drag')}
+      automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       onScrollBeginDrag={(event) => {
         Keyboard.dismiss();
         onScrollBeginDrag?.(event);

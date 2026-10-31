@@ -26,6 +26,8 @@ import {
 } from '../services/insightDetailPresentation';
 import { colors } from '../theme/tokens';
 import { InsightTrendVisual } from '../components/InsightTrendVisual';
+import { AdaptiveSheet } from '../components/layout/AdaptiveLayout';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 const { getInsightTrendVisual } = require('../services/insightTrendVisual');
 const { normalizeDisplayText, normalizeInsightForDisplay } = require('../services/text');
 
@@ -405,6 +407,7 @@ function parseJsonParam(value, fallback = null) {
 
 export default function InsightDetailScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const params = useLocalSearchParams();
   const payloadKey = firstParam(params.payload_key);
   const navPayload = useMemo(() => consumeNavigationPayload(payloadKey, null), [payloadKey]);
@@ -732,7 +735,15 @@ export default function InsightDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: 'Insight detail', headerBackTitle: 'Summary' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.dashboard, layout.availableWidth) },
+        ]}
+      >
+        <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
+          <View style={styles.primaryPane}>
         <View style={styles.hero}>
           <View style={styles.chipRow}>
             <Text style={styles.scopeChip}>{scopeLabel}</Text>
@@ -800,6 +811,9 @@ export default function InsightDetailScreen() {
             </View>
           </View>
         ) : null}
+          </View>
+
+          <View style={styles.evidencePane}>
 
         <View style={styles.sectionBlock}>
           <Text style={styles.cardEyebrow}>Why now</Text>
@@ -1039,6 +1053,8 @@ export default function InsightDetailScreen() {
             <Text style={styles.feedbackNote}>Thanks. We will use this to tune future insight timing.</Text>
           ) : null}
         </View>
+          </View>
+        </View>
       </ScrollView>
 
       <Modal
@@ -1048,7 +1064,7 @@ export default function InsightDetailScreen() {
         onRequestClose={() => setShowFeedbackSheet(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <AdaptiveSheet style={styles.modalCard}>
             <Text style={styles.modalTitle}>What felt off?</Text>
             <View style={styles.reasonGrid}>
               {FEEDBACK_REASONS.map((reason) => (
@@ -1083,7 +1099,7 @@ export default function InsightDetailScreen() {
                 <Text style={styles.modalPrimaryText}>{feedbackSaving ? 'Sending...' : 'Send feedback'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </AdaptiveSheet>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1093,7 +1109,11 @@ export default function InsightDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 36, gap: 22 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 36 },
+  workspace: { gap: 22 },
+  workspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 24 },
+  primaryPane: { flex: 0.82, minWidth: 0, gap: 22 },
+  evidencePane: { flex: 1.18, minWidth: 0, gap: 22 },
   hero: {
     paddingTop: 6,
     paddingBottom: 8,

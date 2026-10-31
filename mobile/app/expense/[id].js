@@ -3,7 +3,7 @@ import {
   StyleSheet, ActivityIndicator, Linking, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useCategories } from '../../hooks/useCategories';
@@ -19,6 +19,7 @@ import { ExpenseItemsSection } from '../../components/ExpenseItemsSection';
 import { ExpenseVisibilityControls } from '../../components/ExpenseVisibilityControls';
 import { ProvenanceSummary } from '../../components/ProvenanceSummary';
 import { RecurringExpenseModal } from '../../components/RecurringExpenseModal';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
 import { InlineError, SkeletonRow } from '../../components/ui/States';
 import { toLocalDateString } from '../../services/date';
 import { colors } from '../../theme/tokens';
@@ -53,6 +54,8 @@ const TRACK_ONLY_REASONS = [
 export default function ExpenseDetailScreen() {
   const { id, expense: expenseParam } = useLocalSearchParams();
   const router = useRouter();
+  const layout = useAdaptiveLayout();
+  const amountInputRef = useRef(null);
   const { categories } = useCategories();
   const { userId: currentUserId } = useCurrentUser();
   const {
@@ -247,7 +250,7 @@ export default function ExpenseDetailScreen() {
   }
 
   return (
-    <DismissKeyboardScrollView contentLayout="form" style={styles.container}>
+    <DismissKeyboardScrollView contentLayout={layout.isTwoPane ? 'dashboard' : 'form'} style={styles.container}>
       <Stack.Screen options={{
         title: expense.merchant,
         headerRight: !canEdit ? undefined : () => (
@@ -276,6 +279,8 @@ export default function ExpenseDetailScreen() {
         ),
       }} />
 
+      <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
+        <View style={styles.contextPane}>
       {/* Hero */}
       <View style={styles.hero}>
         {editing && canEdit && !isPendingEmailReview ? (
@@ -290,8 +295,12 @@ export default function ExpenseDetailScreen() {
               spellCheck
               autoCapitalize="words"
               textContentType="organizationName"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => amountInputRef.current?.focus()}
             />
             <TextInput
+              ref={amountInputRef}
               style={[styles.editInput, styles.editAmount, activeReviewField === 'amount' && styles.editInputFocused]}
               value={amount}
               onChangeText={(value) => setAmount(sanitizeMoneyInput(value))}
@@ -423,6 +432,8 @@ export default function ExpenseDetailScreen() {
         </View>
       ) : null}
 
+        </View>
+        <View style={styles.detailPane}>
       {canEdit && showSecondaryDetails ? (
         <View style={styles.recurringCard}>
           <View style={styles.recurringHeader}>
@@ -750,6 +761,8 @@ export default function ExpenseDetailScreen() {
         onClose={() => !actioning && setShowDismissReasonSheet(false)}
         onSelect={dismissPendingExpense}
       />
+        </View>
+      </View>
     </DismissKeyboardScrollView>
   );
 }
@@ -765,6 +778,10 @@ function Row({ label, children }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  workspace: { width: '100%' },
+  workspaceWide: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingVertical: 20, gap: 20 },
+  contextPane: { flex: 0.9, minWidth: 0 },
+  detailPane: { flex: 1.1, minWidth: 0 },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   detailLoading: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20, paddingTop: 24, gap: 12 },
   heroSkeleton: { minHeight: 130, justifyContent: 'center' },
