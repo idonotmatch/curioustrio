@@ -329,7 +329,7 @@ export default function PlanDetailScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
         <View style={[
           styles.loadingSkeleton,
           { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
@@ -344,7 +344,7 @@ export default function PlanDetailScreen() {
 
   if (!isNew && !plan) {
     return (
-      <SafeAreaView style={styles.center}>
+      <SafeAreaView style={styles.center} edges={['left', 'right', 'bottom']}>
         <Text style={styles.error}>{error || 'This plan is unavailable.'}</Text>
         <SecondaryButton title="Back to planning" onPress={() => router.replace('/plans')} />
       </SafeAreaView>
@@ -352,7 +352,7 @@ export default function PlanDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScrollView
         contentContainerStyle={[
           styles.content,

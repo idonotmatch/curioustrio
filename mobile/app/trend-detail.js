@@ -1048,7 +1048,7 @@ export default function TrendDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Insight details', headerBackTitle: 'Summary' }} />
       <ScrollView
         style={styles.container}

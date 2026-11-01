@@ -77,7 +77,7 @@ export default function ShoppingListScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Next shop', headerBackTitle: 'Back' }} />
       {loading ? (
         <View style={styles.centerState}>

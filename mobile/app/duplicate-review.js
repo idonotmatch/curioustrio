@@ -158,7 +158,7 @@ export default function DuplicateReviewScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center} edges={['bottom']}>
+      <SafeAreaView style={styles.center} edges={['left', 'right', 'bottom']}>
         <ActivityIndicator color={colors.text} />
         <Text style={styles.loadingText}>Loading comparison...</Text>
       </SafeAreaView>
@@ -167,7 +167,7 @@ export default function DuplicateReviewScreen() {
 
   if (error || !expense || !flag || !counterpart) {
     return (
-      <SafeAreaView style={styles.center} edges={['bottom']}>
+      <SafeAreaView style={styles.center} edges={['left', 'right', 'bottom']}>
         <Ionicons name="checkmark-circle-outline" size={30} color={colors.textMuted} />
         <Text style={styles.emptyTitle}>{error ? 'Comparison unavailable' : 'Already resolved'}</Text>
         <Text style={styles.emptyBody}>{error || 'This match no longer needs a decision.'}</Text>
@@ -183,7 +183,7 @@ export default function DuplicateReviewScreen() {
 
   if (mergeResult) {
     return (
-      <SafeAreaView style={styles.center} edges={['bottom']}>
+      <SafeAreaView style={styles.center} edges={['left', 'right', 'bottom']}>
         <Ionicons name="checkmark-circle-outline" size={36} color={colors.success} />
         <Text style={styles.emptyTitle}>Expenses merged</Text>
         <Text style={styles.emptyBody}>Your existing expense stayed in place and supporting details were added from the import.</Text>
@@ -200,7 +200,7 @@ export default function DuplicateReviewScreen() {
 
   const newLabel = expense.source === 'email' ? 'This import' : 'New expense';
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Possible duplicate', headerBackTitle: 'Back' }} />
       <ScrollView contentContainerStyle={[
         styles.content,

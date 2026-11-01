@@ -101,7 +101,7 @@ export default function FundingSourcesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScrollView
         contentContainerStyle={[
           styles.content,

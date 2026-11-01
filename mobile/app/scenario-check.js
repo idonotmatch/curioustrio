@@ -356,7 +356,7 @@ export default function ScenarioCheckScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <DismissKeyboardScrollView contentLayout="form" style={styles.container} contentContainerStyle={styles.content}>
         {isAutoRunning ? (
           <View style={styles.loadingHero}>

@@ -162,7 +162,7 @@ export default function ItemTrendsScreen() {
   }, [layout.isTwoPane, openItem]);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Item price trends', headerBackTitle: 'Activity' }} />
       <View style={[styles.container, { maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'] }]}>
       <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>

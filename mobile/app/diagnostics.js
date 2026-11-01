@@ -1,5 +1,6 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionRow } from '../components/ui/Buttons';
 import { EmptyState, SectionHeader } from '../components/ui/States';
 import { StatusChip } from '../components/ui/StatusChip';
@@ -15,13 +16,13 @@ export default function DiagnosticsHubScreen() {
     return (
       <>
         <Stack.Screen options={{ title: 'Diagnostics' }} />
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['left', 'right']}>
           <EmptyState
             title="Internal tools are disabled"
             body="Diagnostics are hidden in this build."
             icon="lock-closed-outline"
           />
-        </View>
+        </SafeAreaView>
       </>
     );
   }
@@ -29,13 +30,14 @@ export default function DiagnosticsHubScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Diagnostics' }} />
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.content,
-          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
-        ]}
-      >
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.content,
+            { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+          ]}
+        >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
             <Text style={styles.eyebrow}>Internal tools</Text>
@@ -74,13 +76,15 @@ export default function DiagnosticsHubScreen() {
             />
           </View>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: { width: '100%', alignSelf: 'center', padding: spacing.xl, paddingBottom: 48, gap: 28 },
   hero: { gap: spacing.sm },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },

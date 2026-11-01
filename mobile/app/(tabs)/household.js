@@ -1,6 +1,7 @@
 import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHouseholdExpenses } from '../../hooks/useHouseholdExpenses';
 import { useBudget } from '../../hooks/useBudget';
 import { useCategories } from '../../hooks/useCategories';
@@ -38,7 +39,7 @@ export default function HouseholdScreen() {
   const total = Number(budget?.total?.spent || 0);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={[styles.content, { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) }]}>
         <View style={styles.header}>
           <Text style={styles.totalLabel}>Household this month</Text>
@@ -71,7 +72,7 @@ export default function HouseholdScreen() {
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

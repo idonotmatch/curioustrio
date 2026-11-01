@@ -62,6 +62,16 @@ assert.equal(openDuo.isTwoPane, true);
 assert.equal(contentWidthFor(openDuo, 'dashboard'), 868);
 assert.equal(horizontalCardWidthFor(openDuo, { count: 4, kind: 'dashboard' }), 720);
 
+const closedDuo = createAdaptiveLayout({
+  width: 720,
+  height: 900,
+  insets: { top: 24, right: 56, bottom: 20, left: 0 },
+});
+assert.equal(closedDuo.availableWidth, 664);
+assert.equal(closedDuo.sizeClass, 'wide');
+assert.equal(closedDuo.isTwoPane, false);
+assert.equal(contentWidthFor(closedDuo, 'feed'), 608);
+
 const landscapePhone = createAdaptiveLayout({
   width: 852,
   height: 393,

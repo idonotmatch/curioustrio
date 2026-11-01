@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { useCurrentUser } from '../hooks/useCurrentUser';
@@ -108,16 +108,17 @@ export default function BudgetPeriodScreen() {
   const householdPeriodChanged = pendingHouseholdDay !== currentHouseholdDay;
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        {
-          paddingTop: insets.top + 16,
-          maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth),
-        },
-      ]}
-    >
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: insets.top + 16,
+            maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth),
+          },
+        ]}
+      >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>MY BUDGET PERIOD</Text>
         <Text style={styles.subText}>When does your personal budget reset each month?</Text>
@@ -223,12 +224,14 @@ export default function BudgetPeriodScreen() {
           )}
         </View>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 40 },
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 24 },
   sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },

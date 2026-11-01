@@ -164,7 +164,7 @@ export default function PlansScreen() {
   }, [layout.isTwoPane, openPlan]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <View style={[styles.container, { maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'] }]}>
       <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
       <ScrollView

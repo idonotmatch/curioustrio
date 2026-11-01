@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -247,7 +247,7 @@ export default function AddScreen() {
   }, [auto_document, scanLoading]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top + 16 }]} edges={['left', 'right']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth) }]}
@@ -297,7 +297,7 @@ export default function AddScreen() {
           />
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

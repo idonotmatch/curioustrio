@@ -80,7 +80,7 @@ export default function RecurringBundleScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: params.title || 'Usual basket', headerBackTitle: 'Insights' }} />
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.text} /></View>

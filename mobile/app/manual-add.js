@@ -679,7 +679,7 @@ export default function ManualAddScreen() {
         onRequestClose={closeCategoryPicker}
       >
         <Pressable style={styles.modalBackdrop} onPress={closeCategoryPicker} />
-        <SafeAreaView style={styles.categoryModalShell} edges={['bottom']}>
+        <SafeAreaView style={styles.categoryModalShell} edges={['left', 'right', 'bottom']}>
           <View style={styles.categoryModal}>
             <View style={styles.categoryModalHeader}>
               <View style={styles.categoryModalHeaderCopy}>

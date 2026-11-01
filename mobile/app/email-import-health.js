@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
@@ -166,9 +167,9 @@ export default function EmailImportHealthScreen() {
     return (
       <>
         <Stack.Screen options={{ title: 'Email Import Health' }} />
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['left', 'right']}>
           <EmptyState title="Internal tools are disabled" body="Email import health is hidden in this build." icon="lock-closed-outline" />
-        </View>
+        </SafeAreaView>
       </>
     );
   }
@@ -176,14 +177,15 @@ export default function EmailImportHealthScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Email Import Health' }} />
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.content,
-          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
-        ]}
-        refreshControl={<RefreshControl tintColor={colors.text} refreshing={refreshing} onRefresh={refresh} />}
-      >
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.content,
+            { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+          ]}
+          refreshControl={<RefreshControl tintColor={colors.text} refreshing={refreshing} onRefresh={refresh} />}
+        >
         <View style={[styles.hero, statusTone(topRecommendation.level)]}>
           <View style={styles.heroIcon}>
             <Ionicons name={statusIcon(topRecommendation.level)} size={18} color={colors.text} />
@@ -237,13 +239,15 @@ export default function EmailImportHealthScreen() {
             </View>
           </>
         ) : null}
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48 },
   hero: {
     flexDirection: 'row',

@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
@@ -41,7 +42,7 @@ export default function JoinScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Join Household' }} />
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={[styles.content, { maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth) }]}>
         {status === 'joining' && (
           <>
@@ -69,7 +70,7 @@ export default function JoinScreen() {
           </>
         )}
         </View>
-      </View>
+      </SafeAreaView>
     </>
   );
 }

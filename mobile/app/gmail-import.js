@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
 import { invalidateCache, loadWithCache } from '../services/cache';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
@@ -358,13 +359,14 @@ export default function GmailImportScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.content,
-          { maxWidth: Math.min(layout.maxWidths.dashboard, layout.availableWidth) },
-        ]}
-      >
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.content,
+            { maxWidth: Math.min(layout.maxWidths.dashboard, layout.availableWidth) },
+          ]}
+        >
         {params.welcome === 'connect' ? (
           <View style={styles.welcomeCard}>
             <Text style={styles.welcomeEyebrow}>Good first move</Text>
@@ -456,13 +458,15 @@ export default function GmailImportScreen() {
             />
           </View>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48 },
   workspace: { width: '100%' },
   workspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 28 },

@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 import { MetricStrip } from '../components/ui/MetricStrip';
@@ -231,14 +232,15 @@ export default function InsightDiagnosticsScreen() {
   const itemEligibility = itemEligibilityDiagnostics(debug);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
-      ]}
-      keyboardShouldPersistTaps="handled"
-    >
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={[styles.heroCard, tone.card]}>
         <View style={styles.heroTop}>
           <Text style={[styles.heroEyebrow, tone.eyebrow]}>Insight diagnostics</Text>
@@ -378,12 +380,14 @@ export default function InsightDiagnosticsScreen() {
           ) : null}
         </>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 40, gap: 18 },
   heroCard: {
     borderRadius: 16,

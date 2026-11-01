@@ -218,7 +218,7 @@ export default function ItemFamilyReviewScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Review item matches', headerBackTitle: 'Item trends' }} />
       <FlatList
         data={suggestions}
