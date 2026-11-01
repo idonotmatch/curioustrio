@@ -49,6 +49,7 @@ const filesToCheck = [
   'components/PendingExpenseItemsCard.js',
   'components/ReviewQueueItem.js',
   'components/ReviewQueuePreviewPane.js',
+  'components/TransactionPreviewPane.js',
   'components/DismissReasonSheet.js',
   'components/SmartSuggestionCard.js',
   'components/SkippedImportsList.js',

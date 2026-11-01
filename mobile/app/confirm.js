@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, TextInput, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, TextInput, ActivityIndicator, Platform, Image, Modal } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -122,6 +123,7 @@ export default function ConfirmScreen() {
   const [catSuggestion, setCatSuggestion] = useState(null);
   const [catSuggestionLoading, setCatSuggestionLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showReceiptImage, setShowReceiptImage] = useState(false);
   const confirmRequestKeyRef = useRef(createExpenseIdempotencyKey('confirm'));
   const initialItems = useMemo(() => createEditableDraftItems(parsed), [parsed]);
   const originalParsedItemsRef = useRef(createOriginalItemSnapshot(parsed, initialItems));
@@ -170,6 +172,7 @@ export default function ConfirmScreen() {
     setCatSuggestion(null);
     setCatSuggestionLoading(false);
     setShowDatePicker(false);
+    setShowReceiptImage(false);
     const nextItems = createEditableDraftItems(parsed);
     originalParsedItemsRef.current = createOriginalItemSnapshot(parsed, nextItems);
     setItems(nextItems);
@@ -575,6 +578,34 @@ export default function ConfirmScreen() {
     >
       <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
         <View style={styles.primaryPane}>
+      {layout.isTwoPane && isReceiptSource && parsed.image_uri ? (
+        <View style={styles.receiptSourcePanel}>
+          <View style={styles.receiptSourceHeading}>
+            <View>
+              <Text style={styles.receiptSourceEyebrow}>SOURCE RECEIPT</Text>
+              <Text style={styles.receiptSourceTitle}>Compare while you review</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.receiptExpandButton}
+              onPress={() => setShowReceiptImage(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Enlarge receipt image"
+            >
+              <Ionicons name="expand-outline" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={styles.receiptImageButton}
+            onPress={() => setShowReceiptImage(true)}
+            activeOpacity={0.82}
+            accessibilityRole="imagebutton"
+            accessibilityLabel="Receipt image. Double tap to enlarge"
+          >
+            <Image source={{ uri: parsed.image_uri }} style={styles.receiptSourceImage} resizeMode="contain" />
+          </TouchableOpacity>
+          <Text style={styles.receiptSourceHint}>Use the printed receipt to verify the merchant, date, and paid total.</Text>
+        </View>
+      ) : null}
       {isPurchasePlanFlow ? (
         <View style={styles.watchBanner}>
           <Text style={styles.watchBannerTitle}>Logging a planned purchase</Text>
@@ -1142,6 +1173,27 @@ export default function ConfirmScreen() {
       </View>
         </View>
       </View>
+
+      <Modal
+        visible={showReceiptImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReceiptImage(false)}
+      >
+        <View style={styles.receiptModalBackdrop}>
+          <TouchableOpacity
+            style={styles.receiptModalClose}
+            onPress={() => setShowReceiptImage(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Close receipt image"
+          >
+            <Ionicons name="close" size={24} color={colors.text} />
+          </TouchableOpacity>
+          {parsed.image_uri ? (
+            <Image source={{ uri: parsed.image_uri }} style={styles.receiptModalImage} resizeMode="contain" />
+          ) : null}
+        </View>
+      </Modal>
     </DismissKeyboardScrollView>
   );
 }
@@ -1153,6 +1205,64 @@ const styles = StyleSheet.create({
   workspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
   primaryPane: { flex: 0.9, minWidth: 0 },
   detailPane: { flex: 1.1, minWidth: 0 },
+  receiptSourcePanel: {
+    marginBottom: 14,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  receiptSourceHeading: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+  receiptSourceEyebrow: { color: colors.info, fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  receiptSourceTitle: { color: colors.text, fontSize: 15, lineHeight: 21, fontWeight: '700', marginTop: 2 },
+  receiptExpandButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  receiptImageButton: {
+    width: '100%',
+    height: 320,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  receiptSourceImage: { width: '100%', height: '100%' },
+  receiptSourceHint: { color: colors.textSubtle, fontSize: 11, lineHeight: 16, marginTop: 8 },
+  receiptModalBackdrop: {
+    flex: 1,
+    backgroundColor: colors.overlayStrong,
+    padding: 20,
+    paddingTop: 56,
+    paddingBottom: 36,
+  },
+  receiptModalClose: {
+    position: 'absolute',
+    top: 12,
+    right: 16,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  receiptModalImage: { width: '100%', height: '100%' },
   watchBanner: {
     backgroundColor: colors.infoMuted,
     borderWidth: 1,

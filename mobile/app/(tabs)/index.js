@@ -1,4 +1,4 @@
-import { View, Text, FlatList, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Modal, LayoutAnimation, UIManager, Platform, ActivityIndicator } from 'react-native';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMonth, periodLabel, currentPeriod } from '../../contexts/MonthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { useHousehold } from '../../hooks/useHousehold';
 import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ExpenseItem } from '../../components/ExpenseItem';
+import { TransactionPreviewPane } from '../../components/TransactionPreviewPane';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { EmptyState, InlineError, SkeletonRow } from '../../components/ui/States';
 import { colors } from '../../theme/tokens';
@@ -187,21 +188,6 @@ function ItemTrendsLink({ onPress, style }) {
   );
 }
 
-function ActivityContextPane({ children, wide }) {
-  if (wide) {
-    return (
-      <ScrollView
-        style={[styles.activityContextPane, styles.activityContextPaneWide]}
-        contentContainerStyle={styles.activityContextContentWide}
-        showsVerticalScrollIndicator={false}
-      >
-        {children}
-      </ScrollView>
-    );
-  }
-  return <View style={styles.activityContextPane}>{children}</View>;
-}
-
 export default function FeedScreen() {
   const router = useRouter();
   const layout = useAdaptiveLayout();
@@ -223,6 +209,7 @@ export default function FeedScreen() {
   const { categories } = useCategories();
   const refreshInFlightRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeExpenseId, setActiveExpenseId] = useState(null);
   useEffect(() => {
     setSelectedMonth(currentPeriod(transactionStartDay));
   }, [transactionStartDay]);
@@ -266,6 +253,30 @@ export default function FeedScreen() {
 
   const listData = displayExpenses;
 
+  useEffect(() => {
+    if (!layout.isTwoPane) return;
+    setActiveExpenseId((currentId) => (
+      currentId && listData.some((expense) => expense.id === currentId)
+        ? currentId
+        : listData[0]?.id || null
+    ));
+  }, [layout.isTwoPane, listData]);
+
+  const activeExpense = layout.isTwoPane
+    ? listData.find((expense) => expense.id === activeExpenseId) || null
+    : null;
+
+  const openExpense = useCallback((expense) => {
+    if (!expense?.id) return;
+    router.push({
+      pathname: '/expense/[id]',
+      params: {
+        id: expense.id,
+        expense: JSON.stringify(expense),
+      },
+    });
+  }, [router]);
+
   const renderItem = useCallback(({ item }) => (
     <ExpenseItem
       expense={item}
@@ -273,14 +284,15 @@ export default function FeedScreen() {
       currentUserId={currentUserId}
       onDelete={handleDelete}
       showUser={mode === 'household'}
+      onPress={layout.isTwoPane ? (expense) => setActiveExpenseId(expense.id) : undefined}
+      selected={layout.isTwoPane && activeExpenseId === item.id}
     />
-  ), [categories, currentUserId, handleDelete, mode]);
+  ), [activeExpenseId, categories, currentUserId, handleDelete, layout.isTwoPane, mode]);
 
   return (
     <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
     <View style={[styles.container, { width: '100%', maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'], alignSelf: 'center' }]}>
-      <View style={[styles.activityWorkspace, layout.isTwoPane && styles.activityWorkspaceWide]}>
-      <ActivityContextPane wide={layout.isTwoPane}>
+      <View style={styles.activityHeader}>
       <SpendHeader
         myBudget={personalBudget}
         householdBudget={householdBudget}
@@ -292,7 +304,7 @@ export default function FeedScreen() {
       />
 
       {/* Mine / Household toggle — filters the expense list only */}
-      <View style={[styles.controlsRow, layout.isTwoPane && styles.controlsRowWide]}>
+      <View style={styles.controlsRow}>
       {isMultiMember ? (
         <View style={styles.toggleRow}>
           <TouchableOpacity
@@ -314,11 +326,9 @@ export default function FeedScreen() {
           <Text style={styles.sortChipText}>Sort: {currentSortLabel}</Text>
         </TouchableOpacity>
       </View>
-      {layout.isTwoPane ? (
-        <ItemTrendsLink onPress={() => router.push('/item-trends')} style={styles.itemTrendsWide} />
-      ) : null}
-      </ActivityContextPane>
+      </View>
 
+      <View style={[styles.activityWorkspace, layout.isTwoPane && styles.activityWorkspaceWide]}>
       <FlatList
         style={styles.ledgerPane}
         data={listData}
@@ -337,7 +347,7 @@ export default function FeedScreen() {
         ) : null}
         ListHeaderComponent={(
           <View style={styles.listHeader}>
-            {!layout.isTwoPane ? <ItemTrendsLink onPress={() => router.push('/item-trends')} /> : null}
+            <ItemTrendsLink onPress={() => router.push('/item-trends')} />
             {(expenseError || budgetError) && listData.length > 0 ? (
             <InlineError
               title="Showing saved transactions"
@@ -374,6 +384,9 @@ export default function FeedScreen() {
           )
         }
       />
+      {layout.isTwoPane ? (
+        <TransactionPreviewPane expense={activeExpense} onOpen={openExpense} />
+      ) : null}
       </View>
 
       <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
@@ -430,11 +443,9 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
+  activityHeader: { flexShrink: 0, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   activityWorkspace: { flex: 1 },
   activityWorkspaceWide: { flexDirection: 'row' },
-  activityContextPane: { flexShrink: 0 },
-  activityContextPaneWide: { width: 320, borderRightWidth: 1, borderRightColor: colors.borderSubtle },
-  activityContextContentWide: { paddingBottom: 24 },
   ledgerPane: { flex: 1, minWidth: 0 },
 
   controlsRow: {
@@ -446,7 +457,6 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     gap: 12,
   },
-  controlsRowWide: { alignItems: 'stretch', flexDirection: 'column', paddingTop: 14, paddingBottom: 10 },
   toggleRow: { flexDirection: 'row', gap: 8 },
   toggleChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   toggleChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
@@ -495,7 +505,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
   },
-  itemTrendsWide: { marginHorizontal: 16, marginTop: 8 },
   itemTrendsIcon: {
     width: 36,
     height: 36,

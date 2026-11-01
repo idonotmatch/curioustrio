@@ -75,7 +75,9 @@ export const ExpenseItem = memo(function ExpenseItem({
   currentUserId = null,
   showUser = false,
   onDelete,
+  onPress,
   pending = false,
+  selected = false,
 }) {
   const router = useRouter();
   const [localExpense, setLocalExpense] = useState(expense);
@@ -205,17 +207,28 @@ export const ExpenseItem = memo(function ExpenseItem({
 
   return (
     <Swipeable renderRightActions={isOwn ? renderRightActions : undefined}>
-      <View style={[styles.container, pending && styles.containerPending]}>
+      <View style={[
+        styles.container,
+        pending && styles.containerPending,
+        selected && styles.containerSelected,
+      ]}>
         <TouchableOpacity
           style={styles.rowPress}
-          onPress={() => router.push({
-            pathname: '/expense/[id]',
-            params: {
-              id: localExpense.id,
-              expense: JSON.stringify(localExpense),
-            },
-          })}
+          onPress={() => {
+            if (onPress) {
+              onPress(localExpense);
+              return;
+            }
+            router.push({
+              pathname: '/expense/[id]',
+              params: {
+                id: localExpense.id,
+                expense: JSON.stringify(localExpense),
+              },
+            });
+          }}
           activeOpacity={0.7}
+          accessibilityState={{ selected }}
         >
           <View style={[styles.accent, { backgroundColor: pending ? colors.warning : color }]} />
           <View style={styles.left}>
@@ -368,6 +381,8 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
     marginBottom: 6,
     overflow: 'hidden',
   },
@@ -377,6 +392,10 @@ const styles = StyleSheet.create({
   },
   containerPending: {
     backgroundColor: colors.warningMuted,
+  },
+  containerSelected: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.infoBorder,
   },
   accent: {
     width: 3,
