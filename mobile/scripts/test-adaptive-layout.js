@@ -65,12 +65,27 @@ assert.equal(horizontalCardWidthFor(openDuo, { count: 4, kind: 'dashboard' }), 7
 const closedDuo = createAdaptiveLayout({
   width: 720,
   height: 900,
-  insets: { top: 24, right: 56, bottom: 20, left: 0 },
+  insets: { top: 24, right: 160, bottom: 20, left: 0 },
 });
-assert.equal(closedDuo.availableWidth, 664);
-assert.equal(closedDuo.sizeClass, 'wide');
+assert.equal(closedDuo.safeAvailableWidth, 560);
+assert.equal(closedDuo.availableWidth, 720);
+assert.equal(closedDuo.hasTrailingSystemRail, true);
+assert.equal(closedDuo.trailingSystemRailWidth, 160);
+assert.equal(closedDuo.breakpointWidth, 560);
+assert.equal(closedDuo.sizeClass, 'compact');
 assert.equal(closedDuo.isTwoPane, false);
-assert.equal(contentWidthFor(closedDuo, 'feed'), 608);
+assert.equal(contentWidthFor(closedDuo, 'feed'), 680);
+
+const openDuoWithRail = createAdaptiveLayout({
+  width: 1422,
+  height: 1019,
+  insets: { top: 24, right: 160, bottom: 20, left: 0 },
+});
+assert.equal(openDuoWithRail.safeAvailableWidth, 1262);
+assert.equal(openDuoWithRail.availableWidth, 1422);
+assert.equal(openDuoWithRail.hasTrailingSystemRail, true);
+assert.equal(openDuoWithRail.isTwoPane, true);
+assert.equal(contentWidthFor(openDuoWithRail, 'dashboard'), 1256);
 
 const landscapePhone = createAdaptiveLayout({
   width: 852,

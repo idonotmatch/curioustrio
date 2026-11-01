@@ -84,17 +84,21 @@ export default function TabLayout() {
   return (
     <>
       <StartDaySyncer />
-      <Tabs initialRouteName="summary" screenOptions={{
-        tabBarStyle: {
-          backgroundColor: colors.background,
-          borderTopColor: colors.surface,
-        },
-        headerShown: false,
-        tabBarShowLabel: layout.isWide && !layout.prefersCompactNavigation,
-        tabBarLabelPosition: 'below-icon',
-        tabBarHideOnKeyboard: true,
-        tabBarLabelStyle: styles.tabLabel,
-      }}>
+      <Tabs
+        initialRouteName="summary"
+        safeAreaInsets={layout.hasTrailingSystemRail ? { right: 0 } : undefined}
+        screenOptions={{
+          tabBarStyle: {
+            backgroundColor: colors.background,
+            borderTopColor: colors.surface,
+          },
+          headerShown: false,
+          tabBarShowLabel: layout.isWide && !layout.prefersCompactNavigation,
+          tabBarLabelPosition: 'below-icon',
+          tabBarHideOnKeyboard: true,
+          tabBarLabelStyle: styles.tabLabel,
+        }}
+      >
         <Tabs.Screen
           name="summary"
           options={{

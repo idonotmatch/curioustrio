@@ -103,7 +103,7 @@ function shouldShowPrimaryMetric(insight, primaryMetric) {
   return !body.includes(metricValue);
 }
 
-function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disabled = false, emphasis = 'default' }) {
+function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disabled = false, emphasis = 'default', variant = 'default' }) {
   const tone = useMemo(() => insightToneStyles(insight), [insight]);
   const primaryMetric = useMemo(() => getInsightPrimaryMetric(insight), [insight]);
   const cardCopy = useMemo(() => getInsightCardCopy(insight), [insight]);
@@ -115,6 +115,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
     [insightForMetric, primaryMetric]
   );
   const isPrimary = emphasis === 'primary';
+  const isCompact = variant === 'compact';
   const scopeLabel = useMemo(() => getInsightScopeLabel(insight), [insight]);
   const timeframeLabel = useMemo(() => getInsightTimeframeLabel(insight), [insight]);
   const confidenceLabel = useMemo(() => getInsightConfidenceLabel(insight), [insight]);
@@ -138,6 +139,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         styles.insightCard,
         tone.card,
         isPrimary && styles.insightCardPrimary,
+        isCompact && styles.insightCardCompact,
         disabled && styles.insightCardDisabled,
         { width },
       ]}
@@ -163,7 +165,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         </TouchableOpacity>
       </View>
       <TouchableOpacity
-        style={styles.insightDetailButton}
+        style={[styles.insightDetailButton, isCompact && styles.insightDetailButtonCompact]}
         activeOpacity={0.88}
         accessibilityRole="button"
         accessibilityLabel={`Open insight details: ${displayTitle}`}
@@ -172,22 +174,43 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         disabled={disabled}
         onPress={() => onPress?.(insight)}
       >
-        <View style={styles.insightHeader}>
+        <View style={[styles.insightHeader, isCompact && styles.insightHeaderCompact]}>
           <Text style={styles.insightContext} numberOfLines={1}>{timeframeLabel}</Text>
-          <Text style={[styles.insightTitle, isPrimary && styles.insightTitlePrimary]} numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}>{displayTitle}</Text>
+          <Text
+            style={[
+              styles.insightTitle,
+              isPrimary && styles.insightTitlePrimary,
+              isCompact && styles.insightTitleCompact,
+            ]}
+            numberOfLines={INSIGHT_SUMMARY_TITLE_LINES}
+          >
+            {displayTitle}
+          </Text>
           {showPrimaryMetric ? (
-            <View style={[styles.insightMetricPanel, isPrimary && styles.insightMetricPanelPrimary]}>
-              <Text style={[styles.insightMetricValue, isPrimary && styles.insightMetricValuePrimary]} numberOfLines={1}>{primaryMetric.value}</Text>
-              <Text style={[styles.insightMetricLabel, isPrimary && styles.insightMetricLabelPrimary]} numberOfLines={1}>{primaryMetric.label}</Text>
+            <View style={[
+              styles.insightMetricPanel,
+              isPrimary && styles.insightMetricPanelPrimary,
+              isCompact && styles.insightMetricPanelCompact,
+            ]}>
+              <Text style={[
+                styles.insightMetricValue,
+                isPrimary && styles.insightMetricValuePrimary,
+                isCompact && styles.insightMetricValueCompact,
+              ]} numberOfLines={1}>{primaryMetric.value}</Text>
+              <Text style={[
+                styles.insightMetricLabel,
+                isPrimary && styles.insightMetricLabelPrimary,
+                isCompact && styles.insightMetricLabelCompact,
+              ]} numberOfLines={1}>{primaryMetric.label}</Text>
             </View>
           ) : null}
         </View>
-        {displayBody ? (
+        {displayBody && !isCompact ? (
           <View style={styles.insightContent}>
             <Text style={[styles.insightBody, isPrimary && styles.insightBodyPrimary]} numberOfLines={INSIGHT_SUMMARY_BODY_LINES}>{displayBody}</Text>
           </View>
         ) : null}
-        {trendVisual ? (
+        {trendVisual && !isCompact ? (
           <InsightTrendVisual
             visual={trendVisual}
             compact
@@ -195,7 +218,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
             showValue={!showPrimaryMetric}
           />
         ) : null}
-        {evidenceRows.length > 0 ? (
+        {evidenceRows.length > 0 && !isCompact ? (
           <View style={styles.evidenceBlock}>
             <View style={styles.evidenceRows}>
               {evidenceRows.map((row) => (
@@ -209,7 +232,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         ) : null}
       </TouchableOpacity>
       <TouchableOpacity
-        style={styles.insightFooter}
+        style={[styles.insightFooter, isCompact && styles.insightFooterCompact]}
         activeOpacity={0.76}
         accessibilityRole="button"
         accessibilityLabel={`${actionLabel}: ${actionReason}`}
@@ -224,7 +247,7 @@ function InsightCardBase({ insight, width, onPress, onAction, onDismiss, disable
         <View style={styles.insightActionCopy}>
           <Text style={styles.insightActionLabel} numberOfLines={1}>{actionLabel}</Text>
         </View>
-        <View style={styles.insightCTA}>
+        <View style={[styles.insightCTA, isCompact && styles.insightCTACompact]}>
           <Ionicons name="chevron-forward" size={14} color={colors.text} />
         </View>
       </TouchableOpacity>
@@ -252,6 +275,11 @@ const styles = StyleSheet.create({
     borderColor: colors.infoBorder,
     backgroundColor: colors.surfaceRaised,
   },
+  insightCardCompact: {
+    minHeight: 158,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
   insightCardWarn: { borderColor: colors.dangerMuted },
   insightCardPlan: { borderColor: colors.infoMuted },
   insightCardSetup: { borderColor: colors.warningMuted },
@@ -259,7 +287,9 @@ const styles = StyleSheet.create({
   insightCardExplain: { borderColor: colors.border },
   insightCardDisabled: { opacity: 0.72 },
   insightDetailButton: { gap: 10 },
+  insightDetailButtonCompact: { gap: 6 },
   insightHeader: { gap: 10 },
+  insightHeaderCompact: { gap: 6 },
   insightHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   insightMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   insightScopeChip: {
@@ -293,6 +323,7 @@ const styles = StyleSheet.create({
   insightContext: { color: colors.textSubtle, fontSize: 11, lineHeight: 15 },
   insightTitle: { fontSize: 16, color: colors.text, fontWeight: '600', lineHeight: 21 },
   insightTitlePrimary: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  insightTitleCompact: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
   insightMetricPanel: {
     alignSelf: 'flex-start',
     borderLeftWidth: 2,
@@ -301,6 +332,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   insightMetricPanelPrimary: { paddingLeft: 12 },
+  insightMetricPanelCompact: { paddingLeft: 8, paddingVertical: 0 },
   insightMetricValue: {
     fontSize: 22,
     lineHeight: 26,
@@ -313,6 +345,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '800',
   },
+  insightMetricValueCompact: { fontSize: 18, lineHeight: 22 },
   insightMetricLabel: {
     fontSize: 10,
     lineHeight: 13,
@@ -324,6 +357,7 @@ const styles = StyleSheet.create({
   insightMetricLabelPrimary: {
     color: colors.textMuted,
   },
+  insightMetricLabelCompact: { fontSize: 9, lineHeight: 12 },
   insightContent: { flex: 1, justifyContent: 'flex-start', marginTop: 8 },
   insightBody: { fontSize: 13, color: colors.textSubtle, lineHeight: 18 },
   insightBodyPrimary: { fontSize: 14, color: colors.text, lineHeight: 20 },
@@ -346,6 +380,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  insightFooterCompact: { minHeight: 36, marginTop: 6 },
   insightActionCopy: { flex: 1 },
   insightActionLabel: { fontSize: 13, color: colors.text, fontWeight: '700' },
   insightCTA: {
@@ -356,6 +391,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfacePressed,
   },
+  insightCTACompact: { width: 36, height: 36 },
   dismissButton: {
     width: 44,
     height: 44,

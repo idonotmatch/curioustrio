@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSummaryBundle } from '../../hooks/useSummaryBundle';
 import { useInsights } from '../../hooks/useInsights';
+import { usePendingExpenseCount } from '../../hooks/usePendingExpenseCount';
 import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { SummaryInsightsRail } from '../../components/SummaryInsightsRail';
 import { SummaryMonthPicker } from '../../components/SummaryMonthPicker';
@@ -52,10 +53,18 @@ const EARLY_DEVELOPING_INSIGHT_TYPES = new Set([
   'developing_repeated_merchant',
 ]);
 
+function shortExpenseDate(value) {
+  if (!value) return '';
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export default function SummaryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const layout = useAdaptiveLayout();
+  const { count: pendingCount } = usePendingExpenseCount();
   const { selectedMonth, setSelectedMonth, startDay } = useMonth();
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const currentMonthStr = selectedMonth || currentPeriod(startDay);
@@ -99,7 +108,8 @@ export default function SummaryScreen() {
       : insights
   ), [allowMockInsights, currentMonthStr, dismissedMockInsightIds, insights, insightsLoading]);
   const hasMultipleInsights = displayInsights.length > 1;
-  const summaryLayoutKind = layout.isTwoPane ? 'dashboard' : 'feed';
+  const isSummaryDashboard = layout.isTwoPane;
+  const summaryLayoutKind = isSummaryDashboard ? 'dashboard' : 'feed';
   const insightCardWidth = horizontalCardWidthFor(layout, {
     count: displayInsights.length,
     kind: summaryLayoutKind,
@@ -394,6 +404,7 @@ export default function SummaryScreen() {
   const hasBudget = Number(limit || 0) > 0 || Number(hLimit || 0) > 0;
   const watchedImprovedCount = displayWatchedPlans.filter((plan) => plan.last_material_change === 'improved').length;
   const watchedWorsenedCount = displayWatchedPlans.filter((plan) => plan.last_material_change === 'worsened').length;
+  const recentExpenses = displayExpensesForSummary.slice(0, 4);
 
   function openQuickAddWelcome() {
     setShowWelcomeAddCard(false);
@@ -409,7 +420,10 @@ export default function SummaryScreen() {
   }
 
   return (
-    <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <AdaptiveSafeArea
+      style={styles.safeArea}
+      edges={layout.hasTrailingSystemRail ? ['top', 'left'] : ['top', 'left', 'right']}
+    >
     <ScrollView
       style={styles.container}
       contentContainerStyle={[
@@ -425,7 +439,11 @@ export default function SummaryScreen() {
       keyboardDismissMode="on-drag"
     >
       {/* Spend vs Budget */}
-      <View style={styles.spendCard}>
+      <View style={[
+        styles.spendCard,
+        isSummaryDashboard && styles.spendCardWide,
+        layout.hasTrailingSystemRail && { paddingRight: layout.trailingSystemRailWidth },
+      ]}>
         <GlobalPeriodHeader
           periodText={`${periodLabel(selectedMonth, startDay)}${selectedMonth !== currentMonthStr ? ' · tap to change' : ''}`}
           householdName={isMultiMember ? (household?.name || '') : ''}
@@ -433,6 +451,8 @@ export default function SummaryScreen() {
           style={styles.globalHeader}
         />
 
+        <View style={[styles.budgetOverview, isSummaryDashboard && styles.budgetOverviewWide]}>
+        <View style={styles.personalBudgetPane}>
         <View style={styles.spendNumbers}>
           <View>
             <Text style={styles.spendLabel}>spent</Text>
@@ -465,6 +485,32 @@ export default function SummaryScreen() {
             <Ionicons name="arrow-forward" size={14} color={colors.textMuted} />
           </TouchableOpacity>
         )}
+        </View>
+
+        {isSummaryDashboard && isMultiMember ? (
+          <View style={styles.householdBudgetPane}>
+            <View style={styles.householdRow}>
+              <Text style={styles.householdLabel}>Household</Text>
+              <View style={styles.householdNumbers}>
+                <Text style={[styles.householdSpent, hOver && styles.householdOver]}>${hSpent.toFixed(0)}</Text>
+                {hLimit > 0 ? <Text style={styles.householdLimit}> / ${hLimit.toFixed(0)}</Text> : null}
+              </View>
+            </View>
+            {hLimit > 0 ? (
+              <>
+                <View style={styles.hBarTrack}>
+                  <View style={[styles.hBarFill, { width: `${hPct * 100}%`, backgroundColor: hOver ? colors.danger : colors.success }]} />
+                </View>
+                <Text style={styles.householdBudgetMeta}>
+                  {hOver ? `$${(hSpent - hLimit).toFixed(0)} over` : `$${(hLimit - hSpent).toFixed(0)} remaining`}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.householdBudgetMeta}>No shared budget set</Text>
+            )}
+          </View>
+        ) : null}
+        </View>
       </View>
 
       {showWelcomeAddCard ? (
@@ -486,7 +532,7 @@ export default function SummaryScreen() {
       ) : null}
 
       {/* Household budget — shown for multi-member households */}
-      {isMultiMember && (
+      {isMultiMember && !isSummaryDashboard && (
         <View style={styles.householdCard}>
           <View style={styles.householdRow}>
             <View>
@@ -506,7 +552,7 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      <View style={styles.summaryWorkspace}>
+      <View style={[styles.summaryWorkspace, isSummaryDashboard && styles.summaryWorkspaceWide]}>
       <View style={styles.summaryInsightsPane}>
       <SummaryInsightsRail
         styles={styles}
@@ -522,6 +568,7 @@ export default function SummaryScreen() {
         openingInsightId={openingInsightId}
         title="What matters now"
         hint="Swipe for more"
+        displayMode={isSummaryDashboard ? 'dashboard' : 'carousel'}
       />
 
       {displayInsights.length === 0 && !insightsError && !showWelcomeAddCard ? (
@@ -563,6 +610,77 @@ export default function SummaryScreen() {
       ) : null}
       </View>
 
+      {isSummaryDashboard ? (
+      <View style={styles.summaryUtilityPane}>
+        <View style={styles.utilitySection}>
+          <Text style={styles.utilitySectionLabel}>At a glance</Text>
+          <TouchableOpacity style={styles.utilityMetricRow} onPress={() => router.push('/review-queue')} activeOpacity={0.78}>
+            <View style={styles.utilityMetricCopy}>
+              <Text style={styles.utilityMetricValue}>{pendingCount}</Text>
+              <Text style={styles.utilityMetricLabel}>pending reviews</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.utilityMetricRow} onPress={() => router.push('/(tabs)/index')} activeOpacity={0.78}>
+            <View style={styles.utilityMetricCopy}>
+              <Text style={styles.utilityMetricValue}>{displayExpensesForSummary.length}</Text>
+              <Text style={styles.utilityMetricLabel}>expenses this period</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.utilityMetricRow} onPress={() => router.push('/plans')} activeOpacity={0.78}>
+            <View style={styles.utilityMetricCopy}>
+              <Text style={styles.utilityMetricValue}>{displayWatchedPlans.length}</Text>
+              <Text style={styles.utilityMetricLabel}>active plans</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
+          </TouchableOpacity>
+        </View>
+
+        {recentExpenses.length > 0 ? (
+          <View style={styles.utilitySection}>
+            <View style={styles.utilityHeadingRow}>
+              <Text style={styles.utilitySectionLabel}>Recent activity</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/index')} hitSlop={8}>
+                <Text style={styles.utilityLink}>View all</Text>
+              </TouchableOpacity>
+            </View>
+            {recentExpenses.map((expense) => (
+              <TouchableOpacity
+                key={expense.id}
+                style={styles.recentExpenseRow}
+                activeOpacity={0.78}
+                onPress={() => router.push({ pathname: '/expense/[id]', params: { id: expense.id } })}
+              >
+                <View style={styles.recentExpenseCopy}>
+                  <Text style={styles.recentExpenseTitle} numberOfLines={1}>
+                    {expense.merchant || expense.description || 'Expense'}
+                  </Text>
+                  <Text style={styles.recentExpenseMeta} numberOfLines={1}>
+                    {[shortExpenseDate(expense.date), expense.category_parent_name || expense.category_name].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+                <Text style={styles.recentExpenseAmount}>${Number(expense.amount || 0).toFixed(2)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.utilitySection}>
+          <Text style={styles.utilitySectionLabel}>Quick actions</Text>
+          <TouchableOpacity style={styles.utilityActionRow} onPress={requestGlobalAddLauncher} activeOpacity={0.78}>
+            <Ionicons name="add-circle-outline" size={18} color={colors.textMuted} />
+            <Text style={styles.utilityActionText}>Add an expense</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.utilityActionRow} onPress={() => router.push('/item-trends')} activeOpacity={0.78}>
+            <Ionicons name="analytics-outline" size={18} color={colors.textMuted} />
+            <Text style={styles.utilityActionText}>Browse price trends</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDisabled} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      ) : (
       <View>
       {displayWatchedPlans.length > 0 ? (
         <TouchableOpacity
@@ -606,6 +724,7 @@ export default function SummaryScreen() {
         </TouchableOpacity>
       )}
       </View>
+      )}
       </View>
     </ScrollView>
 
@@ -632,7 +751,20 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
 
   spendCard: { marginBottom: 18 },
+  spendCardWide: { marginBottom: 26 },
   globalHeader: { marginBottom: 12 },
+  budgetOverview: { width: '100%' },
+  budgetOverviewWide: { flexDirection: 'row', alignItems: 'stretch', gap: 32 },
+  personalBudgetPane: { flex: 1.2, minWidth: 0 },
+  householdBudgetPane: {
+    flex: 0.8,
+    minWidth: 240,
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: colors.borderSubtle,
+    paddingLeft: 28,
+  },
+  householdBudgetMeta: { color: colors.textSubtle, fontSize: 12, marginTop: 8 },
   spendNumbers: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
   spendLabel: { fontSize: 13, color: colors.textSubtle, marginBottom: 2 },
   spendAmount: { fontSize: 48, color: colors.text, fontWeight: '600', letterSpacing: 0 },
@@ -704,7 +836,16 @@ const styles = StyleSheet.create({
   hOverLabel: { fontSize: 12, color: colors.danger, marginTop: 4 },
 
   summaryWorkspace: { width: '100%' },
+  summaryWorkspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 28 },
   summaryInsightsPane: { flex: 1, minWidth: 0 },
+  summaryUtilityPane: {
+    width: 320,
+    flexShrink: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.borderSubtle,
+    paddingLeft: 24,
+    gap: 28,
+  },
 
   insightsSection: { marginBottom: 32 },
   insightsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
@@ -724,6 +865,17 @@ const styles = StyleSheet.create({
   insightsErrorAction: { color: colors.textMuted, fontSize: 12, fontWeight: '600', marginTop: 4 },
   insightsRail: { paddingRight: 20, gap: 12 },
   insightsRailSingle: { paddingRight: 0 },
+  insightsDashboard: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  insightsFeatured: { flex: 1.45, minWidth: 0 },
+  insightsQueue: { flex: 1, minWidth: 270, gap: 10 },
+  insightsQueueLabel: {
+    color: colors.textSubtle,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
   insightsDots: { flexDirection: 'row', gap: 6, marginTop: 12, alignSelf: 'center' },
   insightsDot: {
     width: 6,
@@ -849,6 +1001,56 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   watchingCTAText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  utilitySection: { gap: 0 },
+  utilityHeadingRow: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  utilitySectionLabel: {
+    color: colors.textSubtle,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  utilityLink: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  utilityMetricRow: {
+    minHeight: 54,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  utilityMetricCopy: { flexDirection: 'row', alignItems: 'baseline', gap: 9, minWidth: 0, flex: 1 },
+  utilityMetricValue: { color: colors.text, fontSize: 20, fontWeight: '750', minWidth: 24 },
+  utilityMetricLabel: { color: colors.textSubtle, fontSize: 12, flexShrink: 1 },
+  recentExpenseRow: {
+    minHeight: 56,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  recentExpenseCopy: { flex: 1, minWidth: 0 },
+  recentExpenseTitle: { color: colors.text, fontSize: 13, fontWeight: '650' },
+  recentExpenseMeta: { color: colors.textSubtle, fontSize: 11, marginTop: 4 },
+  recentExpenseAmount: { color: colors.textMuted, fontSize: 13, fontWeight: '700', flexShrink: 0 },
+  utilityActionRow: {
+    minHeight: 52,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  utilityActionText: { color: colors.text, fontSize: 13, fontWeight: '650', flex: 1 },
   sectionLabel: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   sectionLabelCompact: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 8 },

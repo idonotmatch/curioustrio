@@ -9,7 +9,7 @@ const ADAPTIVE_BREAKPOINTS = Object.freeze({
 const ADAPTIVE_MAX_WIDTHS = Object.freeze({
   form: 680,
   feed: 760,
-  dashboard: 1120,
+  dashboard: 1320,
   sheet: 680,
 });
 
@@ -32,15 +32,25 @@ function createAdaptiveLayout({ width, height, fontScale = 1, insets = {} } = {}
   const safeHeight = Math.max(0, finiteNumber(height));
   const normalizedFontScale = Math.max(0.5, finiteNumber(fontScale, 1));
   const safeInsets = normalizeInsets(insets);
-  const availableWidth = Math.max(0, safeWidth - safeInsets.left - safeInsets.right);
+  const hasTrailingSystemRail = safeWidth >= ADAPTIVE_BREAKPOINTS.wide
+    && safeInsets.right >= 48
+    && safeInsets.right >= safeInsets.left + 32;
+  const trailingSystemRailWidth = hasTrailingSystemRail ? safeInsets.right : 0;
+  const frameInsets = {
+    ...safeInsets,
+    right: hasTrailingSystemRail ? 0 : safeInsets.right,
+  };
+  const safeAvailableWidth = Math.max(0, safeWidth - safeInsets.left - safeInsets.right);
+  const availableWidth = Math.max(0, safeWidth - frameInsets.left - frameInsets.right);
   const availableHeight = Math.max(0, safeHeight - safeInsets.top - safeInsets.bottom);
-  const isExpanded = availableWidth >= ADAPTIVE_BREAKPOINTS.expanded;
-  const isWide = availableWidth >= ADAPTIVE_BREAKPOINTS.wide;
+  const breakpointWidth = hasTrailingSystemRail ? safeAvailableWidth : availableWidth;
+  const isExpanded = breakpointWidth >= ADAPTIVE_BREAKPOINTS.expanded;
+  const isWide = breakpointWidth >= ADAPTIVE_BREAKPOINTS.wide;
   const isLandscapeLike = safeWidth > safeHeight;
   const isShortViewport = availableHeight < ADAPTIVE_BREAKPOINTS.twoPaneMinHeight;
   const isLargeText = normalizedFontScale >= 1.3;
   const isAccessibilityText = normalizedFontScale >= ADAPTIVE_BREAKPOINTS.accessibilityText;
-  const isTwoPane = availableWidth >= ADAPTIVE_BREAKPOINTS.twoPane
+  const isTwoPane = breakpointWidth >= ADAPTIVE_BREAKPOINTS.twoPane
     && !isShortViewport
     && !isAccessibilityText
     && (isExpanded || isLandscapeLike);
@@ -51,9 +61,14 @@ function createAdaptiveLayout({ width, height, fontScale = 1, insets = {} } = {}
     width: safeWidth,
     height: safeHeight,
     availableWidth,
+    safeAvailableWidth,
+    breakpointWidth,
     availableHeight,
     fontScale: normalizedFontScale,
     insets: safeInsets,
+    frameInsets,
+    hasTrailingSystemRail,
+    trailingSystemRailWidth,
     sizeClass,
     isCompact: !isWide,
     isWide,
