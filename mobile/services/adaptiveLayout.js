@@ -32,8 +32,7 @@ function createAdaptiveLayout({ width, height, fontScale = 1, insets = {} } = {}
   const safeHeight = Math.max(0, finiteNumber(height));
   const normalizedFontScale = Math.max(0.5, finiteNumber(fontScale, 1));
   const safeInsets = normalizeInsets(insets);
-  const hasTrailingSystemRail = safeWidth >= ADAPTIVE_BREAKPOINTS.wide
-    && safeInsets.right >= 48
+  const hasTrailingSystemRail = safeInsets.right >= 48
     && safeInsets.right >= safeInsets.left + 32;
   const trailingSystemRailWidth = hasTrailingSystemRail ? safeInsets.right : 0;
   const frameInsets = {

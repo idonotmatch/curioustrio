@@ -76,6 +76,20 @@ assert.equal(closedDuo.sizeClass, 'compact');
 assert.equal(closedDuo.isTwoPane, false);
 assert.equal(contentWidthFor(closedDuo, 'feed'), 680);
 
+const closedDuoCompactScale = createAdaptiveLayout({
+  width: 466,
+  height: 679,
+  insets: { top: 16, right: 104, bottom: 12, left: 0 },
+});
+assert.equal(closedDuoCompactScale.safeAvailableWidth, 362);
+assert.equal(closedDuoCompactScale.availableWidth, 466);
+assert.equal(closedDuoCompactScale.hasTrailingSystemRail, true);
+assert.equal(closedDuoCompactScale.trailingSystemRailWidth, 104);
+assert.equal(closedDuoCompactScale.breakpointWidth, 362);
+assert.equal(closedDuoCompactScale.sizeClass, 'compact');
+assert.equal(closedDuoCompactScale.isTwoPane, false);
+assert.equal(contentWidthFor(closedDuoCompactScale, 'feed'), 426);
+
 const openDuoWithRail = createAdaptiveLayout({
   width: 1422,
   height: 1019,
