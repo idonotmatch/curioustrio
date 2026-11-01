@@ -10,6 +10,7 @@ import { toLocalDateString } from '../../services/date';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../../services/freshnessRegistry';
 import { currency, fundingHistoryCopy, planChangeCopy, priceStatusCopy, strategyCopy } from '../../services/purchasePlanningPresentation';
 import { PrimaryButton, SecondaryButton } from '../../components/ui/Buttons';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 
 function numberInput(value) {
@@ -73,6 +74,7 @@ function strategyOptions(snapshot = {}, breakdown = [], allocations = []) {
 }
 
 export default function PlanDetailScreen() {
+  const layout = useAdaptiveLayout();
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { memberCount } = useHousehold();
@@ -328,7 +330,14 @@ export default function PlanDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <View style={styles.loadingSkeleton}><View style={styles.skeletonHero} /><View style={styles.skeletonBand} /><View style={styles.skeletonBand} /></View>
+        <View style={[
+          styles.loadingSkeleton,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}>
+          <View style={styles.skeletonHero} />
+          <View style={styles.skeletonBand} />
+          <View style={styles.skeletonBand} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -344,7 +353,13 @@ export default function PlanDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths[isNew ? 'form' : 'feed'], layout.availableWidth) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.hero}>
           <View style={styles.heroTitleRow}>
             <View style={styles.heroCopy}>
@@ -406,7 +421,7 @@ export default function PlanDetailScreen() {
                   <Text style={styles.metric}>{currency(snapshot.evaluated_amount)}</Text>
                 </View>
                 {planChangeCopy(snapshot) ? <Text style={styles.change}>{planChangeCopy(snapshot)}</Text> : null}
-                <View style={styles.metrics}>
+                <View style={[styles.metrics, layout.isLargeText && styles.metricsStack]}>
                   <View style={styles.metricCell}><Text style={styles.metricLabel}>Could cover</Text><Text style={styles.metricValue}>{currency(snapshot.funded_amount)}</Text></View>
                   <View style={styles.metricCell}><Text style={styles.metricLabel}>Earmarked</Text><Text style={styles.metricValue}>{currency(snapshot.reserved_amount)}</Text></View>
                   <View style={styles.metricCell}><Text style={styles.metricLabel}>Still open</Text><Text style={styles.metricValue}>{currency(snapshot.funding_gap)}</Text></View>
@@ -548,7 +563,7 @@ export default function PlanDetailScreen() {
               {showDetails ? (
                 <View style={styles.detailFields}>
                   <View style={styles.field}><Text style={styles.label}>Name</Text><TextInput style={styles.input} value={label} onChangeText={setLabel} /></View>
-                  <View style={styles.twoCol}>
+                  <View style={[styles.twoCol, layout.isLargeText && styles.twoColStack]}>
                     <View style={styles.field}><Text style={styles.label}>Estimated price</Text><TextInput style={styles.input} value={amount} onChangeText={(value) => setAmount(numberInput(value))} keyboardType="decimal-pad" /></View>
                     <View style={styles.field}><Text style={styles.label}>Keep as buffer</Text><TextInput style={styles.input} value={buffer} onChangeText={(value) => setBuffer(numberInput(value))} keyboardType="decimal-pad" /></View>
                   </View>
@@ -576,8 +591,8 @@ export default function PlanDetailScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.xl },
-  content: { padding: spacing.xl, paddingBottom: 56, gap: spacing.xxl },
-  loadingSkeleton: { flex: 1, padding: spacing.xl, gap: spacing.xl },
+  content: { width: '100%', alignSelf: 'center', padding: spacing.xl, paddingBottom: 56, gap: spacing.xxl },
+  loadingSkeleton: { flex: 1, width: '100%', alignSelf: 'center', padding: spacing.xl, gap: spacing.xl },
   skeletonHero: { height: 88, backgroundColor: colors.surfaceRaised, borderRadius: radius.md },
   skeletonBand: { height: 150, backgroundColor: colors.surfaceRaised, borderRadius: radius.md },
   hero: { gap: spacing.sm },
@@ -594,6 +609,7 @@ const styles = StyleSheet.create({
   metric: { color: colors.text, fontSize: 25, fontWeight: '750' },
   change: { color: colors.success, fontSize: 13, fontWeight: '700' },
   metrics: { flexDirection: 'row', gap: spacing.sm },
+  metricsStack: { flexDirection: 'column' },
   metricCell: { flex: 1, gap: 4 },
   metricLabel: { color: colors.textSubtle, fontSize: 11, lineHeight: 15 },
   metricValue: { color: colors.text, fontSize: 15, fontWeight: '700' },
@@ -608,6 +624,7 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceRaised, color: colors.text, paddingHorizontal: spacing.md, fontSize: 15 },
   notes: { minHeight: 82, paddingTop: spacing.md, textAlignVertical: 'top' },
   twoCol: { flexDirection: 'row', gap: spacing.md },
+  twoColStack: { flexDirection: 'column' },
   segmented: { minHeight: 44, flexDirection: 'row', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden' },
   segment: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceRaised, minHeight: 44 },
   segmentActive: { backgroundColor: colors.accentMuted },

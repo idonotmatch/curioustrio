@@ -18,6 +18,7 @@ import { useFreshnessRefresh } from '../hooks/useFreshnessRefresh';
 import { GmailImportOverview } from '../components/GmailImportOverview';
 import { GmailPendingReviewSection } from '../components/GmailPendingReviewSection';
 import { GmailImportLogSection } from '../components/GmailImportLogSection';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import {
   reviewModeCountChips,
   summarizeReasonChips,
@@ -64,6 +65,7 @@ function sanitizeCachedGmailStatus(status = {}) {
 export default function GmailImportScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const layout = useAdaptiveLayout();
   const [gmailStatus, setGmailStatus] = useState(null);
   const [gmailStatusError, setGmailStatusError] = useState('');
   const [importLog, setImportLog] = useState([]);
@@ -356,7 +358,13 @@ export default function GmailImportScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Gmail Import' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.dashboard, layout.availableWidth) },
+        ]}
+      >
         {params.welcome === 'connect' ? (
           <View style={styles.welcomeCard}>
             <Text style={styles.welcomeEyebrow}>Good first move</Text>
@@ -367,81 +375,87 @@ export default function GmailImportScreen() {
           </View>
         ) : null}
 
-        <GmailImportOverview
-          styles={styles}
-          displayGmailStatus={displayGmailStatus}
-          gmailStatusError={gmailStatusError}
-          retryGmailStatus={() => loadGmailStatus({ forceRefresh: true })}
-          isUsingMockData={isUsingMockData}
-          connectGmail={connectGmail}
-          disconnectGmail={disconnectGmail}
-          disconnectingGmail={disconnectingGmail}
-          gmailSyncing={gmailSyncing || !!displayGmailStatus?.sync_in_progress}
-          syncGmail={syncGmail}
-          importSummaryLoading={importSummaryLoading}
-          displayImportSummary={displayImportSummary}
-          syncStatusMessage={syncStatusMessage}
-          syncErrorMessage={syncErrorMessage}
-          reviewPathChips={reviewPathChips}
-          importHealthMessage={importHealthMessage}
-          learningExpanded={learningExpanded}
-          setLearningExpanded={setLearningExpanded}
-          collapsedLearningLine={collapsedLearningLine}
-          learningLines={learningLines}
-          reasonChips={reasonChips}
-          topDismissReasons={topDismissReasons}
-          formatDismissReason={formatDismissReason}
-          topTemplates={topTemplates}
-          formatTemplateLabel={formatTemplateLabel}
-          formatTemplateItemSignal={formatTemplateItemSignal}
-          senderCards={senderCards}
-          senderSectionExpanded={senderSectionExpanded}
-          setSenderSectionExpanded={setSenderSectionExpanded}
-          collapsedSenderCards={collapsedSenderCards}
-          senderTrustTone={senderTrustTone}
-          formatSenderTrustLevel={formatSenderTrustLevel}
-          formatSenderReviewPath={formatSenderReviewPath}
-          senderPolicyLabel={senderPolicyLabel}
-          senderTrustExpanded={senderTrustExpanded}
-          setSenderTrustExpanded={setSenderTrustExpanded}
-          visibleSenderCards={visibleSenderCards}
-          summaryWindowDays={displayImportSummary?.window_days || SUMMARY_WINDOW_DAYS}
-        />
+        <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
+          <View style={styles.workspacePrimary}>
+            <GmailImportOverview
+              styles={styles}
+              displayGmailStatus={displayGmailStatus}
+              gmailStatusError={gmailStatusError}
+              retryGmailStatus={() => loadGmailStatus({ forceRefresh: true })}
+              isUsingMockData={isUsingMockData}
+              connectGmail={connectGmail}
+              disconnectGmail={disconnectGmail}
+              disconnectingGmail={disconnectingGmail}
+              gmailSyncing={gmailSyncing || !!displayGmailStatus?.sync_in_progress}
+              syncGmail={syncGmail}
+              importSummaryLoading={importSummaryLoading}
+              displayImportSummary={displayImportSummary}
+              syncStatusMessage={syncStatusMessage}
+              syncErrorMessage={syncErrorMessage}
+              reviewPathChips={reviewPathChips}
+              importHealthMessage={importHealthMessage}
+              learningExpanded={learningExpanded}
+              setLearningExpanded={setLearningExpanded}
+              collapsedLearningLine={collapsedLearningLine}
+              learningLines={learningLines}
+              reasonChips={reasonChips}
+              topDismissReasons={topDismissReasons}
+              formatDismissReason={formatDismissReason}
+              topTemplates={topTemplates}
+              formatTemplateLabel={formatTemplateLabel}
+              formatTemplateItemSignal={formatTemplateItemSignal}
+              senderCards={senderCards}
+              senderSectionExpanded={senderSectionExpanded}
+              setSenderSectionExpanded={setSenderSectionExpanded}
+              collapsedSenderCards={collapsedSenderCards}
+              senderTrustTone={senderTrustTone}
+              formatSenderTrustLevel={formatSenderTrustLevel}
+              formatSenderReviewPath={formatSenderReviewPath}
+              senderPolicyLabel={senderPolicyLabel}
+              senderTrustExpanded={senderTrustExpanded}
+              setSenderTrustExpanded={setSenderTrustExpanded}
+              visibleSenderCards={visibleSenderCards}
+              summaryWindowDays={displayImportSummary?.window_days || SUMMARY_WINDOW_DAYS}
+            />
+          </View>
 
-        <GmailPendingReviewSection
-          styles={styles}
-          displayGmailStatus={displayGmailStatus}
-          displayPendingReviewItems={displayPendingReviewItems}
-          pendingReviewError={pendingReviewError}
-          retryPendingReview={loadPendingQueue}
-          openReviewQueue={() => router.push('/review-queue')}
-          openExpenseReview={(item) => router.push({
-            pathname: '/expense/[id]',
-            params: {
-              id: item.id,
-              expense: JSON.stringify(item),
-            },
-          })}
-        />
+          <View style={styles.workspaceSecondary}>
+            <GmailPendingReviewSection
+              styles={styles}
+              displayGmailStatus={displayGmailStatus}
+              displayPendingReviewItems={displayPendingReviewItems}
+              pendingReviewError={pendingReviewError}
+              retryPendingReview={loadPendingQueue}
+              openReviewQueue={() => router.push('/review-queue')}
+              openExpenseReview={(item) => router.push({
+                pathname: '/expense/[id]',
+                params: {
+                  id: item.id,
+                  expense: JSON.stringify(item),
+                },
+              })}
+            />
 
-        <GmailImportLogSection
-          styles={styles}
-          displayGmailStatus={displayGmailStatus}
-          importLogExpanded={importLogExpanded}
-          toggleImportLog={() => {
-            const next = !importLogExpanded;
-            setImportLogExpanded(next);
-            if (next && importLog.length === 0 && !isUsingMockData) loadImportLog();
-          }}
-          displayImportLog={displayImportLog}
-          retryingAllFailed={retryingAllFailed}
-          retryAllFailedImports={retryAllFailedImports}
-          importLogLoading={importLogLoading}
-          formatLogDetail={formatLogDetail}
-          formatLogStatus={formatLogStatus}
-          retryFailedImport={retryFailedImport}
-          retryingFailedIds={retryingFailedIds}
-        />
+            <GmailImportLogSection
+              styles={styles}
+              displayGmailStatus={displayGmailStatus}
+              importLogExpanded={importLogExpanded}
+              toggleImportLog={() => {
+                const next = !importLogExpanded;
+                setImportLogExpanded(next);
+                if (next && importLog.length === 0 && !isUsingMockData) loadImportLog();
+              }}
+              displayImportLog={displayImportLog}
+              retryingAllFailed={retryingAllFailed}
+              retryAllFailedImports={retryAllFailedImports}
+              importLogLoading={importLogLoading}
+              formatLogDetail={formatLogDetail}
+              formatLogStatus={formatLogStatus}
+              retryFailedImport={retryFailedImport}
+              retryingFailedIds={retryingFailedIds}
+            />
+          </View>
+        </View>
       </ScrollView>
     </>
   );
@@ -449,7 +463,11 @@ export default function GmailImportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48 },
+  workspace: { width: '100%' },
+  workspaceWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 28 },
+  workspacePrimary: { flex: 1.05, minWidth: 0 },
+  workspaceSecondary: { flex: 0.95, minWidth: 0 },
   welcomeCard: {
     marginBottom: 22,
     paddingHorizontal: 16,

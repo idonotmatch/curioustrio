@@ -10,6 +10,7 @@ import { invalidateCache, invalidateCacheByPrefix } from '../services/cache';
 import { saveCurrentUserCache } from '../services/currentUserCache';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { colors } from '../theme/tokens';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -21,6 +22,7 @@ function ordinal(n) {
 
 export default function BudgetPeriodScreen() {
   const insets = useSafeAreaInsets();
+  const layout = useAdaptiveLayout();
   const { user } = useCurrentUser();
   const { household, memberCount, refresh: refreshHousehold } = useHousehold();
   const { setStartDay, setSelectedMonth } = useMonth();
@@ -106,7 +108,16 @@ export default function BudgetPeriodScreen() {
   const householdPeriodChanged = pendingHouseholdDay !== currentHouseholdDay;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: insets.top + 16,
+          maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth),
+        },
+      ]}
+    >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>MY BUDGET PERIOD</Text>
         <Text style={styles.subText}>When does your personal budget reset each month?</Text>
@@ -218,7 +229,7 @@ export default function BudgetPeriodScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 40 },
   section: { marginBottom: 32, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 24 },
   sectionTitle: { fontSize: 12, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   subText: { color: colors.textDisabled, fontSize: 13, marginBottom: 12 },

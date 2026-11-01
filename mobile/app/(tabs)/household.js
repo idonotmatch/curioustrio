@@ -7,9 +7,11 @@ import { useCategories } from '../../hooks/useCategories';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ExpenseItem } from '../../components/ExpenseItem';
 import { BudgetBar } from '../../components/BudgetBar';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
 import { colors } from '../../theme/tokens';
 
 export default function HouseholdScreen() {
+  const layout = useAdaptiveLayout();
   const { expenses, loading, refresh } = useHouseholdExpenses();
   const { budget } = useBudget();
   const { categories } = useCategories();
@@ -37,40 +39,45 @@ export default function HouseholdScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.totalLabel}>Household this month</Text>
-        <Text style={styles.total}>${total.toFixed(2)}</Text>
-        {budget?.total && (
-          <BudgetBar spent={budget.total.spent} limit={budget.total.limit} />
-        )}
+      <View style={[styles.content, { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) }]}>
+        <View style={styles.header}>
+          <Text style={styles.totalLabel}>Household this month</Text>
+          <Text style={styles.total}>${total.toFixed(2)}</Text>
+          {budget?.total && (
+            <BudgetBar spent={budget.total.spent} limit={budget.total.limit} />
+          )}
+        </View>
+        <FlatList
+          data={displayExpenses}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            !loading && (
+              <Text style={styles.empty}>
+                You're not in a household yet. Add members in Settings.
+              </Text>
+            )
+          }
+        />
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => router.push('/(tabs)/add')}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Add expense"
+        >
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
       </View>
-      <FlatList
-        data={displayExpenses}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.text} />}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          !loading && (
-            <Text style={styles.empty}>
-              You're not in a household yet. Add members in Settings.
-            </Text>
-          )
-        }
-      />
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/(tabs)/add')}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  content: { flex: 1, width: '100%', alignSelf: 'center' },
   header: { padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   totalLabel: { fontSize: 13, color: colors.textSubtle, textTransform: 'uppercase', letterSpacing: 1 },
   total: { fontSize: 32, color: colors.text, fontWeight: '700', marginTop: 4 },

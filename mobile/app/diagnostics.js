@@ -5,9 +5,11 @@ import { EmptyState, SectionHeader } from '../components/ui/States';
 import { StatusChip } from '../components/ui/StatusChip';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 import { colors, spacing, typography } from '../theme/tokens';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 
 export default function DiagnosticsHubScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
 
   if (!INTERNAL_TOOLS_ENABLED) {
     return (
@@ -27,7 +29,13 @@ export default function DiagnosticsHubScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Diagnostics' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}
+      >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
             <Text style={styles.eyebrow}>Internal tools</Text>
@@ -73,7 +81,7 @@ export default function DiagnosticsHubScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingBottom: 48, gap: 28 },
+  content: { width: '100%', alignSelf: 'center', padding: spacing.xl, paddingBottom: 48, gap: 28 },
   hero: { gap: spacing.sm },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   eyebrow: { color: colors.textSubtle, ...typography.eyebrow },

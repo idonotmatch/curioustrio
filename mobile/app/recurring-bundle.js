@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors } from '../theme/tokens';
 
 function formatCurrency(value) {
@@ -21,6 +22,7 @@ function formatShortDate(value) {
 
 export default function RecurringBundleScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const params = useLocalSearchParams();
   const groupKeys = Array.isArray(params.group_keys) ? params.group_keys[0] : params.group_keys;
   const scope = `${Array.isArray(params.scope) ? params.scope[0] : params.scope}` === 'personal' ? 'personal' : 'household';
@@ -88,7 +90,13 @@ export default function RecurringBundleScreen() {
           <Text style={styles.error}>{error}</Text>
         </View>
       ) : (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={[
+            styles.content,
+            { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+          ]}
+        >
           <View style={styles.header}>
             <Text style={styles.eyebrow}>SHARED PURCHASE PATTERN</Text>
             <Text style={styles.title}>{bundle.item_count} items tend to come together</Text>
@@ -153,7 +161,7 @@ export default function RecurringBundleScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 48, gap: 20 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48, gap: 20 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, gap: 10 },
   error: { color: colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
   header: { gap: 7 },

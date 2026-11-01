@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { colors } from '../theme/tokens';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 
 export default function JoinScreen() {
+  const layout = useAdaptiveLayout();
   const { token } = useLocalSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState('pending'); // 'pending' | 'joining' | 'success' | 'error'
@@ -40,6 +42,7 @@ export default function JoinScreen() {
     <>
       <Stack.Screen options={{ title: 'Join Household' }} />
       <View style={styles.container}>
+        <View style={[styles.content, { maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth) }]}>
         {status === 'joining' && (
           <>
             <ActivityIndicator color={colors.text} size="large" />
@@ -65,6 +68,7 @@ export default function JoinScreen() {
             </TouchableOpacity>
           </>
         )}
+        </View>
       </View>
     </>
   );
@@ -72,6 +76,7 @@ export default function JoinScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  content: { width: '100%', alignItems: 'center' },
   message: { color: colors.text, fontSize: 16, marginTop: 16, textAlign: 'center' },
   errorText: { color: colors.danger, fontSize: 15, textAlign: 'center', marginBottom: 24 },
   btn: { backgroundColor: colors.borderSubtle, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: colors.borderStrong },

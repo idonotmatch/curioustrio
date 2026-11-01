@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -28,6 +28,7 @@ import { pushConfirmDraft } from '../../services/confirmNavigation';
 import { ActionRow, SecondaryButton } from '../../components/ui/Buttons';
 import { LoadingState } from '../../components/ui/States';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
 
 async function prepareReceiptImage(asset = {}) {
   if (!asset.uri && !asset.base64) {
@@ -86,6 +87,7 @@ async function prepareReceiptImage(asset = {}) {
 
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
+  const layout = useAdaptiveLayout();
   const router = useRouter();
   const { auto_scan, auto_document } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
@@ -246,54 +248,63 @@ export default function AddScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
-      <Text style={styles.hint}>
-        try: "242.50 trader joes" · "whole foods chicken, berries, yogurt 48.12"
-      </Text>
-      <NLInput onSubmit={handleSubmit} loading={loading} />
-      {processingMessage ? (
-        <LoadingState compact label={processingMessage} style={styles.processingBanner} />
-      ) : null}
-      <View style={styles.scanRow}>
-        <ActionRow
-          icon="compass-outline"
-          title="Consider a purchase"
-          body="Check whether it fits, compare funding paths, and revisit it later."
-          onPress={() => router.push('/plan/new')}
-          disabled={scanLoading || loading}
-        />
-        <ActionRow
-          icon="create-outline"
-          title="Manual add"
-          body="Use the structured form when you want exact fields."
-          onPress={startManualEntry}
-          disabled={scanLoading || loading}
-        />
-        <ActionRow
-          icon="camera-outline"
-          title={scanLoading ? 'Scanning receipt' : 'Scan receipt'}
-          body="Use the camera to pull merchant, amount, and date from a receipt."
-          onPress={() => handleScan(false)}
-          disabled={scanLoading}
-        />
-        <SecondaryButton
-          title="Choose from camera roll"
-          icon="images-outline"
-          onPress={() => handleScan(true)}
-          disabled={scanLoading}
-        />
-        <SecondaryButton
-          title="Import receipt file"
-          icon="document-attach-outline"
-          onPress={handleDocumentImport}
-          disabled={scanLoading}
-        />
-      </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth) }]}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.hint}>
+          try: "242.50 trader joes" · "whole foods chicken, berries, yogurt 48.12"
+        </Text>
+        <NLInput onSubmit={handleSubmit} loading={loading} />
+        {processingMessage ? (
+          <LoadingState compact label={processingMessage} style={styles.processingBanner} />
+        ) : null}
+        <View style={styles.scanRow}>
+          <ActionRow
+            icon="compass-outline"
+            title="Consider a purchase"
+            body="Check whether it fits, compare funding paths, and revisit it later."
+            onPress={() => router.push('/plan/new')}
+            disabled={scanLoading || loading}
+          />
+          <ActionRow
+            icon="create-outline"
+            title="Manual add"
+            body="Use the structured form when you want exact fields."
+            onPress={startManualEntry}
+            disabled={scanLoading || loading}
+          />
+          <ActionRow
+            icon="camera-outline"
+            title={scanLoading ? 'Scanning receipt' : 'Scan receipt'}
+            body="Use the camera to pull merchant, amount, and date from a receipt."
+            onPress={() => handleScan(false)}
+            disabled={scanLoading}
+          />
+          <SecondaryButton
+            title="Choose from camera roll"
+            icon="images-outline"
+            onPress={() => handleScan(true)}
+            disabled={scanLoading}
+          />
+          <SecondaryButton
+            title="Import receipt file"
+            icon="document-attach-outline"
+            onPress={handleDocumentImport}
+            disabled={scanLoading}
+          />
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
+  content: { width: '100%', alignSelf: 'center', paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
   hint: { color: colors.textSubtle, fontSize: 12, marginBottom: spacing.lg, lineHeight: 18 },
   processingBanner: {
     marginTop: spacing.lg,

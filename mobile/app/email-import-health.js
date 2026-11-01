@@ -17,6 +17,7 @@ import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 import { MetricStrip } from '../components/ui/MetricStrip';
 import { EmptyState, InlineError, LoadingState, SectionHeader } from '../components/ui/States';
 import { StatusChip } from '../components/ui/StatusChip';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 const WINDOW_DAYS = 14;
@@ -109,6 +110,7 @@ function ProbeSection({ title, probe }) {
 }
 
 export default function EmailImportHealthScreen() {
+  const layout = useAdaptiveLayout();
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -176,7 +178,10 @@ export default function EmailImportHealthScreen() {
       <Stack.Screen options={{ title: 'Email Import Health' }} />
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}
         refreshControl={<RefreshControl tintColor={colors.text} refreshing={refreshing} onRefresh={refresh} />}
       >
         <View style={[styles.hero, statusTone(topRecommendation.level)]}>
@@ -239,7 +244,7 @@ export default function EmailImportHealthScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48 },
   hero: {
     flexDirection: 'row',
     alignItems: 'flex-start',

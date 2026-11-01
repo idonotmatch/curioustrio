@@ -12,6 +12,7 @@ import { getItemInsightEvidence, getItemInsightSummary } from '../services/itemI
 import { SecondaryButton } from '../components/ui/Buttons';
 import { InsightTrendVisual } from '../components/InsightTrendVisual';
 import { getItemPriceTrendVisual } from '../services/itemTrendPresentation';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors } from '../theme/tokens';
 
 const FEEDBACK_REASONS = [
@@ -61,6 +62,7 @@ function parsePayload(value, fallback = null) {
 }
 
 export default function RecurringItemScreen() {
+  const layout = useAdaptiveLayout();
   const router = useRouter();
   const {
     group_key: groupKey,
@@ -280,7 +282,13 @@ export default function RecurringItemScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: title || 'Recurring item', headerBackTitle }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}
+      >
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.text} />
@@ -602,7 +610,7 @@ export default function RecurringItemScreen() {
         onRequestClose={() => setShowFeedbackSheet(false)}
       >
         <View style={styles.modalScrim}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxWidth: Math.min(layout.maxWidths.sheet, Math.max(0, layout.availableWidth - 32)) }]}>
             <Text style={styles.modalTitle}>What was off?</Text>
             <Text style={styles.modalCopy}>
               This helps Adlo learn which recurring signals are mistimed, noisy, or inaccurate for you.
@@ -658,7 +666,7 @@ export default function RecurringItemScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 48, gap: 16 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48, gap: 16 },
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textSubtle, fontSize: 15 },
   hero: { gap: 6, marginBottom: 8 },

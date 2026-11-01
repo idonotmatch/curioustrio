@@ -7,6 +7,7 @@ import { api } from '../services/api';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../services/freshnessRegistry';
 import { currency } from '../services/purchasePlanningPresentation';
 import { PrimaryButton, SecondaryButton } from '../components/ui/Buttons';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 const SOURCE_TYPES = [
@@ -24,6 +25,7 @@ function sourceTypeLabel(value) {
 }
 
 export default function FundingSourcesScreen() {
+  const layout = useAdaptiveLayout();
   const [items, setItems] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [name, setName] = useState('');
@@ -100,41 +102,58 @@ export default function FundingSourcesScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.dashboard, layout.availableWidth) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.hero}>
           <Text style={styles.title}>Funding sources</Text>
           <Text style={styles.subtitle}>Money you would consider using for a planned purchase. Adlo tracks earmarks here but never moves the money.</Text>
         </View>
 
-        {loading ? (
-          <View style={styles.skeletonList}>{[0, 1].map((key) => <View key={key} style={styles.skeletonRow} />)}</View>
-        ) : items.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="wallet-outline" size={24} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No funding sources yet</Text>
-            <Text style={styles.empty}>Add only money you would realistically consider. You can keep any portion untouched.</Text>
+        <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
+          <View style={styles.listPane}>
+            {loading ? (
+              <View style={styles.skeletonList}>{[0, 1].map((key) => <View key={key} style={styles.skeletonRow} />)}</View>
+            ) : items.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="wallet-outline" size={24} color={colors.textMuted} />
+                <Text style={styles.emptyTitle}>No funding sources yet</Text>
+                <Text style={styles.empty}>Add only money you would realistically consider. You can keep any portion untouched.</Text>
+              </View>
+            ) : (
+              <View style={styles.list}>
+                {items.map((source) => (
+                  <TouchableOpacity
+                    key={source.id}
+                    style={[styles.sourceRow, editingId === source.id && styles.sourceRowActive]}
+                    onPress={() => editSource(source)}
+                    activeOpacity={0.82}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${source.name}`}
+                    accessibilityState={{ selected: editingId === source.id }}
+                  >
+                    <View style={styles.sourceCopy}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.sourceName}>{source.name}</Text>
+                        <Text style={styles.sourceType}>{sourceTypeLabel(source.pool_type)}</Text>
+                      </View>
+                      <Text style={styles.sourceMeta}>{currency(source.usable_amount)} uncommitted · {currency(source.reserved_amount)} earmarked · {currency(source.protected_amount)} untouched</Text>
+                    </View>
+                    <View style={styles.balanceColumn}>
+                      <Text style={styles.sourceAmount}>{currency(source.available_amount)}</Text>
+                      <Ionicons name="create-outline" size={17} color={colors.textSubtle} />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
-        ) : (
-          <View style={styles.list}>
-            {items.map((source) => (
-              <TouchableOpacity key={source.id} style={styles.sourceRow} onPress={() => editSource(source)} activeOpacity={0.82} accessibilityRole="button" accessibilityLabel={`Edit ${source.name}`}>
-                <View style={styles.sourceCopy}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.sourceName}>{source.name}</Text>
-                    <Text style={styles.sourceType}>{sourceTypeLabel(source.pool_type)}</Text>
-                  </View>
-                  <Text style={styles.sourceMeta}>{currency(source.usable_amount)} uncommitted · {currency(source.reserved_amount)} earmarked · {currency(source.protected_amount)} untouched</Text>
-                </View>
-                <View style={styles.balanceColumn}>
-                  <Text style={styles.sourceAmount}>{currency(source.available_amount)}</Text>
-                  <Ionicons name="create-outline" size={17} color={colors.textSubtle} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
 
-        <View style={styles.form}>
+          <View style={[styles.form, layout.isTwoPane && styles.formWide]}>
           <View style={styles.formHeading}>
             <View style={styles.sourceCopy}>
               <Text style={styles.sectionTitle}>{editingId ? 'Edit source' : 'Add a source'}</Text>
@@ -156,7 +175,7 @@ export default function FundingSourcesScreen() {
               ))}
             </View>
           </View>
-          <View style={styles.amountRow}>
+          <View style={[styles.amountRow, layout.isLargeText && styles.amountRowStack]}>
             <View style={styles.field}>
               <Text style={styles.label}>Current balance</Text>
               <TextInput style={styles.input} value={amount} onChangeText={(value) => setAmount(numberInput(value))} keyboardType="decimal-pad" placeholder="1200" placeholderTextColor={colors.textDisabled} />
@@ -176,6 +195,7 @@ export default function FundingSourcesScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <PrimaryButton title={editingId ? 'Save source' : 'Add source'} loading={saving} onPress={saveSource} />
           {editingId ? <SecondaryButton title="Cancel" onPress={resetForm} disabled={saving} /> : null}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -184,7 +204,10 @@ export default function FundingSourcesScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingBottom: 52, gap: spacing.xxl },
+  content: { width: '100%', alignSelf: 'center', padding: spacing.xl, paddingBottom: 52, gap: spacing.xxl },
+  workspace: { gap: spacing.xxl },
+  workspaceWide: { flexDirection: 'row', alignItems: 'flex-start' },
+  listPane: { flex: 1, minWidth: 0 },
   hero: { gap: spacing.sm },
   title: { ...typography.screenTitle, color: colors.text },
   subtitle: { ...typography.body, color: colors.textMuted },
@@ -195,6 +218,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   empty: { ...typography.bodySmall, color: colors.textSubtle, textAlign: 'center' },
   sourceRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md },
+  sourceRowActive: { backgroundColor: colors.surfaceRaised },
   sourceCopy: { flex: 1, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm },
   sourceName: { color: colors.text, fontSize: 15, fontWeight: '650' },
@@ -203,6 +227,7 @@ const styles = StyleSheet.create({
   balanceColumn: { alignItems: 'flex-end', gap: spacing.sm },
   sourceAmount: { color: colors.text, fontSize: 16, fontWeight: '700' },
   form: { gap: spacing.md },
+  formWide: { flex: 1, minWidth: 0, borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: spacing.xxl },
   formHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   formBody: { ...typography.bodySmall, color: colors.textMuted },
@@ -210,6 +235,7 @@ const styles = StyleSheet.create({
   field: { flex: 1, gap: spacing.sm },
   input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceRaised, color: colors.text, paddingHorizontal: spacing.md, fontSize: 15 },
   amountRow: { flexDirection: 'row', gap: spacing.md },
+  amountRowStack: { flexDirection: 'column' },
   label: { color: colors.textMuted, fontSize: 12, fontWeight: '650' },
   segmented: { minHeight: 44, flexDirection: 'row', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden' },
   segment: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceRaised },

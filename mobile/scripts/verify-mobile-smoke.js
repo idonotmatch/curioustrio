@@ -5,6 +5,7 @@ const parser = require('@babel/parser');
 const projectRoot = path.join(__dirname, '..');
 const filesToCheck = [
   'app/_layout.js',
+  'app/budget-period.js',
   'app/accounts.js',
   'app/confirm.js',
   'app/diagnostics.js',
@@ -17,6 +18,7 @@ const filesToCheck = [
   'app/insight-detail.js',
   'app/item-trends.js',
   'app/item-family-review.js',
+  'app/join.js',
   'app/manual-add.js',
   'app/match-details.js',
   'app/onboarding.js',
@@ -31,6 +33,8 @@ const filesToCheck = [
   'app/plan/[id].js',
   'app/funding-pools.js',
   'app/(tabs)/settings.js',
+  'app/(tabs)/add.js',
+  'app/(tabs)/household.js',
   'app/(tabs)/summary.js',
   'app/(tabs)/index.js',
   'app/(tabs)/_layout.js',

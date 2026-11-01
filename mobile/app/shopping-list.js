@@ -4,6 +4,7 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors } from '../theme/tokens';
 
 function formatCurrency(value) {
@@ -19,6 +20,7 @@ function formatPriceBasis(unit) {
 
 export default function ShoppingListScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -84,7 +86,10 @@ export default function ShoppingListScreen() {
       ) : (
         <ScrollView
           style={styles.container}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+          ]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadItems({ refresh: true })} tintColor={colors.text} />}
         >
           <View style={styles.header}>
@@ -145,7 +150,7 @@ export default function ShoppingListScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 48, gap: 18 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48, gap: 18 },
   centerState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: { gap: 5 },
   eyebrow: { color: colors.textSubtle, fontSize: 11, fontWeight: '600', letterSpacing: 1 },

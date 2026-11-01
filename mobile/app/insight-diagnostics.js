@@ -13,6 +13,7 @@ import { MetricStrip } from '../components/ui/MetricStrip';
 import { EmptyState, InlineError, LoadingState, SectionHeader } from '../components/ui/States';
 import { StatusChip } from '../components/ui/StatusChip';
 import { colors } from '../theme/tokens';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 
 function reasonLabel(reason = '') {
   switch (`${reason}`.trim()) {
@@ -175,6 +176,7 @@ function DiagnosticsSection({ title, children }) {
 }
 
 export default function InsightDiagnosticsScreen() {
+  const layout = useAdaptiveLayout();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -231,7 +233,10 @@ export default function InsightDiagnosticsScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+      ]}
       keyboardShouldPersistTaps="handled"
     >
       <View style={[styles.heroCard, tone.card]}>
@@ -379,7 +384,7 @@ export default function InsightDiagnosticsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 40, gap: 18 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 40, gap: 18 },
   heroCard: {
     borderRadius: 16,
     borderWidth: 1,

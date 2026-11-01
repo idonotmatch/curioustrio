@@ -23,6 +23,7 @@ import {
   getPurchaseMeta,
 } from '../services/itemFamilyReviewPresentation';
 import { colors, spacing, typography } from '../theme/tokens';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 
 function PurchaseEvidence({ purchase, onOpen }) {
   const source = formatMatchSource(purchase.source_type);
@@ -137,6 +138,7 @@ function CandidateRow({ candidate, reviewing, onReview, onOpenExpense }) {
 }
 
 export default function ItemFamilyReviewScreen() {
+  const layout = useAdaptiveLayout();
   const router = useRouter();
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -236,7 +238,10 @@ export default function ItemFamilyReviewScreen() {
             tintColor={colors.text}
           />
         )}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}
         ListHeaderComponent={(
           <View style={styles.header}>
             <Text style={styles.intro}>Compare the purchase evidence, then decide whether two receipt labels belong to one product history.</Text>
@@ -291,7 +296,7 @@ export default function ItemFamilyReviewScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: 48 },
+  content: { width: '100%', alignSelf: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: 48 },
   header: { gap: spacing.md, paddingBottom: spacing.lg },
   intro: { color: colors.textMuted, ...typography.body },
   candidate: {

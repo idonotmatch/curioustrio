@@ -10,6 +10,7 @@ import { isUnknownMerchantValue, selectInsightEvidence } from '../services/insig
 import { getPrimaryActionForInsight } from '../services/insightPresentation';
 import { openExpenseDetail } from '../services/openExpenseDetail';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors } from '../theme/tokens';
 
 const FEEDBACK_REASONS = [
@@ -554,6 +555,7 @@ function buildTrendFromInsightMetadata(metadata = {}, scope = 'personal', month 
 }
 
 export default function TrendDetailScreen() {
+  const layout = useAdaptiveLayout();
   const router = useRouter();
   const {
     scope = 'personal',
@@ -1048,7 +1050,13 @@ export default function TrendDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: 'Insight details', headerBackTitle: 'Summary' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) },
+        ]}
+      >
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.text} />
@@ -1563,7 +1571,7 @@ export default function TrendDetailScreen() {
         onRequestClose={() => setShowFeedbackSheet(false)}
       >
         <View style={styles.modalScrim}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxWidth: Math.min(layout.maxWidths.sheet, Math.max(0, layout.availableWidth - 32)) }]}>
             <Text style={styles.modalTitle}>What was off?</Text>
             <Text style={styles.modalCopy}>
               This helps Adlo learn how to tune future insights for you.
@@ -1619,7 +1627,7 @@ export default function TrendDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 48, gap: 16 },
+  content: { width: '100%', alignSelf: 'center', padding: 20, paddingBottom: 48, gap: 16 },
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textSubtle, fontSize: 15 },
   inlineLoader: { marginTop: 8, marginBottom: 4 },
