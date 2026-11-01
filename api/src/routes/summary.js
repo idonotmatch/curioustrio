@@ -3,6 +3,8 @@ const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const UserSummarySnapshot = require('../models/userSummarySnapshot');
 const { buildSummaryBundle } = require('../services/summaryBundleService');
+const db = require('../db');
+const { buildWidgetSnapshot, currentBudgetPeriod } = require('../services/widgetSnapshotService');
 
 const router = express.Router();
 router.use(authenticate);
@@ -31,6 +33,49 @@ function refreshSnapshotInBackground(key, { user, period, startDay }) {
     .finally(() => refreshesInFlight.delete(key));
   refreshesInFlight.set(key, work);
 }
+
+router.get('/widget', async (req, res, next) => {
+  try {
+    const user = await User.findByProviderUid(req.userId);
+    if (!user) return res.status(401).json({ error: 'User not synced' });
+
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(`${req.query.today || ''}`)
+      ? `${req.query.today}`
+      : new Date().toISOString().slice(0, 10);
+    const startDay = Math.max(1, Math.min(28, Number(user.budget_start_day) || 1));
+    const period = currentBudgetPeriod(today, startDay);
+    const from = period.from.toISOString().slice(0, 10);
+    const to = period.to.toISOString().slice(0, 10);
+    const result = await db.query(
+      `SELECT
+         (SELECT monthly_limit
+          FROM budget_settings
+          WHERE user_id = $1 AND category_id IS NULL
+          LIMIT 1) AS budget_limit,
+         (SELECT COALESCE(SUM(amount), 0)
+          FROM expenses
+          WHERE user_id = $1
+            AND status = 'confirmed'
+            AND exclude_from_budget = FALSE
+            AND date >= $2 AND date < $3) AS spent,
+         (SELECT COUNT(*)::int
+          FROM expenses
+          WHERE user_id = $1 AND status = 'pending') AS pending_count`,
+      [user.id, from, to]
+    );
+    const row = result.rows[0] || {};
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    return res.json(buildWidgetSnapshot({
+      budgetLimit: row.budget_limit,
+      spent: row.spent,
+      pendingCount: row.pending_count,
+      startDay,
+      today,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get('/', async (req, res, next) => {
   try {

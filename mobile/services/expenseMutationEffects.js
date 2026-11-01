@@ -1,5 +1,6 @@
 import { invalidateCacheByPrefixes } from './cache';
 import { domainsForExpenseMutation, markFreshnessStale } from './freshnessRegistry';
+import { scheduleWidgetSnapshotSync } from './widgetSync';
 
 export const EXPENSE_MUTATION_CACHE_PREFIXES = [
   'cache:expenses:',
@@ -22,4 +23,5 @@ export async function invalidateExpenseMutationCaches({
     domainsForExpenseMutation({ includePending, includeInsights }),
     { reason: 'expense_mutation' },
   );
+  scheduleWidgetSnapshotSync();
 }

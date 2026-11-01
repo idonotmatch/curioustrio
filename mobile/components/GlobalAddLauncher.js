@@ -10,7 +10,12 @@ import { colors, radius, spacing, typography } from '../theme/tokens';
 import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { AdaptiveSheet } from './layout/AdaptiveLayout';
 
-export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router, openSignal = 0 }, ref) {
+export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({
+  router,
+  openSignal = 0,
+  navigationAction = 'push',
+  onDismiss,
+}, ref) {
   const layout = useAdaptiveLayout();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -42,9 +47,19 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
     setKeyboardVisible(false);
   }
 
-  function openAdd() {
+  function dismiss() {
     close();
-    router.push('/manual-add');
+    onDismiss?.();
+  }
+
+  function navigate(destination) {
+    close();
+    const action = navigationAction === 'replace' ? 'replace' : 'push';
+    router[action](destination);
+  }
+
+  function openAdd() {
+    navigate('/manual-add');
   }
 
   async function handleQuickParse(input) {
@@ -53,7 +68,7 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
       const today = toLocalDateString();
       const parsed = await api.post('/expenses/parse', { input, today });
       close();
-      pushConfirmDraft(router, { ...parsed, source: 'manual' });
+      pushConfirmDraft(router, { ...parsed, source: 'manual' }, { navigationAction });
       return true;
     } catch (err) {
       if (`${err?.message || ''}`.includes('Could not parse')) {
@@ -75,29 +90,26 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
   }
 
   function openScan() {
-    close();
-    router.push({ pathname: '/(tabs)/add', params: { auto_scan: '1' } });
+    navigate({ pathname: '/(tabs)/add', params: { auto_scan: '1' } });
   }
 
   function openPlan() {
-    close();
-    router.push('/plan/new');
+    navigate('/plan/new');
   }
 
   function openDocumentImport() {
-    close();
-    router.push({ pathname: '/(tabs)/add', params: { auto_document: '1' } });
+    navigate({ pathname: '/(tabs)/add', params: { auto_document: '1' } });
   }
 
   return (
     <>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!loading) close(); }}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!loading) dismiss(); }}>
         <KeyboardAvoidingView
           style={styles.overlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => { if (!loading) close(); }} />
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => { if (!loading) dismiss(); }} />
           <AdaptiveSheet style={[
             styles.sheet,
             {
@@ -107,7 +119,7 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
           ]}
             accessibilityViewIsModal
             accessibilityLabel="Add expense options"
-            onAccessibilityEscape={() => { if (!loading) close(); }}
+            onAccessibilityEscape={() => { if (!loading) dismiss(); }}
           >
             <ScrollView
               keyboardShouldPersistTaps="handled"
@@ -167,7 +179,7 @@ export const GlobalAddLauncher = forwardRef(function GlobalAddLauncher({ router,
                     disabled={loading}
                   />
 
-                  <TouchableOpacity style={[styles.cancelButton, loading && styles.actionRowDisabled]} onPress={close} activeOpacity={0.8} disabled={loading}>
+                  <TouchableOpacity style={[styles.cancelButton, loading && styles.actionRowDisabled]} onPress={dismiss} activeOpacity={0.8} disabled={loading}>
                     <Text style={styles.cancelText}>Cancel</Text>
                   </TouchableOpacity>
                 </>

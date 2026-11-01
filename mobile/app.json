@@ -82,6 +82,27 @@
           "resizeMode": "contain",
           "backgroundColor": "#0a0a0a"
         }
+      ],
+      [
+        "expo-widgets",
+        {
+          "bundleIdentifier": "com.curioustrio.expensetracker.widgets",
+          "groupIdentifier": "group.com.curioustrio.expensetracker",
+          "widgets": [
+            {
+              "name": "AdloPulseWidget",
+              "displayName": "Adlo Pulse",
+              "description": "See your spending pace and add an expense.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemMedium"
+                ],
+                "initialLayout": "./widgets/AdloPulseWidget.jsx"
+              },
+              "android": null
+            }
+          ]
+        }
       ]
     ],
     "extra": {

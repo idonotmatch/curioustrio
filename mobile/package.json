@@ -13,10 +13,11 @@
     "test": "npm run test:palette && npm run test:smoke && npm run test:logic",
     "test:palette": "node scripts/verify-color-tokens.js",
     "test:smoke": "node scripts/verify-mobile-smoke.js",
-    "test:logic": "node scripts/test-adaptive-layout.js && node scripts/test-auth-boot-routing.js && node scripts/test-native-auth-config.js && node scripts/test-api-config.js && node scripts/test-cache-policy.js && node scripts/test-freshness-cursor.js && node scripts/test-navigation-payload-store.js && node scripts/test-email-auth.js && node scripts/test-expense-idempotency.js && node scripts/test-expense-validation.js && node scripts/test-password-recovery.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js && node scripts/test-money-input.js && node scripts/test-insight-text.js && node scripts/test-insight-trend-visual.js && node scripts/test-item-insight-presentation.js && node scripts/test-item-trend-presentation.js && node scripts/test-item-family-learning.js && node scripts/test-item-family-review-presentation.js && node scripts/test-insight-usefulness.js && node scripts/test-summary-insight-change.js && node scripts/test-onboarding-flow.js && node scripts/test-provenance-presentation.js && node scripts/test-import-recovery-presentation.js && node scripts/test-review-queue-presentation.js && node scripts/test-receipt-scan-presentation.js && node scripts/test-receipt-scan-client.js && node scripts/test-receipt-image-preparation.js && node scripts/test-receipt-details-editing.js && node scripts/test-location-presentation.js && node scripts/test-location-intent.js && node scripts/test-purchase-planning-presentation.js"
+    "test:logic": "node scripts/test-adaptive-layout.js && node scripts/test-auth-boot-routing.js && node scripts/test-native-auth-config.js && node scripts/test-api-config.js && node scripts/test-cache-policy.js && node scripts/test-freshness-cursor.js && node scripts/test-navigation-payload-store.js && node scripts/test-email-auth.js && node scripts/test-expense-idempotency.js && node scripts/test-expense-validation.js && node scripts/test-password-recovery.js && node scripts/test-storage-sanitizers.js && node scripts/test-internal-tools-config.js && node scripts/test-item-editing.js && node scripts/test-money-input.js && node scripts/test-insight-text.js && node scripts/test-insight-trend-visual.js && node scripts/test-item-insight-presentation.js && node scripts/test-item-trend-presentation.js && node scripts/test-item-family-learning.js && node scripts/test-item-family-review-presentation.js && node scripts/test-insight-usefulness.js && node scripts/test-summary-insight-change.js && node scripts/test-onboarding-flow.js && node scripts/test-provenance-presentation.js && node scripts/test-import-recovery-presentation.js && node scripts/test-review-queue-presentation.js && node scripts/test-receipt-scan-presentation.js && node scripts/test-receipt-scan-client.js && node scripts/test-receipt-image-preparation.js && node scripts/test-receipt-details-editing.js && node scripts/test-location-presentation.js && node scripts/test-location-intent.js && node scripts/test-purchase-planning-presentation.js && node scripts/test-widget.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~58.0.16",
+    "@expo/ui": "~58.0.26",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.2.1",
@@ -42,6 +43,7 @@
     "expo-status-bar": "~58.0.4",
     "expo-updates": "~58.0.20",
     "expo-web-browser": "~58.0.7",
+    "expo-widgets": "~58.0.26",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.1",

@@ -26,6 +26,7 @@ import { invalidateCacheByPrefix } from '../services/cache';
 import { resetPendingExpenseStore } from '../hooks/usePendingExpenses';
 import { INTERNAL_TOOLS_ENABLED } from '../services/internalTools';
 import { refreshPushRegistrationIfGranted } from '../services/pushRegistration';
+import { clearWidgetSnapshot, syncWidgetSnapshot } from '../services/widgetSync';
 import { colors } from '../theme/tokens';
 const {
   AUTH_BOOT_CACHE_TIMEOUT_MS,
@@ -43,6 +44,10 @@ const {
   endPasswordRecovery,
   isPasswordRecoveryActive,
 } = require('../services/passwordRecovery');
+const {
+  QUICK_ADD_ROUTE,
+  isWidgetQuickAddUrl,
+} = require('../services/widgetQuickAdd');
 
 initObservability();
 
@@ -123,6 +128,8 @@ function AppNavigator() {
   const gmailAutoSyncTimerRef = useRef(null);
   const lastHandledNotificationRef = useRef(null);
   const pushRegistrationSessionRef = useRef(null);
+  const pendingQuickAddRef = useRef(false);
+  const hasAuthenticatedSessionRef = useRef(false);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -154,6 +161,16 @@ function AppNavigator() {
       setBootstrapped(true);
       return true;
     }
+  }
+
+  function maybeHandleWidgetQuickAddUrl(url) {
+    if (!isWidgetQuickAddUrl(url)) return false;
+    pendingQuickAddRef.current = true;
+    if (bootstrapped && hasAuthenticatedSessionRef.current) {
+      pendingQuickAddRef.current = false;
+      router.replace(QUICK_ADD_ROUTE);
+    }
+    return true;
   }
 
   async function navigateFromNotificationResponse(response) {
@@ -333,9 +350,15 @@ function AppNavigator() {
     }
 
     async function routeAuthenticatedSession(session) {
+      hasAuthenticatedSessionRef.current = true;
       const cacheIdentity = setActiveCacheUserId(session.user.id);
       if (cacheIdentity.changed && cacheIdentity.previousUserId) {
         resetPendingExpenseStore();
+        clearWidgetSnapshot()
+          .then(() => syncWidgetSnapshot({ force: true, token: session.access_token }))
+          .catch(() => {});
+      } else {
+        syncWidgetSnapshot({ token: session.access_token }).catch(() => {});
       }
       const routeKey = `${session.user.id}:${session.access_token ? session.access_token.slice(-12) : 'no-token'}`;
       if (pushRegistrationSessionRef.current !== routeKey) {
@@ -346,6 +369,10 @@ function AppNavigator() {
       }
       const alreadyRoutedSession = routedSessionIdRef.current === routeKey;
       if (alreadyRoutedSession && bootstrapped && !isAuthEntryPath(pathname)) {
+        if (pendingQuickAddRef.current) {
+          pendingQuickAddRef.current = false;
+          router.replace(QUICK_ADD_ROUTE);
+        }
         scheduleGmailAutoSync(session.access_token);
         return;
       }
@@ -385,7 +412,10 @@ function AppNavigator() {
               });
           }
         }
-        router.replace(defaultAuthedRoute(routeUser, hasOnboardingRoute));
+        const defaultRoute = defaultAuthedRoute(routeUser, hasOnboardingRoute);
+        const shouldOpenQuickAdd = pendingQuickAddRef.current && defaultRoute !== '/onboarding';
+        if (shouldOpenQuickAdd) pendingQuickAddRef.current = false;
+        router.replace(shouldOpenQuickAdd ? QUICK_ADD_ROUTE : defaultRoute);
         routedSessionIdRef.current = routeKey;
         setBootstrapped(true);
         if (safeCachedUser) {
@@ -405,10 +435,12 @@ function AppNavigator() {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') && session) {
         routeAuthenticatedSession(session);
       } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        hasAuthenticatedSessionRef.current = false;
         pushRegistrationSessionRef.current = null;
         resetPendingExpenseStore();
         clearActiveCacheUserId();
         invalidateCacheByPrefix('cache:').catch(() => {});
+        clearWidgetSnapshot().catch(() => {});
         endPasswordRecovery();
         router.replace('/login');
         setBootstrapped(true);
@@ -454,6 +486,7 @@ function AppNavigator() {
         if (session?.access_token) {
           markFreshnessStale(foregroundDomainsForPath(pathnameRef.current), { reason: 'app_foreground', delayMs: 800 });
           maybeAutoSyncGmail(session.access_token);
+          syncWidgetSnapshot({ token: session.access_token }).catch(() => {});
         }
       } catch {
         // Non-fatal
@@ -484,7 +517,8 @@ function AppNavigator() {
           null
         );
         if (!active) return;
-        await maybeHandlePasswordRecoveryUrl(initialUrl);
+        const handledRecovery = await maybeHandlePasswordRecoveryUrl(initialUrl);
+        if (!handledRecovery) maybeHandleWidgetQuickAddUrl(initialUrl);
       } finally {
         if (active) setAuthLinkReady(true);
       }
@@ -492,8 +526,9 @@ function AppNavigator() {
 
     bootstrapAuthLinks();
 
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      maybeHandlePasswordRecoveryUrl(url);
+    const subscription = Linking.addEventListener('url', async ({ url }) => {
+      const handledRecovery = await maybeHandlePasswordRecoveryUrl(url);
+      if (!handledRecovery) maybeHandleWidgetQuickAddUrl(url);
     });
 
     return () => {
@@ -564,6 +599,7 @@ function AppNavigator() {
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="reset-password" options={{ title: 'Reset password', headerBackTitle: 'Back' }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="quick-add" options={{ headerShown: false }} />
       <Stack.Screen
         name="manual-add"
         options={{
