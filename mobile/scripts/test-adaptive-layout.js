@@ -4,6 +4,7 @@ const {
   contentWidthFor,
   createAdaptiveLayout,
   horizontalCardWidthFor,
+  safeAreaEdgesFor,
 } = require('../services/adaptiveLayout');
 
 const phone = createAdaptiveLayout({
@@ -75,6 +76,14 @@ assert.equal(closedDuo.breakpointWidth, 560);
 assert.equal(closedDuo.sizeClass, 'compact');
 assert.equal(closedDuo.isTwoPane, false);
 assert.equal(contentWidthFor(closedDuo, 'feed'), 680);
+assert.deepEqual(
+  safeAreaEdgesFor(closedDuo, ['top', 'right', 'bottom', 'left']),
+  ['top', 'bottom', 'left']
+);
+assert.deepEqual(
+  safeAreaEdgesFor(closedDuo, ['top', 'right', 'left'], { reclaimTrailingSystemRail: false }),
+  ['top', 'right', 'left']
+);
 
 const closedDuoCompactScale = createAdaptiveLayout({
   width: 466,
@@ -111,6 +120,10 @@ assert.equal(landscapePhone.availableHeight, 372);
 assert.equal(landscapePhone.isShortViewport, true);
 assert.equal(landscapePhone.isTwoPane, false);
 assert.equal(landscapePhone.prefersCompactNavigation, true);
+assert.deepEqual(
+  safeAreaEdgesFor(landscapePhone, ['top', 'right', 'left']),
+  ['top', 'right', 'left']
+);
 
 const openDuoLargeText = createAdaptiveLayout({
   width: 932,

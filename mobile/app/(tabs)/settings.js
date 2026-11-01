@@ -7,7 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useRecurring } from '../../hooks/useRecurring';
@@ -16,6 +16,7 @@ import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../../services/freshnessRegistry';
 import { colors } from '../../theme/tokens';
 import { InlineError } from '../../components/ui/States';
+import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -113,7 +114,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <AdaptiveSafeArea style={styles.container} edges={['left', 'right']}>
     <DismissKeyboardScrollView
       style={styles.container}
       contentLayout="feed"
@@ -318,7 +319,7 @@ export default function SettingsScreen() {
       </View>
 
     </DismissKeyboardScrollView>
-    </SafeAreaView>
+    </AdaptiveSafeArea>
   );
 }
 

@@ -1,10 +1,19 @@
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
+const { safeAreaEdgesFor } = require('../../services/adaptiveLayout');
 
-export function AdaptiveSafeArea({ children, edges = ['top', 'right', 'left'], style }) {
+export function AdaptiveSafeArea({
+  children,
+  edges = ['top', 'right', 'left'],
+  reclaimTrailingSystemRail = true,
+  style,
+}) {
+  const layout = useAdaptiveLayout();
+  const resolvedEdges = safeAreaEdgesFor(layout, edges, { reclaimTrailingSystemRail });
+
   return (
-    <SafeAreaView edges={edges} style={[styles.screen, style]}>
+    <SafeAreaView edges={resolvedEdges} style={[styles.screen, style]}>
       {children}
     </SafeAreaView>
   );

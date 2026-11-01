@@ -420,10 +420,7 @@ export default function SummaryScreen() {
   }
 
   return (
-    <AdaptiveSafeArea
-      style={styles.safeArea}
-      edges={layout.hasTrailingSystemRail ? ['top', 'left'] : ['top', 'left', 'right']}
-    >
+    <AdaptiveSafeArea style={styles.safeArea}>
     <ScrollView
       style={styles.container}
       contentContainerStyle={[

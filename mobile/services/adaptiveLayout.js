@@ -102,10 +102,18 @@ function horizontalCardWidthFor(layout, {
   return Math.min(maxCardWidth, Math.max(minCardWidth, contentWidth - trailingPeek));
 }
 
+function safeAreaEdgesFor(layout, edges = ['top', 'right', 'left'], {
+  reclaimTrailingSystemRail = true,
+} = {}) {
+  if (!reclaimTrailingSystemRail || !layout?.hasTrailingSystemRail) return edges;
+  return edges.filter(edge => edge !== 'right');
+}
+
 module.exports = {
   ADAPTIVE_BREAKPOINTS,
   ADAPTIVE_MAX_WIDTHS,
   contentWidthFor,
   createAdaptiveLayout,
   horizontalCardWidthFor,
+  safeAreaEdgesFor,
 };

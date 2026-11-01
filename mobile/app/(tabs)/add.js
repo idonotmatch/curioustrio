@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -29,6 +29,7 @@ import { ActionRow, SecondaryButton } from '../../components/ui/Buttons';
 import { LoadingState } from '../../components/ui/States';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
+import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
 
 async function prepareReceiptImage(asset = {}) {
   if (!asset.uri && !asset.base64) {
@@ -247,7 +248,7 @@ export default function AddScreen() {
   }, [auto_document, scanLoading]);
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: insets.top + 16 }]} edges={['left', 'right']}>
+    <AdaptiveSafeArea style={[styles.container, { paddingTop: insets.top + 16 }]} edges={['left', 'right']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { maxWidth: Math.min(layout.maxWidths.form, layout.availableWidth) }]}
@@ -297,7 +298,7 @@ export default function AddScreen() {
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </AdaptiveSafeArea>
   );
 }
 
