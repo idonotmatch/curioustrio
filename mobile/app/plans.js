@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '../services/api';
 import { currency, planChangeCopy, priceStatusCopy, strategyCopy } from '../services/purchasePlanningPresentation';
 import { PrimaryButton, SecondaryButton } from '../components/ui/Buttons';
+import { PlanPreviewPane } from '../components/PlanPreviewPane';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 function relativeUpdate(value) {
@@ -59,7 +61,7 @@ function buildSections(items) {
   ].filter((section) => section.items.length > 0);
 }
 
-function PlanRow({ plan, onPress }) {
+function PlanRow({ plan, onPress, active = false }) {
   const snapshot = plan.latest_snapshot || {};
   const strategy = strategyCopy(snapshot);
   const change = planChangeCopy(snapshot);
@@ -72,7 +74,13 @@ function PlanRow({ plan, onPress }) {
   const revisitDue = plan.revisit_on && `${plan.revisit_on}`.slice(0, 10) <= localDateKey();
 
   return (
-    <TouchableOpacity style={styles.planRow} activeOpacity={0.84} onPress={onPress} accessibilityRole="button">
+    <TouchableOpacity
+      style={[styles.planRow, active && styles.planRowActive]}
+      activeOpacity={0.84}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
       <View style={styles.rowTop}>
         <View style={styles.rowCopy}>
           <View style={styles.badgeRow}>
@@ -106,10 +114,12 @@ function PlanRow({ plan, onPress }) {
 
 export default function PlansScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [activePlanId, setActivePlanId] = useState(null);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     try {
@@ -128,10 +138,37 @@ export default function PlansScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const sections = buildSections(items);
 
+  useEffect(() => {
+    if (!layout.isTwoPane) return;
+    setActivePlanId((currentId) => (
+      currentId && items.some((plan) => plan.id === currentId)
+        ? currentId
+        : items[0]?.id || null
+    ));
+  }, [items, layout.isTwoPane]);
+
+  const activePlan = layout.isTwoPane
+    ? items.find((plan) => plan.id === activePlanId) || null
+    : null;
+
+  const openPlan = useCallback((plan) => {
+    if (plan?.id) router.push(`/plan/${plan.id}`);
+  }, [router]);
+
+  const selectOrOpenPlan = useCallback((plan) => {
+    if (layout.isTwoPane) {
+      setActivePlanId(plan.id);
+      return;
+    }
+    openPlan(plan);
+  }, [layout.isTwoPane, openPlan]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <View style={[styles.container, { maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'] }]}>
+      <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
       <ScrollView
-        style={styles.container}
+        style={styles.listPane}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load({ refresh: true })} tintColor={colors.text} />}
       >
@@ -175,7 +212,14 @@ export default function PlansScreen() {
                   <Text style={styles.sectionMeta}>{section.items.length}</Text>
                 </View>
                 <View style={styles.list}>
-                  {section.items.map((plan) => <PlanRow key={plan.id} plan={plan} onPress={() => router.push(`/plan/${plan.id}`)} />)}
+                  {section.items.map((plan) => (
+                    <PlanRow
+                      key={plan.id}
+                      plan={plan}
+                      active={layout.isTwoPane && activePlanId === plan.id}
+                      onPress={() => selectOrOpenPlan(plan)}
+                    />
+                  ))}
                 </View>
               </View>
             ))}
@@ -183,13 +227,19 @@ export default function PlansScreen() {
           </>
         )}
       </ScrollView>
+      {layout.isTwoPane ? <PlanPreviewPane plan={activePlan} onOpen={openPlan} /> : null}
+      </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, width: '100%', alignSelf: 'center', backgroundColor: colors.background },
+  workspace: { flex: 1 },
+  workspaceWide: { flexDirection: 'row' },
+  listPane: { flex: 1, minWidth: 0, backgroundColor: colors.background },
   content: { padding: spacing.xl, paddingBottom: 52, gap: spacing.xxl },
   hero: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg },
   heroCopy: { flex: 1, gap: spacing.sm },
@@ -209,7 +259,8 @@ const styles = StyleSheet.create({
   sectionBody: { color: colors.textSubtle, fontSize: 12 },
   sectionMeta: { color: colors.textSubtle, fontSize: 13 },
   list: { borderTopWidth: 1, borderTopColor: colors.border },
-  planRow: { paddingVertical: spacing.lg, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  planRow: { paddingVertical: spacing.lg, paddingHorizontal: spacing.sm, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, borderLeftWidth: 2, borderLeftColor: 'transparent' },
+  planRowActive: { backgroundColor: colors.surfaceRaised, borderLeftColor: colors.info },
   rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   rowCopy: { flex: 1, gap: 5 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

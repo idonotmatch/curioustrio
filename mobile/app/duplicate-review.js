@@ -5,6 +5,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffects';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import { colors, radius } from '../theme/tokens';
 
 function firstParam(value) {
@@ -82,6 +83,7 @@ function mergePreviewRows(existing = {}, imported = {}) {
 export default function DuplicateReviewScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const expenseId = firstParam(params.expense_id);
   const flagId = firstParam(params.flag_id);
   const [expense, setExpense] = useState(null);
@@ -200,20 +202,27 @@ export default function DuplicateReviewScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: 'Possible duplicate', headerBackTitle: 'Back' }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[
+        styles.content,
+        { maxWidth: Math.min(layout.maxWidths.dashboard, layout.availableWidth) },
+      ]}>
         <View style={styles.intro}>
           <Text style={styles.eyebrow}>Review match</Text>
           <Text style={styles.title}>Do these represent the same purchase?</Text>
           <Text style={styles.subtitle}>Nothing will be removed until you choose.</Text>
         </View>
 
-        <ExpenseComparison label={newLabel} expense={expense} accent />
-        <View style={styles.connector}>
-          <View style={styles.connectorLine} />
-          <View style={styles.connectorIcon}><Ionicons name="git-compare-outline" size={16} color={colors.warning} /></View>
-          <View style={styles.connectorLine} />
+        <View style={[styles.comparisonWorkspace, layout.isTwoPane && styles.comparisonWorkspaceWide]}>
+          <ExpenseComparison label={newLabel} expense={expense} accent />
+          <View style={[styles.connector, layout.isTwoPane ? styles.connectorWide : styles.connectorCompact]}>
+            <View style={[styles.connectorLine, layout.isTwoPane ? styles.connectorLineWide : styles.connectorLineCompact]} />
+            <View style={[styles.connectorIcon, layout.isTwoPane ? styles.connectorIconWide : styles.connectorIconCompact]}>
+              <Ionicons name="git-compare-outline" size={16} color={colors.warning} />
+            </View>
+            <View style={[styles.connectorLine, layout.isTwoPane ? styles.connectorLineWide : styles.connectorLineCompact]} />
+          </View>
+          <ExpenseComparison label="Existing expense" expense={counterpart} />
         </View>
-        <ExpenseComparison label="Existing expense" expense={counterpart} />
 
         {canMergeIntoExisting ? (
           <View style={styles.mergePreview}>
@@ -303,13 +312,15 @@ export default function DuplicateReviewScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  content: { paddingBottom: 36 },
+  content: { width: '100%', alignSelf: 'center', paddingBottom: 36 },
   loadingText: { color: colors.textMuted, marginTop: 12, fontSize: 14 },
   intro: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 20 },
   eyebrow: { color: colors.warning, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   title: { color: colors.text, fontSize: 25, lineHeight: 31, fontWeight: '700', marginTop: 7 },
   subtitle: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 7 },
-  expenseBand: { paddingHorizontal: 20, paddingVertical: 18, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surface },
+  comparisonWorkspace: { width: '100%' },
+  comparisonWorkspaceWide: { flexDirection: 'row', alignItems: 'stretch', paddingHorizontal: 20 },
+  expenseBand: { flex: 1, minWidth: 0, paddingHorizontal: 20, paddingVertical: 18, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surface },
   expenseBandAccent: { borderLeftWidth: 3, borderLeftColor: colors.warning, backgroundColor: colors.surfaceRaised },
   bandHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   bandLabel: { color: colors.text, fontSize: 13, fontWeight: '700' },
@@ -320,9 +331,15 @@ const styles = StyleSheet.create({
   date: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
   amount: { color: colors.text, fontSize: 24, lineHeight: 29, fontWeight: '700' },
   details: { color: colors.textSubtle, fontSize: 12, lineHeight: 18, marginTop: 13 },
-  connector: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, height: 44 },
-  connectorLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  connectorIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: colors.warningMuted, borderWidth: 1, borderColor: colors.warningBorder, marginHorizontal: 10 },
+  connector: { alignItems: 'center' },
+  connectorCompact: { flexDirection: 'row', height: 44, paddingHorizontal: 20 },
+  connectorWide: { width: 54, flexDirection: 'column', paddingHorizontal: 10, paddingVertical: 10 },
+  connectorLine: { flex: 1, backgroundColor: colors.border },
+  connectorLineCompact: { height: 1 },
+  connectorLineWide: { width: 1 },
+  connectorIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: colors.warningMuted, borderWidth: 1, borderColor: colors.warningBorder },
+  connectorIconCompact: { marginHorizontal: 10 },
+  connectorIconWide: { marginVertical: 10 },
   evidence: { paddingHorizontal: 20, paddingVertical: 22 },
   evidenceTitle: { color: colors.text, fontSize: 14, fontWeight: '600', marginBottom: 11 },
   reasonWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

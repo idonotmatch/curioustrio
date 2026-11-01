@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   RefreshControl,
@@ -17,6 +17,8 @@ import { useHousehold } from '../hooks/useHousehold';
 import { SegmentedControl } from '../components/ui/SegmentedControl';
 import { EmptyState, InlineError, SkeletonRow } from '../components/ui/States';
 import { ActionRow } from '../components/ui/Buttons';
+import { ItemTrendPreviewPane } from '../components/ItemTrendPreviewPane';
+import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
 import {
   filterItemTrendRows,
   formatItemTrendPrice,
@@ -37,7 +39,7 @@ function formatShortDate(value) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function ItemTrendRow({ item, onPress }) {
+function ItemTrendRow({ item, onPress, active = false }) {
   const change = getItemTrendChange(item);
   const needsPackageReview = item.price_comparison_status === 'needs_review';
   const changeColor = needsPackageReview
@@ -56,11 +58,12 @@ function ItemTrendRow({ item, onPress }) {
 
   return (
     <TouchableOpacity
-      style={styles.itemRow}
+      style={[styles.itemRow, active && styles.itemRowActive]}
       onPress={onPress}
       activeOpacity={0.78}
       accessibilityRole="button"
       accessibilityLabel={`Open price history for ${item.item_name || 'matched item'}`}
+      accessibilityState={{ selected: active }}
     >
       <View style={styles.itemCopy}>
         <Text style={styles.itemName} numberOfLines={1}>{item.item_name || 'Matched item'}</Text>
@@ -80,6 +83,7 @@ function ItemTrendRow({ item, onPress }) {
 
 export default function ItemTrendsScreen() {
   const router = useRouter();
+  const layout = useAdaptiveLayout();
   const { memberCount } = useHousehold();
   const isMultiMember = memberCount > 1;
   const [scope, setScope] = useState('personal');
@@ -89,6 +93,7 @@ export default function ItemTrendsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [activeGroupKey, setActiveGroupKey] = useState(null);
 
   const load = useCallback(async ({ forceRefresh = false } = {}) => {
     if (forceRefresh) setRefreshing(true);
@@ -123,7 +128,20 @@ export default function ItemTrendsScreen() {
     [filter, query, rows]
   );
 
-  function openItem(item) {
+  useEffect(() => {
+    if (!layout.isTwoPane) return;
+    setActiveGroupKey((currentKey) => (
+      currentKey && filteredRows.some((item) => item.group_key === currentKey)
+        ? currentKey
+        : filteredRows[0]?.group_key || null
+    ));
+  }, [filteredRows, layout.isTwoPane]);
+
+  const activeItem = layout.isTwoPane
+    ? filteredRows.find((item) => item.group_key === activeGroupKey) || null
+    : null;
+
+  const openItem = useCallback((item) => {
     router.push({
       pathname: '/recurring-item',
       params: {
@@ -133,15 +151,32 @@ export default function ItemTrendsScreen() {
         origin: 'item-trends',
       },
     });
-  }
+  }, [router, scope]);
+
+  const selectOrOpenItem = useCallback((item) => {
+    if (layout.isTwoPane) {
+      setActiveGroupKey(item.group_key);
+      return;
+    }
+    openItem(item);
+  }, [layout.isTwoPane, openItem]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: 'Item price trends', headerBackTitle: 'Activity' }} />
+      <View style={[styles.container, { maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'] }]}>
+      <View style={[styles.workspace, layout.isTwoPane && styles.workspaceWide]}>
       <FlatList
+        style={styles.listPane}
         data={filteredRows}
         keyExtractor={(item) => item.group_key}
-        renderItem={({ item }) => <ItemTrendRow item={item} onPress={() => openItem(item)} />}
+        renderItem={({ item }) => (
+          <ItemTrendRow
+            item={item}
+            active={layout.isTwoPane && activeGroupKey === item.group_key}
+            onPress={() => selectOrOpenItem(item)}
+          />
+        )}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         refreshControl={(
@@ -229,12 +264,21 @@ export default function ItemTrendsScreen() {
           />
         )}
       />
+      {layout.isTwoPane ? (
+        <ItemTrendPreviewPane item={activeItem} scope={scope} onOpen={openItem} />
+      ) : null}
+      </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, width: '100%', alignSelf: 'center', backgroundColor: colors.background },
+  workspace: { flex: 1 },
+  workspaceWide: { flexDirection: 'row' },
+  listPane: { flex: 1, minWidth: 0 },
   listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: 48 },
   header: { gap: spacing.md, paddingBottom: spacing.lg },
   intro: { color: colors.textMuted, ...typography.body },
@@ -259,7 +303,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
+    borderLeftWidth: 2,
+    borderLeftColor: 'transparent',
+    paddingHorizontal: spacing.sm,
   },
+  itemRowActive: { backgroundColor: colors.surfaceRaised, borderLeftColor: colors.info },
   itemCopy: { flex: 1, minWidth: 0, gap: 2 },
   itemName: { color: colors.text, fontSize: 15, lineHeight: 20, fontWeight: '700' },
   itemBrand: { color: colors.textMuted, fontSize: 12, lineHeight: 16 },

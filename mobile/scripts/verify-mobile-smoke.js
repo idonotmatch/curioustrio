@@ -50,6 +50,8 @@ const filesToCheck = [
   'components/ReviewQueueItem.js',
   'components/ReviewQueuePreviewPane.js',
   'components/TransactionPreviewPane.js',
+  'components/PlanPreviewPane.js',
+  'components/ItemTrendPreviewPane.js',
   'components/DismissReasonSheet.js',
   'components/SmartSuggestionCard.js',
   'components/SkippedImportsList.js',
