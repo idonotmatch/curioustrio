@@ -24,7 +24,7 @@ import { buildMockInsights } from '../../fixtures/mockInsights';
 import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 import { colors } from '../../theme/tokens';
 import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
-import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
+import { AdaptiveProtectedRegion, AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
 const { horizontalCardWidthFor } = require('../../services/adaptiveLayout');
 
 const TREND_INSIGHT_TYPES = new Set([
@@ -436,10 +436,9 @@ export default function SummaryScreen() {
       keyboardDismissMode="on-drag"
     >
       {/* Spend vs Budget */}
-      <View style={[
+      <AdaptiveProtectedRegion style={[
         styles.spendCard,
         isSummaryDashboard && styles.spendCardWide,
-        layout.hasTrailingSystemRail && { paddingRight: layout.trailingSystemRailWidth },
       ]}>
         <GlobalPeriodHeader
           periodText={`${periodLabel(selectedMonth, startDay)}${selectedMonth !== currentMonthStr ? ' · tap to change' : ''}`}
@@ -508,7 +507,7 @@ export default function SummaryScreen() {
           </View>
         ) : null}
         </View>
-      </View>
+      </AdaptiveProtectedRegion>
 
       {showWelcomeAddCard ? (
         <View style={styles.welcomeCard}>

@@ -9,7 +9,7 @@ import { ExpenseItem } from '../../components/ExpenseItem';
 import { BudgetBar } from '../../components/BudgetBar';
 import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
 import { colors } from '../../theme/tokens';
-import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
+import { AdaptiveProtectedRegion, AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
 
 export default function HouseholdScreen() {
   const layout = useAdaptiveLayout();
@@ -41,13 +41,13 @@ export default function HouseholdScreen() {
   return (
     <AdaptiveSafeArea style={styles.container} edges={['left', 'right']}>
       <View style={[styles.content, { maxWidth: Math.min(layout.maxWidths.feed, layout.availableWidth) }]}>
-        <View style={styles.header}>
+        <AdaptiveProtectedRegion style={styles.header}>
           <Text style={styles.totalLabel}>Household this month</Text>
           <Text style={styles.total}>${total.toFixed(2)}</Text>
           {budget?.total && (
             <BudgetBar spent={budget.total.spent} limit={budget.total.limit} />
           )}
-        </View>
+        </AdaptiveProtectedRegion>
         <FlatList
           data={displayExpenses}
           keyExtractor={item => item.id}

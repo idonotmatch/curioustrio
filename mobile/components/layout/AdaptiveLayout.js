@@ -19,6 +19,19 @@ export function AdaptiveSafeArea({
   );
 }
 
+export function AdaptiveProtectedRegion({ children, style }) {
+  const layout = useAdaptiveLayout();
+
+  return (
+    <View style={[
+      style,
+      layout.hasTrailingSystemRail && { paddingRight: layout.trailingSystemRailWidth },
+    ]}>
+      {children}
+    </View>
+  );
+}
+
 export function AdaptiveContent({ children, kind = 'feed', padded = false, style }) {
   const layout = useAdaptiveLayout();
   return (

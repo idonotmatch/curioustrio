@@ -15,7 +15,7 @@ import { GlobalPeriodHeader } from '../../components/GlobalPeriodHeader';
 import { EmptyState, InlineError, SkeletonRow } from '../../components/ui/States';
 import { colors } from '../../theme/tokens';
 import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
-import { AdaptiveSafeArea, AdaptiveSheet } from '../../components/layout/AdaptiveLayout';
+import { AdaptiveProtectedRegion, AdaptiveSafeArea, AdaptiveSheet } from '../../components/layout/AdaptiveLayout';
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest' },
   { key: 'amount', label: 'Amount' },
@@ -292,7 +292,7 @@ export default function FeedScreen() {
   return (
     <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
     <View style={[styles.container, { width: '100%', maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'], alignSelf: 'center' }]}>
-      <View style={styles.activityHeader}>
+      <AdaptiveProtectedRegion style={styles.activityHeader}>
       <SpendHeader
         myBudget={personalBudget}
         householdBudget={householdBudget}
@@ -326,7 +326,7 @@ export default function FeedScreen() {
           <Text style={styles.sortChipText}>Sort: {currentSortLabel}</Text>
         </TouchableOpacity>
       </View>
-      </View>
+      </AdaptiveProtectedRegion>
 
       <View style={[styles.activityWorkspace, layout.isTwoPane && styles.activityWorkspaceWide]}>
       <FlatList

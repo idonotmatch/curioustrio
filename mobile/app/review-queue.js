@@ -15,7 +15,7 @@ import { invalidateExpenseMutationCaches } from '../services/expenseMutationEffe
 import { colors } from '../theme/tokens';
 import { EmptyState, InlineError } from '../components/ui/States';
 import { useAdaptiveLayout } from '../contexts/AdaptiveLayoutContext';
-import { AdaptiveSafeArea } from '../components/layout/AdaptiveLayout';
+import { AdaptiveProtectedRegion, AdaptiveSafeArea } from '../components/layout/AdaptiveLayout';
 const { pendingActionCount } = require('../services/reviewQueuePresentation');
 
 function summarizeReviewModes(expenses = []) {
@@ -296,14 +296,16 @@ export default function ReviewQueueScreen() {
   return (
     <AdaptiveSafeArea style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={[styles.container, { width: '100%', maxWidth: layout.maxWidths[layout.isTwoPane ? 'dashboard' : 'feed'], alignSelf: 'center' }]}>
-        <View style={styles.reviewTabs} accessibilityRole="tablist">
-          {[{ key: 'pending', label: 'Pending' }, { key: 'skipped', label: 'Skipped' }].map((tab) => (
-            <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: reviewTab === tab.key }}
-              onPress={() => setReviewTab(tab.key)} style={[styles.reviewTab, reviewTab === tab.key && styles.reviewTabActive]}>
-              <Text style={[styles.reviewTabText, reviewTab === tab.key && styles.reviewTabTextActive]}>{tab.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <AdaptiveProtectedRegion>
+          <View style={styles.reviewTabs} accessibilityRole="tablist">
+            {[{ key: 'pending', label: 'Pending' }, { key: 'skipped', label: 'Skipped' }].map((tab) => (
+              <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: reviewTab === tab.key }}
+                onPress={() => setReviewTab(tab.key)} style={[styles.reviewTab, reviewTab === tab.key && styles.reviewTabActive]}>
+                <Text style={[styles.reviewTabText, reviewTab === tab.key && styles.reviewTabTextActive]}>{tab.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </AdaptiveProtectedRegion>
         {reviewTab === 'skipped' ? (
           <View style={styles.skippedPane}>
           <SkippedImportsList isUsingMockData={isUsingMockData} onRecovered={() => {
@@ -352,7 +354,7 @@ export default function ReviewQueueScreen() {
           onEndReached={() => { if (hasMore && !loadingMore) loadMore(); }}
           onEndReachedThreshold={0.35}
           ListHeaderComponent={(
-            <View style={styles.header}>
+            <AdaptiveProtectedRegion style={styles.header}>
               <Text style={styles.eyebrow}>Pending actions</Text>
               <Text style={styles.title}>
                 {loading
@@ -408,7 +410,7 @@ export default function ReviewQueueScreen() {
                   </Pressable>
                 )) : null}
               </View>
-            </View>
+            </AdaptiveProtectedRegion>
           )}
           ListEmptyComponent={
             loading

@@ -16,7 +16,7 @@ import { INTERNAL_TOOLS_ENABLED } from '../../services/internalTools';
 import { FRESHNESS_DOMAINS, markFreshnessStale } from '../../services/freshnessRegistry';
 import { colors } from '../../theme/tokens';
 import { InlineError } from '../../components/ui/States';
-import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
+import { AdaptiveProtectedRegion, AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -121,16 +121,16 @@ export default function SettingsScreen() {
       contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}
     >
       {params.welcome === 'budget' ? (
-        <View style={styles.welcomeCard}>
+        <AdaptiveProtectedRegion style={styles.welcomeCard}>
           <Text style={styles.welcomeEyebrow}>Good first move</Text>
           <Text style={styles.welcomeTitle}>Pick a monthly budget.</Text>
           <Text style={styles.welcomeBody}>
             This gives Adlo something concrete to pace against before you have much history.
           </Text>
-        </View>
+        </AdaptiveProtectedRegion>
       ) : null}
 
-      <View style={styles.screenHeader}>
+      <AdaptiveProtectedRegion style={styles.screenHeader}>
         <Text style={styles.eyebrow}>Settings</Text>
         <Text style={styles.screenTitle}>Control panel</Text>
         <Text style={styles.screenSubtitle}>Budget, import, and notification settings that keep Adlo current.</Text>
@@ -147,7 +147,7 @@ export default function SettingsScreen() {
             </View>
           ))}
         </View>
-      </View>
+      </AdaptiveProtectedRegion>
 
       {/* Budget */}
       <View style={styles.section}>

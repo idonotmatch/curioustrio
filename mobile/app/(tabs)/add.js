@@ -29,7 +29,7 @@ import { ActionRow, SecondaryButton } from '../../components/ui/Buttons';
 import { LoadingState } from '../../components/ui/States';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 import { useAdaptiveLayout } from '../../contexts/AdaptiveLayoutContext';
-import { AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
+import { AdaptiveProtectedRegion, AdaptiveSafeArea } from '../../components/layout/AdaptiveLayout';
 
 async function prepareReceiptImage(asset = {}) {
   if (!asset.uri && !asset.base64) {
@@ -255,13 +255,15 @@ export default function AddScreen() {
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.hint}>
-          try: "242.50 trader joes" · "whole foods chicken, berries, yogurt 48.12"
-        </Text>
-        <NLInput onSubmit={handleSubmit} loading={loading} />
-        {processingMessage ? (
-          <LoadingState compact label={processingMessage} style={styles.processingBanner} />
-        ) : null}
+        <AdaptiveProtectedRegion>
+          <Text style={styles.hint}>
+            try: "242.50 trader joes" · "whole foods chicken, berries, yogurt 48.12"
+          </Text>
+          <NLInput onSubmit={handleSubmit} loading={loading} />
+          {processingMessage ? (
+            <LoadingState compact label={processingMessage} style={styles.processingBanner} />
+          ) : null}
+        </AdaptiveProtectedRegion>
         <View style={styles.scanRow}>
           <ActionRow
             icon="compass-outline"
