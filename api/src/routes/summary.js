@@ -5,6 +5,7 @@ const UserSummarySnapshot = require('../models/userSummarySnapshot');
 const { buildSummaryBundle } = require('../services/summaryBundleService');
 const db = require('../db');
 const { buildWidgetSnapshot, currentBudgetPeriod } = require('../services/widgetSnapshotService');
+const { householdExpenseVisibilitySql } = require('../services/expenseAccessPolicy');
 
 const router = express.Router();
 router.use(authenticate);
@@ -42,7 +43,22 @@ router.get('/widget', async (req, res, next) => {
     const today = /^\d{4}-\d{2}-\d{2}$/.test(`${req.query.today || ''}`)
       ? `${req.query.today}`
       : new Date().toISOString().slice(0, 10);
-    const startDay = Math.max(1, Math.min(28, Number(user.budget_start_day) || 1));
+    const householdResult = user.household_id
+      ? await db.query(
+          `SELECT h.budget_start_day, COUNT(u.id)::int AS member_count
+           FROM households h
+           LEFT JOIN users u ON u.household_id = h.id
+           WHERE h.id = $1
+           GROUP BY h.id`,
+          [user.household_id]
+        )
+      : { rows: [] };
+    const household = householdResult.rows[0] || null;
+    const hasFamilyBudget = Number(household?.member_count || 0) > 1;
+    const startDay = Math.max(1, Math.min(
+      28,
+      Number(hasFamilyBudget ? household?.budget_start_day : user.budget_start_day) || 1
+    ));
     const period = currentBudgetPeriod(today, startDay);
     const from = period.from.toISOString().slice(0, 10);
     const to = period.to.toISOString().slice(0, 10);
@@ -60,14 +76,32 @@ router.get('/widget', async (req, res, next) => {
             AND date >= $2 AND date < $3) AS spent,
          (SELECT COUNT(*)::int
           FROM expenses
-          WHERE user_id = $1 AND status = 'pending') AS pending_count`,
-      [user.id, from, to]
+          WHERE user_id = $1 AND status = 'pending') AS pending_count,
+         (SELECT SUM(bs.monthly_limit)
+          FROM budget_settings bs
+          JOIN users budget_user ON budget_user.id = bs.user_id
+          WHERE budget_user.household_id = $4
+            AND bs.category_id IS NULL) AS family_budget_limit,
+         (SELECT COALESCE(SUM(e.amount), 0)
+          FROM expenses e
+          WHERE $4::uuid IS NOT NULL
+            AND (e.household_id = $4 OR e.user_id IN (
+              SELECT id FROM users WHERE household_id = $4
+            ))
+            AND ${householdExpenseVisibilitySql(5)}
+            AND e.status = 'confirmed'
+            AND e.exclude_from_budget = FALSE
+            AND e.date >= $2 AND e.date < $3) AS family_spent`,
+      [user.id, from, to, user.household_id, user.id]
     );
     const row = result.rows[0] || {};
     res.setHeader('Cache-Control', 'private, max-age=60');
     return res.json(buildWidgetSnapshot({
       budgetLimit: row.budget_limit,
       spent: row.spent,
+      familyBudgetLimit: row.family_budget_limit,
+      familySpent: row.family_spent,
+      hasFamilyBudget,
       pendingCount: row.pending_count,
       startDay,
       today,

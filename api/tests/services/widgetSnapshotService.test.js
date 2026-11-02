@@ -9,6 +9,9 @@ describe('widgetSnapshotService', () => {
     const snapshot = buildWidgetSnapshot({
       budgetLimit: 2500,
       spent: 500,
+      familyBudgetLimit: 4500,
+      familySpent: 1200,
+      hasFamilyBudget: true,
       pendingCount: 3,
       startDay: 1,
       today: '2026-11-10',
@@ -24,11 +27,18 @@ describe('widgetSnapshotService', () => {
         spending_ratio: 0.2,
         period_elapsed_ratio: 1 / 3,
       },
+      family_pace: {
+        state: 'on_pace',
+        label: 'On pace',
+        spending_ratio: 1200 / 4500,
+      },
       pending_review_count: 3,
       generated_at: '2026-11-10T12:00:00.000Z',
     });
     expect(JSON.stringify(snapshot)).not.toContain('2500');
     expect(JSON.stringify(snapshot)).not.toContain('500');
+    expect(JSON.stringify(snapshot)).not.toContain('4500');
+    expect(JSON.stringify(snapshot)).not.toContain('1200');
   });
 
   test('rolls a custom budget period into the prior month', () => {
@@ -45,6 +55,7 @@ describe('widgetSnapshotService', () => {
     });
     expect(snapshot.period.label).toBe('Oct 15 - Nov 14');
     expect(snapshot.pace.state).toBe('on_pace');
+    expect(snapshot.family_pace).toBeNull();
   });
 
   test('handles missing budgets and spending beyond the budget', () => {

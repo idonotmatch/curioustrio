@@ -92,7 +92,7 @@
             {
               "name": "AdloPulseWidget",
               "displayName": "Adlo Pulse",
-              "description": "See your spending pace and add an expense.",
+              "description": "See your personal and family budget pace, then add an expense.",
               "ios": {
                 "supportedFamilies": [
                   "systemMedium"

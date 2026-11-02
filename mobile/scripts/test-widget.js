@@ -29,6 +29,11 @@ function run() {
       spending_ratio: 1.4,
       period_elapsed_ratio: -0.2,
     },
+    family_pace: {
+      state: 'below',
+      label: 'Below pace',
+      spending_ratio: 0.42,
+    },
     pending_review_count: 2,
   });
   assert.deepStrictEqual(props, {
@@ -36,6 +41,10 @@ function run() {
     paceLabel: 'A little high',
     paceTone: 'caution',
     spendingRatio: 1,
+    hasFamilyBudget: true,
+    familyPaceLabel: 'Below pace',
+    familyPaceTone: 'positive',
+    familySpendingRatio: 0.42,
     elapsedRatio: 0,
     reviewLabel: '2 expenses to review',
     signedIn: true,

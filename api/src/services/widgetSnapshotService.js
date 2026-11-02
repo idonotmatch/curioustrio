@@ -70,6 +70,9 @@ function paceState({ budgetLimit, spendingRatio, elapsedRatio }) {
 function buildWidgetSnapshot({
   budgetLimit,
   spent,
+  familyBudgetLimit,
+  familySpent,
+  hasFamilyBudget = false,
   pendingCount,
   startDay,
   today,
@@ -88,6 +91,16 @@ function buildWidgetSnapshot({
     spendingRatio: rawSpendingRatio,
     elapsedRatio,
   });
+  const numericFamilyLimit = Math.max(0, Number(familyBudgetLimit) || 0);
+  const numericFamilySpent = Math.max(0, Number(familySpent) || 0);
+  const rawFamilySpendingRatio = numericFamilyLimit > 0
+    ? numericFamilySpent / numericFamilyLimit
+    : 0;
+  const familyState = paceState({
+    budgetLimit: numericFamilyLimit,
+    spendingRatio: rawFamilySpendingRatio,
+    elapsedRatio,
+  });
 
   return {
     schema_version: 1,
@@ -102,6 +115,13 @@ function buildWidgetSnapshot({
       spending_ratio: clamp(rawSpendingRatio),
       period_elapsed_ratio: elapsedRatio,
     },
+    family_pace: hasFamilyBudget
+      ? {
+          state: familyState.key,
+          label: familyState.label,
+          spending_ratio: clamp(rawFamilySpendingRatio),
+        }
+      : null,
     pending_review_count: Math.max(0, Number(pendingCount) || 0),
     generated_at: generatedAt,
   };
