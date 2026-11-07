@@ -30,6 +30,22 @@ function publicJob(job) {
   };
 }
 
+function receiptDateString(value) {
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    const year = value.getFullYear();
+    const month = `${value.getMonth() + 1}`.padStart(2, '0');
+    const day = `${value.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const error = new Error('Receipt scan job has an invalid processing date');
+  error.reason_code = 'receipt_scan_invalid_date';
+  throw error;
+}
+
 async function submitReceiptScanJob({
   user,
   endpoint,
@@ -69,9 +85,17 @@ async function submitReceiptScanJob({
     });
   }
 
-  const jobId = crypto.randomUUID();
+  const priorJob = await ReceiptScanJob.findByRequest(reservation.requestId, user.id);
+  const reusableJob = priorJob?.status === 'failed' ? priorJob : null;
+  const jobId = reusableJob?.id || crypto.randomUUID();
   let storedInput = null;
   try {
+    if (reusableJob?.storage_bucket && reusableJob?.storage_path) {
+      await deleteReceiptScanInput({
+        bucket: reusableJob.storage_bucket,
+        path: reusableJob.storage_path,
+      }).catch(() => {});
+    }
     storedInput = await storeReceiptScanInput({
       userId: user.id,
       jobId,
@@ -83,7 +107,7 @@ async function submitReceiptScanJob({
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
-      const job = await ReceiptScanJob.create({
+      const jobPayload = {
         id: jobId,
         userId: user.id,
         requestId: reservation.requestId,
@@ -95,7 +119,15 @@ async function submitReceiptScanJob({
         storagePath: storedInput.path,
         todayDate,
         usageSnapshot: reservation.usage,
-      }, client);
+      };
+      const job = reusableJob
+        ? await ReceiptScanJob.requeue(jobPayload, client)
+        : await ReceiptScanJob.create(jobPayload, client);
+      if (!job) {
+        throw Object.assign(new Error('Receipt scan retry could not be queued'), {
+          reason_code: 'scan_queue_failed',
+        });
+      }
       await BackgroundJob.enqueue({
         jobType: BackgroundJob.JOB_TYPES.receiptScan,
         dedupeKey: jobId,
@@ -161,18 +193,19 @@ async function runReceiptScanJob(payload = {}) {
 
   await ReceiptScanJob.markProcessing(job.id);
   const inputBase64 = await loadReceiptScanInput({ bucket: job.storage_bucket, path: job.storage_path });
+  const todayDate = receiptDateString(job.today_date);
   const result = job.endpoint === 'document'
     ? await scanReceiptDocumentInput({
       user,
       documentBase64: inputBase64,
       fileName: job.file_name,
-      todayDate: job.today_date,
+      todayDate,
     })
     : await scanReceiptInput({
       user,
       imageBase64: inputBase64,
       imageMediaType: job.media_type,
-      todayDate: job.today_date,
+      todayDate,
       allowRetry: true,
     });
 

@@ -13,6 +13,7 @@ jest.mock('../../src/models/receiptScanJob', () => ({
   findForUser: jest.fn(),
   markInputDeleted: jest.fn(),
   markProcessing: jest.fn(),
+  requeue: jest.fn(),
   succeed: jest.fn(),
 }));
 jest.mock('../../src/models/user', () => ({ findById: jest.fn() }));
@@ -104,6 +105,52 @@ describe('receiptScanJobService', () => {
     expect(storeReceiptScanInput).not.toHaveBeenCalled();
   });
 
+  it('requeues a failed durable job instead of violating the request uniqueness constraint', async () => {
+    const client = { query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() };
+    db.pool.connect.mockResolvedValueOnce(client);
+    reserveReceiptScan.mockResolvedValueOnce({
+      kind: 'reserved', requestId: 'request-retry', usage: { remaining_month: 148 },
+    });
+    ReceiptScanJob.findByRequest.mockResolvedValueOnce({
+      id: 'scan-retry',
+      user_id: 'user-1',
+      request_id: 'request-retry',
+      status: 'failed',
+      storage_bucket: 'private-receipts',
+      storage_path: 'user-1/scan-retry.jpg',
+    });
+    storeReceiptScanInput.mockResolvedValueOnce({
+      bucket: 'private-receipts', path: 'user-1/scan-retry.jpg',
+    });
+    ReceiptScanJob.requeue.mockResolvedValueOnce({ id: 'scan-retry', status: 'queued' });
+    BackgroundJob.enqueue.mockResolvedValueOnce({ id: 'background-retry' });
+
+    const outcome = await submitReceiptScanJob({
+      user: { id: 'user-1' },
+      endpoint: 'image',
+      inputBase64: '/9j/2Q==',
+      inputHash: 'a'.repeat(64),
+      requestKey: 'scan-request-retry',
+      mediaType: 'image/jpeg',
+      todayDate: '2026-11-07',
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'queued', job: { scan_job_id: 'scan-retry', status: 'queued' },
+    });
+    expect(deleteReceiptScanInput).toHaveBeenCalledWith({
+      bucket: 'private-receipts', path: 'user-1/scan-retry.jpg',
+    });
+    expect(ReceiptScanJob.create).not.toHaveBeenCalled();
+    expect(ReceiptScanJob.requeue).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'scan-retry', requestId: 'request-retry' }),
+      client
+    );
+    expect(BackgroundJob.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      dedupeKey: 'scan-retry', payload: { scan_job_id: 'scan-retry' },
+    }));
+  });
+
   it('reconciles model usage, stores the result, and deletes the staged input', async () => {
     const job = {
       id: 'scan-1', user_id: 'user-1', request_id: 'request-1', endpoint: 'image',
@@ -133,6 +180,27 @@ describe('receiptScanJobService', () => {
       bucket: 'private-receipts', path: 'user-1/scan-1.jpg',
     });
     expect(ReceiptScanJob.markInputDeleted).toHaveBeenCalledWith('scan-1');
+  });
+
+  it('normalizes the database DATE object before invoking receipt extraction', async () => {
+    const job = {
+      id: 'scan-date', user_id: 'user-1', request_id: 'request-date', endpoint: 'image',
+      storage_bucket: 'private-receipts', storage_path: 'user-1/scan-date.jpg',
+      media_type: 'image/jpeg', today_date: new Date(2026, 10, 7), status: 'queued',
+    };
+    ReceiptScanJob.findById.mockResolvedValueOnce(job);
+    User.findById.mockResolvedValueOnce({ id: 'user-1', household_id: 'household-1' });
+    loadReceiptScanInput.mockResolvedValueOnce('/9j/2Q==');
+    scanReceiptInput.mockResolvedValueOnce({
+      body: { merchant: 'Market', amount: 12.34 },
+      modelUsage: { model_call_count: 1 },
+    });
+
+    await runReceiptScanJob({ scan_job_id: 'scan-date' });
+
+    expect(scanReceiptInput).toHaveBeenCalledWith(expect.objectContaining({
+      todayDate: '2026-11-07',
+    }));
   });
 
   it('does not charge the account allowance for an unusable extraction', async () => {

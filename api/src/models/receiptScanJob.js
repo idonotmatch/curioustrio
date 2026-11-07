@@ -36,6 +36,55 @@ async function create({
   return result.rows[0] || null;
 }
 
+async function requeue({
+  id,
+  userId,
+  endpoint,
+  inputHash,
+  mediaType = null,
+  fileName = null,
+  storageBucket,
+  storagePath,
+  todayDate,
+  usageSnapshot = {},
+}, queryable = db) {
+  const result = await queryable.query(
+    `UPDATE receipt_scan_jobs
+        SET endpoint = $3,
+            input_hash = $4,
+            media_type = $5,
+            file_name = $6,
+            storage_bucket = $7,
+            storage_path = $8,
+            today_date = $9,
+            usage_snapshot = $10::jsonb,
+            status = 'queued',
+            result_body = NULL,
+            error_body = NULL,
+            model_usage = '{}'::jsonb,
+            started_at = NULL,
+            completed_at = NULL,
+            input_deleted_at = NULL,
+            updated_at = NOW(),
+            expires_at = NOW() + INTERVAL '24 hours'
+      WHERE id = $1 AND user_id = $2 AND status = 'failed'
+      RETURNING *`,
+    [
+      id,
+      userId,
+      endpoint,
+      inputHash,
+      mediaType,
+      fileName,
+      storageBucket,
+      storagePath,
+      todayDate,
+      JSON.stringify(usageSnapshot),
+    ]
+  );
+  return result.rows[0] || null;
+}
+
 async function findById(id) {
   const result = await db.query(`SELECT * FROM receipt_scan_jobs WHERE id = $1 LIMIT 1`, [id]);
   return result.rows[0] || null;
@@ -112,5 +161,6 @@ module.exports = {
   findForUser,
   markInputDeleted,
   markProcessing,
+  requeue,
   succeed,
 };
