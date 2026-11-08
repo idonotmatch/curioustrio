@@ -1,6 +1,8 @@
 const { completeWithImageDetailed } = require('./ai');
 const {
   receiptFamilyStrategiesMode,
+  receiptFallbackModelTimeoutMs,
+  receiptPrimaryModelTimeoutMs,
 } = require('./parsingOptimizationConfig');
 const { cleanMerchantDisplayName, canonicalMerchantKey } = require('./merchantIdentity');
 const { cleanItemDescription, normalizeItemDisplayName } = require('./itemNormalizer');
@@ -581,6 +583,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
       text: buildPrimaryPrompt(todayDate, priors, familyHint),
       maxTokens: 3200,
       outputSchema: RECEIPT_OUTPUT_SCHEMA,
+      requestTimeoutMs: receiptPrimaryModelTimeoutMs(),
     });
     text = primaryModelResult.text;
     primaryDurationMs = Date.now() - primaryStartedAt;
@@ -674,6 +677,7 @@ async function parseReceiptDetailed(imageBase64, todayDate, options = {}) {
     text: buildFallbackPrompt(todayDate, priors, familyHint || familyClassification),
     maxTokens: 1800,
     outputSchema: FALLBACK_RECEIPT_OUTPUT_SCHEMA,
+    requestTimeoutMs: receiptFallbackModelTimeoutMs(),
   });
   const fallbackText = fallbackModelResult.text;
   const fallbackDurationMs = Date.now() - fallbackStartedAt;

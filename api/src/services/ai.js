@@ -63,13 +63,13 @@ function isOutputSchemaValidationError(error) {
     && /(?:output_config\.format\.schema|invalid schema)/i.test(message);
 }
 
-async function createImageCompletion(request) {
+async function createImageCompletion(request, requestTimeoutMs = null) {
   const controller = new AbortController();
   return withTimeout(client.messages.create(request, {
     signal: controller.signal,
   }), {
     service: 'anthropic_image',
-    timeoutMs: imageModelTimeoutMs(),
+    timeoutMs: requestTimeoutMs || imageModelTimeoutMs(),
     onTimeout: () => controller.abort(),
   });
 }
@@ -86,6 +86,7 @@ async function completeWithImageDetailed({
   text,
   maxTokens = 512,
   outputSchema = null,
+  requestTimeoutMs = null,
 }) {
   const request = {
     model: DEFAULT_MODEL,
@@ -111,11 +112,11 @@ async function completeWithImageDetailed({
   let response;
   let schemaFallbackUsed = false;
   try {
-    response = await createImageCompletion(request);
+    response = await createImageCompletion(request, requestTimeoutMs);
   } catch (error) {
     if (!outputSchema || !isOutputSchemaValidationError(error)) throw error;
     const { output_config: _invalidOutputConfig, ...requestWithoutSchema } = request;
-    response = await createImageCompletion(requestWithoutSchema);
+    response = await createImageCompletion(requestWithoutSchema, requestTimeoutMs);
     schemaFallbackUsed = true;
   }
   const textBlock = response.content?.find((block) => block?.type === 'text')

@@ -39,6 +39,12 @@ module.exports = {
   imageModelTimeoutMs() {
     return timeoutMs('PARSING_IMAGE_MODEL_TIMEOUT_MS', 20000);
   },
+  receiptPrimaryModelTimeoutMs() {
+    return timeoutMs('PARSING_RECEIPT_PRIMARY_MODEL_TIMEOUT_MS', 35000);
+  },
+  receiptFallbackModelTimeoutMs() {
+    return timeoutMs('PARSING_RECEIPT_FALLBACK_MODEL_TIMEOUT_MS', 25000);
+  },
   mapkitTimeoutMs() {
     return timeoutMs('PARSING_MAPKIT_TIMEOUT_MS', 2500);
   },

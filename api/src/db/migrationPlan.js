@@ -91,6 +91,7 @@ const MIGRATION_PLAN = [
   '095_receipt_scan_usage_guards.sql',
   '096_scalable_receipt_scan_jobs.sql',
   '097_push_notification_hardening.sql',
+  '098_receipt_scan_failure_telemetry.sql',
 ];
 
 module.exports = {

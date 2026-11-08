@@ -49,7 +49,7 @@ describe('expenseIngestService', () => {
 
   it('reports image-model timeouts separately from unreadable receipts', async () => {
     const timeout = Object.assign(new Error('anthropic_image timed out'), { name: 'VendorTimeoutError' });
-    parseReceiptDetailed.mockRejectedValueOnce(timeout);
+    parseReceiptDetailed.mockRejectedValue(timeout);
 
     const result = await scanReceiptInput({
       user: { id: 'user-1', household_id: 'hh-1' },
@@ -66,6 +66,40 @@ describe('expenseIngestService', () => {
       status: 'failed',
       failureReason: 'ai_timeout',
     }));
+  });
+
+  it('falls back to core extraction when the rich receipt pass times out', async () => {
+    const timeout = Object.assign(new Error('anthropic_image timed out'), { name: 'VendorTimeoutError' });
+    parseReceiptDetailed
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({
+        parsed: {
+          merchant: 'Fallback Market',
+          amount: 18.42,
+          date: '2026-11-08',
+          items: [{ description: 'Apples', amount: 4.2 }],
+          parse_status: 'partial',
+          review_fields: ['items'],
+        },
+        raw: { merchant: 'Fallback Market' },
+        diagnostics: { model_call_count: 1, model_input_tokens: 100, model_output_tokens: 40 },
+      });
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: null },
+      imageBase64: 'fakebase64',
+      imageMediaType: 'image/jpeg',
+      todayDate: '2026-11-08',
+    });
+
+    expect(result.body).toMatchObject({ merchant: 'Fallback Market', amount: 18.42 });
+    expect(parseReceiptDetailed).toHaveBeenNthCalledWith(2, 'fakebase64', '2026-11-08', {
+      passMode: 'fallback_only',
+      mediaType: 'image/jpeg',
+    });
+    const telemetry = IngestAttemptLog.create.mock.calls.at(-1)[0].metadata;
+    expect(telemetry.retry_strategy).toBe('provider_timeout_fallback');
+    expect(telemetry.model_call_count).toBe(2);
   });
 
   it('passes the validated image media type to the image model', async () => {

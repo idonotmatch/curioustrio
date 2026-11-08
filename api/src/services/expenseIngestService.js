@@ -120,6 +120,13 @@ function addModelMetrics(metrics, diagnostics = {}) {
   if (diagnostics.model_stop_reason) metrics.model_stop_reasons.push(diagnostics.model_stop_reason);
 }
 
+function addFailedModelAttempt(metrics, error) {
+  const status = Number(error?.status || 0);
+  if (error?.name === 'VendorTimeoutError' || status >= 400) {
+    metrics.model_call_count += 1;
+  }
+}
+
 function applyModelMetrics(parsedResult, metrics) {
   if (!parsedResult) return parsedResult;
   return {
@@ -158,6 +165,7 @@ async function tryReceiptParse(imageBase64, todayDate, options, modelMetrics) {
     addModelMetrics(modelMetrics, result?.diagnostics);
     return { result, durationMs: Date.now() - startedAt, error: null };
   } catch (error) {
+    addFailedModelAttempt(modelMetrics, error);
     return {
       result: null,
       durationMs: Date.now() - startedAt,
@@ -377,6 +385,9 @@ async function scanReceiptInput({ user, imageBase64, imageMediaType = null, toda
   const modelMetrics = createModelMetrics();
   let parsedResult;
   let initialParseDurationMs = 0;
+  let providerTimeoutFallbackAttempted = false;
+  let providerTimeoutFallbackDurationMs = 0;
+  let providerTimeoutFallbackFailureReason = null;
   try {
     const initialParseStartedAt = Date.now();
     parsedResult = await parseReceiptDetailed(imageBase64, todayDate, receiptParseOptions({
@@ -385,22 +396,41 @@ async function scanReceiptInput({ user, imageBase64, imageMediaType = null, toda
     addModelMetrics(modelMetrics, parsedResult?.diagnostics);
     initialParseDurationMs = Date.now() - initialParseStartedAt;
   } catch (err) {
+    initialParseDurationMs = Date.now() - scanStartedAt;
+    addFailedModelAttempt(modelMetrics, err);
     const failureReason = receiptProviderFailureReason(err);
-    await safeRecordIngestAttempt({
-      userId: user?.id || null,
-      source: 'receipt',
-      status: 'failed',
-      failureReason,
-      metadata: {
-        image_size: imageBase64.length,
-        error: err.message,
-      },
-    });
-    return {
-      errorStatus: 503,
-      errorBody: buildIngestFailure('receipt', failureReason),
-      modelUsage: modelMetrics,
-    };
+    if (failureReason === 'ai_timeout' && allowRetry && useSingleRetryPolicy) {
+      providerTimeoutFallbackAttempted = true;
+      const fallbackAttempt = await tryReceiptParse(imageBase64, todayDate, receiptParseOptions({
+        passMode: 'fallback_only',
+      }, imageMediaType), modelMetrics);
+      providerTimeoutFallbackDurationMs = fallbackAttempt.durationMs;
+      providerTimeoutFallbackFailureReason = fallbackAttempt.failureReason || null;
+      parsedResult = fallbackAttempt.result;
+    }
+
+    if (!parsedResult) {
+      const finalFailureReason = providerTimeoutFallbackFailureReason || failureReason;
+      await safeRecordIngestAttempt({
+        userId: user?.id || null,
+        source: 'receipt',
+        status: 'failed',
+        failureReason: finalFailureReason,
+        metadata: {
+          image_size: imageBase64.length,
+          error: err.message,
+          initial_parse_duration_ms: initialParseDurationMs,
+          provider_timeout_fallback_attempted: providerTimeoutFallbackAttempted,
+          provider_timeout_fallback_duration_ms: providerTimeoutFallbackDurationMs,
+          provider_timeout_fallback_failure_reason: providerTimeoutFallbackFailureReason,
+        },
+      });
+      return {
+        errorStatus: 503,
+        errorBody: buildIngestFailure('receipt', finalFailureReason),
+        modelUsage: modelMetrics,
+      };
+    }
   }
 
   const firstPassOutcome = summarizeReceiptOutcome(parsedResult);
@@ -412,7 +442,12 @@ async function scanReceiptInput({ user, imageBase64, imageMediaType = null, toda
   let retryFailureReason = null;
   const merchantHint = parsedResult?.parsed?.merchant || parsedResult?.raw?.merchant || null;
 
-  if (!allowRetry) {
+  if (providerTimeoutFallbackAttempted) {
+    contextRetryDurationMs = providerTimeoutFallbackDurationMs;
+    contextRetrySkippedReason = 'provider_timeout_fallback';
+    retryStrategy = 'provider_timeout_fallback';
+    retryFailureReason = providerTimeoutFallbackFailureReason;
+  } else if (!allowRetry) {
     contextRetrySkippedReason = 'cost_guard';
   } else if (useSingleRetryPolicy) {
     const firstPassPrimaryOnly = parsedResult;
