@@ -9,8 +9,15 @@ const MAX_BATCH_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 const RECEIPT_DELAY_MS = 15 * 60 * 1000;
 // InvalidCredentials is an app-level APNs/FCM configuration problem. Only
-// DeviceNotRegistered proves that this particular device token is unusable.
+// explicit per-device errors prove that a particular token is unusable.
 const PERMANENT_TOKEN_ERRORS = new Set(['DeviceNotRegistered']);
+
+function permanentTokenErrorCode(error = {}) {
+  const code = `${error.code || ''}`;
+  if (PERMANENT_TOKEN_ERRORS.has(code)) return code;
+  if (/\bBadDeviceToken\b/i.test(`${error.message || ''}`)) return 'BadDeviceToken';
+  return null;
+}
 
 function postExpoJson(path, payload) {
   return new Promise((resolve, reject) => {
@@ -79,10 +86,12 @@ function publicMessage(message = {}) {
 }
 
 function ticketError(ticket = {}) {
-  return {
+  const error = {
     code: `${ticket?.details?.error || 'ExpoRejected'}`.slice(0, 100),
     message: `${ticket?.message || 'Expo rejected the notification'}`.slice(0, 500),
   };
+  const permanentCode = permanentTokenErrorCode(error);
+  return permanentCode ? { ...error, code: permanentCode } : error;
 }
 
 async function recordTicket({ message, ticket, userId, category, notificationKey, metadata }) {
@@ -104,7 +113,7 @@ async function recordTicket({ message, ticket, userId, category, notificationKey
     });
   }
 
-  if (!accepted && PERMANENT_TOKEN_ERRORS.has(error.code) && message.pushTokenId) {
+  if (!accepted && permanentTokenErrorCode(error) && message.pushTokenId) {
     await PushToken.disable(message.pushTokenId, error.code);
   }
 
@@ -243,7 +252,7 @@ async function reconcilePushReceipt(payload = {}, { transport = postExpoJson } =
     errorCode: error.code,
     errorMessage: error.message,
   });
-  if (PERMANENT_TOKEN_ERRORS.has(error.code) && delivery.push_token_id) {
+  if (permanentTokenErrorCode(error) && delivery.push_token_id) {
     await PushToken.disable(delivery.push_token_id, error.code);
   }
   return { delivered: false, error_code: error.code };
@@ -252,6 +261,7 @@ async function reconcilePushReceipt(payload = {}, { transport = postExpoJson } =
 module.exports = {
   PERMANENT_TOKEN_ERRORS,
   normalizeTickets,
+  permanentTokenErrorCode,
   postExpoJson,
   reconcilePushReceipt,
   sendNotifications,

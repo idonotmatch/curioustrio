@@ -80,6 +80,26 @@ describe('pushService', () => {
     expect(PushToken.disable).not.toHaveBeenCalled();
   });
 
+  it('disables a token when Expo wraps APNs BadDeviceToken as DeveloperError', async () => {
+    NotificationDelivery.findById.mockResolvedValue({
+      id: 'delivery-1', status: 'accepted', push_token_id: 'token-1',
+    });
+    const transport = jest.fn().mockResolvedValue({
+      data: {
+        'ticket-1': {
+          status: 'error',
+          message: 'APNs rejected the notification (status: 400, reason: BadDeviceToken)',
+          details: { error: 'DeveloperError' },
+        },
+      },
+    });
+
+    await expect(reconcilePushReceipt({
+      delivery_id: 'delivery-1', ticket_id: 'ticket-1',
+    }, { transport })).resolves.toMatchObject({ delivered: false, error_code: 'BadDeviceToken' });
+    expect(PushToken.disable).toHaveBeenCalledWith('token-1', 'BadDeviceToken');
+  });
+
   it('records transport failures instead of reporting them as sent', async () => {
     const error = Object.assign(new Error('Expo timed out'), { code: 'expo_timeout' });
     const transport = jest.fn().mockRejectedValue(error);

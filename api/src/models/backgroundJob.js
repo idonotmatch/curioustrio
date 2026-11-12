@@ -51,6 +51,23 @@ async function enqueue({
   return result.rows[0] || null;
 }
 
+async function wakeQueued({ jobType, dedupeKey, queryable = db } = {}) {
+  if (!Object.values(JOB_TYPES).includes(jobType)) throw new Error(`Unsupported background job type: ${jobType}`);
+  const cleanKey = `${dedupeKey || ''}`.trim();
+  if (!cleanKey) throw new Error('Background job dedupe key is required');
+
+  const result = await queryable.query(
+    `UPDATE background_jobs
+     SET available_at = NOW(), updated_at = NOW()
+     WHERE job_type = $1
+       AND dedupe_key = $2
+       AND status = 'queued'
+     RETURNING *`,
+    [jobType, cleanKey]
+  );
+  return result.rows[0] || null;
+}
+
 async function claimNext(workerId) {
   const result = await db.query(
     `WITH next_job AS (
@@ -180,4 +197,5 @@ module.exports = {
   recoverStale,
   retryDelayMs,
   touch,
+  wakeQueued,
 };

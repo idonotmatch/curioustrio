@@ -28,6 +28,20 @@ describe('BackgroundJob model', () => {
     expect(BackgroundJob.retryDelayMs(99)).toBe(900000);
   });
 
+  it('wakes existing queued work without creating a new job', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'job-1', status: 'queued' }] });
+
+    await BackgroundJob.wakeQueued({
+      jobType: BackgroundJob.JOB_TYPES.pushDispatch,
+      dedupeKey: 'gmail_review:user-1',
+    });
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining("AND status = 'queued'"),
+      ['push_dispatch', 'gmail_review:user-1']
+    );
+  });
+
   it('claims work with skip-locked semantics', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ id: 'job-1' }] });
     await BackgroundJob.claimNext('worker-1');

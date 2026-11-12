@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/user');
 const PushToken = require('../models/pushToken');
+const BackgroundJob = require('../models/backgroundJob');
 const { sendNotifications } = require('../services/pushService');
 const RecurringExpense = require('../models/recurringExpense');
 const NotificationDelivery = require('../models/notificationDelivery');
@@ -34,6 +35,12 @@ router.post('/register', authenticate, async (req, res, next) => {
     if (normalizedTimezone && normalizedTimezone !== user.notification_timezone) {
       await User.updateNotificationTimezone(user.id, normalizedTimezone);
     }
+    // A token/timezone refresh can make a previously deferred notification
+    // deliverable now. Wake existing work without creating a new notification.
+    await BackgroundJob.wakeQueued({
+      jobType: BackgroundJob.JOB_TYPES.pushDispatch,
+      dedupeKey: `gmail_review:${user.id}`,
+    });
     res.status(204).end();
   } catch (err) { next(err); }
 });
