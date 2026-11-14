@@ -13,6 +13,7 @@ jest.mock('../../src/models/receiptScanJob', () => ({
   findForUser: jest.fn(),
   markInputDeleted: jest.fn(),
   markProcessing: jest.fn(),
+  recordAttemptFailure: jest.fn(),
   requeue: jest.fn(),
   succeed: jest.fn(),
 }));
@@ -54,6 +55,7 @@ describe('receiptScanJobService', () => {
     jest.clearAllMocks();
     ReceiptScanJob.markProcessing.mockResolvedValue({});
     ReceiptScanJob.markInputDeleted.mockResolvedValue(undefined);
+    ReceiptScanJob.recordAttemptFailure.mockResolvedValue({});
     deleteReceiptScanInput.mockResolvedValue(true);
     completeReceiptScan.mockResolvedValue(undefined);
     failReceiptScan.mockResolvedValue(undefined);
@@ -180,6 +182,9 @@ describe('receiptScanJobService', () => {
       bucket: 'private-receipts', path: 'user-1/scan-1.jpg',
     });
     expect(ReceiptScanJob.markInputDeleted).toHaveBeenCalledWith('scan-1');
+    expect(scanReceiptInput).toHaveBeenCalledWith(expect.objectContaining({
+      allowProviderRetry: false,
+    }));
   });
 
   it('normalizes the database DATE object before invoking receipt extraction', async () => {
@@ -229,6 +234,36 @@ describe('receiptScanJobService', () => {
       expect.objectContaining({ reason_code: 'missing_total', status: 422 }),
       expect.objectContaining({ model_call_count: 1 })
     );
+  });
+
+  it('retries transient provider failures through the durable worker', async () => {
+    const job = {
+      id: 'scan-transient', user_id: 'user-1', request_id: 'request-transient', endpoint: 'image',
+      storage_bucket: 'private-receipts', storage_path: 'user-1/scan-transient.jpg',
+      media_type: 'image/jpeg', today_date: '2026-11-14', status: 'queued',
+      model_usage: { model_call_count: 1, model_input_tokens: 50 },
+    };
+    ReceiptScanJob.findById.mockResolvedValueOnce(job);
+    User.findById.mockResolvedValueOnce({ id: 'user-1' });
+    loadReceiptScanInput.mockResolvedValueOnce('/9j/2Q==');
+    scanReceiptInput.mockResolvedValueOnce({
+      errorStatus: 503,
+      errorBody: { error: 'Could not parse receipt', reason_code: 'ai_timeout' },
+      modelUsage: { model_call_count: 1, model_input_tokens: 80 },
+    });
+
+    await expect(runReceiptScanJob({ scan_job_id: 'scan-transient' })).rejects.toMatchObject({
+      reason_code: 'ai_timeout',
+    });
+
+    expect(ReceiptScanJob.recordAttemptFailure).toHaveBeenCalledWith(
+      'scan-transient',
+      expect.objectContaining({ reason_code: 'ai_timeout' }),
+      expect.objectContaining({ model_call_count: 2, model_input_tokens: 130 })
+    );
+    expect(ReceiptScanJob.fail).not.toHaveBeenCalled();
+    expect(failReceiptScan).not.toHaveBeenCalled();
+    expect(deleteReceiptScanInput).not.toHaveBeenCalled();
   });
 
   it('resumes reconciliation from a durable result without invoking the model again', async () => {

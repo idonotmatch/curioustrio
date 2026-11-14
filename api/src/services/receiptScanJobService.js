@@ -30,6 +30,25 @@ function publicJob(job) {
   };
 }
 
+function mergeModelUsage(previous = {}, current = {}) {
+  const numericKeys = [
+    'model_call_count',
+    'model_input_tokens',
+    'model_output_tokens',
+    'model_cache_creation_input_tokens',
+    'model_cache_read_input_tokens',
+  ];
+  const merged = { ...previous, ...current };
+  for (const key of numericKeys) {
+    merged[key] = Math.max(0, Number(previous?.[key]) || 0) + Math.max(0, Number(current?.[key]) || 0);
+  }
+  merged.model_names = [...new Set([
+    ...(Array.isArray(previous?.model_names) ? previous.model_names : []),
+    ...(Array.isArray(current?.model_names) ? current.model_names : []),
+  ])].slice(0, 5);
+  return merged;
+}
+
 function receiptDateString(value) {
   if (typeof value === 'string') {
     const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -207,27 +226,37 @@ async function runReceiptScanJob(payload = {}) {
       imageMediaType: job.media_type,
       todayDate,
       allowRetry: true,
+      allowProviderRetry: false,
     });
 
   if (result.errorStatus) {
     const errorBody = { ...result.errorBody, status: result.errorStatus };
-    await ReceiptScanJob.fail(job.id, errorBody, result.modelUsage);
+    const modelUsage = mergeModelUsage(job.model_usage, result.modelUsage);
+    if (result.errorStatus >= 500 && ['ai_timeout', 'ai_unavailable'].includes(errorBody.reason_code)) {
+      await ReceiptScanJob.recordAttemptFailure(job.id, errorBody, modelUsage);
+      const transientError = new Error(errorBody.error || 'Receipt AI provider is temporarily unavailable');
+      transientError.reason_code = errorBody.reason_code;
+      transientError.status = result.errorStatus;
+      throw transientError;
+    }
+    await ReceiptScanJob.fail(job.id, errorBody, modelUsage);
     await failReceiptScan({
       requestId: job.request_id,
       userId: job.user_id,
       errorBody,
-      modelUsage: result.modelUsage,
+      modelUsage,
     });
     await removeJobInput(job);
     return { failed: true, status: result.errorStatus };
   }
 
-  await ReceiptScanJob.succeed(job.id, result.body, result.modelUsage);
+  const modelUsage = mergeModelUsage(job.model_usage, result.modelUsage);
+  await ReceiptScanJob.succeed(job.id, result.body, modelUsage);
   await completeReceiptScan({
     requestId: job.request_id,
     userId: job.user_id,
     responseBody: result.body,
-    modelUsage: result.modelUsage,
+    modelUsage,
   });
   await removeJobInput(job);
   return { succeeded: true };
@@ -253,8 +282,13 @@ async function failDeadReceiptScanJob(payload = {}, error = null) {
     error: 'Receipt processing could not be completed',
     reason_code: 'receipt_scan_worker_failed',
   };
-  await ReceiptScanJob.fail(job.id, errorBody);
-  await failReceiptScan({ requestId: job.request_id, userId: job.user_id, errorBody });
+  await ReceiptScanJob.fail(job.id, errorBody, job.model_usage || {});
+  await failReceiptScan({
+    requestId: job.request_id,
+    userId: job.user_id,
+    errorBody,
+    modelUsage: job.model_usage || {},
+  });
   await removeJobInput(job);
   if (error) {
     console.error('[receipt scan] job exhausted retries', {

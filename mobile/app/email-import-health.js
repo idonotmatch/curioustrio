@@ -225,6 +225,22 @@ export default function EmailImportHealthScreen() {
               />
             </View>
 
+            <View style={styles.section}>
+              <SectionHeader title="Amount quality" body="Confidence and transaction-direction checks" />
+              <MetricStrip
+                items={[
+                  { label: 'High', value: health.amount_quality?.high_confidence },
+                  { label: 'Medium', value: health.amount_quality?.medium_confidence },
+                  { label: 'Needs review', value: health.amount_quality?.low_confidence },
+                  {
+                    label: 'Sign issues',
+                    value: Number(health.amount_quality?.negative_purchase_sign_mismatches || 0)
+                      + Number(health.amount_quality?.positive_refund_sign_mismatches || 0),
+                  },
+                ]}
+              />
+            </View>
+
             <ProbeSection title="Inbox coverage" probe={health.probes?.inbox} />
             <ProbeSection title="Importer search coverage" probe={health.probes?.import_query} />
 

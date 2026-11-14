@@ -14,6 +14,10 @@ function isMissingExpenseReviewMetadataError(err) {
   return err?.code === '42703' && /review_(required|mode|source)/i.test(`${err?.message || ''}`);
 }
 
+function isMissingFieldEvidenceError(err) {
+  return err?.code === '42703' && /field_(confidence|evidence)/i.test(`${err?.message || ''}`);
+}
+
 function isMissingSnippetError(err) {
   return err?.code === '42703' && /snippet/i.test(`${err?.message || ''}`);
 }
@@ -786,6 +790,38 @@ async function summarizeByUser(userId, days = 30) {
          COUNT(*) FILTER (WHERE f.review_edit_count > 0) AS reviewed_edited,
          COUNT(*) FILTER (WHERE f.review_action = 'approved' AND f.review_edit_count = 0) AS approved_without_changes,
          COUNT(*) FILTER (WHERE f.review_action = 'approved' AND f.review_edit_count > 0) AS approved_after_changes,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.field_confidence->>'amount' = 'low'
+         ) AS amount_low_confidence,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.field_confidence->>'amount' = 'medium'
+         ) AS amount_medium_confidence,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.field_confidence->>'amount' IN ('high', 'confirmed')
+         ) AS amount_high_confidence,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.amount < 0
+         ) AS negative_amounts,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.amount < 0
+             AND COALESCE(l.email_event_type, 'unknown') <> 'refund'
+         ) AS negative_purchase_sign_mismatches,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.review_source = 'gmail'
+             AND e.amount > 0
+             AND l.email_event_type = 'refund'
+         ) AS positive_refund_sign_mismatches,
          MAX(l.imported_at) AS last_imported_at
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
@@ -809,7 +845,7 @@ async function summarizeByUser(userId, days = 30) {
       [userId, safeDays]
     );
   } catch (err) {
-    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err)) throw err;
+    if (!isMissingFeedbackTableError(err) && !isMissingExpenseReviewMetadataError(err) && !isMissingFieldEvidenceError(err)) throw err;
     countsResult = await db.query(
       `SELECT
          COUNT(*) FILTER (WHERE l.status = 'imported') AS imported,
@@ -850,6 +886,16 @@ async function summarizeByUser(userId, days = 30) {
          0::bigint AS reviewed_edited,
          0::bigint AS approved_without_changes,
          0::bigint AS approved_after_changes,
+         0::bigint AS amount_low_confidence,
+         0::bigint AS amount_medium_confidence,
+         0::bigint AS amount_high_confidence,
+         COUNT(*) FILTER (
+           WHERE l.status = 'imported'
+             AND e.source = 'email'
+             AND e.amount < 0
+         ) AS negative_amounts,
+         0::bigint AS negative_purchase_sign_mismatches,
+         0::bigint AS positive_refund_sign_mismatches,
          MAX(l.imported_at) AS last_imported_at
        FROM email_import_log l
        LEFT JOIN expenses e ON e.id = l.expense_id
@@ -872,6 +918,8 @@ async function summarizeByUser(userId, days = 30) {
   );
 
   const row = countsResult.rows[0] || {};
+  const importedForReview = Number(row.imported_pending_review || 0);
+  const amountCorrections = Number(fieldCountsResult.rows.find((entry) => entry.field === 'amount')?.count || 0);
   return {
     window_days: safeDays,
     imported: Number(row.imported || 0),
@@ -894,6 +942,22 @@ async function summarizeByUser(userId, days = 30) {
     reviewed_edited: Number(row.reviewed_edited || 0),
     approved_without_changes: Number(row.approved_without_changes || 0),
     approved_after_changes: Number(row.approved_after_changes || 0),
+    amount_quality: {
+      tracked_imports: importedForReview,
+      high_confidence: Number(row.amount_high_confidence || 0),
+      medium_confidence: Number(row.amount_medium_confidence || 0),
+      low_confidence: Number(row.amount_low_confidence || 0),
+      negative_amounts: Number(row.negative_amounts || 0),
+      negative_purchase_sign_mismatches: Number(row.negative_purchase_sign_mismatches || 0),
+      positive_refund_sign_mismatches: Number(row.positive_refund_sign_mismatches || 0),
+      user_corrections: amountCorrections,
+      low_confidence_rate: importedForReview
+        ? Number((Number(row.amount_low_confidence || 0) / importedForReview).toFixed(4))
+        : 0,
+      correction_rate: importedForReview
+        ? Number((amountCorrections / importedForReview).toFixed(4))
+        : 0,
+    },
     last_imported_at: row.last_imported_at || null,
     reasons: reasonsResult.rows.map(r => ({
       reason: r.reason,

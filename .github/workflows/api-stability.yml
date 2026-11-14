@@ -38,6 +38,9 @@ jobs:
       - name: Run focused stability suite
         run: npm run test:stability
 
+      - name: Run import quality regression suite
+        run: npm run test:imports
+
       - name: Run launch-critical suite
         run: npm run test:launch
 

@@ -4,6 +4,7 @@ jest.mock('../../src/models/oauthToken', () => ({
 jest.mock('../../src/models/emailImportLog', () => ({
   listByUser: jest.fn(),
   findByMessageId: jest.fn(),
+  summarizeByUser: jest.fn(),
 }));
 jest.mock('../../src/services/gmailClient', () => ({
   GMAIL_SEARCH_QUERY: 'newer_than:30d subject:(receipt OR invoice)',
@@ -23,9 +24,11 @@ describe('gmailImportHealthService', () => {
     OAuthToken.findByUserId.mockReset();
     EmailImportLog.listByUser.mockReset();
     EmailImportLog.findByMessageId.mockReset();
+    EmailImportLog.summarizeByUser.mockReset();
     listRecentMessages.mockReset();
     getMessage.mockReset();
     EmailImportLog.listByUser.mockResolvedValue([]);
+    EmailImportLog.summarizeByUser.mockResolvedValue({ amount_quality: {} });
   });
 
   it('returns disconnected recommendations without probing Gmail', async () => {
@@ -90,6 +93,31 @@ describe('gmailImportHealthService', () => {
     ]));
     expect(health.recommendations).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'unlogged_inbox_messages', level: 'warning' }),
+    ]));
+  });
+
+  it('flags amount-sign mismatches and degraded amount confidence', async () => {
+    OAuthToken.findByUserId.mockResolvedValue({
+      last_synced_at: new Date().toISOString(),
+      last_sync_status: 'success',
+    });
+    EmailImportLog.summarizeByUser.mockResolvedValue({
+      amount_quality: {
+        tracked_imports: 8,
+        low_confidence: 3,
+        low_confidence_rate: 0.375,
+        negative_purchase_sign_mismatches: 1,
+        positive_refund_sign_mismatches: 0,
+      },
+    });
+    listRecentMessages.mockResolvedValue([]);
+
+    const health = await getGmailImportHealth(user, { days: 14, limit: 10 });
+
+    expect(health.amount_quality).toMatchObject({ low_confidence: 3 });
+    expect(health.recommendations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'amount_sign_mismatch', level: 'error' }),
+      expect.objectContaining({ code: 'amount_confidence_degraded', level: 'warning' }),
     ]));
   });
 });

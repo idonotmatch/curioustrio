@@ -9,7 +9,16 @@ const {
   buildEmailItemsForPersistence,
   shouldSkipTemplateBeforeClassification,
   discoverGmailMessages,
+  isUnavailableGmailMessageError,
 } = require('../../src/services/gmailImporter');
+
+describe('isUnavailableGmailMessageError', () => {
+  it('recognizes messages removed between discovery and fetch', () => {
+    expect(isUnavailableGmailMessageError({ response: { status: 404 } })).toBe(true);
+    expect(isUnavailableGmailMessageError({ code: 404 })).toBe(true);
+    expect(isUnavailableGmailMessageError({ response: { status: 429 } })).toBe(false);
+  });
+});
 
 describe('discoverGmailMessages', () => {
   it('uses Gmail history after an initial cursor has been stored', async () => {

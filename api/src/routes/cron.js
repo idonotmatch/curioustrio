@@ -6,6 +6,7 @@ const { notifyCronAlert } = require('../services/cronAlertService');
 const { captureException } = require('../services/observability');
 const { runScheduledGmailSync } = require('../services/gmailSyncService');
 const { runInsightPushCron } = require('../services/insightPushCronService');
+const { runOperationalHealthCheck } = require('../services/operationalHealthService');
 
 // Middleware: verify the request carries the shared CRON_SECRET.
 // Render (or any scheduler) passes this as a bearer token.
@@ -36,6 +37,10 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
     });
     console.log('[cron/gmail-sync] enqueue completed', result);
 
+    runOperationalHealthCheck({ notify: true }).catch((error) => {
+      captureException(error, { area: 'operational_health', phase: 'gmail_sync_heartbeat' });
+    });
+
     if (!result.ok) {
       await notifyCronAlert({
         job: 'gmail-sync',
@@ -51,6 +56,25 @@ router.post('/gmail-sync', cronAuth, async (req, res, next) => {
       job: 'gmail-sync',
       level: 'error',
       message: 'Gmail scheduler failed before account processing completed.',
+    });
+    next(err);
+  }
+});
+
+router.post('/operational-health', cronAuth, async (req, res, next) => {
+  try {
+    const result = await runOperationalHealthCheck({ notify: true });
+    console.log('[cron/operational-health] completed', {
+      ok: result.ok,
+      finding_count: result.findings.length,
+    });
+    res.status(result.ok ? 200 : 503).json(result);
+  } catch (err) {
+    captureException(err, { area: 'operational_health', phase: 'run' });
+    await notifyCronAlert({
+      job: 'operational-health',
+      level: 'error',
+      message: 'Operational health check failed before metrics could be evaluated.',
     });
     next(err);
   }

@@ -69,6 +69,12 @@ export default function DiagnosticsHubScreen() {
               onPress={() => router.push('/insight-diagnostics')}
             />
             <ActionRow
+              icon="scan-outline"
+              title="Receipt scan health"
+              body="Check queue stalls, extraction failures, retries, and end-to-end scan latency."
+              onPress={() => router.push('/receipt-scan-health')}
+            />
+            <ActionRow
               icon="sync-outline"
               title="Gmail import control"
               body="Manage connection, run sync, retry failures, and inspect sender learning."

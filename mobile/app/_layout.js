@@ -618,6 +618,9 @@ function AppNavigator() {
       {INTERNAL_TOOLS_ENABLED ? (
         <Stack.Screen name="insight-diagnostics" options={{ title: 'Insight Diagnostics', headerBackTitle: 'Settings' }} />
       ) : null}
+      {INTERNAL_TOOLS_ENABLED ? (
+        <Stack.Screen name="receipt-scan-health" options={{ title: 'Receipt Scan Health', headerBackTitle: 'Diagnostics' }} />
+      ) : null}
       <Stack.Screen name="review-queue" options={{ title: 'Pending actions', headerBackTitle: 'Activity' }} />
       <Stack.Screen name="duplicate-review" options={{ title: 'Possible duplicate', headerBackTitle: 'Back' }} />
       <Stack.Screen name="payment-methods" options={{ title: 'Saved Card Labels', headerBackTitle: 'Settings' }} />

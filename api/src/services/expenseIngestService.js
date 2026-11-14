@@ -52,16 +52,25 @@ function shouldRetryReceipt(parsedResult, merchantHint = null) {
       && !['invalid_model_json', 'truncated_model_output', 'empty_model_response'].includes(parsedResult.failureReason);
   }
   const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
+  const items = Array.isArray(parsedResult.parsed.items) ? parsedResult.parsed.items : [];
+  const hasUsableItem = items.some((item) => `${item?.description || ''}`.trim()
+    && Number.isFinite(Number(item?.amount)));
   return parsedResult.parsed.parse_status === 'partial'
     && parsedResult.parsed.items_truncated !== true
-    && reviewFields.some((field) => ['merchant', 'amount', 'items'].includes(field));
+    && (
+      reviewFields.some((field) => ['merchant', 'amount'].includes(field))
+      || (reviewFields.includes('items') && !hasUsableItem)
+    );
 }
 
 function shouldRetryReceiptWithContext(parsedResult, merchantHint = null) {
   if (!merchantHint || !parsedResult?.parsed) return false;
   const reviewFields = Array.isArray(parsedResult.parsed.review_fields) ? parsedResult.parsed.review_fields : [];
+  const items = Array.isArray(parsedResult.parsed.items) ? parsedResult.parsed.items : [];
+  const hasUsableItem = items.some((item) => `${item?.description || ''}`.trim()
+    && Number.isFinite(Number(item?.amount)));
   return parsedResult.parsed.items_truncated !== true
-    && reviewFields.some((field) => ['merchant', 'items'].includes(field));
+    && (reviewFields.includes('merchant') || (reviewFields.includes('items') && !hasUsableItem));
 }
 
 function receiptResultQuality(parsedResult) {
@@ -379,7 +388,14 @@ async function parseExpenseInput({ userPromise, input, todayDate }) {
   };
 }
 
-async function scanReceiptInput({ user, imageBase64, imageMediaType = null, todayDate, allowRetry = true }) {
+async function scanReceiptInput({
+  user,
+  imageBase64,
+  imageMediaType = null,
+  todayDate,
+  allowRetry = true,
+  allowProviderRetry = true,
+}) {
   const scanStartedAt = Date.now();
   const useSingleRetryPolicy = receiptRetryPolicyMode() === 'single';
   const modelMetrics = createModelMetrics();
@@ -399,7 +415,7 @@ async function scanReceiptInput({ user, imageBase64, imageMediaType = null, toda
     initialParseDurationMs = Date.now() - scanStartedAt;
     addFailedModelAttempt(modelMetrics, err);
     const failureReason = receiptProviderFailureReason(err);
-    if (failureReason === 'ai_timeout' && allowRetry && useSingleRetryPolicy) {
+    if (failureReason === 'ai_timeout' && allowRetry && allowProviderRetry && useSingleRetryPolicy) {
       providerTimeoutFallbackAttempted = true;
       const fallbackAttempt = await tryReceiptParse(imageBase64, todayDate, receiptParseOptions({
         passMode: 'fallback_only',
@@ -465,7 +481,7 @@ async function scanReceiptInput({ user, imageBase64, imageMediaType = null, toda
 
       const hasMerchantSpecificPriors = context.merchant_alias_count > 0 || context.merchant_item_count > 0;
       const hasUsefulFallbackPriors = Boolean(merchantHint) || firstPassOutcome.parse_status === 'partial';
-      if (context.prior_count > 0 && (hasMerchantSpecificPriors || hasUsefulFallbackPriors)) {
+      if (context.prior_count > 0 && hasMerchantSpecificPriors && hasUsefulFallbackPriors) {
         contextRetryAttempted = true;
         retryStrategy = 'contextual_primary_only';
         try {
@@ -546,7 +562,7 @@ async function scanReceiptInput({ user, imageBase64, imageMediaType = null, toda
 
     const hasMerchantSpecificPriors = context.merchant_alias_count > 0 || context.merchant_item_count > 0;
     const hasUsefulFallbackPriors = Boolean(merchantHint) || firstPassOutcome.parse_status === 'partial';
-    if (context.prior_count > 0 && (hasMerchantSpecificPriors || hasUsefulFallbackPriors)) {
+    if (context.prior_count > 0 && hasMerchantSpecificPriors && hasUsefulFallbackPriors) {
       contextRetryAttempted = true;
       retryStrategy = 'legacy_contextual_full';
       try {

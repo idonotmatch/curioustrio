@@ -43,7 +43,7 @@ function countLogs(logs) {
   }, { imported: 0, skipped: 0, failed: 0, pending_review: 0, unknown: 0 });
 }
 
-function buildRecommendations({ token, inboxProbe, importProbe, recentLogCounts }) {
+function buildRecommendations({ token, inboxProbe, importProbe, recentLogCounts, amountQuality = {} }) {
   const recommendations = [];
   const ageHours = syncAgeHours(token);
 
@@ -105,6 +105,24 @@ function buildRecommendations({ token, inboxProbe, importProbe, recentLogCounts 
       level: 'error',
       code: 'recent_failures',
       message: `${recentLogCounts.failed} recent import failure${recentLogCounts.failed === 1 ? '' : 's'} need retry or investigation.`,
+    });
+  }
+
+  const signMismatches = Number(amountQuality.negative_purchase_sign_mismatches || 0)
+    + Number(amountQuality.positive_refund_sign_mismatches || 0);
+  if (signMismatches > 0) {
+    recommendations.push({
+      level: 'error',
+      code: 'amount_sign_mismatch',
+      message: `${signMismatches} recent import${signMismatches === 1 ? ' has' : 's have'} an amount sign that disagrees with its transaction type.`,
+    });
+  }
+
+  if (Number(amountQuality.tracked_imports || 0) >= 3 && Number(amountQuality.low_confidence_rate || 0) >= 0.25) {
+    recommendations.push({
+      level: 'warning',
+      code: 'amount_confidence_degraded',
+      message: `${Math.round(Number(amountQuality.low_confidence_rate) * 100)}% of recent imports need a full amount check.`,
     });
   }
 
@@ -209,6 +227,8 @@ async function getGmailImportHealth(user, options = {}) {
     return Number.isFinite(importedMs) && importedMs >= cutoffMs;
   });
   const recentLogCounts = countLogs(recentLogs);
+  const qualitySummary = await EmailImportLog.summarizeByUser(user.id, days);
+  const amountQuality = qualitySummary?.amount_quality || {};
 
   let inboxProbe = {
     label: 'Recent inbox',
@@ -282,11 +302,12 @@ async function getGmailImportHealth(user, options = {}) {
           imported_at: log.imported_at,
         })),
     },
+    amount_quality: amountQuality,
     probes: {
       inbox: inboxProbe,
       import_query: importProbe,
     },
-    recommendations: buildRecommendations({ token, inboxProbe, importProbe, recentLogCounts }),
+    recommendations: buildRecommendations({ token, inboxProbe, importProbe, recentLogCounts, amountQuality }),
   };
 }
 

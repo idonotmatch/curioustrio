@@ -56,7 +56,7 @@ function deriveEmailFieldEvidence(expense, log) {
   };
 }
 
-function buildEmailFieldEvidence(expense, log, senderQuality = {}) {
+function buildEmailFieldEvidence(expense, log, senderQuality = {}, options = {}) {
   const legacy = deriveEmailFieldEvidence(expense, log);
   const subject = `${log?.subject || ''}`;
   const fromAddress = `${log?.from_address || ''}`;
@@ -77,6 +77,7 @@ function buildEmailFieldEvidence(expense, log, senderQuality = {}) {
   const importedDate = dateOnly(log?.imported_at);
   const expenseDate = dateOnly(expense?.date);
   const itemLevel = senderQuality?.item_reliability?.level || 'unknown';
+  const amountAssessment = options?.amountAssessment || null;
 
   const fieldEvidence = {
     merchant: {
@@ -86,10 +87,11 @@ function buildEmailFieldEvidence(expense, log, senderQuality = {}) {
       source: merchantInSubject ? 'subject' : 'sender',
     },
     amount: {
-      confidence: amountExplicit ? 'high' : (hasItems ? 'medium' : 'low'),
-      questionable: !amountExplicit && !hasItems,
-      detail: legacy.amount_evidence || 'The final charged total was not explicit in the email summary.',
-      source: amountExplicit ? 'email_total' : (hasItems ? 'line_items' : 'extraction'),
+      confidence: amountAssessment?.confidence || (amountExplicit ? 'high' : (hasItems ? 'medium' : 'low')),
+      questionable: amountAssessment?.questionable ?? (!amountExplicit && !hasItems),
+      detail: amountAssessment?.detail || legacy.amount_evidence || 'The final charged total was not explicit in the email summary.',
+      source: amountAssessment?.source || (amountExplicit ? 'email_total' : (hasItems ? 'line_items' : 'extraction')),
+      ...(Array.isArray(amountAssessment?.reason_codes) ? { reason_codes: amountAssessment.reason_codes } : {}),
     },
     date: {
       confidence: expenseDate && importedDate && expenseDate !== importedDate ? 'high' : 'medium',

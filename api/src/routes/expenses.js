@@ -9,6 +9,7 @@ const ExpenseItem = require('../models/expenseItem');
 const Category = require('../models/category');
 const EmailImportLog = require('../models/emailImportLog');
 const IngestAttemptLog = require('../models/ingestAttemptLog');
+const { getReceiptScanHealth } = require('../services/receiptScanHealthService');
 const CategoryDecisionEvent = require('../models/categoryDecisionEvent');
 const { classifyExpenseItemType } = require('../services/itemClassifier');
 const {
@@ -189,6 +190,14 @@ router.get('/ingest-summary', async (req, res, next) => {
     const source = req.query.source ? `${req.query.source}`.trim() : null;
     const summary = await IngestAttemptLog.summarizeByUser(user.id, { source, days });
     res.json(summary || { counts: {}, reasons: [] });
+  } catch (err) { next(err); }
+});
+
+router.get('/scan-health', async (req, res, next) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'User not synced. Call POST /users/sync first.' });
+    res.json(await getReceiptScanHealth(user, { days: req.query.days }));
   } catch (err) { next(err); }
 });
 

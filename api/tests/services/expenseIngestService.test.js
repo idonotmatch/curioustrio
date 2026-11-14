@@ -325,6 +325,33 @@ describe('expenseIngestService', () => {
     expect(IngestAttemptLog.create.mock.calls.at(-1)[0].metadata.retry_failure_reason).toBe('ai_timeout');
   });
 
+  it('does not spend a second model call when partial output already has usable items', async () => {
+    process.env.PARSING_RECEIPT_SINGLE_RETRY_POLICY_MODE = 'single';
+    parseReceiptDetailed.mockResolvedValueOnce({
+      parsed: {
+        merchant: 'Market',
+        amount: 12.5,
+        date: '2026-11-14',
+        items: [{ description: 'Avocados', amount: 4.5 }],
+        parse_status: 'partial',
+        review_fields: ['items'],
+      },
+      raw: { merchant: 'Market' },
+      diagnostics: { model_call_count: 1, receipt_family: 'grocery_receipt' },
+    });
+
+    const result = await scanReceiptInput({
+      user: { id: 'user-1', household_id: 'household-1' },
+      imageBase64: 'fakebase64',
+      todayDate: '2026-11-14',
+    });
+
+    expect(result.body.items).toHaveLength(1);
+    expect(parseReceiptDetailed).toHaveBeenCalledTimes(1);
+    expect(buildReceiptParsingContext).not.toHaveBeenCalled();
+    expect(IngestAttemptLog.create.mock.calls.at(-1)[0].metadata.context_retry_skipped_reason).toBe('not_eligible');
+  });
+
   it('returns extracted receipt data when category enrichment is unavailable', async () => {
     parseReceiptDetailed.mockResolvedValueOnce({
       parsed: {

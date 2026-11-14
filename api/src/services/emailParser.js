@@ -280,7 +280,7 @@ function analyzeEmailSignals(subject = '', fromAddress = '', emailBody = '') {
   const nonTransactionalSubject = /(tracking|has shipped|was shipped|shipment|out for delivery|delivered|delivery update|review (?:your|this)|share your experience|meet your expectations|how was your (?:order|purchase|visit)|newsletter|weekly digest|security alert|password reset)/i.test(subjectText);
   const explicitTransactionSubject = /(receipt|invoice|order confirmation|purchase confirmation|payment (?:received|confirmed|successful)|charged|amount paid|refund (?:issued|processed|confirmed)|return confirmation)/i.test(subjectText);
   const transactionalContext = /(receipt|order|confirmation|purchase|charged|invoice|payment|paid|refund|return|renewal|booking|subscription|trip|reservation)/i.test(text);
-  const strongMoneySignal = /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund amount|refund total|you paid|paid .*?@|charged to)[^$\d]{0,50}\$?\s?-?\d+(?:\.\d{2})?/i.test(text);
+  const strongMoneySignal = /(?:order total|total charged|amount charged|amount paid|total paid|payment total|grand total|refund amount|refund total|you paid|paid .*?@|charged to)[^$\d]{0,50}\$?\s?-?\d+(?:\.\d{2})?/i.test(text);
   const mediumMoneySignal = /(?:\btotal\b|\binvoice amount\b|\bpayment received\b|\bamount\b)[^$\d]{0,20}\$?\s?-?\d+(?:\.\d{2})?/i.test(text)
     || (/\$\s?-?\d+(?:\.\d{2})?/.test(text) && transactionalContext);
   const weakMoneySignal = /(?:save|from|starting at|under|up to|earn|credit|discount)[^$\d]{0,20}\$?\s?\d+(?:\.\d{2})?/i.test(text)
@@ -465,8 +465,8 @@ function extractDeterministicTotalAmount(emailBody = '') {
     .filter(Boolean);
 
   const candidates = [];
-  const exactLabelPattern = /^(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total)$/i;
-  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|payment total|refund total|refund amount|total(?!\s+savings))\b([^\n]{0,32})/gi;
+  const exactLabelPattern = /^(grand total|order total|total charged|amount charged|amount paid|total paid|payment total|refund total|refund amount|total)$/i;
+  const inlineLabelPattern = /\b(grand total|order total|total charged|amount charged|amount paid|total paid|payment total|refund total|refund amount|total(?!\s+savings))\b([^\n]{0,32})/gi;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];

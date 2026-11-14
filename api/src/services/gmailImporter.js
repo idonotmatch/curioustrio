@@ -48,6 +48,7 @@ const {
   assessEmailAdmission,
   normalizeEmailMerchant,
 } = require('./emailAdmissionPolicy');
+const { assessEmailAmount } = require('./emailAmountAssessment');
 
 function amountsApproximatelyEqual(left, right) {
   const expected = Math.abs(Number(right) || 0);
@@ -108,7 +109,7 @@ function findLikelyAmount(...parts) {
   }
 
   const patterns = [
-    /(?:order total|total charged|amount charged|amount paid|payment total|grand total|refund total)[^$\d]{0,20}(?:\$\s?(-?\d+(?:\.\d{1,2})?)|(-?\d+\.\d{2}))/i,
+    /(?:order total|total charged|amount charged|amount paid|total paid|payment total|grand total|refund total)[^$\d]{0,20}(?:\$\s?(-?\d+(?:\.\d{1,2})?)|(-?\d+\.\d{2}))/i,
     /\btotal\b[^$\d]{0,20}(?:\$\s?(-?\d+(?:\.\d{1,2})?)|(-?\d+\.\d{2}))/i,
   ];
   for (const pattern of patterns) {
@@ -205,6 +206,17 @@ function summarizeImportFailure(err) {
   if (message.includes('rate limit')) return 'rate_limited';
   if (message.includes('amount')) return 'amount_parse_failed';
   return 'import_failed';
+}
+
+function isUnavailableGmailMessageError(error) {
+  const status = Number(
+    error?.response?.status
+    || error?.status
+    || error?.statusCode
+    || error?.code
+    || 0
+  );
+  return status === 404;
 }
 
 function shouldSoftenSkipBehavior(senderQuality = {}) {
@@ -713,7 +725,14 @@ async function processMessageImport(user, msgId, {
       };
     }
 
-    let reviewMode = (forceReview || lifecycle.eventType === 'refund')
+    const amountAssessment = assessEmailAmount({
+      body,
+      parsedAmount: parsed.amount,
+      items: itemsForPersistence,
+      eventType: lifecycle.eventType,
+    });
+
+    let reviewMode = (forceReview || lifecycle.eventType === 'refund' || amountAssessment.requires_full_review)
       ? 'full_review'
       : (structuredItemAdjustment?.reviewMode || recommendReviewMode(effectiveSenderQuality));
     const structuredEvidence = buildEmailFieldEvidence({
@@ -724,7 +743,7 @@ async function processMessageImport(user, msgId, {
       subject,
       from_address: from,
       imported_at: `${messageDateContext}T12:00:00.000Z`,
-    }, effectiveSenderQuality);
+    }, effectiveSenderQuality, { amountAssessment });
 
     const persistenceClient = providedPersistenceClient || await db.pool.connect();
     const ownsPersistenceClient = !providedPersistenceClient;
@@ -871,6 +890,17 @@ async function processMessageImport(user, msgId, {
     }
     return { imported: 1, skipped: 0, failed: 0, expense, duplicate_flags: duplicateFlags };
   } catch (e) {
+    if (!msgFrom && isUnavailableGmailMessageError(e)) {
+      const skipReason = 'gmail_message_unavailable';
+      await EmailImportLog.upsertResult({
+        userId: user.id,
+        messageId: msgId,
+        status: 'skipped',
+        skipReason,
+      });
+      increment(outcomes.skipped_reasons, skipReason);
+      return { imported: 0, skipped: 1, failed: 0, reason: skipReason };
+    }
     const failureReason = summarizeImportFailure(e);
     console.error('[gmail import] message failed', {
       reason: failureReason,
@@ -1159,5 +1189,6 @@ module.exports = {
   shouldSkipTemplateBeforeClassification,
   discoverGmailMessages,
   isRecoverableHistoryCursorError,
+  isUnavailableGmailMessageError,
   resolveEmailLocation,
 };
