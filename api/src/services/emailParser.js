@@ -16,6 +16,7 @@ Return ONLY a JSON object with:
 
 Use "uncertain" when the email looks purchase-related but lacks a clearly readable final charge.
 Use "not_expense" for newsletters, promos, shipping-only updates, account alerts, or non-purchase emails.
+Use "refund" only when the message says a refund was actually issued, processed, completed, or sent. Refund policies, return instructions, trade-in estimates, available credits, and conditional or future refunds are not refund transactions.
 Do not include any text outside the JSON object.`;
 
 const SYSTEM_PROMPT = `You are a receipt email parser. Extract purchase data from email receipts, order confirmations, and refund notifications.
@@ -34,7 +35,7 @@ Return ONLY a JSON object with:
 
 Do NOT treat itinerary, reservation, guest, policy, loyalty-credit, support, or informational lines as items. Examples that should usually NOT become items: check-in/check-out times, guest names, cancellation policy text, "dollars used", "for more information", website links, confirmation headlines, or marketing upgrade offers unless they are clearly billed as purchased line items in an itemized block.
 
-If the email describes a refund or return, set amount as a negative number.
+If the email confirms that a refund was actually issued, processed, completed, or sent, set amount as a negative number. Do not make an amount negative for refund policies, return instructions, trade-in estimates, available credits, or conditional/future refunds.
 If the email is not purchase/refund related, return null.
 Do not include any text outside the JSON object.`;
 

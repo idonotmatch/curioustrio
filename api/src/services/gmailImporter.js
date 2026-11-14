@@ -135,6 +135,16 @@ function hasValidParsedAmount(parsed) {
   return Number.isFinite(amount) && amount !== 0 && Math.abs(amount) <= 99_999_999.99;
 }
 
+function normalizeParsedAmountForLifecycle(parsed = null, eventType = 'unknown') {
+  if (!parsed || typeof parsed !== 'object') return parsed;
+  const amount = Number(parsed.amount);
+  if (!Number.isFinite(amount) || amount === 0) return parsed;
+  return {
+    ...parsed,
+    amount: eventType === 'refund' ? -Math.abs(amount) : Math.abs(amount),
+  };
+}
+
 function normalizeParsedAmountAgainstDeterministicTotal(parsed = null, body = '', classification = {}) {
   if (!parsed || typeof parsed !== 'object') return parsed;
 
@@ -602,6 +612,10 @@ async function processMessageImport(user, msgId, {
       importedAsPendingReview = true;
     }
 
+    // The lifecycle gate owns transaction direction. Parser/classifier guesses
+    // can still supply the magnitude, but boilerplate must not flip the sign.
+    parsed = normalizeParsedAmountForLifecycle(parsed, lifecycle.eventType);
+
     const matchingItems = buildEmailItemsForPersistence(parsed.items, deterministicFallbackItems);
     let relatedLifecycle = await EmailImportLog.findRelatedTransaction(user.id, {
       messageId: msgId,
@@ -672,7 +686,6 @@ async function processMessageImport(user, msgId, {
     }
 
     if (lifecycle.eventType === 'refund') {
-      parsed.amount = -Math.abs(Number(parsed.amount));
       importedAsPendingReview = true;
     }
 
@@ -1137,6 +1150,7 @@ module.exports = {
   reprocessImportLog,
   findLikelyAmount,
   normalizePeerPaymentExpense,
+  normalizeParsedAmountForLifecycle,
   normalizeParsedAmountAgainstDeterministicTotal,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,

@@ -40,6 +40,40 @@ describe('emailTransactionLifecycle', () => {
     expect(lifecycle.eventType).toBe('charge');
   });
 
+  it.each([
+    [
+      'Your Google Play Order Receipt',
+      "Your subscription continues and you've been charged $3.26. See our refund policy.",
+    ],
+    [
+      'Woot woot! We got your order #1125706105',
+      'Returns are eligible for a refund after the item is received. Order total $66.51.',
+    ],
+    [
+      "We're processing your order W1615170956",
+      'A trade-in refund may be applied after device verification. Amount financed $1.00.',
+    ],
+    [
+      'Your receipt from Airbnb',
+      'Total paid $178.41. Review the cancellation and refund policy for this stay.',
+    ],
+  ])('does not treat purchase boilerplate as a refund: %s', (subject, body) => {
+    const lifecycle = extractEmailTransactionLifecycle({
+      subject,
+      body,
+      classification: { disposition: 'refund' },
+    });
+    expect(lifecycle.eventType).not.toBe('refund');
+  });
+
+  it.each([
+    ['Your refund has been issued', 'We sent the money back to your original payment method.'],
+    ['Update on order #A-1', 'We have processed your refund of $19.25.'],
+    ['Refund confirmation', 'Refund amount: $42.10'],
+  ])('requires completed refund evidence: %s', (subject, body) => {
+    expect(extractEmailTransactionLifecycle({ subject, body }).eventType).toBe('refund');
+  });
+
   it('recognizes shipping and cancellation as non-financial lifecycle events', () => {
     expect(isNonFinancialLifecycleEvent(extractEmailTransactionLifecycle({
       subject: 'Your order has shipped',

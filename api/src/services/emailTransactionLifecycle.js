@@ -7,6 +7,14 @@ const { scoreMatch } = require('./matchScoring');
 const FINANCIAL_EVENT_TYPES = new Set(['purchase_confirmation', 'charge', 'refund']);
 const NON_FINANCIAL_EVENT_TYPES = new Set(['shipping_update', 'cancellation', 'return_update']);
 
+function hasExplicitRefundEvidence(subject = '', body = '') {
+  const subjectText = `${subject || ''}`.toLowerCase();
+  const bodyText = `${body || ''}`.toLowerCase();
+  const refundSubject = /\b(?:your )?refund(?: of \$?\d+(?:\.\d{2})?)? (?:has been |was |is )?(?:issued|processed|confirmed|completed|sent)|refund (?:issued|processed|confirmed|complete|completed)|you(?:'ve| have| were) been refunded\b/;
+  const completedRefundBody = /\b(?:we(?:'ve| have)? |your (?:merchant|seller) (?:has )?)?(?:issued|processed|completed|sent) (?:you )?(?:a |your )?refund\b|\byou(?:'ve| have| were) been refunded\b|\b(?:refund|amount refunded) (?:amount|total)?\s*[:\-]\s*\$?\d+(?:\.\d{2})?\b|\b\$?\d+(?:\.\d{2})? (?:has been|was|will be) refunded (?:to|back to)\b/;
+  return refundSubject.test(subjectText) || completedRefundBody.test(bodyText);
+}
+
 function normalizeExternalId(value) {
   const clean = `${value || ''}`
     .trim()
@@ -67,7 +75,9 @@ function classifyLifecycleEvent(subject = '', body = '', classification = {}) {
   const fulfillmentBody = /\b(?:(?:your |the )?(?:order|package|shipment) (?:has |was |is )?(?:shipped|in transit|on (?:its|the) way|out for delivery|delivered|ready for (?:pickup|collection)|picked up)|(?:we(?:'re| are) )?(?:getting|preparing) your (?:autoship )?order ready)\b/;
   if (fulfillmentSubject.test(subjectText) || fulfillmentBody.test(bodyText)) return 'shipping_update';
 
-  if (classification?.disposition === 'refund' || /\b(refund(?:ed)?|money back|credit issued|refund processed)\b/.test(text)) return 'refund';
+  // Refund policies, return instructions, trade-in estimates, and future credits
+  // are common purchase-email boilerplate. Require evidence that money moved.
+  if (hasExplicitRefundEvidence(subjectText, bodyText)) return 'refund';
   if (/\b(order confirmation|order confirmed|order received|thanks for your order|purchase confirmation)\b/.test(text)
     || /\border\s*#?[a-z0-9._-]+\s+is confirmed\b/i.test(text)
     || /\bthanks for shopping with us\b[^\n]{0,80}\border\b/i.test(subjectText)) return 'purchase_confirmation';
@@ -155,6 +165,7 @@ module.exports = {
   normalizeExternalId,
   extractOrderId,
   extractTransactionId,
+  hasExplicitRefundEvidence,
   classifyLifecycleEvent,
   buildMessageFingerprint,
   buildPurchaseIdentityKey,

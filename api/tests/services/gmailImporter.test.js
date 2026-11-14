@@ -2,6 +2,7 @@ const {
   findLikelyAmount,
   normalizePeerPaymentExpense,
   normalizeParsedAmountAgainstDeterministicTotal,
+  normalizeParsedAmountForLifecycle,
   buildGmailImportPushPayload,
   buildItemHistoryReviewAdjustment,
   buildStructuredItemReviewAdjustment,
@@ -120,6 +121,18 @@ describe('normalizeParsedAmountAgainstDeterministicTotal', () => {
       'Subtotal $20.94 Total Savings -$1.61 Sales Tax $0.51 Total $19.84',
       { disposition: 'expense' }
     )).toEqual(expect.objectContaining({ amount: 19.84 }));
+  });
+});
+
+describe('normalizeParsedAmountForLifecycle', () => {
+  it('repairs a negative parser guess when lifecycle evidence says purchase', () => {
+    expect(normalizeParsedAmountForLifecycle({ amount: -66.51 }, 'purchase_confirmation'))
+      .toEqual({ amount: 66.51 });
+  });
+
+  it('makes completed refunds negative', () => {
+    expect(normalizeParsedAmountForLifecycle({ amount: 19.25 }, 'refund'))
+      .toEqual({ amount: -19.25 });
   });
 });
 
